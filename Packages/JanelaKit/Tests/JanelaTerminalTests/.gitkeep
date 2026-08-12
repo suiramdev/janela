@@ -1,0 +1,23 @@
+# This directory is intentionally empty for now.
+#
+# It must exist: `Package.swift` declares a `JanelaTerminalTests` target, and
+# SwiftPM fails to resolve if the directory is missing. Git does not track empty
+# directories, so this file is what keeps it alive across a clone. Delete it once
+# there is a real test file here.
+#
+# What belongs here (see docs/testing.md):
+#
+#   - `TerminalSession` lifecycle: idle → running → exited, and that `start()` on
+#     an already-running session is a no-op.
+#   - Laziness: constructing a session allocates no PTY and no emulator. This is
+#     the property that makes 40 open tabs viable, so it deserves an explicit test.
+#   - Event translation, which is the heart of ADR 0006: feed known byte
+#     sequences through the emulator and assert the right `TerminalEventSink`
+#     callback fires.
+#         BEL          -> terminalDidRequestAttention
+#         OSC 0 / 2    -> terminalDidSetTitle
+#         OSC 7        -> terminalDidReportWorkingDirectory
+#         OSC 9 / 777  -> terminalDidRequestAttention
+#         OSC 133 A/C/D-> terminalDidMarkPrompt
+#   - Attention badging: a signal while unfocused sets `hasUnseenAttention`;
+#     focusing clears it.

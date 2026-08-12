@@ -1,0 +1,6 @@
+# UI tests live here.
+#
+# Kept empty on purpose for now: UI tests are slow and brittle, and we only add
+# them for flows that a unit test genuinely cannot cover — see docs/testing.md
+# § The testing pyramid. The first one worth writing is "launch the app, create a
+# workspace, start a session, see output".

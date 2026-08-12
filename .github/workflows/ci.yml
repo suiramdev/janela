@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default. No job here writes to the repository; anything that
+# needs more must request it at the job level and say why.
+permissions:
+  contents: read
+
+env:
+  # Keep this in sync with scripts/bootstrap.sh and docs/development.md.
+  XCODE_VERSION: "26.1"
+
+jobs:
+  # The fast gate. Runs on every push and finishes in well under a minute, because
+  # everything that matters lives in the package and needs no Xcode project.
+  package:
+    name: Build & test modules
+    runs-on: macos-15
+    steps:
+      # Actions are pinned to commit SHAs, not tags: a tag can be moved to point
+      # at new code, a SHA cannot. Update deliberately, with the version comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # No job pushes, so leaving a credential in .git/config only widens the
+          # blast radius of a compromised build step.
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Cache SwiftPM
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: Packages/JanelaKit/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/JanelaKit/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  lint:
+    name: Format & lint
+    runs-on: macos-15
+    steps:
+      # Actions are pinned to commit SHAs, not tags: a tag can be moved to point
+      # at new code, a SHA cannot. Update deliberately, with the version comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # No job pushes, so leaving a credential in .git/config only widens the
+          # blast radius of a compromised build step.
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      # REQUIRE_SWIFTLINT makes a missing SwiftLint a hard failure here, so a
+      # broken CI image cannot silently skip the lint step.
+      - name: Lint
+        run: REQUIRE_SWIFTLINT=1 make lint
+
+  # The slow gate: proves the .app bundle still builds and that project.yml is
+  # valid. Separated so a formatting mistake does not cost a full Xcode build.
+  app:
+    name: Build app bundle
+    runs-on: macos-15
+    steps:
+      # Actions are pinned to commit SHAs, not tags: a tag can be moved to point
+      # at new code, a SHA cannot. Update deliberately, with the version comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # No job pushes, so leaving a credential in .git/config only widens the
+          # blast radius of a compromised build step.
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: make generate
+
+      # Verify the generated project is reproducible. If this fails, someone
+      # committed a .xcodeproj or project.yml is non-deterministic.
+      - name: Ensure no project is committed
+        run: |
+          if git ls-files --error-unmatch '*.xcodeproj/project.pbxproj' >/dev/null 2>&1; then
+            echo "::error::A .xcodeproj is committed. It is generated from project.yml."
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Janela.xcodeproj \
+            -scheme Janela \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO

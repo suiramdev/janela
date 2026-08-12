@@ -1,0 +1,119 @@
+# XcodeGen project definition — the source of truth for Janela.xcodeproj.
+#
+# The .xcodeproj is generated and gitignored. Never commit one: pbxproj files do
+# not merge, and both humans and coding agents corrupt them.
+#
+#   make generate    regenerate Janela.xcodeproj
+#   make open        regenerate and open it
+#
+# See docs/decisions/0001-project-generation.md.
+
+name: Janela
+
+options:
+  bundleIdPrefix: sh.janela
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  # Keep the generated project free of an implicit scheme per target; we define
+  # exactly the schemes we want below.
+  xcodeVersion: "2600"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: true
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    DEAD_CODE_STRIPPING: true
+    ENABLE_HARDENED_RUNTIME: true
+    # Janela spawns the user's shell and arbitrary developer tools in arbitrary
+    # directories. The App Sandbox cannot express that, so we ship unsandboxed and
+    # outside the Mac App Store. See docs/decisions/0008-sandboxing.md.
+    ENABLE_APP_SANDBOX: false
+    CODE_SIGN_STYLE: Automatic
+    # Set DEVELOPMENT_TEAM in a local, gitignored Secrets.xcconfig rather than here.
+    ALWAYS_SEARCH_USER_PATHS: false
+    CLANG_ENABLE_MODULES: true
+    GCC_NO_COMMON_BLOCKS: true
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      ONLY_ACTIVE_ARCH: true
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+      # Whole-module + cross-module optimisation matters for the terminal hot path.
+      LLVM_LTO: YES_THIN
+      ONLY_ACTIVE_ARCH: false
+
+packages:
+  JanelaKit:
+    path: Packages/JanelaKit
+
+targets:
+  Janela:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Janela
+        excludes:
+          - "**/.gitkeep"
+    dependencies:
+      # The app target is a shell. All logic lives in the package.
+      - package: JanelaKit
+        product: JanelaApp
+    settings:
+      base:
+        PRODUCT_NAME: Janela
+        PRODUCT_BUNDLE_IDENTIFIER: sh.janela.Janela
+        INFOPLIST_FILE: App/Janela/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Janela/Janela.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: true
+        COMBINE_HIDPI_IMAGES: true
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Janela is a developer tool; it has no reason to talk to the network.
+        # Any future updater must justify itself in an ADR first.
+
+  JanelaUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: App/JanelaUITests
+        excludes:
+          - "**/.gitkeep"
+    dependencies:
+      - target: Janela
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sh.janela.Janela.uitests
+        TEST_TARGET_NAME: Janela
+
+schemes:
+  Janela:
+    build:
+      targets:
+        Janela: all
+    run:
+      config: Debug
+      # Catches over-release and threading bugs in the PTY layer early.
+      environmentVariables:
+        - variable: OS_ACTIVITY_MODE
+          value: default
+          isEnabled: true
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - JanelaUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

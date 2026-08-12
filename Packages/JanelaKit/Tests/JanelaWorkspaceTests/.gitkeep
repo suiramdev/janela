@@ -1,0 +1,21 @@
+# This directory is intentionally empty for now.
+#
+# It must exist: `Package.swift` declares a `JanelaWorkspaceTests` target, and
+# SwiftPM fails to resolve if the directory is missing. Git does not track empty
+# directories, so this file is what keeps it alive across a clone. Delete it once
+# there is a real test file here.
+#
+# What belongs here (see docs/testing.md):
+#
+#   - All four `WorkspaceCreationRequest` cases, using an in-memory database and a
+#     FAKE `WorktreeServing` — these tests are about orchestration, not git.
+#   - The product rule that worktree creation is one case of `createWorkspace`,
+#     not a separate path. If someone adds a second public creation method, that
+#     should be visible here.
+#   - `removalPlan`: that it reports live sessions, that `canDeleteDirectory` is
+#     true ONLY for `.managedWorktree`, and that an adopted worktree is never
+#     offered for deletion.
+#   - `removeWorkspace`: that it never deletes a directory unless the plan
+#     explicitly opted in.
+#   - `ShellEnvironment`: that login-shell argv[0] is prefixed with `-` (this is
+#     what makes the user's PATH work), and that the JANELA_* variables are set.

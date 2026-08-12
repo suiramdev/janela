@@ -1,0 +1,22 @@
+# This directory is intentionally empty for now.
+#
+# It must exist: `Package.swift` declares a `JanelaPTYTests` target, and SwiftPM
+# fails to resolve if the directory is missing. Git does not track empty
+# directories, so this file is what keeps it alive across a clone. Delete it once
+# there is a real test file here.
+#
+# What belongs here (see docs/testing.md):
+#
+#   - Spawning real processes. `/bin/echo` and assert the output and exit code;
+#     `cat` and assert a write round-trips.
+#   - The controlling terminal actually works: run something that opens
+#     `/dev/tty`, and assert Ctrl-C (0x03) delivers SIGINT. This is the test that
+#     would have caught the `posix_spawn` mistake described in
+#     `PseudoTerminal.swift`.
+#   - Resize delivers SIGWINCH, and `ws_xpixel`/`ws_ypixel` survive the round trip.
+#   - Signals reach the process GROUP: spawn a shell that spawns a child, kill the
+#     group, assert the grandchild died too.
+#   - Back-pressure: flood the PTY and assert memory stays bounded and no bytes
+#     are lost. Bytes must never be dropped — see `ByteStream.swift`.
+#   - Teardown ordering: closing the fd in the DispatchIO cleanup handler rather
+#     than before, so we never hit `EV_VANISHED`.

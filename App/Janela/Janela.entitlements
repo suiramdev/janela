@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Janela runs with the Hardened Runtime (required for notarization) but WITHOUT
+	  the App Sandbox.
+
+	  This is not laziness. Janela's entire purpose is to run the user's own tools
+	  in the user's own directories: their shell, their compilers, their coding
+	  agents. The sandbox cannot express "any executable, any path the user picks",
+	  and the workarounds (security-scoped bookmarks for every repository, a
+	  privileged helper) would degrade the product without meaningfully improving
+	  the user's safety — the child processes are the user's own.
+
+	  Consequence: Janela ships outside the Mac App Store, signed and notarized for
+	  direct distribution. See docs/decisions/0008-sandboxing.md.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+
+	<!--
+	  Required to spawn child processes that are not signed by us, which is every
+	  process Janela exists to run.
+	-->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<false/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+
+	<!--
+	  Inheriting the user's environment is the point; we do not want a restricted
+	  child environment.
+	-->
+	<key>com.apple.security.inherit</key>
+	<false/>
+</dict>
+</plist>
