@@ -50,10 +50,18 @@ times become a problem.
 ## Naming
 
 - **Types**: `UpperCamelCase`. Protocols describing a capability end in `-ing`
-  (`GitRunning`, `WorktreeServing`, `TerminalEmulating`); the concrete type drops
-  it (`GitRunner`, `WorktreeService`).
+  (`GitRunning`, `WorktreeServing`, `TerminalEmulating`, `AttentionDelivering`);
+  the concrete type drops it (`GitRunner`, `WorktreeService`).
 - **Modules**: `Janela` + one noun. The prefix is deliberate — `Core` and
   `Terminal` are far too generic to be unqualified module names.
+- **Domain nouns are used exactly as `domain-model.md` defines them.** A `Session`
+  is not a terminal, a `Tab` is not a session, and nothing is a workspace. A type
+  or property whose name disagrees with that document is a bug in one of the two,
+  and the document wins unless you change it in the same PR.
+- **`LiveTerminal`, not `Terminal`.** SwiftTerm exports a `Terminal`, and a
+  same-named type inside the module that imports it is resolved by whichever
+  import wins. The `Live` prefix marks the running object as distinct from its
+  persistable `TerminalDescriptor`.
 - **Booleans** read as assertions: `isPinned`, `hasUnseenAttention`,
   `startsAutomatically`.
 - **No abbreviations** except universally understood ones (`id`, `url`, `pty`).
@@ -73,8 +81,13 @@ stores, actors owning a resource.
 `SessionState.exited(code:)` cannot be confused with `.failed(message:)`, whereas
 `isRunning`/`exitCode`/`errorMessage` has invalid combinations.
 
-**Use typed identifiers.** `Identifier<Workspace>` is a phantom-typed wrapper, so
-a `SessionID` cannot be passed where a `WorkspaceID` belongs. Free at runtime.
+**Use typed identifiers.** `Identifier<Session>` is a phantom-typed wrapper, so a
+`TerminalID` cannot be passed where a `SessionID` belongs. Free at runtime, and it
+matters more now that the model has three nested levels whose ids are all UUIDs.
+
+**Bound recursive types at the type level.** `SessionLayout.Pane` is `indirect` and
+decoded from disk, so its depth limit is enforced in `init(from:)` rather than
+documented in a comment. Any future recursive `Codable` gets the same treatment.
 
 **Use typed throws** where the error set is closed: `throws(Failure)` on
 `PseudoTerminal`. It documents the failures and removes a cast at the call site.
@@ -93,6 +106,16 @@ Never put `error.localizedDescription` or a git stderr dump in a dialog headline
 It produces a bug report, not a recovery path. Detailed output belongs in a
 disclosure triangle or the log.
 
+**Some failures are neither shown nor logged as errors — they are absences.** A
+missing `gh`, a logged-out `gh`, or a forge request that timed out means the app
+shows no pull-request information and says nothing at all. Rendering an optional
+feature's unavailability as an error is how a nice-to-have becomes an irritation.
+See [`decisions/0012-forge-integration.md`](decisions/0012-forge-integration.md).
+
+**A failing automation command is shown in its own terminal, not in a dialog.**
+The user gets the real output, scrollback included, which is strictly better than
+anything we could summarise.
+
 ---
 
 ## Logging
@@ -102,8 +125,17 @@ release, unsearchable in Console.
 
 **Never log terminal traffic, command output, file contents, or environment
 values.** That is the user's private data and it must not reach the system log.
-Log the *shape* of things: a git subcommand and its exit status, a session id and
+Log the *shape* of things: a git subcommand and its exit status, a terminal id and
 its state transition.
+
+Three additions that follow from features added since:
+
+- **Never log a notification body.** OSC 9/777 payloads are the user's own program
+  talking; they go to `UNUserNotificationCenter` and nowhere else.
+- **Never log `gh`/`glab` output.** It contains branch names, PR titles, and
+  sometimes private repository names. Log the subcommand and the failure class.
+- **Never log the paths `.worktreeinclude` copied.** Log the count and the total
+  size; a path list is a description of the user's project.
 
 Prefer `.debug` on hot paths; it compiles to nearly nothing when the subsystem is
 not being collected. Use `privacy: .public` only for values that are definitionally
@@ -116,8 +148,9 @@ not sensitive, such as an enum case name.
 Constructor injection, always. No singletons, no `.shared`, no service locator.
 `AppEnvironment.live()` is the one place the real graph is assembled.
 
-This is what makes `WorkspaceStore` testable with an in-memory database and a fake
-`WorktreeServing`, with no global state to reset between parallel tests.
+This is what makes `SessionStore` testable with an in-memory database and a fake
+`WorktreeServing`, and `AttentionPolicy` testable with a recording
+`AttentionDelivering`, with no global state to reset between parallel tests.
 
 ---
 
@@ -150,9 +183,11 @@ reader gets from code to reasoning.
 Comment the surprising, not the obvious. Good candidates:
 
 - A constraint from outside (`argv[0]` must start with `-` or zsh skips
-  `.zprofile`).
-- A performance reason (`ContiguousArray` rather than `Data`).
-- A deliberate omission (why there is no `.agentThinking` state).
+  `.zprofile`; `git ls-files -i` requires an exclude option).
+- A performance reason (`ContiguousArray` rather than `Data`; `clonefile` rather
+  than a recursive copy).
+- A deliberate omission (why there is no `.agentThinking` state; why automation
+  commands are not read from the repository).
 
 `// TODO:` is allowed and is used throughout the current scaffold to mark the
 seams. Each one sits under a doc comment describing what belongs there.

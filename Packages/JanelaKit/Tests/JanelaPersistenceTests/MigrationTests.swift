@@ -18,55 +18,92 @@ struct MigrationTests {
             )
         }
 
-        #expect(tables.contains("workspace"))
-        #expect(tables.contains("repository"))
+        #expect(tables.contains("project"))
         #expect(tables.contains("session"))
+        #expect(tables.contains("terminal"))
         #expect(tables.contains("launchProfile"))
+        #expect(tables.contains("automationCommand"))
     }
 
-    @Test("Deleting a workspace deletes its sessions but never its repository")
+    @Test("Deleting a project deletes its sessions, their terminals, and its automation")
     func cascadeRules() throws {
-        // This encodes a product rule, not just a schema detail: repositories
-        // outlive the workspaces cut from them, and sessions never outlive their
-        // workspace. Getting this backwards orphans rows or deletes user data.
+        // This encodes product rules, not just schema details: a project contains
+        // its sessions, a session contains its terminals, and nothing survives its
+        // container. Getting this backwards orphans rows or strands a terminal
+        // pointing at a directory nobody owns.
         let database = try JanelaDatabase.inMemory()
 
         try database.write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO repository (id, name, mainWorktreeDirectory, addedAt)
-                    VALUES ('r1', 'repo', '/tmp/repo', '2026-01-01 00:00:00')
+                    INSERT INTO project (id, name, directory, addedAt)
+                    VALUES ('p1', 'repo', '/tmp/repo', '2026-01-01 00:00:00')
                     """
             )
             try db.execute(
                 sql: """
-                    INSERT INTO workspace
-                        (id, name, directory, originKind, repositoryID, accent, createdAt, lastActiveAt, isPinned)
+                    INSERT INTO session
+                        (id, projectID, name, directory, backingKind, layout, accent,
+                         position, createdAt, lastActiveAt, isPinned)
                     VALUES
-                        ('w1', 'ws', '/tmp/ws', 'repositoryCheckout', 'r1', 'none',
-                         '2026-01-01 00:00:00', '2026-01-01 00:00:00', 0)
+                        ('s1', 'p1', 'fix/pty', '/tmp/wt', 'worktree', '{}', 'none',
+                         0, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 0)
                     """
             )
             try db.execute(
                 sql: """
-                    INSERT INTO session (id, workspaceID, title, startsAutomatically, position, createdAt)
-                    VALUES ('s1', 'w1', 'shell', 1, 0, '2026-01-01 00:00:00')
+                    INSERT INTO terminal (id, sessionID, title, startsAutomatically, role, position, createdAt)
+                    VALUES ('t1', 's1', 'shell', 1, 'user', 0, '2026-01-01 00:00:00')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO automationCommand (id, projectID, event, command, isEnabled, timeoutSeconds, position)
+                    VALUES ('a1', 'p1', 'worktreeCreated', '[\"make\",\"setup\"]', 1, 30, 0)
                     """
             )
         }
 
         try database.write { db in
-            try db.execute(sql: "DELETE FROM workspace WHERE id = 'w1'")
+            try db.execute(sql: "DELETE FROM project WHERE id = 'p1'")
         }
 
         let counts = try database.read { db in
             (
                 sessions: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM session"),
-                repositories: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repository")
+                terminals: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM terminal"),
+                automation: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM automationCommand")
             )
         }
 
         #expect(counts.sessions == 0)
-        #expect(counts.repositories == 1)
+        #expect(counts.terminals == 0)
+        #expect(counts.automation == 0)
+    }
+
+    @Test("A standalone session survives having no project at all")
+    func standaloneSessionsHaveNoProject() throws {
+        // A standalone session is a first-class case, not a degenerate one, so
+        // `projectID` must be genuinely nullable rather than nullable-by-accident.
+        let database = try JanelaDatabase.inMemory()
+
+        try database.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO session
+                        (id, projectID, name, directory, backingKind, layout, accent,
+                         position, createdAt, lastActiveAt, isPinned)
+                    VALUES
+                        ('s1', NULL, 'scratch', '/tmp/scratch', 'folder', '{}', 'none',
+                         0, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 0)
+                    """
+            )
+        }
+
+        let count = try database.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM session WHERE projectID IS NULL")
+        }
+
+        #expect(count == 1)
     }
 }

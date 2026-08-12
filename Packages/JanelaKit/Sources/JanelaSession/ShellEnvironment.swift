@@ -35,22 +35,53 @@ public struct ShellEnvironment: Sendable {
         self.resolved = resolved
     }
 
-    /// Variables Janela sets on every session it starts.
+    /// Variables Janela sets on every terminal it starts.
     ///
     /// Keep this list short: every variable here is one the user cannot control,
     /// and terminal programs are unusually sensitive to this namespace.
-    public static func janelaVariables(sessionID: SessionID, workspaceName: String) -> [String: String] {
-        [
+    ///
+    /// - Parameters:
+    ///   - session: The session the terminal belongs to.
+    ///   - terminalID: The terminal being started.
+    ///   - projectName: The owning project's name, or `nil` when the session is
+    ///     standalone.
+    ///   - automationEvent: Set when this terminal runs a project automation
+    ///     command, so one script can branch on why it was invoked.
+    /// - Returns: Variables to merge over the resolved environment.
+    public static func janelaVariables(
+        session: Session,
+        terminalID: TerminalID,
+        projectName: String?,
+        automationEvent: AutomationEvent? = nil
+    ) -> [String: String] {
+        var variables = [
             // Declaring xterm-256color rather than a bespoke terminfo entry means
             // every existing tool works on day one. Revisit only if we ship a
             // terminfo file, and see docs/decisions/0004-terminal-engine.md first.
             "TERM": "xterm-256color",
             "COLORTERM": "truecolor",
             "TERM_PROGRAM": "Janela",
-            // Lets scripts and agents detect they are inside Janela.
-            "JANELA_SESSION_ID": sessionID.description,
-            "JANELA_WORKSPACE": workspaceName,
+            // Lets scripts and agents detect they are inside Janela, and lets one
+            // automation script serve several projects.
+            "JANELA_SESSION_ID": session.id.description,
+            "JANELA_SESSION": session.name,
+            "JANELA_TERMINAL_ID": terminalID.description,
+            "JANELA_DIRECTORY": session.directory.path(percentEncoded: false),
         ]
+
+        if let projectName {
+            variables["JANELA_PROJECT"] = projectName
+        }
+        // Only set for worktree-backed sessions. A simple session sits on whatever
+        // branch the user's checkout is on, and claiming otherwise would be a lie
+        // that goes stale the moment they switch.
+        if let branch = session.worktree?.branch {
+            variables["JANELA_BRANCH"] = branch
+        }
+        if let automationEvent {
+            variables["JANELA_AUTOMATION_EVENT"] = automationEvent.rawValue
+        }
+        return variables
     }
 
     /// Builds the argument vector for a login shell.

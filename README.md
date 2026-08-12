@@ -1,16 +1,31 @@
 # Janela
 
-**A native macOS agentic IDE. Terminal-first, worktree-aware, deliberately small.**
+**A native macOS terminal session manager. Terminal-first, worktree-aware,
+deliberately small.**
 
 ---
 
-Janela manages the development environments you already work in. Point it at a
-repository, press a key, and you have a fresh branch in a fresh worktree with
-Claude Code running in it — without ever thinking about worktrees.
+Janela manages the places you work. Add a repository once, press a key, and you
+have a fresh branch in a fresh worktree with your `.env` already in place, `pnpm
+install` already running, and Claude Code waiting in a terminal — without ever
+thinking about `git worktree add`.
 
-> **A workspace is a named directory with terminals in it.**
+> **A session is a directory with terminals in it.**
+> **A project is where sessions come from.**
 >
 > That is the whole model.
+
+```text
+Project          collapsible in the sidebar — a repository or folder you added
+  └─ Session     a button — one working directory, one or more terminals
+       └─ Terminal   a shell, an agent, a dev server; split and tabbed
+```
+
+Sessions can also stand alone, with no project at all — "just give me a terminal in
+this folder" is a first-class case, not an afterthought.
+
+And they keep running when you close the window. A small background daemon owns the
+processes, so quitting Janela is not a decision about your work.
 
 ---
 
@@ -21,29 +36,48 @@ there, an agent running in one tab, a dev server in another, and no reliable sen
 of which of the six things you started is still alive or wants something.
 
 Terminal emulators are great at terminals and know nothing about your
-repositories. Agent orchestrators make the *worktree* the central object, so you
-end up managing worktrees as a chore — and when you just want a terminal in a
-folder, the model fights you.
+repositories. Multiplexers solve arrangement but make you memorise chords, and
+still leave creating a worktree as a five-command chore.
 
-Janela sits in the gap. Worktrees are a first-class capability and never a
-first-class concept: they are one of four ways a workspace's directory can come to
-exist, recorded as provenance and otherwise invisible.
+Janela sits in the gap. It is `tmux`-shaped ergonomics — many places to work, one
+keystroke between them — with the git worktree friction removed and none of the
+configuration.
 
 ## What it is
 
 - **Native.** Swift, SwiftUI, AppKit where it earns its place. Not Electron.
-- **Fast.** Budgeted, not hand-waved: 250 ms cold launch, one-frame workspace
+- **Fast.** Budgeted, not hand-waved: 250 ms cold launch, one-frame session
   switching, 40 open sessions comfortably. See [`docs/performance.md`](docs/performance.md).
-- **Terminal-first.** It runs your shell, your git, your agents. It does not
-  reimplement, wrap, or interpret them.
+- **Terminal-first.** It runs your shell, your git, your agents, your `gh`. It does
+  not reimplement, wrap, or interpret them.
 - **Agent-friendly.** Claude Code, Codex, OpenCode and anything else that runs in
   a terminal. No per-agent integrations, because there is nothing to integrate.
-- **Small.** Four concepts: workspace, session, repository, launch profile.
+- **Small.** Four concepts: project, session, terminal, launch profile.
+- **Durable.** Terminals live in a daemon, not in the window. Close the app, come
+  back tomorrow, find your agent finished and your dev server still up.
+
+### v1 scope
+
+| Capability | Shape |
+| --- | --- |
+| Projects and sessions | Collapsible projects, sessions as buttons, standalone sessions too |
+| Worktree-backed sessions | One action to create, one confirmation — that explains itself — to destroy |
+| Splits and tabs | Terminals arranged per session, persisted where you left them |
+| Notifications | Sidebar badges from real terminal signals, plus Notification Centre when you are elsewhere |
+| GitHub / GitLab | PR and CI state for a session's branch, and "new session from PR", via your own `gh`/`glab` |
+| `.worktreeinclude` | Carry `.env`, `node_modules` and friends into a new worktree |
+| Project automation | Commands on worktree creation, session start, and session teardown |
+| Durable sessions | A daemon owns the processes; the app is one of its clients |
+
+The daemon is also the foundation for two things explicitly **not** in v1: a
+`janela` CLI for agent skills, and connecting to your own Mac from a phone. Both are
+clients of a protocol that already exists.
 
 ## What it is not
 
-Not a code editor. Not a git client. Not an agent runtime. Not cross-platform. Not
-a plugin platform. No telemetry.
+Not a code editor. Not a git client. Not a forge client. Not an agent runtime. Not
+a multiplexer replacement. Not a task runner. Not cross-platform. Not a plugin
+platform. No telemetry.
 
 The reasoning for each is in [`docs/product.md`](docs/product.md) § Non-goals —
 written down so they can be pointed at rather than re-litigated.
@@ -74,18 +108,26 @@ Requires macOS 15+, Xcode 26+. Run `make help` for everything else.
 
 ## Architecture at a glance
 
-One process, no daemon, no IPC. All logic lives in `Packages/JanelaKit` as layered
-modules whose dependencies point strictly downward — enforced by the compiler, not
-by review.
+Two processes. `janelad` owns the PTYs, an authoritative terminal grid, the
+database, git and automation; `Janela.app` renders, and is one client among several.
+They meet at a framed Unix socket.
 
 ```text
-JanelaSupport → JanelaCore → { Git, PTY, Persistence } → Terminal → Workspace
-                                                                       ↓
-                                                    Design → UI → App
+Janela.app  ── unix socket ──  janelad
+  JanelaClient                    JanelaDaemon
+  JanelaTerminalUI                JanelaSession → Terminal → { Git, PTY, Persistence }
+  JanelaUI / JanelaDesign
+            ↖                  ↗
+         JanelaCore + JanelaProtocol   (shared, pure)
 ```
 
-The app target is one Swift file. `Janela.xcodeproj` is generated from
-`project.yml` and never committed.
+All logic lives in `Packages/JanelaKit` as layered modules whose dependencies point
+strictly downward, and no client module may import a daemon module — enforced by the
+compiler, not by review. The app target is one Swift file; `Janela.xcodeproj` is
+generated from `project.yml` and never committed.
+
+Why a daemon, and what it costs:
+[`docs/decisions/0015-daemon-owned-sessions.md`](docs/decisions/0015-daemon-owned-sessions.md).
 
 ## Documentation
 
@@ -95,7 +137,7 @@ The app target is one Swift file. `Janela.xcodeproj` is generated from
 | [`docs/product.md`](docs/product.md) | What we are building and what we refuse to build |
 | [`docs/architecture.md`](docs/architecture.md) | How it fits together and where the seams are |
 | [`docs/domain-model.md`](docs/domain-model.md) | The four nouns and the shared vocabulary |
-| [`docs/decisions/`](docs/decisions/) | ADRs — why the stack is what it is |
+| [`docs/decisions/`](docs/decisions/) | ADRs — why the stack and the model are what they are |
 | [`docs/conventions.md`](docs/conventions.md) | How the code is written |
 | [`docs/testing.md`](docs/testing.md) | What we test, and what we refuse to fake |
 | [`docs/performance.md`](docs/performance.md) | Budgets and how to measure them |

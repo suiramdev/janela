@@ -45,7 +45,7 @@ public protocol TerminalEventSink: AnyObject {
     /// OSC 0 / OSC 2 — the process set the window or icon title.
     func terminalDidSetTitle(_ title: String)
 
-    /// OSC 7 — the shell reported its working directory. This is how the workspace
+    /// OSC 7 — the shell reported its working directory. This is how a session
     /// header can show where you actually are, and it requires shell integration
     /// the user may not have. Absence is normal; never block a feature on it.
     func terminalDidReportWorkingDirectory(_ url: URL)
@@ -54,6 +54,11 @@ public protocol TerminalEventSink: AnyObject {
     /// only signal Janela uses to badge a background session, and it is the same
     /// signal a `make && echo -e "\a"` produces. See
     /// docs/decisions/0006-agent-activity-signals.md.
+    ///
+    /// Note this arrives per *terminal*, not per session: a session's badge is
+    /// derived from its panes. Whether the signal also becomes a Notification
+    /// Centre delivery is policy that lives in `JanelaSession` — see
+    /// docs/decisions/0011-notifications.md. This layer reports, it does not decide.
     func terminalDidRequestAttention(_ notification: TerminalNotification)
 
     /// OSC 133 semantic prompt marks, when the shell emits them. Used to time

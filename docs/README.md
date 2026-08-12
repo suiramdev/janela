@@ -8,8 +8,10 @@ If you are new — human or agent — this sequence gets you productive fastest.
    non-negotiables. Short.
 2. **[`product.md`](product.md)** — what Janela is and what it refuses to be. Most
    design disagreements are settled here.
-3. **[`architecture.md`](architecture.md)** — modules, seams, key flows.
-4. **[`domain-model.md`](domain-model.md)** — the four nouns and the vocabulary.
+3. **[`architecture.md`](architecture.md)** — two processes, modules, seams, key
+   flows.
+4. **[`domain-model.md`](domain-model.md)** — the four nouns (project, session,
+   terminal, launch profile) and the vocabulary.
 5. **[`development.md`](development.md)** — setup, the loop, and what to build
    first.
 
@@ -28,11 +30,32 @@ Then, as needed:
 | --- | --- |
 | Change what the product is | `product.md` |
 | Change a module boundary or dependency | `architecture.md` + an ADR |
-| Add or rename a domain concept | `domain-model.md` (and justify it in `product.md`) |
+| Add or rename a domain concept | `domain-model.md` + an ADR (and justify it in `product.md`) |
 | Change a technology choice | A new ADR in `decisions/` |
+| Add a file the user writes, or anything that runs on their behalf | An ADR first — see `0013` and `0014` for why the two were answered differently |
+| Change the wire protocol, or what a client may do | `decisions/0016-daemon-protocol.md` + a version bump |
 | Change a code style rule | `conventions.md` (and `.swift-format` / `.swiftlint.yml`) |
 | Record a performance budget | `performance.md` |
 | Explain a build or workflow step | `development.md` + a `make` target |
+
+## If you have read an older version of these documents
+
+Two things changed underneath everything else.
+
+**The central noun.** What was a **workspace** is now a **session**; what was a
+**session** is now a **terminal**; **repository** was absorbed into **project**, a
+new grouping level.
+[`decisions/0009-projects-sessions-terminals.md`](decisions/0009-projects-sessions-terminals.md)
+records why.
+
+**The process model.** Janela was one process; it is now a daemon plus clients.
+Anything that says "single process", "no IPC", or "sessions die when the app quits"
+predates [`decisions/0015-daemon-owned-sessions.md`](decisions/0015-daemon-owned-sessions.md)
+and is wrong.
+
+Both times, earlier ADRs were amended in place rather than superseded, because the
+decisions held and only their surroundings moved. See
+[`decisions/README.md`](decisions/README.md) for that exception and its expiry.
 
 ## Principles for these documents
 

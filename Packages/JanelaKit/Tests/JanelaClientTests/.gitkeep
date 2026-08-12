@@ -1,0 +1,27 @@
+# This directory is intentionally empty for now.
+#
+# It must exist: `Package.swift` declares a `JanelaClientTests` target, and SwiftPM
+# warns about a target whose sources directory is missing.
+#
+# What belongs here (docs/testing.md):
+#
+#   - `AttentionPolicy`, exhaustively. It is pure, synchronous logic and every rule
+#     in docs/decisions/0011-notifications.md is one test: no delivery for the
+#     focused terminal in an active app, no delivery for a bare bell, delivery for
+#     an explicit OSC 9, no delivery for a fast command that failed, one delivery
+#     for the same signal seen twice.
+#   - Mirror updates: a full snapshot replaces state, a partial update merges by id,
+#     and `selection` survives both because it is client-only state that never
+#     travels.
+#   - `isRunning` is derived from what the daemon reported, never inferred from what
+#     this client did.
+#   - Reconnect: backoff, re-subscribe, and a full snapshot replacing a stale mirror.
+#     Test with the transport failing mid-frame, which is what a daemon restart
+#     looks like from here.
+#   - `.refused` is terminal until the user acts. A client that automatically
+#     restarts the daemon on a version mismatch would kill live terminals, which is
+#     the one thing we promised never to do.
+#
+# Use an in-memory `MessageTransport` here so these stay deterministic. The daemon
+# side uses a real socket, so the pairing is covered somewhere — faking both sides
+# would test nothing.

@@ -30,8 +30,9 @@ settings:
     DEAD_CODE_STRIPPING: true
     ENABLE_HARDENED_RUNTIME: true
     # Janela spawns the user's shell and arbitrary developer tools in arbitrary
-    # directories. The App Sandbox cannot express that, so we ship unsandboxed and
-    # outside the Mac App Store. See docs/decisions/0008-sandboxing.md.
+    # directories, and creates git worktrees at paths no open panel produced. The
+    # App Sandbox cannot express that, so we ship unsandboxed and outside the Mac
+    # App Store. See docs/decisions/0008-sandboxing-and-distribution.md.
     ENABLE_APP_SANDBOX: false
     CODE_SIGN_STYLE: Automatic
     # Set DEVELOPMENT_TEAM in a local, gitignored Secrets.xcconfig rather than here.
@@ -66,6 +67,21 @@ targets:
       # The app target is a shell. All logic lives in the package.
       - package: JanelaKit
         product: JanelaApp
+
+    # TODO: embed the daemon. Janela.app must ship janelad and its LaunchAgent:
+    #
+    #   Contents/Resources/janelad                             the daemon binary
+    #   Contents/Library/LaunchAgents/sh.janela.janelad.plist
+    #
+    # Both binaries are Developer ID signed with the hardened runtime and notarized
+    # as one bundle. Signing the app but not the daemon produces a bundle that
+    # notarizes and then fails at SMAppService registration — on a user's machine,
+    # not in CI — so `make app-build` should verify both signatures.
+    #
+    # The plist's SockPathName is an absolute, user-specific path, so it is written
+    # at registration time rather than shipped as a static resource.
+    # See docs/decisions/0017-daemon-lifecycle.md and
+    # docs/decisions/0008-sandboxing-and-distribution.md.
     settings:
       base:
         PRODUCT_NAME: Janela

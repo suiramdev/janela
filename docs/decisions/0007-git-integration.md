@@ -6,7 +6,8 @@
 ## Context
 
 Janela needs a narrow slice of git: create a worktree, list worktrees, remove one,
-and determine whether removing it would lose work.
+determine whether removing it would lose work, and resolve which ignored files a
+project's `.worktreeinclude` asks us to carry into a new worktree.
 
 The obvious "proper" choice is to link a library — libgit2, via SwiftGit2 — and
 avoid subprocess overhead. Two facts argue against it.
@@ -48,6 +49,11 @@ Rules:
   fights the user's own `git` for `index.lock`.
 - **Parse porcelain formats with `-z`.** `git worktree list --porcelain -z` —
   worktree paths can contain newlines, so line-splitting is a bug.
+- **Pattern matching is git's job too.** `.worktreeinclude` resolution is
+  `git ls-files -o -i --exclude-from=<file> -z --directory`, not a gitignore
+  matcher we wrote. Same reasoning one level down: the semantics are subtler than
+  they look and a divergence surfaces in someone else's repository. See
+  [0013](0013-worktreeinclude.md).
 - `Foundation.Process` with `Pipe` is correct here. The fork/`login_tty` machinery
   from [0004](0004-terminal-engine.md) is only for terminals; git needs no PTY.
 
@@ -61,6 +67,9 @@ read `.git` files directly for *display-only* metadata — never to move an
 unusual config. Behaviour matches what the user gets in their own terminal, which
 makes bug reports tractable.
 
+**Good.** The same runner serves `.worktreeinclude`, so the feature that decides
+which 400 MB to copy inherits git's exact pattern semantics for free.
+
 **Good.** Debuggable. Every operation is a command we can paste into a terminal.
 
 **Bad.** Milliseconds per call, and we must parse text output. Mitigated by using
@@ -69,6 +78,12 @@ porcelain formats, which are explicitly stability-guaranteed.
 **Bad.** Depends on a `git` on `PATH`. Every developer Mac has one, and we resolve
 it rather than hardcoding `/usr/bin/git`, because the Xcode-shipped git lags and
 lacks some worktree flags.
+
+**Note.** The subprocess plumbing itself lives in `JanelaSupport` as
+`ProcessRunning`, because `JanelaForge` needs the same mechanics for `gh`/`glab`
+and the two are peers that may not import each other
+([`../architecture.md`](../architecture.md) § Modules). `GitRunning` remains the
+only git-shaped API.
 
 ## Alternatives considered
 

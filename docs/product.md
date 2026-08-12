@@ -16,35 +16,47 @@ The existing answers pull in two unhelpful directions:
 
 - **Terminal emulators** (Terminal.app, iTerm2, Ghostty, WezTerm) are excellent at
   terminals and know nothing about your repositories. Tab soup is on you.
-- **Agent orchestrators** built around git worktrees make the worktree the central
-  object. You end up managing worktrees as a first-class chore, which is a strange
-  thing to ask of someone whose actual job is writing software. And when you just
-  want a terminal in a folder, the model fights you.
+- **Multiplexers** (`tmux`, `zellij`) solve arrangement, but every switch is a
+  keystroke chord you have to remember, and creating a worktree to work on a second
+  branch is still a five-command chore you do by hand.
 
-Neither is wrong. But there is a gap between them.
+Neither is wrong. But there is a gap between them, and it is where most of a
+developer's day with agents actually happens: *starting a second, third and fourth
+place to work, and moving between them without losing the thread.*
 
 ---
 
 ## The thesis
 
-> **A workspace is a named directory with terminals in it.**
+> **A session is a directory with terminals in it. A project is where sessions
+> come from.**
 
-That is the entire mental model. A user who understands that sentence can use
-Janela without reading anything else.
+That is the entire mental model, and it maps one-to-one onto what you see:
 
-Everything else attaches to it as *provenance* or *convenience*:
+```text
+Project          collapsible in the sidebar — a repository or folder you added
+  └─ Session     a button — one working directory, one or more terminals
+       └─ Terminal   a shell, an agent, a dev server; split and tabbed
+```
 
-- A workspace's directory might be a folder you picked. Fine.
-- It might be a repository's main checkout. Also fine.
-- It might be a **git worktree Janela created for you** because you said "I want to
-  work on a new branch". Still just a directory with terminals in it.
+Two sentences of consequence:
 
-The worktree is an implementation detail of *how the directory came to exist*. It
-is modelled as `Workspace.Origin`, and that is the only place worktree-ness enters
-the domain. There is no `Worktree` screen, no worktree list, no separate type.
+- **A session does not need a project.** "Just give me a terminal in this folder"
+  is a standalone session, and it is a first-class case, not a degenerate one.
+- **A session inside a project can bring its own directory.** A *simple* session
+  runs in the project's own directory. A *worktree-backed* session gets a fresh git
+  worktree created for it, which is how you work on a second branch without
+  stashing, cloning, or thinking about `git worktree add`.
 
-**This is the differentiator.** Not "we support worktrees" — everyone does. It is
-that worktrees stopped being a thing you manage.
+The worktree is an implementation detail of *how a session's directory came to
+exist*. It is modelled as `Session.Backing`, and that is the only place
+worktree-ness enters the domain. There is no `Worktree` screen, no worktree list,
+no separate type.
+
+**This is the differentiator.** Not "we support worktrees" — plenty of tools do. It
+is that a worktree costs one action to create, one click to return to, and one
+confirmation to destroy, and that in between it behaves exactly like every other
+place you work.
 
 ---
 
@@ -56,28 +68,34 @@ Every concept a user must learn is a tax. Janela's concept budget:
 
 | Concept | Why it earns its place |
 | --- | --- |
-| **Workspace** | The thing you switch between. Unavoidable. |
-| **Session** | A terminal. Unavoidable. |
-| **Repository** | Makes "new branch" a one-step action instead of a file picker. |
+| **Project** | The thing you add once so that "new branch" and "run the setup script" are one step. |
+| **Session** | The thing you switch between. Unavoidable. |
+| **Terminal** | A running program. Unavoidable. |
 | **Launch profile** | Makes "start Claude Code here" a keystroke. |
 
 That is four. Adding a fifth requires deleting one or writing an ADR that argues
 why the tax is worth it.
 
-Rejected concepts, and why: projects/groups (workspaces are a searchable flat
-list — hierarchy is a cost users pay to organise something they mostly search);
-tasks/runs/jobs (a running thing is a session); per-workspace settings trees
-(settings are global, workspaces carry state); layouts as saved objects (the
-layout is just where you left it).
+Note what the hierarchy is *not*: arbitrary nesting. It is exactly two levels deep,
+always, and the second level is flat. Sessions do not contain sessions, projects do
+not contain projects, and there are no folders, tags, or saved groups. Two levels
+is what a sidebar can render as a list of buttons and what a user can hold in their
+head; three is a file manager.
+
+Rejected concepts, and why: tasks/runs/jobs (a running thing is a terminal);
+per-session settings trees (settings are global or per-project, sessions carry
+state); saved layouts as objects (a session's layout is wherever you left it, and
+it lives on the session).
 
 ### 2. Terminal-first, and we do not replace your tools
 
-Janela runs your shell, your git, your agents. It does not:
+Janela runs your shell, your git, your agents, your `gh`. It does not:
 
 - reimplement a shell, or parse your dotfiles
 - wrap `claude`/`codex`/`opencode` in a custom protocol
 - provide a text editor, a diff viewer, or a file tree
 - model an agent's task graph or transcript
+- implement its own git plumbing, GitHub client, or credential store
 
 If a feature request starts with "Janela should understand…", the answer is
 almost certainly no. The value is in *arrangement*, not in *interpretation*.
@@ -87,34 +105,108 @@ OSC 9 notifications, OSC 133 prompt marks, the bell — and never guesses agent
 semantics from a byte stream. See
 [`decisions/0006-agent-activity-signals.md`](decisions/0006-agent-activity-signals.md).
 
-### 3. Native, and it should feel like it
+The same principle decides the integrations. Forge support shells out to the user's
+own `gh` and `glab`, already authenticated, rather than asking for a token
+([ADR 0012](decisions/0012-forge-integration.md)). Automation commands run in a real
+terminal you can watch, rather than in a hidden process whose output we invent a UI
+for ([ADR 0014](decisions/0014-project-automation.md)).
+
+### 3. Switching is the feature
+
+The app is judged on one interaction, performed hundreds of times a day: getting
+from where you are to where you want to be.
+
+That means:
+
+- **Every session is one click or one keystroke away.** The sidebar is the whole
+  navigation model — projects collapse, sessions are buttons, and there is a fuzzy
+  jump list for when the sidebar is long.
+- **Switching starts no work.** It shows a view. Budget: one frame.
+- **Nothing is modal.** Creating a session, a worktree, or a project never takes
+  over the app while a script runs; automation runs in a terminal you can watch or
+  ignore.
+- **The state you need is on the button.** Which sessions are running, which one
+  wants attention, which branch a session is on — visible without opening it.
+
+This is also why splits and tabs exist inside a session rather than at the top
+level ([ADR 0010](decisions/0010-terminal-layout.md)): an agent, its dev server and
+a scratch shell are one *place*, and they should switch as one.
+
+### 4. Native, and it should feel like it
 
 macOS conventions are not decoration. A developer tool that ignores them costs its
 users a small tax on every interaction. Sheets, the standard sidebar, real menu
-commands, proper keyboard navigation, Increase Contrast, Reduce Motion, dark mode
-via semantic colours.
+commands, proper keyboard navigation, Notification Centre, Increase Contrast,
+Reduce Motion, dark mode via semantic colours.
 
 This is also why the app is Swift and AppKit/SwiftUI rather than a web stack: see
 [`decisions/0004-terminal-engine.md`](decisions/0004-terminal-engine.md) for the
 part of that argument that is measurable rather than aesthetic.
 
-### 4. Fast enough that you stop noticing it
+### 5. Fast enough that you stop noticing it
 
 Specific budgets, not vibes, live in [`performance.md`](performance.md). The
 headline ones:
 
 - **Cold launch to interactive window: 250 ms.**
-- **Workspace switch: one frame.** Switching is showing a view, not starting work.
-- **40 open sessions is normal**, because an unstarted session costs ~nothing.
+- **Session switch: one frame.** Switching is showing a view, not starting work.
+- **40 open sessions is normal**, because an unstarted terminal costs ~nothing.
 - Terminal throughput must survive `yes` and a verbose build without dropping the
   UI below 60 fps.
 
-### 5. Destructive actions explain themselves
+### 6. Laziness is a feature, and so is leaving
 
-Deleting a workspace can delete a worktree, which can lose work. So Janela
-computes what would actually be lost — uncommitted changes, unpushed commits,
-running sessions, a lock held by another process — and says so specifically.
-"Are you sure?" is not a warning. See `WorktreeRemovalSafety`.
+A configured terminal that has never been started costs a struct. A collapsed
+project reads nothing from disk. A session you have not opened has no emulator, no
+PTY, and no child process.
+
+This is what makes the sidebar allowed to be long, and it is why
+`Terminal.start()` — not `init` — is what allocates.
+
+The same property applies at the other end. **Closing the window costs nothing
+either.** Your agent keeps working, your dev server keeps serving, and reopening
+puts you back where you were, scrollback intact. A background daemon owns the
+processes, so quitting Janela is not a decision about your work — see
+[ADR 0015](decisions/0015-daemon-owned-sessions.md).
+
+The honest limit: this survives the app, not the machine. Logging out or rebooting
+ends your terminals, and sessions come back idle.
+
+### 7. Destructive actions explain themselves
+
+Deleting a session can delete a worktree, which can lose work. So Janela computes
+what would actually be lost — uncommitted changes, unpushed commits, running
+terminals, a lock held by another process, files copied in by
+`.worktreeinclude` — and says so specifically. "Are you sure?" is not a warning.
+See `WorktreeRemovalSafety`.
+
+Deleting a project is the same question asked once per session it owns.
+
+---
+
+## What v1 includes
+
+Committed scope. Each has a design section in
+[`domain-model.md`](domain-model.md) and, where there was a real technology choice,
+an ADR.
+
+| Capability | Shape | Detail |
+| --- | --- | --- |
+| **Projects and sessions** | Sidebar with collapsible projects, sessions as buttons, standalone sessions above them | [ADR 0009](decisions/0009-projects-sessions-terminals.md) |
+| **Worktree-backed sessions** | "New branch" creates the worktree; removal explains what it destroys | [ADR 0007](decisions/0007-git-integration.md) |
+| **Splits and tabs** | Terminals arranged in a per-session layout tree, persisted | [ADR 0010](decisions/0010-terminal-layout.md) |
+| **Notifications** | Terminal-signalled attention, badged in the sidebar and delivered to Notification Centre when you are elsewhere | [ADR 0011](decisions/0011-notifications.md) |
+| **GitHub / GitLab** | Branch and PR/MR state on a session, "new session from PR", via the user's `gh`/`glab` | [ADR 0012](decisions/0012-forge-integration.md) |
+| **`.worktreeinclude`** | Repo-declared list of ignored files to carry into a new worktree — `.env`, `node_modules`, build caches | [ADR 0013](decisions/0013-worktreeinclude.md) |
+| **Project automation** | Commands on session start, session teardown, and worktree creation | [ADR 0014](decisions/0014-project-automation.md) |
+| **Durable sessions** | A daemon owns the processes, so quitting the app does not stop them | [ADR 0015](decisions/0015-daemon-owned-sessions.md) |
+
+The last one is also the foundation for two things that are **not** v1 scope, listed
+here so their absence reads as a plan rather than an oversight: a `janela` CLI — so
+an agent can list sessions, read what is on a terminal's screen, or start work — and
+connecting to your own Mac from a phone. Both are clients of the same protocol, and
+neither needs an architecture change to add, which is precisely why the daemon
+arrived now rather than later. See [ADR 0016](decisions/0016-daemon-protocol.md).
 
 ---
 
@@ -123,15 +215,32 @@ running sessions, a lock held by another process — and says so specifically.
 Listed so they can be pointed at, not re-litigated.
 
 - **Not a code editor.** No editing surface, ever. Your editor is better.
-- **Not a git client.** Worktree plumbing only. No staging UI, no commit UI, no
-  rebase assistant, no history browser.
+- **Not a git client.** Worktree plumbing and read-only status. No staging UI, no
+  commit UI, no rebase assistant, no history browser.
+- **Not a forge client.** We show the state of the branch a session is on and can
+  start a session from a PR. No review UI, no comment threads, no merge button. See
+  [ADR 0012](decisions/0012-forge-integration.md).
 - **Not an agent runtime.** Janela does not schedule agents, retry them, chain
   them, or read their output for meaning.
+- **Not a multiplexer replacement.** We took exactly one thing from tmux — sessions
+  that outlive their client — and deliberately left the rest: no scripting language,
+  no config file, no session sharing between users, and no key-binding surface
+  competing with the program you are running. If you want tmux, run tmux — it works
+  fine inside Janela, which is the correct relationship.
+- **Not a task runner.** Project automation is three lifecycle events with a
+  command each. It is not a build system, it has no dependency graph, and it will
+  not grow one.
 - **Not cross-platform.** Native macOS is the point. Portability is a cost we are
   choosing to pay for depth. Revisit only with an ADR.
-- **Not a terminal multiplexer.** If you want tmux, run tmux — it will work fine
-  inside Janela, which is the correct relationship.
-- **Not collaborative.** No accounts, no sync, no sharing in v1.
+- **Not collaborative.** No accounts, no sync, no sharing. A future remote client
+  connects *you* to *your own Mac*; it does not connect you to anyone else, and
+  nothing about it implies a server we operate.
+- **Not a cloud product.** Your code stays on your machine. The daemon is a local
+  process, and remote access — when it exists — is a connection to your hardware,
+  not an upload to ours.
+- **Not a service you leave running for its own sake.** The daemon starts when a
+  client first connects and exits when it has nothing left to hold
+  ([ADR 0017](decisions/0017-daemon-lifecycle.md)).
 - **Not a plugin platform.** Extensibility is the fastest route to the complexity
   this app exists to avoid.
 - **No telemetry.** The app does not phone home.
@@ -142,14 +251,21 @@ Listed so they can be pointed at, not re-litigated.
 
 A developer can:
 
-1. Point Janela at a repository once.
+1. Add a repository as a project once.
 2. Press `⌘⇧B`, type a branch name, and be looking at a terminal in a fresh
-   worktree seconds later.
+   worktree seconds later — with their `.env` already in place and `pnpm install`
+   already running, because the project said so.
 3. Press `⌘T`, pick "Claude Code", and have it running in the right directory with
-   their real `PATH`.
-4. Switch to another workspace instantly, and be told when the first one wants
+   their real `PATH`. Split the pane, start a dev server next to it.
+4. Switch to another session instantly, and be told — in the sidebar, and in
+   Notification Centre if Janela is not frontmost — when the first one wants
    attention.
-5. Finish, delete the workspace, and be told exactly what that will destroy before
-   it happens.
+5. See that the branch they are on has an open pull request, and that CI is red.
+6. Quit Janela with the agent still working, reopen an hour later, and find it
+   finished, the dev server still up, and the scrollback intact.
+7. Finish, delete the session, and be told exactly what that will destroy before it
+   happens.
 
-Nothing in that list requires the user to think about worktrees. That is the test.
+Nothing in that list requires the user to think about worktrees, nothing in it
+required them to leave the app to run a setup script, and nothing in it punished
+them for closing a window. That is the test.

@@ -2,12 +2,17 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-12
+- **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the bundle now
+  ships a second executable and a LaunchAgent. Unsandboxed, hardened, notarized,
+  outside the App Store is unchanged, and applies to both binaries.
 
 ## Context
 
 Janela's purpose is to run the user's own tools — their login shell, their
-compilers, their coding agents — in directories the user chooses, with the user's
-own environment.
+compilers, their coding agents, their `git`, their `gh` — in directories the user
+chooses, with the user's own environment. It also creates directories the user did
+not pick in an open panel: a git worktree is a new path, and the files
+`.worktreeinclude` copies into it are more of the same.
 
 The App Sandbox cannot express that. It is designed to constrain an app to
 declared resources, and Janela's declared resource is "any executable, any path".
@@ -29,14 +34,32 @@ Terminal.app — which is itself not sandboxed.
 
 ## Decision
 
-- **App Sandbox: off.**
+- **App Sandbox: off**, for the app *and* for `janelad`. The daemon is the one that
+  actually spawns the user's tools now, so if either binary could be sandboxed it
+  would be the app — and it cannot, because it must talk to a socket the sandbox
+  would deny it.
 - **Hardened Runtime: on** (required for notarization), with
   `com.apple.security.cs.disable-library-validation` so we can spawn and load the
   user's unsigned tooling.
 - **Distribution:** Developer ID signed, notarized, stapled, direct download.
   **Not** the Mac App Store — the sandbox is mandatory there, so this decision
-  forecloses that channel.
-- **No network entitlement is requested.** Janela does not phone home.
+  forecloses that channel. The MAS also disallows the `SMAppService` agent layout
+  [0017](0017-daemon-lifecycle.md) depends on, which makes that door doubly shut.
+- **Two executables, one signature story.** `Contents/MacOS/Janela` and
+  `Contents/Resources/janelad` are both Developer ID signed with the hardened
+  runtime and notarized as one bundle. The LaunchAgent plist ships at
+  `Contents/Library/LaunchAgents/`. Signing the app but not the daemon produces a
+  bundle that notarizes and then fails at registration — a failure that appears at
+  install time on a user's machine rather than in CI, so `make app-build` verifies
+  both binaries' signatures.
+- **No network entitlement is requested.** Janela does not phone home. Forge
+  integration reaches the network only through the user's `gh`/`glab` child
+  processes, which are their own — this app never opens a socket
+  ([0012](0012-forge-integration.md)).
+- **Notifications need authorization, not an entitlement.**
+  `UNUserNotificationCenter` works in an unsandboxed, Developer ID-signed app, and
+  we request permission lazily on first delivery rather than at launch
+  ([0011](0011-notifications.md)).
 
 ## Consequences
 
@@ -54,9 +77,16 @@ Those live outside the repository; `.gitignore` covers `*.p12` and
 `notarization-credentials.json`, and `DEVELOPMENT_TEAM` belongs in a local,
 gitignored `Secrets.xcconfig`.
 
-**Bad.** Users still see TCC prompts for Desktop/Documents/Downloads, triggered by
+**Bad, and now sharper.** TCC prompts. Users still see them for
+Desktop/Documents/Downloads, triggered by
 *child* processes but attributed to Janela. `Info.plist` usage strings say so
 honestly rather than pretending Janela wants the access itself.
+
+Since [0015](0015-daemon-owned-sessions.md) the file access happens in `janelad`,
+which is its own responsible process — so the prompt names an unfamiliar background
+binary instead of the app the user just clicked. That is materially worse, and it is
+mitigated by a rule rather than an API: **the app owns the open panel, the daemon is
+handed paths.** See [0017](0017-daemon-lifecycle.md) § TCC attribution.
 
 **Note.** Some agents run their own sandboxing — Codex defaults to a Seatbelt
 `workspace-write` profile

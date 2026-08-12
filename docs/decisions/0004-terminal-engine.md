@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-12
+- **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the emulator
+  moved into the daemon and the single seam became two. The engine choice itself is
+  unchanged.
 
 ## Context
 
@@ -9,6 +12,25 @@ The terminal is the product. Its emulator must handle the full xterm sequence se
 scrollback, reflow, mouse reporting, bracketed paste, and the alternate screen,
 because every coding agent we intend to host is a full-screen TUI that uses all of
 it.
+
+Reflow deserves particular weight here. Splits mean a terminal is resized whenever
+its neighbour is dragged ([0010](0010-terminal-layout.md)), so reflow is not a
+window-resize edge case — it is an interactive path, and its correctness and cost
+are both load-bearing.
+
+Since [0015](0015-daemon-owned-sessions.md) there are two distinct jobs where there
+used to be one, and separating them precedes choosing anything:
+
+- **Interpreting bytes into a screen**, in the daemon, headless. No fonts, no
+  drawing, no AppKit — a state machine and a grid.
+- **Drawing a screen**, in each client. No PTY, no child process: it receives escape
+  sequences over a socket exactly as a real terminal receives them from a pty, and
+  paints.
+
+SwiftTerm already draws this line internally — `Terminal` is the headless VT state
+machine, `TerminalView` is the AppKit surface built on it. That the library splits
+the same way we now need to is why this ADR survives 0015 with an amendment rather
+than a replacement.
 
 Building this ourselves is not a weekend. The `ctlseqs` surface is enormous, and
 the reference documentation openly contradicts itself in places — DEC's own manuals
@@ -36,14 +58,30 @@ Use with caution in production code."*
 
 ## Decision
 
-Ship **SwiftTerm**, reached only through the `TerminalEmulating` protocol in
-`JanelaTerminal`. Nothing above that module may import SwiftTerm.
+Ship **SwiftTerm** on both sides of the socket, reached only through two protocols:
 
-Treat **libghostty-vt as the planned v2 evaluation**, not a rejected option.
+| Seam | Module | Backed by | Owns |
+| --- | --- | --- | --- |
+| `TerminalEmulating` | `JanelaTerminal` (daemon) | `SwiftTerm.Terminal` | Authoritative grid, scrollback, damage tracking, text snapshots |
+| `TerminalRendering` | `JanelaTerminalUI` (client) | `SwiftTerm.TerminalView` | Painting, fonts, selection, keyboard input |
 
-The protocol is deliberately about a dozen members: feed bytes, resize, snapshot
-text, clear scrollback, and an event sink. That is the entire cost of switching
-engines later, and it is small on purpose.
+Nothing outside those two modules may import SwiftTerm. The rule has not changed;
+there are simply two places it applies rather than one.
+
+Treat **libghostty-vt as the planned v2 evaluation**, not a rejected option. Note
+that 0015 improves its odds: libghostty-vt is a *VT library*, not a renderer, which
+is exactly the shape of the daemon-side seam.
+
+Each protocol is deliberately about a dozen members. `TerminalEmulating` is feed,
+resize, damage-since-revision, serialise-for-attach, snapshot text, clear
+scrollback, and an event sink; `TerminalRendering` is feed, resize, focus, and a
+selection accessor. That is the entire cost of switching engines later, on either
+side independently.
+
+One member is new and load-bearing: **serialise-for-attach**, which turns the
+current grid into the escape sequences that reproduce it. It is what makes
+reattaching correct rather than lucky, and it is the piece SwiftTerm does not give
+us — see 0015 § Consequences for the honest accounting of that cost.
 
 ## Consequences
 
@@ -56,12 +94,28 @@ patch it — it is one SPM dependency of readable Swift.
 the fork/`login_tty` spawn shape, and populating `ws_xpixel`/`ws_ypixel` with
 backing-scale-aware values so Sixel and SGR-pixel mouse mode are correct on Retina.
 
+**Good.** Using the same engine on both sides makes the repaint encoder testable the
+obvious way: feed bytes to a daemon-side emulator, encode the damage, feed the
+result to a second emulator, and assert the two grids are identical.
+
+**Bad.** Retina pixel metrics (`ws_xpixel`/`ws_ypixel`) are a *client* fact, but the
+daemon is what sets the window size. A client on a non-Retina display attached
+alongside a Retina one makes this genuinely ambiguous, and 0016's minimum-viewport
+rule sizes the grid in cells, not pixels. Sixel fidelity across mixed-DPI clients is
+a known open edge.
+
 **Bad.** SwiftTerm is Swift 5 language mode, so it needs `@preconcurrency`
 containment — see [0003](0003-concurrency-model.md).
 
-**Bad.** We inherit its open correctness bugs, notably reflow and accessibility. If
-one blocks us, we fix it upstream or in a fork rather than working around it in
-Janela.
+**Bad.** We inherit its open correctness bugs, notably reflow and accessibility.
+Reflow is the one that interacts with splits, so it is the first thing to profile
+once pane dragging exists — and it now happens daemon-side, where a bug corrupts the
+authoritative state rather than one window. If one blocks us, we fix it upstream or
+in a fork rather than working around it in Janela.
+
+**Bad.** The dependency is now linked into two binaries, one of which is a background
+daemon that must not crash. A parser fault that used to lose a window now loses every
+terminal the user has running, which raises the bar on fuzzing the feed path.
 
 **Accepted risk.** Single-maintainer concentration. Mitigated by the MIT licence,
 the vendorability of the source, and the protocol seam.
@@ -85,7 +139,9 @@ outright.
 ## Revisit when
 
 - libghostty declares its C API stable, **or** cmux's usage demonstrates the
-  XCFramework path is low-friction enough to adopt.
+  XCFramework path is low-friction enough to adopt. The daemon-side seam is now the
+  natural first place to try it, independently of what the app renders with.
 - A SwiftTerm correctness or performance bug blocks a release and upstream is
   unresponsive.
-- We need Kitty graphics or Sixel at a fidelity SwiftTerm cannot reach.
+- We need Kitty graphics or Sixel at a fidelity SwiftTerm cannot reach, or the
+  mixed-DPI pixel-metrics edge above stops being theoretical.

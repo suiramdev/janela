@@ -26,7 +26,7 @@ public struct TerminalSize: Hashable, Sendable {
 /// A pseudo-terminal master file descriptor and the child attached to its slave.
 ///
 /// This type is intentionally low-level and non-generic. It knows about file
-/// descriptors, `posix_spawn`, and `ioctl`, and nothing about workspaces, agents,
+/// descriptors, `posix_spawn`, and `ioctl`, and nothing about sessions, agents,
 /// or SwiftUI. It is the layer we profile in isolation and the layer we must keep
 /// allocation-free on the read path.
 ///

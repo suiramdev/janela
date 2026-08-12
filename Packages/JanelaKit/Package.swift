@@ -6,11 +6,21 @@
 //
 // LAYERING RULE (enforced by the compiler through target dependencies):
 //
-//     Support  →  Core  →  { Git, PTY, Persistence }  →  Terminal
-//                                                          ↓
-//                                                      Workspace
-//                                                          ↓
-//                                          Design  →  Feature UI  →  App
+//     Support  →  Core  →  Protocol
+//                             ↙              ↘
+//     ==== daemon ====                 ==== client ====
+//     { Git, PTY, Persistence }        Client
+//              ↓                          ↓
+//         Terminal                    Design  →  TerminalUI
+//              ↓                          ↓
+//         Session                      UI  →  App
+//              ↓
+//         Daemon  →  janelad
+//
+// The two halves meet only at Core and Protocol. No client target may depend on a
+// daemon target or vice versa — which is what makes a CLI possible without a
+// refactor, and why JanelaUI cannot spawn a process even by accident.
+// See docs/decisions/0015-daemon-owned-sessions.md.
 //
 // Dependencies point downward only. If you need an upward reference, you need a
 // protocol in the lower layer instead. See docs/architecture.md.
@@ -47,9 +57,15 @@ let package = Package(
         // Exposed individually so tests, previews and the `janela-dev` CLI can link
         // narrow slices without dragging in the UI.
         .library(name: "JanelaCore", targets: ["JanelaCore"]),
+        .library(name: "JanelaProtocol", targets: ["JanelaProtocol"]),
         .library(name: "JanelaGit", targets: ["JanelaGit"]),
         .library(name: "JanelaTerminal", targets: ["JanelaTerminal"]),
-        .library(name: "JanelaWorkspace", targets: ["JanelaWorkspace"]),
+        .library(name: "JanelaSession", targets: ["JanelaSession"]),
+        .library(name: "JanelaClient", targets: ["JanelaClient"]),
+
+        // The daemon binary. Ships inside Janela.app and is registered as a
+        // LaunchAgent; see docs/decisions/0017-daemon-lifecycle.md.
+        .executable(name: "janelad", targets: ["janelad"]),
     ],
     dependencies: [
         // SQLite persistence. Chosen over SwiftData for predictable performance,
@@ -82,7 +98,18 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 2 — Capabilities
+        // MARK: Layer 2 — Protocol
+        // The vocabulary the two processes share: frames, messages, handshake, and
+        // the transport seam. Pure and Codable, with no idea how either side is
+        // implemented. Changing anything here is a wire-compatibility decision —
+        // see docs/decisions/0016-daemon-protocol.md.
+        .target(
+            name: "JanelaProtocol",
+            dependencies: ["JanelaSupport", "JanelaCore"],
+            swiftSettings: sharedSwiftSettings
+        ),
+
+        // MARK: Layer 3 — Capabilities (daemon side)
         // Each of these owns exactly one external boundary and hides it completely.
 
         /// Git, by way of `/usr/bin/git`. Owns worktree creation, enumeration and
@@ -113,8 +140,11 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 3 — Terminal
-        // Binds a PTY to an emulator and exposes a session you can attach a view to.
+        // MARK: Layer 4 — Terminal (daemon side)
+        // Binds a PTY to a *headless* emulator and owns the authoritative grid,
+        // damage tracking and repaint encoding. Runs in janelad, never in a client;
+        // the client's half of this seam is JanelaTerminalUI, which draws.
+        // One of exactly two targets allowed to import SwiftTerm.
         .target(
             name: "JanelaTerminal",
             dependencies: [
@@ -126,12 +156,14 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 4 — Workspace
+        // MARK: Layer 5 — Session (daemon side)
         // The application's brain. Composes Git + Terminal + Persistence into the
-        // workspace lifecycle. This is where product behaviour lives, and it is
-        // deliberately UI-free so it can be tested without a window server.
+        // project and session lifecycle and project automation. Runs inside the
+        // daemon, and deliberately does *not* import JanelaProtocol: it announces
+        // change through a `StateObserving` protocol it owns, so it stays usable —
+        // and testable — with no socket at all.
         .target(
-            name: "JanelaWorkspace",
+            name: "JanelaSession",
             dependencies: [
                 "JanelaSupport",
                 "JanelaCore",
@@ -142,9 +174,43 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 5 — Design
+        // MARK: Layer 6 — Daemon
+        // Listener, connections, subscriptions, peer-credential checks. Thin on
+        // purpose: what a message *means* belongs in JanelaSession.
+        .target(
+            name: "JanelaDaemon",
+            dependencies: [
+                "JanelaSupport",
+                "JanelaCore",
+                "JanelaProtocol",
+                "JanelaSession",
+                "JanelaTerminal",
+            ],
+            swiftSettings: sharedSwiftSettings
+        ),
+
+        // The daemon executable. Process plumbing only — socket activation, signal
+        // handling, idle exit. Nothing here is worth testing, which is the point.
+        .executableTarget(
+            name: "janelad",
+            dependencies: ["JanelaDaemon", "JanelaSupport"],
+            swiftSettings: sharedSwiftSettings
+        ),
+
+        // MARK: Layer 6 — Client
+        // The connection, the mirrored @Observable state the UI reads, and the
+        // attention policy — which lives here rather than in the daemon because only
+        // a client knows what is focused. See docs/decisions/0011-notifications.md.
+        .target(
+            name: "JanelaClient",
+            dependencies: ["JanelaSupport", "JanelaCore", "JanelaProtocol"],
+            swiftSettings: sharedSwiftSettings
+        ),
+
+        // MARK: Layer 7 — Design
         // Tokens, typography, spacing, and the small set of reusable controls.
-        // Knows nothing about workspaces; it could be lifted into another app.
+        // Knows nothing about projects or sessions; it could be lifted into
+        // another app.
         .target(
             name: "JanelaDesign",
             dependencies: ["JanelaSupport"],
@@ -152,32 +218,50 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 6 — Feature UI
-        // SwiftUI views and observable presentation state. Talks to JanelaWorkspace
-        // through its services; never reaches past it into Git or PTY directly.
+        // The client half of the terminal seam: a surface that draws the bytes the
+        // daemon sends. The second and last target allowed to import SwiftTerm.
         .target(
-            name: "JanelaUI",
+            name: "JanelaTerminalUI",
             dependencies: [
                 "JanelaCore",
+                "JanelaProtocol",
                 "JanelaDesign",
-                "JanelaTerminal",
-                "JanelaWorkspace",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             swiftSettings: sharedSwiftSettings
         ),
 
-        // MARK: Layer 7 — App
-        // Composition root: builds the object graph, defines the `App` scene, menus
-        // and commands. The Xcode target is a shell around this.
+        // MARK: Layer 8 — Feature UI
+        // SwiftUI views and presentation state. Note what is absent: Git, PTY,
+        // Persistence, Terminal and Session are daemon-side and are not linked here.
+        // The app cannot spawn a process — the capability is not discouraged, it is
+        // not present.
+        .target(
+            name: "JanelaUI",
+            dependencies: [
+                "JanelaCore",
+                "JanelaProtocol",
+                "JanelaClient",
+                "JanelaDesign",
+                "JanelaTerminalUI",
+            ],
+            swiftSettings: sharedSwiftSettings
+        ),
+
+        // MARK: Layer 9 — App
+        // Composition root: builds the client object graph, defines the `App` scene,
+        // menus and commands, registers the LaunchAgent via SMAppService, and adapts
+        // attention policy onto UNUserNotificationCenter. The Xcode target is a shell
+        // around this.
         .target(
             name: "JanelaApp",
             dependencies: [
                 "JanelaSupport",
-                "JanelaGit",
-                "JanelaTerminal",
+                "JanelaCore",
+                "JanelaProtocol",
+                "JanelaClient",
                 "JanelaUI",
-                "JanelaWorkspace",
-                "JanelaPersistence",
+                "JanelaTerminalUI",
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -211,8 +295,23 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
         .testTarget(
-            name: "JanelaWorkspaceTests",
-            dependencies: ["JanelaWorkspace", "JanelaTestSupport"],
+            name: "JanelaSessionTests",
+            dependencies: ["JanelaSession", "JanelaTestSupport"],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .testTarget(
+            name: "JanelaProtocolTests",
+            dependencies: ["JanelaProtocol"],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .testTarget(
+            name: "JanelaDaemonTests",
+            dependencies: ["JanelaDaemon", "JanelaTestSupport"],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .testTarget(
+            name: "JanelaClientTests",
+            dependencies: ["JanelaClient", "JanelaTestSupport"],
             swiftSettings: sharedSwiftSettings
         ),
 

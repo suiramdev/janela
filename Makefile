@@ -60,6 +60,24 @@ app-build: generate ## Build the .app bundle
 app-run: app-build ## Build and launch the app
 	@open $(DERIVED)/Build/Products/Debug/Janela.app
 
+# ---- Daemon ------------------------------------------------------------------
+#
+# The footgun of the two-process design is an old janelad staying resident while
+# you iterate on a new one: the app then talks to code you edited ten minutes ago,
+# or refuses the handshake outright. See docs/development.md § The daemon.
+
+.PHONY: daemon-restart
+daemon-restart: ## Stop janelad so the next connection starts the current build
+	@pkill -x janelad 2>/dev/null && echo "Stopped janelad." || echo "No janelad running."
+	@echo "launchd will start the current build on the next connection."
+	@echo "Note: this closed any terminals it was holding — the same cost a user"
+	@echo "pays after an app update, which is worth feeling."
+
+.PHONY: daemon-status
+daemon-status: ## Show whether janelad is running, and who is connected
+	@pgrep -lf janelad || echo "janelad: not running"
+	@lsof -U 2>/dev/null | grep janelad || echo "no clients connected"
+
 # ---- Quality -----------------------------------------------------------------
 
 .PHONY: format

@@ -5,8 +5,9 @@
 
 ## Context
 
-The most valuable thing an agent-oriented IDE can tell you is *"this one needs
-you"*. A user with six workspaces wants the badge to be right.
+The most valuable thing this app can tell you is *"this one needs you"*. A user
+with six sessions, each holding two or three terminals, wants the badge to be
+right.
 
 There are two ways to produce it.
 
@@ -41,15 +42,26 @@ which is the supported way to get an exact signal.
 
 ## Decision
 
-Janela derives session status **only** from terminal-level signals:
+Janela derives terminal status **only** from terminal-level signals:
 
 - BEL, OSC 9, OSC 777 → `TerminalEventSink.terminalDidRequestAttention`
 - OSC 133 marks → `TerminalEventSink.terminalDidMarkPrompt`
 - OSC 0/2 → title; OSC 7 → working directory
-- process exit → `SessionState.exited(code:)`
+- process exit → `TerminalState.exited(code:)`
 
-`SessionState` therefore has no `.waitingForUser` or `.agentThinking` case, and
+`TerminalState` therefore has no `.waitingForUser` or `.agentThinking` case, and
 adding one requires superseding this ADR.
+
+Signals are per **terminal**, and a session's status is derived from its terminals
+rather than stored. This is why splits are modelled as data rather than delegated
+to a multiplexer: one `tmux` process is one terminal to us, which would collapse
+"the agent in the left pane finished" into "something in there beeped". See
+[0010](0010-terminal-layout.md).
+
+What happens *after* a signal — badge only, or badge plus a Notification Centre
+delivery — is policy, and it lives in a separate decision:
+[0011](0011-notifications.md). This ADR is only about what we are willing to treat
+as a signal in the first place.
 
 Where an agent supports hooks, we **document** how to point them at Janela rather
 than parsing harder. A `janela notify` CLI is the natural v2 of this, mirroring
@@ -71,6 +83,10 @@ and process exit, which always work.
 
 **Bad.** We cannot show "agent is thinking" or a token count. That is the trade,
 and [`../product.md`](../product.md) § 2 makes it deliberately.
+
+**Bad.** A user running `tmux` inside a terminal gets one badge for whatever is
+inside it. Correct, and unavoidable without parsing — it is also why we ship splits
+ourselves.
 
 ## Alternatives considered
 

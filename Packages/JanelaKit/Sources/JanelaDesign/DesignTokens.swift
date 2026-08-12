@@ -14,7 +14,9 @@ public enum Metrics {
 
     public static func grid(_ multiple: CGFloat) -> CGFloat { gridUnit * multiple }
 
-    /// Sidebar bounds. Below the minimum, workspace names truncate uselessly.
+    /// Sidebar bounds. Below the minimum, session names truncate uselessly — and
+    /// they sit indented under a project, so they start further right than the
+    /// width alone suggests.
     public static let sidebarMinimumWidth: CGFloat = 180
     public static let sidebarIdealWidth: CGFloat = 240
     public static let sidebarMaximumWidth: CGFloat = 400
@@ -33,11 +35,12 @@ public enum Metrics {
 public enum Palette {
     /// Background behind terminal content.
     public static let terminalBackground = Color("TerminalBackground", bundle: .module)
-    /// Badge on a session that wants attention.
+    /// Badge on a terminal, and on the session button that contains it.
     public static let attention = Color("Attention", bundle: .module)
-    /// Indicator for a running session.
+    /// Indicator for a running terminal.
     public static let running = Color("Running", bundle: .module)
-    /// Text and glyphs for a session that exited non-zero.
+    /// Text and glyphs for a terminal that exited non-zero, including a failed
+    /// automation command — whose terminal stays open showing exactly why.
     public static let failure = Color("Failure", bundle: .module)
 }
 

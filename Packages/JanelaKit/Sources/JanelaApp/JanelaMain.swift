@@ -1,9 +1,8 @@
-import JanelaGit
-import JanelaPersistence
+import JanelaClient
+import JanelaCore
+import JanelaProtocol
 import JanelaSupport
-import JanelaTerminal
 import JanelaUI
-import JanelaWorkspace
 import OSLog
 import SwiftUI
 
@@ -14,12 +13,20 @@ import SwiftUI
 /// dependency, it takes it in `init` — which is also what makes the whole graph
 /// substitutable in tests.
 ///
+/// ## What this process is
+///
+/// A **client**. It renders, it delivers notifications, and it asks `janelad` to do
+/// things. It does not own a PTY, a database, or a git checkout — none of those
+/// modules are even linked, so it could not if it tried. See
+/// docs/decisions/0015-daemon-owned-sessions.md.
+///
 /// ## Launch budget
 ///
-/// Time from process start to an interactive window is budgeted at 250 ms cold.
-/// Nothing on this path may do file I/O beyond opening the database, and nothing
-/// may block on git or on resolving the user's shell environment — both are
-/// kicked off as background work after first paint. See docs/performance.md.
+/// Process start to an interactive window is budgeted at 250 ms cold, and **the
+/// window paints before the daemon answers**. Connecting is started here and
+/// awaited nowhere: a launch that blocks on a socket has handed the daemon a veto
+/// over the launch budget, which is the coupling the two-process split exists to
+/// remove. See docs/performance.md § Launch.
 public struct JanelaMain: App {
 
     @State private var environment: AppEnvironment
@@ -29,12 +36,18 @@ public struct JanelaMain: App {
     }
 
     public var body: some Scene {
-        WindowGroup(id: "workspace") {
-            WorkspaceWindow()
-                .environment(environment.workspaces)
+        WindowGroup(id: "session") {
+            MainWindow()
+                .environment(environment.projects)
                 .environment(environment.sessions)
+                .environment(environment.connection)
+                .task {
+                    // Deliberately in `.task` rather than `init`: the window is on
+                    // screen by the time this runs.
+                    await environment.start()
+                }
         }
-        // Unified toolbar with no title text: the workspace name lives in the
+        // Unified toolbar with no title text: the session name lives in the
         // sidebar, and repeating it in the title bar wastes the only horizontal
         // space the terminal actually wants.
         .windowStyle(.hiddenTitleBar)
@@ -47,7 +60,7 @@ public struct JanelaMain: App {
     }
 }
 
-/// The object graph.
+/// The client object graph.
 ///
 /// Held as a single `@State` value so SwiftUI keeps it alive for the process
 /// lifetime without any global mutable state.
@@ -55,54 +68,58 @@ public struct JanelaMain: App {
 @Observable
 public final class AppEnvironment {
 
-    public let workspaces: WorkspaceStore
-    public let sessions: SessionRegistry
+    public let projects: ProjectStore
+    public let sessions: SessionStore
+    public let connection: DaemonConnection
 
-    public init(workspaces: WorkspaceStore, sessions: SessionRegistry) {
-        self.workspaces = workspaces
+    public init(projects: ProjectStore, sessions: SessionStore, connection: DaemonConnection) {
+        self.projects = projects
         self.sessions = sessions
+        self.connection = connection
     }
 
-    /// Builds the production graph. The only place that touches the real database.
+    /// Builds the production graph.
     ///
-    /// Failing to open the database is not fatal. A developer tool that refuses to
-    /// launch because a SQLite file is corrupt is worse than one that launches
-    /// without history, so we fall back to an in-memory store and surface
-    /// `persistenceFailure` so the UI can say so.
+    /// Note how little happens here compared with the single-process design it
+    /// replaced: no database to open, no fallback to an in-memory store, no
+    /// migration that could fail on the launch path. Those moved into the daemon,
+    /// where a failure surfaces as a connection that does not come up rather than
+    /// an app that will not launch.
     public static func live() -> AppEnvironment {
-        let sessions = SessionRegistry()
-        let git = GitRunner()
-        let worktrees = WorktreeService(git: git)
-
-        var persistenceFailure: (any Error)?
-        let database: JanelaDatabase
-        do {
-            database = try JanelaDatabase.open(at: try JanelaDatabase.defaultURL())
-        } catch {
-            Log.persistence.error(
-                "Falling back to in-memory store: \(error.localizedDescription, privacy: .public)")
-            persistenceFailure = error
-            do {
-                database = try JanelaDatabase.inMemory()
-            } catch {
-                // SQLite itself is unusable. There is no meaningful degraded mode
-                // left, and pretending otherwise would only fail later and worse.
-                preconditionFailure("SQLite is unavailable: \(error)")
-            }
-        }
-
-        let workspaces = WorkspaceStore(
-            database: database,
-            worktrees: worktrees,
-            sessions: sessions
+        // TODO: build a Unix socket transport pointed at the daemon's socket, and
+        // register the LaunchAgent via SMAppService if it is not already
+        // (docs/decisions/0017-daemon-lifecycle.md).
+        //
+        // `SMAppService.register()` can return `.requiresApproval`, and that is a
+        // supported state, not an error: the app runs in a degraded in-app mode and
+        // says so plainly. Refusing to work at all would be worse.
+        AppEnvironment(
+            projects: ProjectStore(),
+            sessions: SessionStore(),
+            connection: DaemonConnection(transport: PlaceholderTransport())
         )
-
-        let environment = AppEnvironment(workspaces: workspaces, sessions: sessions)
-        environment.persistenceFailure = persistenceFailure
-        return environment
     }
 
-    /// Non-nil when the on-disk store could not be opened and this session is
-    /// running against a throwaway in-memory database.
-    public internal(set) var persistenceFailure: (any Error)?
+    /// Connects to the daemon. Called after first paint, never before it.
+    public func start() async {
+        await connection.connect()
+    }
+}
+
+/// Stands in until the socket transport exists.
+///
+/// Its only job is to let the app launch and render its disconnected state, which
+/// is a state the UI must handle correctly anyway — the daemon can be restarting at
+/// any moment.
+private struct PlaceholderTransport: MessageTransport {
+
+    var incoming: AsyncThrowingStream<Frame, any Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+
+    func send(_ frame: Frame) async throws {
+        Log.app.debug("Dropping frame: no transport yet")
+    }
+
+    func close() async {}
 }

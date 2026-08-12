@@ -2,9 +2,10 @@ import Foundation
 
 /// A type-safe, opaque identifier.
 ///
-/// Using a phantom type here means a `SessionID` can never be passed where a
-/// `WorkspaceID` is expected, which matters once these start crossing module and
-/// database boundaries.
+/// Using a phantom type here means a `TerminalID` can never be passed where a
+/// `SessionID` is expected. That matters more than it looks: the model is three
+/// levels deep, every level's id is a UUID underneath, and `session(for: id)` with
+/// the wrong `id` would otherwise compile and return nil forever.
 public struct Identifier<Subject>: Hashable, Sendable, Codable, CustomStringConvertible {
     public let rawValue: UUID
 
@@ -24,7 +25,8 @@ public struct Identifier<Subject>: Hashable, Sendable, Codable, CustomStringConv
     }
 }
 
-public typealias WorkspaceID = Identifier<Workspace>
-public typealias RepositoryID = Identifier<Repository>
-public typealias SessionID = Identifier<TerminalSessionDescriptor>
+public typealias ProjectID = Identifier<Project>
+public typealias SessionID = Identifier<Session>
+public typealias TerminalID = Identifier<TerminalDescriptor>
 public typealias LaunchProfileID = Identifier<LaunchProfile>
+public typealias AutomationID = Identifier<AutomationCommand>
