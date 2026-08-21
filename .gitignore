@@ -26,9 +26,10 @@ target/
 generated/
 packages/db/generated/
 
-# The compiled daemon sidecar.
+# The compiled daemon sidecar and its sourcemap.
 apps/desktop/src-tauri/binaries/
 apps/daemon/janelad*
+apps/daemon/main.js.map
 
 # ---- Local tooling / caches ---------------------------------------------------
 # Janela's own runtime directory: the daemon socket lives at ~/.janela/run, but a
