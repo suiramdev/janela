@@ -2,6 +2,13 @@
 node_modules/
 .bun/
 
+# Spikes are kept as evidence for the ADRs, but their dependencies and build
+# output are not. See spikes/README.md.
+spikes/**/node_modules/
+spikes/**/generated/
+spikes/**/*.sqlite*
+spikes/**/bun.lock
+
 # ---- Build output -------------------------------------------------------------
 dist/
 build/

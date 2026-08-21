@@ -1,0 +1,61 @@
+// A real slice of Janela's schema, to prove the cascade rules ADR 0005 requires.
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  runtime  = "bun"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model LaunchProfile {
+  id         String    @id
+  name       String
+  symbolName String
+  command    String
+  isAgent    Boolean   @default(false)
+  projects   Project[]
+  terminals  Terminal[]
+}
+
+model Project {
+  id               String          @id
+  name             String
+  directory        String          @unique
+  isForgeEnabled   Boolean         @default(true)
+  addedAt          DateTime
+  defaultProfileId String?
+  defaultProfile   LaunchProfile?  @relation(fields: [defaultProfileId], references: [id], onDelete: SetNull)
+  sessions         Session[]
+}
+
+model Session {
+  id           String     @id
+  projectId    String?
+  project      Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  directory    String
+  backingKind  String
+  layout       String
+  position     Int
+  createdAt    DateTime
+  lastActiveAt DateTime
+  terminals    Terminal[]
+
+  @@index([projectId, position])
+}
+
+model Terminal {
+  id        String         @id
+  sessionId String
+  session   Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  title     String
+  profileId String?
+  profile   LaunchProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  role      String         @default("user")
+  position  Int
+  createdAt DateTime
+
+  @@index([sessionId, position])
+}
