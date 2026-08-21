@@ -139,20 +139,40 @@ users a small tax on every interaction. Sheets, the standard sidebar, real menu
 commands, proper keyboard navigation, Notification Centre, Increase Contrast,
 Reduce Motion, dark mode via semantic colours.
 
-This is also why the app is Swift and AppKit/SwiftUI rather than a web stack: see
-[`decisions/0004-terminal-engine.md`](decisions/0004-terminal-engine.md) for the
-part of that argument that is measurable rather than aesthetic.
+**What this costs now, stated honestly.** The client renders in a WebView
+([ADR 0023](decisions/0023-macos-first-portable.md),
+[ADR 0024](decisions/0024-tauri-client-shell.md)), so this principle is a
+requirement we meet by effort rather than one the framework meets for us. The chrome
+macOS owns is still genuinely native — the menu bar, notifications, file dialogs, the
+window — and `prefers-color-scheme`, `prefers-contrast` and `prefers-reduced-motion`
+are the same three settings under different names.
+
+What is genuinely lost is AppKit's controls, and with them the last few percent:
+scrollbar behaviour, text-field affordances, sheet physics, and the accumulated
+correctness of controls we did not write. A WebView imitation of a macOS control is
+usually close and occasionally wrong, and developers notice. That is a real cost,
+paid deliberately, and the defence is discipline rather than optimism — the design
+system stays small and closed instead of re-creating AppKit in CSS.
 
 ### 5. Fast enough that you stop noticing it
 
 Specific budgets, not vibes, live in [`performance.md`](performance.md). The
 headline ones:
 
-- **Cold launch to interactive window: 250 ms.**
+- **Cold launch to interactive window: 400 ms.**
 - **Session switch: one frame.** Switching is showing a view, not starting work.
 - **40 open sessions is normal**, because an unstarted terminal costs ~nothing.
 - Terminal throughput must survive `yes` and a verbose build without dropping the
   UI below 60 fps.
+
+The launch number moved — it was 250 ms — and only the launch numbers moved. A
+WebView process and a JavaScript bundle are a real cost, and keeping a budget we
+would miss on every run would make the whole document decorative. Everything else is
+unchanged, which is not luck: the daemon already took the expensive work off the
+launch path and already absorbs the floods, so what renders does not affect them.
+Measured, the terminal path has headroom — 133 MB/s off the PTY against a 100 MB/s
+budget. [ADR 0023](decisions/0023-macos-first-portable.md) has the full before-and-
+after table and the reasoning for each row.
 
 ### 6. Laziness is a feature, and so is leaving
 
@@ -208,6 +228,12 @@ connecting to your own Mac from a phone. Both are clients of the same protocol, 
 neither needs an architecture change to add, which is precisely why the daemon
 arrived now rather than later. See [ADR 0016](decisions/0016-daemon-protocol.md).
 
+Since the client became a WebView, the second one is closer than it was: the phone
+client is a browser page that supplies a different transport, sharing the mirror, the
+attention policy and the terminal surface with the desktop app rather than
+reimplementing them. Still not v1, and still nothing built for it beyond not closing
+the door — [ADR 0023](decisions/0023-macos-first-portable.md).
+
 ---
 
 ## Non-goals
@@ -230,8 +256,17 @@ Listed so they can be pointed at, not re-litigated.
 - **Not a task runner.** Project automation is three lifecycle events with a
   command each. It is not a build system, it has no dependency graph, and it will
   not grow one.
-- **Not cross-platform.** Native macOS is the point. Portability is a cost we are
-  choosing to pay for depth. Revisit only with an ADR.
+- **Not cross-platform *yet*, and macOS is still the point.** macOS is the only
+  platform we build, test, ship or support, and no bug is a bug because it appears
+  elsewhere. What changed is the cost of the door: the client renders in a WebView
+  and the daemon speaks a transport-agnostic protocol, so reaching a browser — which
+  is what "connect to your Mac from a phone" was always going to mean — is a
+  transport implementation rather than a second codebase. We spend nothing to keep
+  that door open and refuse changes that would close it. Shipping Linux or Windows
+  would be a testing and support commitment nobody has asked for, and it is the
+  fastest route to "runs everywhere, feels like nowhere"; that answer is still no,
+  and changing it needs its own ADR. See
+  [ADR 0023](decisions/0023-macos-first-portable.md).
 - **Not collaborative.** No accounts, no sync, no sharing. A future remote client
   connects *you* to *your own Mac*; it does not connect you to anyone else, and
   nothing about it implies a server we operate.

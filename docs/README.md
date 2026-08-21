@@ -17,6 +17,9 @@ If you are new — human or agent — this sequence gets you productive fastest.
 
 Then, as needed:
 
+- **[`MIGRATION_MAP.md`](MIGRATION_MAP.md)** — where everything went when the stack
+  changed. Read this if you know the previous codebase, or if a document you are
+  reading mentions Swift.
 - **[`conventions.md`](conventions.md)** — how the code is written.
 - **[`testing.md`](testing.md)** — what we test and what we refuse to fake.
 - **[`performance.md`](performance.md)** — budgets and how to measure them.

@@ -28,9 +28,10 @@ for it (*worktree-backed*). Worktrees are one way a session's directory comes to
 exist — not the point of the app.
 
 Terminals run inside `janelad`, a per-user daemon, so they survive the window
-closing. The app renders; the daemon runs things. A future CLI and a future phone
-client are more clients of the same socket — see
-[`docs/decisions/0015-daemon-owned-sessions.md`](docs/decisions/0015-daemon-owned-sessions.md).
+closing. The app renders; the daemon runs things. A future CLI and a future browser
+client are more clients of the same protocol — see
+[`docs/decisions/0015-daemon-owned-sessions.md`](docs/decisions/0015-daemon-owned-sessions.md)
+and [`docs/decisions/0023-macos-first-portable.md`](docs/decisions/0023-macos-first-portable.md).
 
 If you are about to write code that contradicts that, stop and read
 [`docs/product.md`](docs/product.md) first.
@@ -39,80 +40,95 @@ If you are about to write code that contradicts that, stop and read
 
 ## Commands
 
-Everything is a `make` target. Do not invent new invocations.
+Everything is a `bun run` script. Do not invent new invocations.
 
 | Command | What it does | When |
 | --- | --- | --- |
-| `make bootstrap` | Install tooling, resolve deps, generate the project | Once, first time |
-| `make build` | Build all modules via SwiftPM | Constantly — takes seconds |
-| `make test` | Run all module tests | After every change |
-| `make lint` | swift-format + SwiftLint, non-mutating | Before committing |
-| `make format` | Fix formatting in place | When `make lint` complains |
-| `make check` | `lint` + `test` — exactly what CI runs | Before pushing |
-| `make generate` | Regenerate `Janela.xcodeproj` from `project.yml` | After touching `project.yml` |
-| `make app-build` | Build the real `.app` bundle | Only when you need the bundle |
+| `bun run bootstrap` | Install, generate the database client, build the native library | Once, first time |
+| `bun run check` | `lint` + `typecheck` + `test` — exactly what CI runs | Before pushing |
+| `bun run typecheck` | `tsc --build` across the workspace | Constantly — takes seconds |
+| `bun test` | Run all tests | After every change |
+| `bun run lint` | Oxlint, format check, **and the layering gate**, non-mutating | Before committing |
+| `bun run format` | Fix formatting in place | When `lint` complains |
+| `bun run check:layers` | The layering gate alone | When you touched a dependency edge |
+| `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
+| `bun run app` | Build and run the app | When you need to see it |
+| `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
 
-**Prefer `make build` / `make test` over Xcode.** All logic lives in
-`Packages/JanelaKit`, which builds without an Xcode project in a few seconds.
-`xcodebuild` is minutes slower and you rarely need it.
+**Prefer `bun run check` over building the app.** It covers everything except the
+Tauri shell and finishes in seconds; `bun run app` drives cargo and takes minutes.
+
+Two things that will bite you once each:
+
+- **A resident `janelad` from another checkout will serve your app.** That is by
+  design — it holds the user's terminals — but during development it means you are
+  testing code you did not build. `bun run daemon:status` says who is running.
+- **Prisma's CLI needs Node, not Bun**, and rejects unsupported versions. The pinned
+  one is in `.node-version`. Nothing we ship uses it.
 
 ---
 
 ## Repository layout
 
 ```text
-App/Janela/            Thin app shell. ONE Swift file. Do not grow it.
-Packages/JanelaKit/    All logic, as layered modules. Your work goes here.
+apps/desktop/          The Tauri app. src-tauri/ is a THIN Rust shell; src/ is React.
+apps/daemon/           janelad. Process plumbing only — nothing testable.
+packages/              All logic, as layered packages. Your work goes here.
+scripts/layers.ts      The module graph, as data. The architecture, enforced.
 docs/                  Architecture, decisions, conventions. Read before designing.
 docs/decisions/        ADRs. Read the relevant one before changing a decision.
-docs/research/         Primary-source research backing the ADRs.
-scripts/               Implementations behind the make targets.
-project.yml            Source of truth for the Xcode project (which is generated).
+docs/MIGRATION_MAP.md  Where everything went when the stack changed.
 ```
 
 ---
 
 ## The layering rule
 
-Modules depend **downward only**. This is enforced by the compiler through target
-dependencies in `Packages/JanelaKit/Package.swift`.
+Packages depend **downward only**. This used to be enforced by a compiler. It is now
+enforced by `bun run check:layers`, which reads `scripts/layers.ts` — because
+TypeScript does not check a module graph, and Bun's hoisting means an *undeclared*
+import resolves and runs. See
+[`docs/decisions/0022-layering-enforcement.md`](docs/decisions/0022-layering-enforcement.md).
 
 ```text
-                 JanelaSupport      logging, signposts, errors, subprocess
+                @janela/support     logging, errors, timing, bounded buffers
+                       ↓            (+ /process — subprocess, daemon-only)
+                @janela/core        domain types. Pure. No I/O.
                        ↓
-                 JanelaCore         domain types. Pure. No I/O.
-                       ↓
-                 JanelaProtocol     wire messages, framing, handshake
-                  ↙         ↘
-     ==== daemon ====        ==== client ====
-     JanelaGit               JanelaClient      connection, mirror, attention policy
-     JanelaPTY                   ↓
-     JanelaPersistence       JanelaDesign      tokens and reusable controls
-     JanelaForge (planned)   JanelaTerminalUI  the SwiftTerm-backed surface
-         ↓                       ↓
-     JanelaTerminal          JanelaUI          SwiftUI views
-         ↓                       ↓
-     JanelaSession           JanelaApp         composition root, notifications
-         ↓
-     JanelaDaemon  →  janelad (executable)
+                @janela/protocol    frames, messages, handshake, transport seam
+                  ↙          ↘
+    ==== daemon ====           ==== client ====
+    git   pty   db   forge     client        connection, mirror, attention policy
+         ↓                        ↓
+    terminal                   design        tokens and reusable controls
+         ↓                        ↓
+    session                    terminal-ui   the renderer surface
+         ↓                        ↓
+    daemon                     ui            views
+         ↓                        ↓
+    apps/daemon → janelad      apps/desktop  Tauri shell + composition root
 ```
 
-**If you need an upward reference, you need a protocol in the lower layer
+**If you need an upward reference, you need an interface in the lower package
 instead.** Adding a dependency edge that points sideways or upward is a design
-change: write it down in `docs/decisions/` first.
+change: write it down in `docs/decisions/` first, then change `scripts/layers.ts`.
 
 Four rules that catch most mistakes:
 
-- **No client module may import a daemon module, or vice versa.** They meet only at
-  `JanelaCore` and `JanelaProtocol`. This is what makes a CLI possible without a
-  refactor, and why `JanelaUI` cannot spawn a process even by accident.
-- Only `JanelaTerminal` (daemon, headless) and `JanelaTerminalUI` (client, the view)
-  may `import SwiftTerm`. Two seams, one library, one rule.
-- Nothing in `JanelaSession` or below may `import SwiftUI`, `AppKit`, or
-  `UserNotifications`. The daemon detects attention, the client decides, the app
-  delivers.
-- `JanelaGit` and `JanelaForge` are peers and must never import each other. Shared
-  subprocess plumbing lives in `JanelaSupport`.
+- **No client package may import a daemon package, or vice versa.** They meet only at
+  `@janela/core` and `@janela/protocol`. This is what makes a CLI possible without a
+  refactor, and why `@janela/ui` cannot spawn a process even by accident.
+- Only `@janela/terminal` (daemon, headless) and `@janela/terminal-ui` (client, the
+  view) may name a terminal library. Two seams, one rule.
+- Nothing in `@janela/session` or below may import a view layer. The daemon detects
+  attention, the client decides, the app delivers.
+- `@janela/git` and `@janela/forge` are peers and must never import each other.
+  Shared subprocess plumbing lives in `@janela/support/process`.
+
+The gate also holds a table of **gated modules** — `bun:ffi` only in `@janela/pty`,
+`bun:sqlite` and `@prisma/client` only in `@janela/db`, `node:child_process` only in
+`@janela/support`, `@tauri-apps/*` only in `apps/desktop`. Each entry carries its
+reason and its ADR.
 
 ---
 
@@ -184,17 +200,25 @@ it means a project or a session. Full table in
 
 ## Conventions that matter
 
-- **Swift 6 language mode, strict concurrency.** No `@preconcurrency` escapes
-  without a comment explaining the plan to remove it.
-- **`any` on existentials** is required (`ExistentialAny` is on).
-- **Explicit imports** are required for the module defining a member
-  (`MemberImportVisibility` is on) — if the compiler asks for `import OSLog`, add it.
-- **No `try!`, no force unwraps** in shipped code. The linter enforces this.
-- **No `print()`.** Use the `Log` categories in `JanelaSupport`.
-- **Dependency injection through `init`.** There is no singleton graph and no
-  `.shared`. The composition root is `AppEnvironment.live()`.
-- **Doc comments explain *why*.** The signature already says what. `swift-format`
-  validates `- Parameters:`/`- Returns:`/`- Throws:` completeness.
+- **Strict TypeScript, and every strictness flag is on.** `noUncheckedIndexedAccess`
+  and `exactOptionalPropertyTypes` included. They are not negotiable per-file.
+- **No `any`, no non-null `!`.** Both are promises to the compiler with no evidence
+  behind them, and the daemon is the wrong place to be optimistic. The linter
+  enforces this.
+- **No `console.log`.** Use the `log` categories in `@janela/support`. Never log
+  terminal traffic, command output, file contents, notification bodies, or
+  environment values — log the *shape*: an id, a count, an exit status.
+- **Imports carry their `.ts` extension**, and `import type` is required for
+  type-only imports.
+- **Domain values are plain and JSON-shaped.** Timestamps are ISO strings, paths are
+  strings. Everything in `@janela/core` crosses a socket.
+- **Dependency injection through parameters.** There is no service locator and no
+  module-level mutable state. The composition roots are `liveEnvironment()` in the
+  app and `daemonEnvironment()` in the daemon.
+- **Doc comments explain *why*.** The signature already says what.
+- **argv is always an array.** `LaunchProfile.command`, `AutomationCommand.command`,
+  git invocations, PTY spawns. There is no shell anywhere, so there is no quoting bug
+  class. A user who wants a shell writes `["zsh", "-lc", "…"]` and has chosen that.
 
 Full details: [`docs/conventions.md`](docs/conventions.md).
 
@@ -202,17 +226,18 @@ Full details: [`docs/conventions.md`](docs/conventions.md).
 
 ## Testing
 
-- Tests use **swift-testing** (`@Test`, `#expect`), not XCTest.
-- `swift test` runs in **parallel**. Never write to a fixed path; use
-  `TemporaryDirectory` and `GitFixture` from `JanelaTestSupport`.
+- Tests use **`bun test`** (`describe`, `test`, `expect`), colocated as `*.test.ts`.
+- `bun test` runs files **in parallel**. Never write to a fixed path; use
+  `temporaryDirectory` and `gitFixture` from `@janela/test-support`.
 - Git behaviour is tested against **real repositories** in temp directories. We do
   not mock git — a mock would only prove our assumptions. The same goes for
-  `.worktreeinclude`, which is tested by creating a real worktree and looking at
-  what landed in it.
-- Automation, attention policy and forge state are tested with **fakes**, because
-  the logic under test is the decision, not the subprocess.
-- Note `#expect` cannot swallow a `try`. Hoist the throwing call into a `let`
-  first, then assert on the value.
+  `.worktreeinclude`, which is tested by creating a real worktree and looking at what
+  landed in it, and for **PTYs**, where the interesting behaviour is exactly what a
+  fake would paper over.
+- Automation, attention policy and forge state are tested with **fakes**, because the
+  logic under test is the decision, not the subprocess.
+- The repaint encoder is tested by **round-tripping two emulators**: feed bytes to
+  one, encode the damage, feed the result to a second, assert the grids match.
 
 Full details: [`docs/testing.md`](docs/testing.md).
 
@@ -220,10 +245,11 @@ Full details: [`docs/testing.md`](docs/testing.md).
 
 ## Before you finish
 
-Run `make check`. It must pass. Then confirm:
+Run `bun run check`. It must pass. Then confirm:
 
-- [ ] Did you add a dependency edge? It must point downward, and must not cross the
-      daemon/client line except through `JanelaCore` or `JanelaProtocol`.
+- [ ] Did you add a dependency edge? It must point downward, must not cross the
+      daemon/client line except through `@janela/core` or `@janela/protocol`, and must
+      be in **both** `scripts/layers.ts` and the package's `package.json`.
 - [ ] Did you change the wire protocol? Version it, and say what an older peer does.
 - [ ] Did you add a concept a user has to learn? Justify it against
       [`docs/product.md`](docs/product.md) § Non-goals — the budget is four nouns.
@@ -237,12 +263,15 @@ Run `make check`. It must pass. Then confirm:
 
 ## Current state
 
-The repository is **scaffolded, not implemented**. It builds, launches, and passes
-its tests, but the substance is `TODO`. Search for `TODO:` to find the seams —
-they are placed deliberately, and each one has a doc comment describing what
-belongs there.
+The repository is **scaffolded, not implemented**. Packages export their interfaces
+and their `TODO:` seams; the bodies are not written. Search for `TODO:` to find the
+seams — they are placed deliberately, and each carries a doc comment describing what
+belongs there and which traps to avoid.
 
-Start with [`docs/development.md`](docs/development.md) § First tasks.
+The stack changed from Swift to Tauri and TypeScript. If you know the previous
+codebase, or you are reading a document that mentions Swift, start with
+[`docs/MIGRATION_MAP.md`](docs/MIGRATION_MAP.md) — every module, type and seam has a
+row.
 
 ---
 

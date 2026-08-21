@@ -81,7 +81,8 @@ duplication is intentional.
 ### Script parity
 
 The `make` targets are gone, and each has an equivalent. The table lives in
-`../development.md`; the rule is unchanged from 0001 and worth restating here:
+[`../MIGRATION_MAP.md`](../MIGRATION_MAP.md) § Commands; the rule is unchanged from
+0001 and worth restating here:
 **everything a contributor needs to do is one command, and inventing new invocations
 is how a workflow becomes tribal knowledge.**
 
