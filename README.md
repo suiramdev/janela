@@ -1,5 +1,17 @@
 # Janela
 
+> [!WARNING]
+> **This document predates the Tauri/TypeScript migration and is stale.**
+> It describes the Swift stack — `make` targets, SwiftPM modules, SwiftTerm, GRDB,
+> Xcode. The architecture, the domain model and the product thesis it serves are
+> unchanged; the stack it names is gone.
+>
+> Current: [`AGENTS.md`](AGENTS.md) for commands and layering,
+> [`architecture.md`](docs/architecture.md) for the system,
+> [`MIGRATION_MAP.md`](docs/MIGRATION_MAP.md) for where every module, type and seam went.
+> Rewriting this file is a tracked follow-up.
+
+
 **A native macOS terminal session manager. Terminal-first, worktree-aware,
 deliberately small.**
 

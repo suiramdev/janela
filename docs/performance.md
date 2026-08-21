@@ -1,5 +1,25 @@
 # Performance
 
+> [!WARNING]
+> **This document predates the Tauri/TypeScript migration and is stale.**
+> It describes the Swift stack — `make` targets, SwiftPM modules, SwiftTerm, GRDB,
+> Xcode. The architecture, the domain model and the product thesis it serves are
+> unchanged; the stack it names is gone.
+>
+> **Two budgets below are also out of date**, and this is the important part:
+> cold launch is now **400 ms** (was 250) and warm launch **200 ms** (was 120),
+> because the client renders in a WebView. *Every other budget on this page is
+> unchanged*, including the terminal-throughput ones, which measured 133 MB/s off
+> the PTY against a 100 MB/s budget. The before-and-after table and the reasoning
+> for each row are in
+> [`decisions/0023-macos-first-portable.md`](decisions/0023-macos-first-portable.md).
+>
+> Current: [`AGENTS.md`](../AGENTS.md) for commands and layering,
+> [`architecture.md`](architecture.md) for the system,
+> [`MIGRATION_MAP.md`](MIGRATION_MAP.md) for where every module, type and seam went.
+> Rewriting this file is a tracked follow-up.
+
+
 Budgets, not aspirations. Each number below is something a change can be measured
 against and a review can point at.
 

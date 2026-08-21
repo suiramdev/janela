@@ -1,5 +1,21 @@
 # Domain model
 
+> [!WARNING]
+> **This document predates the Tauri/TypeScript migration and is stale.**
+> **The model itself is current and correct** — four nouns, the backing invariants,
+> the vocabulary, the deliberately-absent table. What is stale is the *syntax*: the
+> types are shown in Swift and live in `JanelaCore`. They are now TypeScript in
+> `@janela/core`, with three changes worth knowing: timestamps are ISO strings
+> rather than `Date`, paths are branded strings rather than `URL`, and
+> `symbolName` is `iconName`. Every rename has a row in
+> [`MIGRATION_MAP.md`](MIGRATION_MAP.md).
+>
+> Current: [`AGENTS.md`](../AGENTS.md) for commands and layering,
+> [`architecture.md`](architecture.md) for the system,
+> [`MIGRATION_MAP.md`](MIGRATION_MAP.md) for where every module, type and seam went.
+> Rewriting this file is a tracked follow-up.
+
+
 The nouns, what they mean, and — as importantly — what they deliberately do not
 mean. This is the shared vocabulary; use these words in code, in UI copy, and in
 issues.
