@@ -243,3 +243,15 @@ they are placed deliberately, and each one has a doc comment describing what
 belongs there.
 
 Start with [`docs/development.md`](docs/development.md) § First tasks.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues for `suiramdev/janela`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at root, ADRs under `docs/decisions/`. See `docs/agents/domain.md`.
