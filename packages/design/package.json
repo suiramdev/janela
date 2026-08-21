@@ -1,0 +1,27 @@
+{
+  "name": "@janela/design",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tokens, semantic colours, and the small set of reusable controls.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/support": "workspace:*",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.33.0",
+    "tailwind-merge": "3.6.0"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*",
+    "react": "19.2.8",
+    "tailwindcss": "4.3.3"
+  }
+}

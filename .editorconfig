@@ -6,14 +6,22 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 indent_style = space
-indent_size = 4
-max_line_length = 110
-
-[*.{yml,yaml,json,md}]
 indent_size = 2
+max_line_length = 100
+
+[*.{ts,tsx,js,jsx,mts,cts}]
+# Must agree with printWidth/tabWidth in .oxfmtrc.json. oxfmt is the authority;
+# this is here so an editor without the oxfmt plugin still does the right thing.
+indent_size = 2
+max_line_length = 100
+
+[*.rs]
+indent_size = 4
+max_line_length = 100
 
 [*.md]
 trim_trailing_whitespace = false
+max_line_length = 80
 
-[Makefile]
-indent_style = tab
+[*.{json,jsonc,yml,yaml,toml}]
+indent_size = 2

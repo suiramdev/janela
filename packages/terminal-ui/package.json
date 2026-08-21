@@ -1,0 +1,27 @@
+{
+  "name": "@janela/terminal-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The client-side terminal surface: a view that is fed escape sequences.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/design": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "6.0.0"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*",
+    "react": "19.2.8"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@janela/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Tauri app: window, native menus, notifications, and the socket bridge.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "vite build",
+    "bundle": "tauri build",
+    "clean": "rm -rf dist src-tauri/target *.tsbuildinfo",
+    "dev": "tauri dev",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/client": "workspace:*",
+    "@janela/core": "workspace:*",
+    "@janela/design": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@janela/terminal-ui": "workspace:*",
+    "@janela/ui": "workspace:*",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-log": "2.9.0",
+    "@tauri-apps/plugin-notification": "2.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*",
+    "@tauri-apps/cli": "2.11.4",
+    "@vitejs/plugin-react": "6.1.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.2"
+  }
+}

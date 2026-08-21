@@ -1,0 +1,106 @@
+/**
+ * Janela's logging.
+ *
+ * Rules of the road (see docs/conventions.md):
+ * - Never `console.log`. It is unsearchable, it is not levelled, and in the
+ *   daemon it goes somewhere nobody reads. The lint rule `no-console` enforces
+ *   this; these categories are the alternative.
+ * - Never log file contents, command output, environment values, notification
+ *   bodies, or the paths `.worktreeinclude` copied. Terminal traffic and
+ *   everything adjacent to it is the user's private data and must not leak into
+ *   a log file. Log the *shape*: a subcommand and its exit status, a terminal id
+ *   and its state transition, a file count and a total size.
+ * - Prefer `debug` for anything on a hot path.
+ *
+ * Both processes log through this. The daemon writes to the system log via its
+ * own sink; a client writes through the Tauri log plugin, and a future browser
+ * client to the console — which is why the sink is injected rather than chosen
+ * here. This module stays isomorphic so `@janela/support` can link into a
+ * WebView. See docs/decisions/0023-macos-first-portable.md.
+ */
+
+export type LogLevel = "debug" | "info" | "notice" | "warning" | "error";
+
+/** One record, already reduced to something safe to persist. */
+export interface LogRecord {
+  readonly level: LogLevel;
+  readonly category: LogCategory;
+  readonly message: string;
+  /**
+   * Structured fields. Values must be *shapes*, never content: an id, a count, a
+   * duration, an exit status. A reviewer's test for a new field is "would I mind
+   * finding this in a bug report I did not write?".
+   */
+  readonly fields?: Readonly<Record<string, string | number | boolean>>;
+}
+
+/** Where records go. Injected, because the two processes answer this differently. */
+export interface LogSink {
+  write(record: LogRecord): void;
+}
+
+/**
+ * The categories. One per subsystem, and the same set in both processes so a
+ * daemon log and a client log can be read side by side.
+ */
+export type LogCategory =
+  /** App lifecycle, window and scene management. */
+  | "app"
+  /** Project and session creation, opening, closing, deletion. */
+  | "session"
+  /**
+   * Project automation: which event fired, which command index, and its exit
+   * status. Never the command's output — that belongs in its terminal, where the
+   * user can see it.
+   */
+  | "automation"
+  /** Forge CLI invocations: the subcommand and the failure class, never the JSON. */
+  | "forge"
+  /** PTY and child-process plumbing. Hot path — use `debug`. */
+  | "pty"
+  /** Terminal emulation and rendering. */
+  | "terminal"
+  /** Git invocations: the subcommand and exit status, never full output. */
+  | "git"
+  /** Database open, migration, and query failures. */
+  | "db"
+  /** The socket: connections, handshakes, subscription churn. Never payloads. */
+  | "protocol";
+
+export interface Logger {
+  debug(message: string, fields?: LogRecord["fields"]): void;
+  info(message: string, fields?: LogRecord["fields"]): void;
+  notice(message: string, fields?: LogRecord["fields"]): void;
+  warning(message: string, fields?: LogRecord["fields"]): void;
+  error(message: string, fields?: LogRecord["fields"]): void;
+}
+
+export const LOG_SUBSYSTEM = "sh.janela.Janela";
+
+/**
+ * Installs the process's sink. Called once, by a composition root — the daemon's
+ * `main`, or the desktop app's environment. Until it is called, records are
+ * dropped rather than printed, so a library that logs during import cannot
+ * decide the format for everyone.
+ */
+export function setLogSink(sink: LogSink): void {
+  void sink;
+  throw new Error(`not implemented: setLogSink`);
+}
+
+/** The logger for one category. Cheap; hold it in a module constant. */
+export function log(category: LogCategory): Logger {
+  void category;
+  throw new Error(`not implemented: log`);
+}
+
+/**
+ * A sink that discards everything. The default, and what tests use when they do
+ * not care — `@janela/test-support` has a recording one for when they do.
+ */
+export const nullLogSink: LogSink = {
+  write(): void {
+    // Deliberately nothing. Dropping is the correct default: a library that logs
+    // during import must not decide the format for the whole process.
+  },
+};

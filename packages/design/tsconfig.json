@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "types": ["bun"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "generated", "native/target", "src-tauri"],
+  "references": [
+    {
+      "path": "../../packages/support"
+    },
+    {
+      "path": "../../packages/test-support"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["bun"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "generated", "native/target", "src-tauri"],
+  "references": [
+    {
+      "path": "../../packages/support"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/session"
+    },
+    {
+      "path": "../../packages/terminal"
+    },
+    {
+      "path": "../../packages/test-support"
+    }
+  ]
+}

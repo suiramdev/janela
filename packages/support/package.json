@@ -1,0 +1,19 @@
+{
+  "name": "@janela/support",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Logging, user-facing errors, timing marks, bounded buffers, and the one subprocess runner.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./process": "./src/process.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

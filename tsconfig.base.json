@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // Janela's module graph used to be enforced by a compiler, for free. TypeScript
+    // will not do that, so every setting here that can turn a runtime surprise into a
+    // compile error is on. See docs/decisions/0022-layering-enforcement.md for the
+    // part the compiler still cannot do, and scripts/check-layers.ts for the gate.
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+
+    // ---- Strictness. Nothing here is negotiable without an ADR.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+
+    // Imports carry their `.ts` extension. Bun executes TypeScript directly, so
+    // there is no rewriting step that could fix an extensionless specifier, and an
+    // explicit extension is one fewer resolution rule to know. tsc therefore emits
+    // declarations only: the `.d.ts` files exist for cross-package typechecking,
+    // never to be run.
+    "allowImportingTsExtensions": true,
+    "emitDeclarationOnly": true,
+
+    // `noUnusedLocals`/`noUnusedParameters` are the compiler's half of "no dead
+    // seams": a skeleton that stops being wired up stops compiling.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // ---- Project references. Each package emits declarations so a downstream
+    // package typechecks against its published shape, not its internals — which
+    // is how a layering violation shows up as a type error rather than working
+    // by accident through node_modules hoisting.
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "incremental": true,
+
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "noEmitOnError": true
+  },
+  "exclude": ["node_modules", "dist", "generated", "native/target"]
+}

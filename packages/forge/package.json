@@ -1,0 +1,22 @@
+{
+  "name": "@janela/forge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "GitHub and GitLab state, through the user's own gh and glab. Planned.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

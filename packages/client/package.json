@@ -1,0 +1,23 @@
+{
+  "name": "@janela/client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The connection, the mirrored state a client renders, and the attention policy.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@janela/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The domain model: project, session, terminal, launch profile. Pure, no I/O.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

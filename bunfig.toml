@@ -1,0 +1,28 @@
+# Bun configuration for the Janela workspace.
+#
+# Bun is both the package manager and the daemon's runtime, so this file is on
+# the path of every contributor command. See docs/decisions/0020-bun-daemon-runtime.md.
+
+[install]
+# Reproducible installs: the lockfile is authoritative and CI must not resolve
+# a different tree than a contributor did.
+exact = true
+# Hoisting is what makes the layering gate necessary rather than optional: a
+# package can `import "@janela/pty"` and have it *resolve* without declaring it.
+# `bun run check:layers` is what closes that hole.
+linker = "hoisted"
+
+[install.cache]
+disable = false
+
+[test]
+# Tests run in parallel, and the temporary-directory / git-fixture discipline in
+# @janela/test-support exists because of it. Keep it that way: a test that needs a
+# fixed path is a bug that fails intermittently, which is worse than failing.
+coverageThreshold = 0
+root = "."
+
+[run]
+# `bun run <script>` should never silently fall back to a globally installed
+# binary of a different version.
+bun = true

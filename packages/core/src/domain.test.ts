@@ -1,0 +1,41 @@
+import { describe, expect, test } from "bun:test";
+
+import { ACCENTS } from "./accent.ts";
+import { BUILT_IN_PROFILES } from "./launch-profile.ts";
+import { AUTOMATION_EVENTS } from "./project.ts";
+
+describe("the concept budget", () => {
+  test("three automation events, and a fourth needs an ADR", () => {
+    expect(AUTOMATION_EVENTS).toEqual(["worktreeCreated", "sessionStart", "sessionTeardown"]);
+  });
+
+  test("built-in profiles are argv arrays, never shell strings", () => {
+    for (const profile of BUILT_IN_PROFILES) {
+      expect(Array.isArray(profile.command)).toBe(true);
+      for (const argument of profile.command) {
+        // A built-in that needed a shell would be handing user-adjacent input to
+        // `sh -c`, which is the bug class docs/domain-model.md says does not exist
+        // here. `["zsh", "-lc", "…"]` is a choice a user makes, not one we ship.
+        expect(argument).not.toContain("|");
+        expect(argument).not.toContain("&&");
+      }
+    }
+  });
+
+  test("an empty command means the login shell, and Shell is the one that has one", () => {
+    const shell = BUILT_IN_PROFILES.find((profile) => profile.name === "Shell");
+    expect(shell?.command).toEqual([]);
+    expect(shell?.isAgent).toBe(false);
+  });
+
+  test("isAgent is presentational — every agent profile is otherwise ordinary", () => {
+    for (const profile of BUILT_IN_PROFILES.filter((p) => p.isAgent)) {
+      expect(profile.command.length).toBeGreaterThan(0);
+      expect(profile.environment).toEqual({});
+    }
+  });
+
+  test("accents include an explicit none, so absence is a value rather than a null", () => {
+    expect(ACCENTS[0]).toBe("none");
+  });
+});

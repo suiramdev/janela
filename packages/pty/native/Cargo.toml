@@ -1,0 +1,23 @@
+# The PTY's native half. See docs/decisions/0021-pty-native-layer.md.
+#
+# Deliberately tiny and deliberately dependency-free apart from `libc`: this is
+# the one place in Janela where a fault takes every terminal the user has running,
+# so there is nothing here that is not load-bearing.
+[package]
+name = "janela-pty"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "janela_pty"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

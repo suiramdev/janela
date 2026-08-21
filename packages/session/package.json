@@ -1,0 +1,26 @@
+{
+  "name": "@janela/session",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The brain: project and session lifecycle, automation, removal planning.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/db": "workspace:*",
+    "@janela/forge": "workspace:*",
+    "@janela/git": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@janela/terminal": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

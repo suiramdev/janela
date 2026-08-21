@@ -1,0 +1,160 @@
+// Janela's schema.
+//
+// ## What lives here
+//
+// Projects, sessions, terminal descriptors, session layouts, automation commands,
+// launch profiles. Roughly: kilobytes. This database will never be large, and that
+// is a design constraint rather than an observation — if something wants to store
+// megabytes (scrollback, logs, agent transcripts) it does not belong here.
+//
+// ## What does not live here
+//
+// - Terminal scrollback. It stays in the emulator's ring buffer and dies with the
+//   terminal. Persisting it means unbounded growth and a privacy problem.
+// - Secrets. Forge credentials belong to `gh`/`glab` and never to us.
+// - Notification bodies. They are the user's own program's output; they reach the
+//   notification centre and nowhere else.
+// - Anything derivable from git or a forge. We cache display values with a
+//   timestamp, but git is always the source of truth and we re-read rather than
+//   reconcile.
+//
+// ## Rules
+//
+// 1. **Never edit a shipped migration.** Add a new one. A user's database is
+//    already at v3; rewriting v3 does nothing for them and breaks everyone else.
+// 2. **Every migration gets a test** that opens a database at the previous version
+//    and migrates forward. `prisma migrate dev` produces ordered SQL under
+//    `prisma/migrations/`; `prisma db push` produces nothing to test and is
+//    forbidden outside a scratch database.
+// 3. **Cascade rules encode product rules**, and there are tests for exactly those.
+//
+// See docs/decisions/0019-prisma-sql-layer.md and
+// docs/decisions/0005-persistence.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  runtime  = "bun"
+}
+
+datasource db {
+  // Prisma 7 removed `url` from this block; the connection lives in
+  // `prisma.config.ts` and the adapter is passed to the client constructor.
+  provider = "sqlite"
+}
+
+/// Launch profiles come first because both Project and Terminal reference them.
+model LaunchProfile {
+  id         String  @id
+  name       String
+  iconName   String
+  /// JSON array. argv, never a shell string.
+  command    String
+  /// JSON object.
+  environment String
+  isAgent    Boolean @default(false)
+  isBuiltIn  Boolean @default(false)
+
+  projects  Project[]
+  terminals Terminal[]
+}
+
+model Project {
+  id        String @id
+  name      String
+  directory String @unique
+
+  /// Git facts are a display cache, never a source of truth. Nullable throughout,
+  /// because a plain folder is a perfectly good project.
+  remoteURL     String?
+  defaultBranch String?
+  forge         String?
+
+  worktreeRoot     String  @default("siblingDirectory")
+  worktreeRootPath String?
+  isForgeEnabled   Boolean @default(true)
+  accent           String  @default("none")
+  isExpanded       Boolean @default(true)
+  addedAt          DateTime
+
+  defaultProfileId String?
+  defaultProfile   LaunchProfile? @relation(fields: [defaultProfileId], references: [id], onDelete: SetNull)
+
+  sessions   Session[]
+  automation AutomationCommand[]
+}
+
+model Session {
+  /// Nullable: a standalone session belongs to no project, and that is a
+  /// first-class case. Cascade rather than SetNull, because a worktree-backed
+  /// session orphaned from its project would have a `backing` nothing could
+  /// interpret.
+  id        String   @id
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name      String
+  directory String
+
+  /// Backing is stored as a discriminator plus optional payload rather than as an
+  /// opaque JSON blob, so it stays queryable ("show me every worktree session on
+  /// branch X") without a table scan.
+  backingKind           String
+  worktreeBranch        String?
+  worktreeBaseCommit    String?
+  worktreeOwnership     String?
+  /// JSON array.
+  worktreeIncludedPaths String?
+
+  /// The split/tab tree. JSON because it is recursive and only ever read whole;
+  /// depth-bounded on decode, see SessionLayout.
+  layout String
+
+  accent       String   @default("none")
+  position     Int
+  createdAt    DateTime
+  lastActiveAt DateTime
+  isPinned     Boolean  @default(false)
+
+  terminals Terminal[]
+
+  @@index([projectId, position])
+  @@index([lastActiveAt])
+}
+
+model Terminal {
+  id        String  @id
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  title                    String
+  workingDirectoryOverride String?
+  startsAutomatically      Boolean @default(false)
+  /// "user", or the automation event this terminal was spawned for.
+  role                     String  @default("user")
+  position                 Int
+  createdAt                DateTime
+
+  profileId String?
+  profile   LaunchProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, position])
+}
+
+/// Automation commands live here and never in the user's repository: a committed
+/// file that runs commands makes cloning a repo a code-execution vector. See
+/// docs/decisions/0014-project-automation.md.
+model AutomationCommand {
+  id        String  @id
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  event   String
+  /// JSON array, never a shell string.
+  command String
+  isEnabled      Boolean @default(true)
+  timeoutSeconds Int     @default(30)
+  position       Int
+
+  @@index([projectId, event, position])
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json", ".oxlintrc.json", ".oxfmtrc.json"],
+  "tasks": {
+    "generate": {
+      "cache": false,
+      "outputs": ["generated/**"]
+    },
+    "build:native": {
+      "inputs": ["native/**"],
+      "outputs": [
+        "native/target/release/*.dylib",
+        "native/target/release/*.so",
+        "native/target/release/*.dll"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck", "generate"],
+      "outputs": [".tsbuildinfo", "dist/**/*.d.ts"]
+    },
+    "build": {
+      "dependsOn": ["^build", "generate", "build:native"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["^build", "generate", "build:native"],
+      "outputs": []
+    },
+    "bundle": {
+      "dependsOn": ["^build", "build"],
+      "outputs": ["target/release/bundle/**"],
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

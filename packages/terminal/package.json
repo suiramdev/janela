@@ -1,0 +1,25 @@
+{
+  "name": "@janela/terminal",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The daemon-side emulator: authoritative grid, damage tracking, repaint encoding.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/pty": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

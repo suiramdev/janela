@@ -1,0 +1,22 @@
+{
+  "name": "@janela/git",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Git, by way of the user's own git binary. Worktrees and .worktreeinclude.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

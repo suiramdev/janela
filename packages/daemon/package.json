@@ -1,0 +1,25 @@
+{
+  "name": "@janela/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Listener, connections, subscriptions, peer-credential checks.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/session": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@janela/terminal": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

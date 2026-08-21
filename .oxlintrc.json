@@ -1,0 +1,240 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import", "typescript", "unicorn", "promise", "react", "react-perf", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "pedantic": "off"
+  },
+  "env": { "es2024": true },
+  "ignorePatterns": ["**/dist/**", "**/generated/**", "**/native/target/**", "spikes/**"],
+  "rules": {
+    // ---- The conventions a machine can check. docs/conventions.md is the prose.
+
+    // No stray printing. The Log categories in @janela/support exist so terminal
+    // traffic never reaches a system log by accident, and so the daemon and the
+    // client log the same shapes.
+    "no-console": "error",
+
+    // No force-unwrapping. `!` is a promise to the compiler with no evidence
+    // behind it, and the daemon is the wrong place to be optimistic.
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-imports": "error",
+
+    // Every domain value crossing the socket is a plain immutable value. That used
+    // to be a language guarantee; here it is a review rule with a linter behind the
+    // easy half.
+    "typescript/no-unnecessary-type-assertion": "error",
+    "no-param-reassign": "error",
+    "prefer-const": "error",
+    "eqeqeq": ["error", "always"],
+    "no-eval": "error",
+    "no-implied-eval": "error",
+
+    // A floating promise in the daemon is a silently-dropped session mutation.
+    "promise/no-return-wrap": "error",
+    "no-async-promise-executor": "error",
+
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "import/no-duplicates": "error"
+  },
+  "overrides": [
+    {
+      // ---- AGENTS.md rule 1: no client package may import a daemon package.
+      //
+      // This is the coarse, always-on half of the layering gate: it runs in the
+      // editor and catches the mistake as it is typed. The precise graph —
+      // downward-only edges, declared-dependency agreement — is checked by
+      // `bun run check:layers`, which is the authority. See
+      // docs/decisions/0022-layering-enforcement.md for why there are two.
+      "files": [
+        "packages/client/**",
+        "packages/design/**",
+        "packages/terminal-ui/**",
+        "packages/ui/**",
+        "apps/desktop/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@janela/git",
+                  "@janela/git/*",
+                  "@janela/pty",
+                  "@janela/pty/*",
+                  "@janela/db",
+                  "@janela/db/*",
+                  "@janela/forge",
+                  "@janela/forge/*",
+                  "@janela/terminal",
+                  "@janela/terminal/*",
+                  "@janela/session",
+                  "@janela/session/*",
+                  "@janela/daemon",
+                  "@janela/daemon/*"
+                ],
+                "message": "A client package may not import a daemon package. They meet only at @janela/core and @janela/protocol. This is what makes a CLI possible without a refactor, and why the UI cannot spawn a process even by accident. See docs/decisions/0015-daemon-owned-sessions.md."
+              },
+              {
+                "group": [
+                  "@janela/support/process",
+                  "node:child_process",
+                  "child_process",
+                  "bun:ffi",
+                  "bun:sqlite",
+                  "@prisma/client",
+                  "@xterm/headless",
+                  "@xterm/addon-serialize"
+                ],
+                "message": "The client renders; it does not spawn processes, open the database, or run an emulator. If you need one of these, you need a protocol message instead."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // ---- The mirror image: nothing daemon-side may reach for a view, a
+      // window, or a DOM. The daemon detects, the client decides, the app
+      // delivers (docs/decisions/0011-notifications.md).
+      "files": [
+        "packages/git/**",
+        "packages/pty/**",
+        "packages/db/**",
+        "packages/forge/**",
+        "packages/terminal/**",
+        "packages/session/**",
+        "packages/daemon/**",
+        "apps/daemon/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "react",
+                  "react/*",
+                  "react-dom",
+                  "react-dom/*",
+                  "@tauri-apps/*",
+                  "@xterm/xterm",
+                  "@xterm/xterm/*",
+                  "tailwindcss",
+                  "@janela/client",
+                  "@janela/client/*",
+                  "@janela/design",
+                  "@janela/design/*",
+                  "@janela/terminal-ui",
+                  "@janela/terminal-ui/*",
+                  "@janela/ui",
+                  "@janela/ui/*"
+                ],
+                "message": "Nothing in the daemon may import a view layer or a client package. There is no window in janelad, and a @janela/session that knows a socket exists has stopped being testable without one."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // ---- Shared layer: belongs to both processes, so it may reach for
+      // neither. Everything here crosses a socket and must stay cheap to encode.
+      "files": ["packages/support/src/**", "packages/core/**", "packages/protocol/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "react",
+                  "react/*",
+                  "react-dom",
+                  "@tauri-apps/*",
+                  "@xterm/*",
+                  "@prisma/client",
+                  "bun:ffi",
+                  "bun:sqlite",
+                  "node:child_process",
+                  "@janela/git",
+                  "@janela/pty",
+                  "@janela/db",
+                  "@janela/forge",
+                  "@janela/terminal",
+                  "@janela/session",
+                  "@janela/daemon",
+                  "@janela/client",
+                  "@janela/design",
+                  "@janela/terminal-ui",
+                  "@janela/ui"
+                ],
+                "message": "@janela/support, @janela/core and @janela/protocol are the vocabulary both processes share. They are pure, and they import from neither side."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // ---- AGENTS.md rule 4: git and forge are peers and must never import
+      // each other. Shared subprocess plumbing lives in @janela/support/process.
+      "files": ["packages/git/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@janela/forge", "@janela/forge/*"],
+                "message": "@janela/git and @janela/forge are peers. Shared subprocess plumbing lives in @janela/support/process."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/forge/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@janela/git", "@janela/git/*"],
+                "message": "@janela/forge and @janela/git are peers. Shared subprocess plumbing lives in @janela/support/process."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // Tests are allowed the assertions production code is not.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "packages/test-support/**"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "no-console": "off"
+      }
+    },
+    {
+      // Build and check scripts. They print, and they walk the workspace one
+      // package at a time so that a violation is reported in a stable order —
+      // parallelising them to satisfy a linter would make the output
+      // non-deterministic for no gain on a tree this size.
+      "files": ["scripts/**"],
+      "rules": {
+        "no-console": "off",
+        "no-await-in-loop": "off"
+      }
+    }
+  ]
+}

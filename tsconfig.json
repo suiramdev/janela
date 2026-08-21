@@ -1,0 +1,31 @@
+{
+  // Solution file. It builds nothing itself; it names every project so that
+  // `tsc --build` walks the graph in dependency order, and so an editor opens
+  // the whole workspace with one language service.
+  //
+  // The order below is the layer order from AGENTS.md § The layering rule. Keep
+  // it that way: reading this file top to bottom should teach the graph.
+  "files": [],
+  "references": [
+    { "path": "packages/support" },
+    { "path": "packages/core" },
+    { "path": "packages/protocol" },
+
+    { "path": "packages/git" },
+    { "path": "packages/pty" },
+    { "path": "packages/db" },
+    { "path": "packages/forge" },
+    { "path": "packages/terminal" },
+    { "path": "packages/session" },
+    { "path": "packages/daemon" },
+    { "path": "apps/daemon" },
+
+    { "path": "packages/client" },
+    { "path": "packages/design" },
+    { "path": "packages/terminal-ui" },
+    { "path": "packages/ui" },
+    { "path": "apps/desktop" },
+
+    { "path": "packages/test-support" }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@janela/janelad",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The daemon executable. Process plumbing only.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build --compile --minify --sourcemap --target=bun-darwin-arm64 --outfile janelad src/main.ts",
+    "clean": "rm -rf janelad dist *.tsbuildinfo",
+    "dev": "bun run src/main.ts --foreground",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/daemon": "workspace:*",
+    "@janela/db": "workspace:*",
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

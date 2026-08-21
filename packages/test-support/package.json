@@ -1,0 +1,15 @@
+{
+  "name": "@janela/test-support",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Temporary directories, throwaway git repositories, fakes. Not shipped.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@janela/pty",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pseudo-terminals and child processes. The hot path.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build:native": "cargo build --release --manifest-path native/Cargo.toml",
+    "clean": "cargo clean --manifest-path native/Cargo.toml && rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

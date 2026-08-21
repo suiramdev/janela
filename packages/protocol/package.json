@@ -1,0 +1,22 @@
+{
+  "name": "@janela/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Frames, messages, handshake, and the transport seam both processes share.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/support": "workspace:*"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}
