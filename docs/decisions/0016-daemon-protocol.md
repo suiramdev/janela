@@ -2,6 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-26
+- **Amended:** 2026-08-21 by [0024](0024-tauri-client-shell.md) — the app's client is
+  a WebView, which cannot open a Unix socket, so the Tauri shell opens it and relays
+  frames over IPC. **The protocol, the framing, the handshake and the authentication
+  posture are unchanged**; there is one more hop on the local path, and it is subject
+  to the same no-base64 rule as the socket. The `Hello` and message sketches below
+  are shown in their original Swift; the shipped shapes are in `@janela/protocol` and
+  are the same shapes.
 
 ## Context
 
@@ -15,6 +22,12 @@ Three consumers, arriving at different times:
 | `Janela.app` | now | local, same machine, same user |
 | `janela` CLI (agent skills) | soon | local, same machine, same user |
 | phone / web client | later | network, authenticated, encrypted |
+
+Since [0023](0023-macos-first-portable.md) the third row is no longer speculative in
+the way it was: the client packages are deliberately transport-agnostic so that a
+browser client is a `MessageTransport` implementation rather than a second codebase.
+That makes the foresight this ADR paid for more likely to be collected, and it does
+not change any of the reasoning below.
 
 Designing only for the first produces something that has to be replaced twice.
 Designing all three now means building a network service nobody has asked to
@@ -100,6 +113,12 @@ costs nothing to carry.
   76 bytes on macOS 26.2 — and **rejects any connection whose uid is not our own**
 - records `LOCAL_PEERPID` for logs, and never trusts it for authorisation, because
   a pid is reusable
+
+The peer check is a `getsockopt` call, and `bun:ffi` is gated to `@janela/pty` so
+that Janela has exactly one FFI surface ([0021](0021-pty-native-layer.md)). The
+listener therefore obtains the credential from whichever layer owns the descriptor
+and passes it in, rather than calling `getsockopt` itself. The rule is unchanged;
+only who makes the call is.
 
 This is the same posture as tmux: any process running as you can talk to it, which
 is not an escalation because such a process could already run anything as you. It
@@ -208,7 +227,8 @@ of terminal output inflates it by a third and adds two passes per frame.
 **WebSocket from the start.** Would make the web client trivial. Rejected for v1 as
 the local transport — an HTTP upgrade handshake to talk to a process on the same
 machine is ceremony — but it is the *expected* second transport, and the framing
-above maps onto WebSocket frames with no message changes.
+above maps onto WebSocket frames with no message changes. [0023](0023-macos-first-portable.md)
+commits to keeping that door open without walking through it.
 
 **Shared memory for the grid.** The fastest possible local transport. Rejected:
 it works only locally, it cannot be authenticated the same way, and the frame-rate
@@ -218,7 +238,9 @@ bounded output stream means we are not moving enough data to need it.
 
 - The second transport is actually built. That is the moment to check whether
   "transport-agnostic" was real or was a comforting story, and this ADR should be
-  amended with the answer either way.
+  amended with the answer either way. Note there are now *two* local implementations
+  — the daemon's socket listener and the app's Tauri bridge — which is weak evidence
+  the seam is real, and not the test.
 - Control-frame volume shows up in a profile, which would mean subscriptions are
   too chatty rather than that JSON was wrong.
 - A client needs to attach to a terminal without being able to render it, beyond

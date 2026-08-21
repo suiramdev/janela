@@ -1,7 +1,14 @@
 # 0004. SwiftTerm behind a protocol; libghostty as the v2 option
 
-- **Status:** Accepted
+- **Status:** Superseded by [0018](0018-terminal-engine.md)
 - **Date:** 2026-08-12
+
+> SwiftTerm is not available to the new stack. The *shape* this ADR established —
+> two seams, a headless emulator in the daemon and a renderer in the client, each
+> behind a protocol of about a dozen members — survived the migration intact, which
+> is the strongest available evidence it was a real boundary. See
+> [0018](0018-terminal-engine.md), including what the two-seams-**one-library** rule
+> cost to give up.
 - **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the emulator
   moved into the daemon and the single seam became two. The engine choice itself is
   unchanged.

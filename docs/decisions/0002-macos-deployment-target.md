@@ -1,7 +1,12 @@
 # 0002. Target macOS 15
 
-- **Status:** Accepted
+- **Status:** Superseded by [0023](0023-macos-first-portable.md)
 - **Date:** 2026-08-12
+
+> The client is a WebView, so the SwiftUI APIs this ADR bought are no longer what
+> sets the floor. macOS remains the first-class and only shipped target; the floor is
+> now set by `SMAppService` ([0017](0017-daemon-lifecycle.md)) and by WKWebView's
+> capabilities, which is a different argument for a similar answer.
 
 ## Context
 

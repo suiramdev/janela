@@ -1,7 +1,13 @@
 # 0005. GRDB/SQLite rather than SwiftData
 
-- **Status:** Accepted
+- **Status:** Superseded by [0019](0019-prisma-sql-layer.md)
 - **Date:** 2026-08-12
+
+> GRDB is not available to the new stack. Everything else here still holds and is
+> not restated in the superseding ADR: what is stored and what is not, the
+> never-edit-a-shipped-migration rule, the requirement that every migration be tested
+> forward from the previous version, the cascade rules that encode product rules, and
+> the database being daemon-private with exactly one writer.
 - **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the daemon is
   now the exclusive owner of the database. GRDB over SQLite is unchanged.
 

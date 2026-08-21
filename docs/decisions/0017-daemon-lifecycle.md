@@ -2,6 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-26
+- **Amended:** 2026-08-21 by [0020](0020-bun-daemon-runtime.md) — `janelad` is a
+  compiled Bun binary shipped as a Tauri sidecar, and registration happens from the
+  Tauri shell rather than from SwiftUI. **The lifecycle decision is unchanged**:
+  launchd owns it, socket activation starts it, it outlives clients and exits when
+  idle. One implementation detail got harder and is called out below.
 
 ## Context
 
@@ -44,6 +49,11 @@ Janela.app/Contents/
   Resources/janelad                         the daemon binary
 ```
 
+`janelad` is one file. Its runtime, the database client, the emulator and the PTY
+library are all embedded ([0020](0020-bun-daemon-runtime.md),
+[0021](0021-pty-native-layer.md)), so the bundle layout above is exactly as this ADR
+first described it rather than a binary plus a scatter of supporting files.
+
 The plist declares the socket rather than a run-at-load flag:
 
 ```xml
@@ -63,6 +73,16 @@ The plist declares the socket rather than a run-at-load flag:
 
 - **launchd creates and owns the socket**, and hands the daemon its file descriptor
   via `launch_activate_socket`. The daemon never binds a path itself.
+
+  **This is the one place the runtime change makes things harder.**
+  `launch_activate_socket` is a C function, and `bun:ffi` is deliberately gated to
+  `@janela/pty` so Janela has exactly one FFI surface. The expected resolution is to
+  add one export to that existing library — it is already built, signed and located —
+  rather than opening a second surface. The alternative, binding the path ourselves,
+  would trade away socket activation and with it the property that a user who never
+  opens Janela never has a process running. That is a decision this ADR made
+  deliberately, so it must not be given up silently. Recorded as a `TODO` in
+  `apps/daemon/src/main.ts` with both options stated.
 - **First connection starts the daemon.** A user who never opens Janela never has a
   process.
 - **`KeepAlive`/`SuccessfulExit=false` restarts it after a crash**, but not after
@@ -89,10 +109,10 @@ the world.
 
 The app registers on first launch and reports failure honestly:
 
-```swift
-let service = SMAppService.agent(plistName: "sh.janela.janelad.plist")
-try service.register()     // .enabled | .requiresApproval | .notFound
-```
+Registration is `SMAppService.agent(plistName:)` plus `register()`, returning
+enabled, requires-approval, or not-found. It is called from the Tauri shell, which is
+the only part of the client that talks to system frameworks
+([0024](0024-tauri-client-shell.md)).
 
 - `requiresApproval` means the user has to enable it in System Settings. The app
   says so plainly and links there, and **runs in a degraded in-app mode** until
@@ -149,14 +169,17 @@ users will land in "requiresApproval" without understanding why. The degraded mo
 is what stops that being fatal, and it is extra code that must actually work rather
 than be a stub.
 
-**Bad.** Development is more awkward. `make run` now means "build both, make sure
-the daemon that launchd starts is the one you just built", which is a genuine
-footgun when an old daemon is still resident. A `make daemon-restart` target and a
-version banner in the app's about panel are the mitigations.
+**Bad.** Development is more awkward. Running the app means "build both, and make
+sure the daemon launchd starts is the one you just built", which is a genuine footgun
+when an old daemon is still resident. `bun run daemon:restart` and
+`bun run daemon:status` are the mitigations, along with a version banner in the app's
+about panel.
 
 **Bad.** Two binaries in one bundle, both signed and notarized, and the plist has to
 point at the right path inside the bundle. Getting this wrong fails at install time
-rather than at build time. See [0008](0008-sandboxing-and-distribution.md).
+rather than at build time. See [0008](0008-sandboxing-and-distribution.md). CI
+compiles the sidecar and runs it from an empty directory on every push, which catches
+the class of failure where the daemon silently depends on something beside it.
 
 **Bad.** An absolute path in the plist's `SockPathName` means the plist is
 user-specific and cannot be a static resource. It is generated at registration

@@ -4,6 +4,12 @@
 - **Date:** 2026-08-26
 - **Supersedes:** the single-process premise in [`../architecture.md`](../architecture.md)
   § Shape of the system, and its § Session durability section.
+- **Amended:** 2026-08-21 by [0020](0020-bun-daemon-runtime.md) — `janelad` is now a
+  Bun process shipped as one compiled binary, and the client is a Tauri app
+  ([0024](0024-tauri-client-shell.md)). Every decision, rule and consequence below is
+  unchanged: what the daemon owns, why, and what it costs did not depend on the
+  language either process was written in. Only the module names moved, from
+  `JanelaX` to `@janela/x`.
 
 ## Context
 
@@ -57,7 +63,7 @@ it works for exactly our workload.
 clients.**
 
 ```text
-janelad  (one per user, launchd-managed)
+janelad  (one per user, launchd-managed, one compiled binary)
   ├── PTYs and child processes            ← survive every client disconnecting
   ├── a headless emulator per terminal    ← authoritative screen + scrollback
   ├── the SQLite database                 ← single writer, no file sharing
@@ -83,7 +89,7 @@ headless emulator in janelad          ← authoritative grid + bounded scrollbac
     ▼
 socket                                 ← bounded by frame rate, not by throughput
     ▼
-client's renderer (SwiftTerm view, or xterm.js, or a phone)
+client's renderer (xterm.js in the app, or a browser, or a phone)
 ```
 
 Three properties fall out of this, and together they are why the grid wins:
@@ -96,8 +102,10 @@ Three properties fall out of this, and together they are why the grid wins:
   the UI; now the daemon absorbs it. This is a *better* performance story than the
   architecture it replaces.
 - **Clients stay byte-fed.** Because the repaint is escape sequences, the client
-  renderer is an ordinary terminal view. SwiftTerm on macOS and xterm.js on the web
-  both work with no adaptation, and no client needs to understand our grid format.
+  renderer is an ordinary terminal view. The app's renderer and a future browser
+  client's both work with no adaptation, and no client needs to understand our grid
+  format. This is the property that let the *engine* change entirely without the
+  protocol noticing — see [0018](0018-terminal-engine.md).
 
 The daemon additionally exposes the grid as **text**, which is what makes a CLI
 useful to an agent: "what is on screen in the build terminal" is a protocol
@@ -116,10 +124,14 @@ request, not a screen-scrape.
 | Rendering, selection, input | app | **app** |
 | Window layout, sidebar state | app | **app** |
 
-`JanelaSession` keeps its job as the UI-free brain; it simply now runs inside the
-daemon. `JanelaUI` loses its dependencies on Git, PTY, Persistence and Terminal
+`@janela/session` keeps its job as the UI-free brain; it simply now runs inside the
+daemon. `@janela/ui` loses its dependencies on git, PTY, persistence and terminal
 entirely — the app *cannot* spawn a process any more, even by accident, because
 nothing it links knows how.
+
+That last sentence used to be guaranteed by a compiler refusing an undeclared
+dependency. It is now guaranteed by [0022](0022-layering-enforcement.md), because
+nothing in the new stack refuses it on its own.
 
 ### Rules
 
@@ -179,7 +191,10 @@ launchd registration the user can see in System Settings rather than a hidden
 forked child.
 
 **Bad.** Two executables to sign, notarize and keep in step, and a bundle layout
-that is no longer "an app with one binary". See [0008](0008-sandboxing-and-distribution.md).
+that is no longer "an app with one binary". See
+[0008](0008-sandboxing-and-distribution.md). Still exactly two: the daemon compiles
+to a single file with its runtime, database client, emulator and PTY library
+embedded ([0020](0020-bun-daemon-runtime.md), [0021](0021-pty-native-layer.md)).
 
 **Bad.** TCC prompts may now be attributed to `janelad` rather than to Janela,
 because the daemon is its own responsible process. A permission dialog naming a

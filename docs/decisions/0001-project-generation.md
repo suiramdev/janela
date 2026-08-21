@@ -1,7 +1,14 @@
 # 0001. Generate the Xcode project from `project.yml`
 
-- **Status:** Accepted
+- **Status:** Superseded by [0024](0024-tauri-client-shell.md) and
+  [0025](0025-monorepo-tooling.md)
 - **Date:** 2026-08-12
+
+> There is no Xcode project to generate. The two problems this ADR existed to solve
+> — a project file that does not merge and that coding agents corrupt — are gone
+> rather than solved. Its underlying requirement survives in
+> [0025](0025-monorepo-tooling.md): the fast path must be fast enough to run on
+> every change.
 
 ## Context
 

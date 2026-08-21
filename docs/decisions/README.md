@@ -16,6 +16,8 @@ Write an ADR when a change would:
   not ship, such as `gh`
 - change a module boundary or add a dependency edge
 - change how processes, concurrency, or persistence work
+- change a layer, a package boundary, or the contents of the gated-module table in
+  `scripts/layers.ts` — the module graph is a decision, and it is now data
 - add, rename, or remove a domain noun
 - introduce a file format the user writes, or anything that executes on their
   behalf
@@ -36,11 +38,11 @@ wrong is the most useful part.
 
 | # | Decision | Status |
 | --- | --- | --- |
-| [0001](0001-project-generation.md) | Generate the Xcode project from `project.yml` | Accepted |
-| [0002](0002-macos-deployment-target.md) | Target macOS 15 | Accepted |
-| [0003](0003-concurrency-model.md) | Swift 6 strict concurrency, main-actor UI, off-main PTY | Accepted |
-| [0004](0004-terminal-engine.md) | SwiftTerm behind a protocol; libghostty as the v2 option | Accepted |
-| [0005](0005-persistence.md) | GRDB/SQLite rather than SwiftData | Accepted |
+| [0001](0001-project-generation.md) | Generate the Xcode project from `project.yml` | Superseded by [0024](0024-tauri-client-shell.md), [0025](0025-monorepo-tooling.md) |
+| [0002](0002-macos-deployment-target.md) | Target macOS 15 | Superseded by [0023](0023-macos-first-portable.md) |
+| [0003](0003-concurrency-model.md) | Swift 6 strict concurrency, main-actor UI, off-main PTY | Superseded by [0020](0020-bun-daemon-runtime.md) |
+| [0004](0004-terminal-engine.md) | SwiftTerm behind a protocol; libghostty as the v2 option | Superseded by [0018](0018-terminal-engine.md) |
+| [0005](0005-persistence.md) | GRDB/SQLite rather than SwiftData | Superseded by [0019](0019-prisma-sql-layer.md) |
 | [0006](0006-agent-activity-signals.md) | Terminal signals only; never infer agent semantics | Accepted |
 | [0007](0007-git-integration.md) | Shell out to `git`; do not use libgit2 | Accepted |
 | [0008](0008-sandboxing-and-distribution.md) | Unsandboxed, hardened, notarized, outside the App Store | Accepted |
@@ -53,8 +55,16 @@ wrong is the most useful part.
 | [0015](0015-daemon-owned-sessions.md) | A daemon owns sessions; the app is a client | Accepted |
 | [0016](0016-daemon-protocol.md) | One transport-agnostic protocol, over a Unix socket in v1 | Accepted |
 | [0017](0017-daemon-lifecycle.md) | launchd owns the daemon's lifecycle, via `SMAppService` | Accepted |
+| [0018](0018-terminal-engine.md) | xterm.js on both sides, behind the two existing seams | Accepted |
+| [0019](0019-prisma-sql-layer.md) | Prisma over SQLite, through a `bun:sqlite` adapter we own | Accepted |
+| [0020](0020-bun-daemon-runtime.md) | Bun is the daemon's runtime, shipped as one compiled binary | Accepted |
+| [0021](0021-pty-native-layer.md) | The PTY is a Rust library behind `bun:ffi` | Accepted |
+| [0022](0022-layering-enforcement.md) | The module graph is data, and a script enforces it | Accepted |
+| [0023](0023-macos-first-portable.md) | macOS first, portable underneath | Accepted |
+| [0024](0024-tauri-client-shell.md) | Tauri is the client shell | Accepted |
+| [0025](0025-monorepo-tooling.md) | Bun workspaces and Turborepo, with Oxc for lint and format | Accepted |
 
-Two are load-bearing enough that the rest only make sense after them:
+Three are load-bearing enough that the rest only make sense after them:
 
 - **[0009](0009-projects-sessions-terminals.md)** renamed the central noun.
   Everything written before it that says "workspace" means what is now a
@@ -62,6 +72,28 @@ Two are load-bearing enough that the rest only make sense after them:
 - **[0015](0015-daemon-owned-sessions.md)** split the app in two. Everything written
   before it assumes one process; where that matters, the earlier ADR carries an
   **Amended** line pointing here.
+- **[0023](0023-macos-first-portable.md)** replaced the stack. Everything written
+  before it assumes Swift, AppKit/SwiftUI and an Xcode project. The six ADRs it and
+  its companions supersede are listed above with pointers; **read the superseding ADR
+  for the decision and the superseded one for the reasoning**, which is usually still
+  correct and is deliberately not repeated.
+
+### On the six supersessions of 2026-08-21
+
+The migration to Tauri and TypeScript invalidated six technology choices at once:
+0001 (XcodeGen), 0002 (deployment target), 0003 (Swift concurrency), 0004
+(SwiftTerm), 0005 (GRDB), and the cross-platform stance in `../product.md`. Each got
+a superseding ADR rather than an amendment, because in each case the *decision* was
+genuinely reversed — a different library, a different runtime, a different answer.
+
+That is the opposite of the in-place amendments described below, and deliberately so.
+What survived in every case was the *shape*: two terminal seams, testable migrations,
+the isolation rules, downward-only dependencies. Where a superseding ADR inherits
+rules from the one it replaces, it says so instead of restating them, and the older
+document remains the place those rules are explained.
+
+0008 was **amended** rather than superseded, because unsandboxed-hardened-notarized
+survived the change of toolchain with only its bundler different.
 
 ### A note on amendments in place
 

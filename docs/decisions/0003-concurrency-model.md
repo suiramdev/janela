@@ -1,7 +1,14 @@
 # 0003. Swift 6 strict concurrency, main-actor UI, off-main PTY
 
-- **Status:** Accepted
+- **Status:** Superseded by [0020](0020-bun-daemon-runtime.md)
 - **Date:** 2026-08-12
+
+> Swift 6 strict concurrency is gone with the language. The *isolation rules* survive
+> almost verbatim in [0020](0020-bun-daemon-runtime.md) — never block the read path,
+> coalesce once per frame, back-pressure by not reading, never drop a byte, bound
+> every queue — and the measurements in this ADR are still the reason for them. What
+> is genuinely lost is compile-time data-race checking; 0020 says so plainly rather
+> than claiming an equivalent.
 - **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the read path
   moved into the daemon and a socket now sits between it and the UI. The isolation
   rules are unchanged; where they apply is.

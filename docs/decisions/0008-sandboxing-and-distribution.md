@@ -2,6 +2,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-12
+- **Amended:** 2026-08-21 by [0024](0024-tauri-client-shell.md) — the bundle is
+  assembled by Tauri's bundler rather than Xcode, and the daemon is a compiled Bun
+  binary shipped as a sidecar. **The decision is unchanged and applies to both
+  binaries**: unsandboxed, hardened runtime, Developer ID signed, notarized, stapled,
+  direct download, not the Mac App Store. Two notes. First,
+  `com.apple.security.cs.disable-library-validation` is now load-bearing for a second
+  reason — the daemon `dlopen`s its embedded PTY library
+  ([0021](0021-pty-native-layer.md)) as well as loading the user's unsigned tooling.
+  Second, it is still exactly two executables: the daemon compiles to one file with
+  everything embedded, so nothing else needs signing beside it.
 - **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the bundle now
   ships a second executable and a LaunchAgent. Unsandboxed, hardened, notarized,
   outside the App Store is unchanged, and applies to both binaries.
