@@ -1,6 +1,0 @@
-# UI tests live here.
-#
-# Kept empty on purpose for now: UI tests are slow and brittle, and we only add
-# them for flows that a unit test genuinely cannot cover — see docs/testing.md
-# § The testing pyramid. The first one worth writing is "launch the app, add a
-# project, create a worktree-backed session, see a terminal produce output".
