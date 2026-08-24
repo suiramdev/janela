@@ -1155,7 +1155,12 @@ mod tests {
             .collect();
         argv.push(std::ptr::null());
         let term = cstring("TERM=xterm-256color");
-        let envp: Vec<*const c_char> = vec![term.as_ptr() as *const c_char, std::ptr::null()];
+        let search_path = cstring("PATH=/usr/bin:/bin");
+        let envp: Vec<*const c_char> = vec![
+            term.as_ptr() as *const c_char,
+            search_path.as_ptr() as *const c_char,
+            std::ptr::null(),
+        ];
         let cwd = cstring("/");
         let mut pid: i32 = 0;
         // SAFETY: every buffer is owned by this frame and outlives the call.
@@ -1178,6 +1183,30 @@ mod tests {
         pty.master
     }
 
+    /// Drains until `needle` appears or a deadline passes, and returns everything
+    /// seen. A fixed sleep followed by an assertion is a flake; a marker the
+    /// child prints is not.
+    fn drain_until(handle: i32, needle: &str) -> String {
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut seen = String::new();
+        for _ in 0..1000 {
+            // SAFETY: `buffer` is writable for its own length.
+            let drained = unsafe { jpty_read(handle, buffer.as_mut_ptr(), buffer.len()) };
+            if drained > 0 {
+                seen.push_str(&String::from_utf8_lossy(&buffer[..drained as usize]));
+                if seen.contains(needle) {
+                    return seen;
+                }
+                continue;
+            }
+            if drained < 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+        seen
+    }
+
     /// `cargo test` runs these in parallel threads of one process, and the handle
     /// table is process-global: a slot this test retires is the next slot another
     /// test's spawn hands out, which bumps the generation and makes a handle we
@@ -1191,6 +1220,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_child_closes_every_descriptor_above_stderr() {
+        let _exclusive = exclusive();
+        // A pipe with CLOEXEC deliberately left off. Every descriptor this
+        // library opens is CLOEXEC, so a child would see nothing extra even with
+        // no close loop at all — which means the loop can only be tested against
+        // a descriptor CLOEXEC does not cover, and the parent has to be us.
+        let mut leaked: [c_int; 2] = [-1, -1];
+        assert_eq!(unsafe { libc::pipe(leaked.as_mut_ptr()) }, 0);
+
+        let (handle, _) = spawn(
+            "/bin/sh",
+            &[
+                "sh",
+                "-c",
+                "for n in 3 4 5 6 7 8 9 10 11 12 13 14; do [ -e /dev/fd/$n ] && echo OPEN=$n; done; echo FDDONE",
+            ],
+        );
+        assert!(handle >= 0, "spawn failed with {handle}");
+        let seen = drain_until(handle, "FDDONE");
+        jpty_close(handle);
+        close_all(&leaked);
+
+        assert!(seen.contains("FDDONE"), "probe did not run: {seen:?}");
+        assert!(
+            !seen.contains("OPEN="),
+            "the child inherited a descriptor: {seen:?}"
+        );
+    }
     #[test]
     fn resize_puts_all_four_winsize_fields_in_the_kernel() {
         let _exclusive = exclusive();
