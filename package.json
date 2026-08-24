@@ -12,7 +12,7 @@
     "build:native": "turbo run build:native",
     "generate": "turbo run generate",
     "typecheck": "tsc --build",
-    "test": "bun test",
+    "test": "turbo run test -- --pass-with-no-tests && bun test scripts",
     "lint": "oxlint --deny-warnings && oxfmt --check . && bun run check:layers",
     "format": "oxfmt . && oxlint --fix",
     "check": "bun run lint && bun run typecheck && bun run test",
