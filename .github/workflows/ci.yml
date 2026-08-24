@@ -63,8 +63,15 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      # The PTY tests spawn real children through the Rust dylib, and the
+      # macos-15 image already ships cargo.
+      - name: Build the PTY library
+        run: bun run build:native
+
+      # `bun run test`, not `bun test`: the root script is what routes through
+      # turbo, and bypassing it skips the native build this job depends on.
       - name: Test
-        run: bun test
+        run: bun run test
 
   # The native half of the PTY. Separated because it needs a Rust toolchain and a
   # formatting mistake should not pay for a cargo build.
