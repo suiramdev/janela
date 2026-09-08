@@ -52,6 +52,13 @@ export { ptr };
  */
 export const JPTY_EXEC_FAILED_BIAS = 2000;
 
+/**
+ * Added to the reader thread's errno by `jpty_read` when the descriptor itself
+ * failed, so a lost terminal (`-(3000 + errno)`) is not mistaken for a finished
+ * one (`-1`).
+ */
+export const JPTY_READ_FAILED_BIAS = 3000;
+
 /** What `jpty_exit_code` returns when there is no status to report. */
 export const JPTY_NO_EXIT_CODE = -2147483648;
 

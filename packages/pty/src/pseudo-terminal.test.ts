@@ -17,11 +17,21 @@
  * Nothing touches a fixed path either; the tests that need a directory make
  * their own under `os.tmpdir()` and remove it.
  *
- * Two checklist items are asserted in `native/src/lib.rs`'s `cargo test` module
- * instead, because they are only observable from the other side of the boundary:
- * `ws_xpixel`/`ws_ypixel` reaching the kernel, which no stock CLI reports, and
- * the child's close-every-descriptor loop, which needs a parent deliberately
- * holding a descriptor without `FD_CLOEXEC`.
+ * Three checklist items are asserted in `native/src/lib.rs`'s `cargo test`
+ * module instead, because they are only observable from the other side of the
+ * boundary: `ws_xpixel`/`ws_ypixel` reaching the kernel, which no stock CLI
+ * reports; the child's close-every-descriptor loop, which needs a parent
+ * deliberately holding a descriptor without `FD_CLOEXEC`; and a read *failure*,
+ * which a real terminal cannot produce on Darwin at all — a child exiting and
+ * `revoke(2)` on the replica both make `read` return 0, which is EOF, measured.
+ * So the native half of that one is proved there against a descriptor `read`
+ * rejects, and the band's mapping is proved here against a scripted surface.
+ *
+ * The water marks are a fourth: `HIGH_WATER` in Rust and
+ * `TERMINAL_WATER_MARKS.highWater` here are kept in step by hand, because
+ * asserting a backlog reached the mark means pushing 4 MB through a tty inside a
+ * wall-clock window, and that rate varies by two orders of magnitude on one idle
+ * machine. Nothing below asserts the size of a backlog for that reason.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -31,6 +41,9 @@ import { join } from "node:path";
 
 import { TERMINAL_WATER_MARKS } from "@janela/support";
 
+// The scripted native surface below needs the ABI's own type, which is internal
+// to the package on purpose: `index.ts` exports terminals, not a library.
+import type { NativePtyLibrary } from "./bindings.ts";
 import {
   CTRL_C,
   DEFAULT_TERMINAL_SIZE,
@@ -206,6 +219,35 @@ function detailOf(call: () => unknown): PseudoTerminalFailureDetail {
     throw error;
   }
   throw new Error("expected a PseudoTerminalFailure, and nothing was thrown");
+}
+
+/**
+ * A terminal over a native surface that answers exactly what one test asks, for
+ * the one band no real terminal on this platform produces. Only the calls these
+ * tests reach are scripted; the rest report "did nothing". Nothing is pushed to
+ * `started`, because there is no child and no descriptor.
+ */
+function scriptedTerminal(read: bigint, exitCode: number): PseudoTerminal {
+  const library: NativePtyLibrary = {
+    jpty_spawn: () => 4097,
+    jpty_read: () => read,
+    jpty_write: () => 0n,
+    jpty_resize: () => 0,
+    jpty_signal: () => 0,
+    jpty_exit_code: () => exitCode,
+    jpty_close: () => undefined,
+    jpty_drop_all: () => 0,
+  };
+  return spawnPseudoTerminal(
+    {
+      executable: "/bin/cat",
+      arguments: ["cat"],
+      workingDirectory: tmpdir(),
+      environment: { PATH: "/usr/bin:/bin" },
+      initialSize: DEFAULT_TERMINAL_SIZE,
+    },
+    library,
+  );
 }
 
 describe("spawning and reading", () => {
@@ -467,6 +509,32 @@ describe("failures", () => {
   });
 });
 
+describe("read failure", () => {
+  /** `-(3000 + EIO)`, spelled out so the band is pinned rather than derived. */
+  const READ_FAILED_EIO = -3005n;
+
+  test("a lost descriptor is thrown once, then the terminal reads as exited", () => {
+    const terminal = scriptedTerminal(READ_FAILED_EIO, 129);
+
+    // Not `undefined`: EOF means the child finished, and a terminal we lost the
+    // descriptor to did not. The errno rides in the detail for the log.
+    expect(detailOf(() => terminal.drain())).toEqual({ kind: "readFailed", errno: 5 });
+    // Once. The daemon drains every terminal every frame, so a failure that
+    // throws for ever is a failure that throws inside the frame loop for ever.
+    expect(terminal.drain()).toBeUndefined();
+    // And the reader thread reaps on that path too, so the status is not lost.
+    expect(terminal.exitCode()).toBe(129);
+  });
+
+  test("EOF is not a failure", () => {
+    // The boundary the band exists for: one above `READ_FAILED_EIO`'s band is
+    // still an ordinary end of stream.
+    const terminal = scriptedTerminal(-1n, 0);
+    expect(terminal.drain()).toBeUndefined();
+    expect(terminal.exitCode()).toBe(0);
+  });
+});
+
 describe("back-pressure", () => {
   test("an empty drain is an empty view, allocated once", () => {
     const terminal = shell("exec sleep 300");
@@ -495,10 +563,13 @@ describe("back-pressure", () => {
     const terminal = spawn("/usr/bin/yes", ["yes"]);
     await drainUntil(terminal, /y/);
 
-    // Setup rather than a wait-for-an-assertion, and the one real delay in
-    // this file: stop draining so the ring reaches its ceiling and the
-    // back-pressure gate latches. Neither assertion below depends on how full
-    // it actually got — only on bytes continuing to arrive afterwards.
+    // Setup, not a wait-for-an-assertion: stop draining so a backlog builds and
+    // the gate latches. How much it holds is deliberately not asserted — how
+    // fast a child pushes bytes through a tty varies by two orders of magnitude
+    // on one idle machine (measured: 52 KB to 3.5 MB in the same 250 ms
+    // window), so any assertion about the size of a backlog after a fixed wait
+    // is a flake. What is asserted is that bytes keep arriving, which a reader
+    // that parked and was never woken cannot do.
     await Bun.sleep(500);
 
     let total = 0;
@@ -511,17 +582,90 @@ describe("back-pressure", () => {
         }
         largest = Math.max(largest, chunk.byteLength);
         total += chunk.byteLength;
-        // Twice the ring's ceiling cannot come out of a ring that stopped
-        // being filled, so this is the resume, not the backlog.
-        return largest === DRAIN_BUFFER_SIZE && total > RING_CEILING * 2;
+        // Twice the ring's ceiling cannot come out of a ring that stopped being
+        // filled, so this is the resume rather than the backlog.
+        return total > RING_CEILING * 2;
       },
-      () =>
-        `the reader stalled: ${total} bytes drained, largest ${largest} of ${DRAIN_BUFFER_SIZE}`,
+      () => `the reader stalled: ${total} bytes drained, largest ${largest}`,
       30_000,
     );
 
-    expect(largest).toBe(DRAIN_BUFFER_SIZE);
     expect(total).toBeGreaterThan(RING_CEILING * 2);
+    expect(largest).toBeLessThanOrEqual(DRAIN_BUFFER_SIZE);
+  }, 45_000);
+
+  test("a backlog hands back every byte, in order", async () => {
+    // The other half of non-negotiable #9: stopping is free, losing a byte is
+    // not. The payload is larger than the ring can hold, so it cannot come out
+    // in one drain and cannot come out without the ring wrapping.
+    //
+    // Read from a file rather than generated in the child, because the flood has
+    // to outrun the ring: `seq` formatting 800k numbers manages 1.7 MB/s, while
+    // `cat` of a prepared file is 84 writes instead of 800k.
+    const expected = new TextEncoder().encode(
+      `${Array.from({ length: 800_000 }, (_, index) => String(index + 1)).join("\n")}\n`,
+    );
+    expect(expected.byteLength).toBeGreaterThan(RING_CEILING);
+    const directory = await mkdtemp(join(tmpdir(), "janela-pty-"));
+    try {
+      const payload = join(directory, "payload");
+      await writeFile(payload, expected);
+      // The path arrives as `$1` rather than spliced into the script: argv is an
+      // array here too. Raw mode so ONLCR does not rewrite the newlines.
+      const terminal = spawn("/bin/sh", [
+        "sh",
+        "-c",
+        'stty raw -echo; exec cat "$1"',
+        "janela-payload",
+        payload,
+      ]);
+      // Setup, and the one thing here that is a duration: not draining for a
+      // while is how a backlog comes to exist at all, and no assertion below
+      // depends on how big it got — only on every byte arriving, in order,
+      // however it was carved up. A fake clock cannot produce it either, because
+      // what fills the ring is a child writing into a kernel PTY buffer, read by
+      // an OS thread with no scheduler on this side to advance.
+      await Bun.sleep(500);
+
+      const collected = new Uint8Array(expected.byteLength);
+      let filled = 0;
+      let largest = 0;
+      await poll(
+        () => {
+          const chunk = terminal.drain();
+          if (chunk === undefined) {
+            return true;
+          }
+          if (chunk.byteLength === 0) {
+            return false;
+          }
+          if (filled + chunk.byteLength > collected.length) {
+            throw new Error(`more bytes than the payload holds: ${filled + chunk.byteLength}`);
+          }
+          collected.set(chunk, filled);
+          filled += chunk.byteLength;
+          largest = Math.max(largest, chunk.byteLength);
+          return false;
+        },
+        () => `timed out after ${filled} of ${collected.length} bytes`,
+        30_000,
+      );
+
+      expect(filled).toBe(expected.byteLength);
+      expect(largest).toBeLessThanOrEqual(DRAIN_BUFFER_SIZE);
+      // Reported as an offset rather than compared with `toEqual`, so one dropped
+      // or reordered byte names its own index instead of printing 5 MB of diff.
+      let mismatch = -1;
+      for (let index = 0; index < expected.length; index += 1) {
+        if (collected[index] !== expected[index]) {
+          mismatch = index;
+          break;
+        }
+      }
+      expect(mismatch).toBe(-1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }, 45_000);
 
   test("a flooding terminal does not stall its neighbour", async () => {

@@ -57,6 +57,16 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
 
 /// Stop reading once this much undelivered output is buffered.
+///
+/// Mirrors `TERMINAL_WATER_MARKS` in `@janela/support`, as `READ_SIZE` below
+/// mirrors `READ_SIZE` in `byte-stream.ts`. **Both pairs are kept in step by
+/// hand**: the C ABI carries no marks, and the pairing is not testable from the
+/// TypeScript side either — asserting a backlog reached this mark means pushing
+/// 4 MB through a tty inside a wall-clock window, and that rate varies by two
+/// orders of magnitude on one idle machine (measured: 52 KB to 3.5 MB in the
+/// same 250 ms). So the gate is pinned to these constants here, in `cargo
+/// test`, where it is exact; the TypeScript side asserts only what holds at any
+/// rate — every byte arrives, and no drain exceeds its buffer.
 const HIGH_WATER: usize = 4 * 1024 * 1024;
 /// Resume reading once the backlog drops back to this.
 const LOW_WATER: usize = 1024 * 1024;
@@ -88,6 +98,11 @@ const JPTY_BAD_HANDLE: i32 = -1000;
 /// Added to a child-side errno so the caller can tell "couldn't open a terminal"
 /// from "couldn't start your program" without a second out-parameter.
 const EXEC_FAILED_BIAS: i32 = 2000;
+/// Added to the reader thread's errno when the descriptor itself failed, so
+/// `jpty_read` can say "the child is gone" (`-1`) and "we lost the terminal"
+/// (`-(3000 + errno)`) with one return value. Disjoint from both errno bands and
+/// from `JPTY_BAD_HANDLE`: `-3001..-3199`.
+const READ_FAILED_BIAS: i32 = 3000;
 
 /// Failure stages the child can report down the exec-failure pipe.
 const STAGE_LOGIN_TTY: i32 = 1;
@@ -129,10 +144,10 @@ struct Ring {
     /// `LOW_WATER`. Two marks rather than one, so the child is released in long
     /// runs instead of stuttering one read at a time at the boundary.
     paused: bool,
-    /// The child is reaped and nothing more will arrive. Set last, after the exit
-    /// code is stored, so `jpty_read` returning `-1` implies `jpty_exit_code` has
-    /// an answer.
-    closed: bool,
+    /// Why the reader stopped, once it has. Set last, after the exit code is
+    /// stored, so any negative `jpty_read` implies `jpty_exit_code` has an
+    /// answer.
+    stopped: Option<Stop>,
 }
 
 impl Ring {
@@ -145,7 +160,7 @@ impl Ring {
             len: 0,
             capacity_ceiling,
             paused: false,
-            closed: false,
+            stopped: None,
         }
     }
 
@@ -428,11 +443,17 @@ fn retire_if_settled(index: usize, generation: u32, pty: &Pty) {
 
 // ---------------------------------------------------------------- reader thread
 
+#[derive(Clone, Copy)]
 enum Stop {
     /// The caller hung up.
     HungUp,
-    /// The child's stdio is gone, or the descriptor failed.
+    /// `read` returned 0: the child's side of the terminal is gone. On Darwin
+    /// this is also what a revoked or hung-up replica produces — measured, so a
+    /// hangup is never mistaken for a fault.
     Eof,
+    /// `poll` or `read` failed with this errno (`EBADF`, `EIO`). Not EOF: the
+    /// terminal was lost, not finished.
+    Failed(i32),
 }
 
 fn read_loop(pty: &Pty) -> Stop {
@@ -467,7 +488,7 @@ fn read_loop(pty: &Pty) -> Stop {
             if errno() == libc::EINTR {
                 continue;
             }
-            return Stop::Eof;
+            return Stop::Failed(errno());
         }
         let (master_ready, wake_ready) = (fds[0].revents != 0, fds[1].revents != 0);
         if wake_ready {
@@ -501,9 +522,10 @@ fn read_loop(pty: &Pty) -> Stop {
         if read == 0 {
             return Stop::Eof;
         }
-        match errno() {
+        let failure = errno();
+        match failure {
             libc::EINTR | libc::EAGAIN => continue,
-            _ => return Stop::Eof,
+            _ => return Stop::Failed(failure),
         }
     }
 }
@@ -513,8 +535,9 @@ fn run_reader(pty: Arc<Pty>, index: usize, generation: u32) {
 
     // Shutdown order is the design, and it differs by reason.
     //
-    // On EOF the descriptor stays open across `waitpid`, so a child that closed
-    // its stdio but is still alive is not sent a spurious SIGHUP by the close.
+    // On EOF, or on a descriptor that failed, the descriptor stays open across
+    // `waitpid`, so a child that closed its stdio but is still alive is not sent
+    // a spurious SIGHUP by the close.
     //
     // On an explicit hangup we already sent SIGHUP, and the child may be blocked
     // in `write(2)` against a PTY buffer nobody is draining any more. Closing
@@ -531,7 +554,7 @@ fn run_reader(pty: Arc<Pty>, index: usize, generation: u32) {
         }
         break result;
     };
-    if matches!(stop, Stop::Eof) {
+    if !matches!(stop, Stop::HungUp) {
         unsafe { libc::close(pty.master) };
     }
 
@@ -544,9 +567,9 @@ fn run_reader(pty: Arc<Pty>, index: usize, generation: u32) {
     };
     pty.exit_code.store(code, Ordering::SeqCst);
     pty.finished.store(true, Ordering::SeqCst);
-    // Only now. `jpty_read` returning -1 must imply `jpty_exit_code` has an
+    // Only now. A negative `jpty_read` must imply `jpty_exit_code` has an
     // answer, or the TypeScript side sees a terminal that ended with no status.
-    lock_ring(&pty).closed = true;
+    lock_ring(&pty).stopped = Some(stop);
     pty.ready.notify_all();
     retire_if_settled(index, generation, &pty);
 }
@@ -891,7 +914,11 @@ unsafe fn report_failure(err_write: c_int, stage: i32) -> ! {
 // ---------------------------------------------------------------- reading
 
 /// Drain up to `len` bytes. Returns bytes written, 0 when empty, -1 when the
-/// child is gone and the ring is drained, `JPTY_BAD_HANDLE` for a stale handle.
+/// child is gone and the ring is drained, `-(3000 + errno)` when the descriptor
+/// failed and the ring is drained, `JPTY_BAD_HANDLE` for a stale handle.
+///
+/// Buffered bytes always come out first: a failure is reported only once nothing
+/// is left, so it never hides output.
 ///
 /// Copies `min(available, len)` and leaves the rest, so a caller whose buffer is
 /// smaller than the ring gets the remainder on its next call rather than a
@@ -911,7 +938,11 @@ pub unsafe extern "C" fn jpty_read(handle: i32, out: *mut u8, len: usize) -> isi
     let mut ring = lock_ring(&pty);
     let drained = unsafe { ring.drain_into(out, len) };
     if drained == 0 {
-        return if ring.closed { -1 } else { 0 };
+        return match ring.stopped {
+            None => 0,
+            Some(Stop::Failed(code)) => -(READ_FAILED_BIAS + code) as isize,
+            Some(Stop::HungUp | Stop::Eof) => -1,
+        };
     }
     drop(ring);
     // Unconditionally, and this is not laziness. Waking only when the drain
@@ -1348,6 +1379,82 @@ mod tests {
     fn spawning_a_missing_executable_relays_the_childs_errno() {
         let (handle, _) = spawn("/nonexistent/janela/probe", &["probe"]);
         assert_eq!(handle, -(EXEC_FAILED_BIAS + libc::ENOENT));
+    }
+
+    /// A read *failure* is not producible through the public API on Darwin: a
+    /// child exiting and `revoke(2)` on the replica both make `read` return 0,
+    /// which is EOF — measured. So the fault is injected where it occurs, by
+    /// handing the reader thread a descriptor `read` rejects. A directory is the
+    /// deterministic choice: `poll` reports `POLLNVAL`, `read` fails `EISDIR`,
+    /// and unlike a closed descriptor *number* there is no reuse race against
+    /// the threads `cargo test` runs alongside this one.
+    #[test]
+    fn a_failed_descriptor_is_reported_apart_from_eof() {
+        let _exclusive = exclusive();
+        let root = cstring("/");
+        // SAFETY: `root` is NUL-terminated and outlives the call.
+        let master = unsafe { libc::open(root.as_ptr() as *const c_char, libc::O_RDONLY) };
+        assert!(master >= 0, "could not open a directory descriptor");
+
+        let mut wake: [c_int; 2] = [-1, -1];
+        assert_eq!(unsafe { libc::pipe(wake.as_mut_ptr()) }, 0);
+        assert!(set_cloexec(wake[0]) && set_cloexec(wake[1]));
+        assert!(set_nonblocking(wake[0]) && set_nonblocking(wake[1]));
+
+        // A real child, so the reader's `waitpid` has something to reap: the
+        // claim is that a failure still leaves an exit code behind, and a
+        // fabricated pid would prove the opposite by accident.
+        let child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("/bin/sleep starts");
+        let pid = child.id() as pid_t;
+
+        let pty = Arc::new(Pty {
+            master,
+            pid,
+            wake,
+            ring: Mutex::new(Ring::new(RING_CAPACITY_CEILING)),
+            ready: Condvar::new(),
+            exit_code: AtomicI32::new(i32::MIN),
+            shutdown: AtomicBool::new(false),
+            finished: AtomicBool::new(false),
+        });
+        let handle = allocate_slot(Arc::clone(&pty)).expect("a free slot");
+        let (index, generation) = unpack(handle).expect("a handle we just packed");
+        let owner = Arc::clone(&pty);
+        let reader = std::thread::spawn(move || run_reader(owner, index, generation));
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+        reader.join().expect("the reader thread finishes");
+
+        let mut buffer = [0u8; 16];
+        // SAFETY: a stack array, writable for its own length.
+        assert_eq!(
+            unsafe { jpty_read(handle, buffer.as_mut_ptr(), buffer.len()) },
+            -((READ_FAILED_BIAS + libc::EISDIR) as isize),
+            "a failed descriptor must not read as EOF"
+        );
+        // The ordering the ring's `stopped` field exists for: a negative read
+        // implies there is a status to report.
+        assert_eq!(jpty_exit_code(handle), 128 + libc::SIGTERM);
+        jpty_close(handle);
+
+        // The control, in the same test so the two cannot drift apart: a child
+        // that simply finishes still reads as EOF.
+        let (echoing, _) = spawn("/bin/echo", &["echo", "done"]);
+        assert!(echoing >= 0, "spawn failed with {echoing}");
+        let mut stopped: Option<isize> = None;
+        for _ in 0..1000 {
+            // SAFETY: as above.
+            let drained = unsafe { jpty_read(echoing, buffer.as_mut_ptr(), buffer.len()) };
+            if drained < 0 {
+                stopped = Some(drained);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+        assert_eq!(stopped, Some(-1), "a finished child must read as EOF");
+        jpty_close(echoing);
     }
 
     #[test]

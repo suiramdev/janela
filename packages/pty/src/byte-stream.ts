@@ -36,7 +36,12 @@
  * @see docs/decisions/0003-concurrency-model.md
  */
 
-/** Per-read request size inside the native reader. */
+/**
+ * Per-read request size inside the native reader.
+ *
+ * Mirrored by `READ_SIZE` in `native/src/lib.rs`; the ABI carries no sizes, so
+ * the two are kept in step by hand and pinned from the test side.
+ */
 export const READ_SIZE = 128 * 1024;
 
 /**

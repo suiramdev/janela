@@ -5,8 +5,10 @@ import {
   cStringArray,
   JPTY_EXEC_FAILED_BIAS,
   JPTY_NO_EXIT_CODE,
+  JPTY_READ_FAILED_BIAS,
   native,
   ptr,
+  type NativePtyLibrary,
   type PtyHandle,
 } from "./bindings.ts";
 import { DRAIN_BUFFER_SIZE, type TerminalBytes } from "./byte-stream.ts";
@@ -72,6 +74,11 @@ export interface PseudoTerminal {
    * stay bounded whatever one terminal is doing. Nothing is dropped, and the
    * native reader is woken after every non-empty drain, so the backlog always
    * makes progress.
+   *
+   * Throws `PseudoTerminalFailure` with `kind: "readFailed"` exactly once if the
+   * descriptor itself failed — and only after every buffered byte has been handed
+   * out, so a failure never hides output. Later calls return `undefined`, and
+   * `exitCode()` still answers, because the reader thread reaps on that path too.
    */
   drain(): TerminalBytes | undefined;
 
@@ -146,6 +153,7 @@ export interface PseudoTerminalConfiguration {
 export type PseudoTerminalFailureDetail =
   | { readonly kind: "couldNotAllocateTerminal"; readonly errno: number }
   | { readonly kind: "couldNotStart"; readonly path: string; readonly errno: number }
+  | { readonly kind: "readFailed"; readonly errno: number }
   | { readonly kind: "notRunning" };
 
 export class PseudoTerminalFailure extends UserFacingError {
@@ -165,6 +173,8 @@ function summarize(detail: PseudoTerminalFailureDetail): string {
       return "Couldn't open a terminal.";
     case "couldNotStart":
       return `Couldn't start ${detail.path}.`;
+    case "readFailed":
+      return "Couldn't read from this terminal.";
     case "notRunning":
       return "This terminal isn't running.";
   }
@@ -198,6 +208,7 @@ function spawnFailure(code: number, executable: string): PseudoTerminalFailure {
 class NativePseudoTerminal implements PseudoTerminal {
   readonly pid: number;
 
+  private readonly library: NativePtyLibrary;
   private readonly handle: PtyHandle;
   private readonly drainBuffer = new Uint8Array(DRAIN_BUFFER_SIZE);
   /** Held rather than allocated per call: an idle terminal drains 120 times a second. */
@@ -207,7 +218,8 @@ class NativePseudoTerminal implements PseudoTerminal {
   private closed = false;
   private exitStatus: number | undefined;
 
-  constructor(handle: PtyHandle, pid: number) {
+  constructor(library: NativePtyLibrary, handle: PtyHandle, pid: number) {
+    this.library = library;
     this.handle = handle;
     this.pid = pid;
     this.empty = this.drainBuffer.subarray(0, 0);
@@ -218,7 +230,7 @@ class NativePseudoTerminal implements PseudoTerminal {
       return undefined;
     }
     const drained = Number(
-      native.jpty_read(this.handle, ptr(this.drainBuffer), this.drainBuffer.length),
+      this.library.jpty_read(this.handle, ptr(this.drainBuffer), this.drainBuffer.length),
     );
     if (drained > 0) {
       return this.drainBuffer.subarray(0, drained);
@@ -226,11 +238,20 @@ class NativePseudoTerminal implements PseudoTerminal {
     if (drained === 0) {
       return this.empty;
     }
-    // The native side stores the exit code before it closes the ring, so the
-    // status is readable in this same tick and `exitCode()` never needs the
-    // boundary again.
+    // The native side stores the exit code before it records why the reader
+    // stopped, so the status is readable in this same tick and `exitCode()` never
+    // needs the boundary again.
     this.running = false;
     this.cacheExitCode();
+    if (drained <= -JPTY_READ_FAILED_BIAS) {
+      // Only the failure band. `JPTY_BAD_HANDLE` is above it and stays on the
+      // `undefined` path, and `running` is already false, so a lost descriptor is
+      // reported once rather than every frame the daemon drains.
+      throw new PseudoTerminalFailure({
+        kind: "readFailed",
+        errno: -drained - JPTY_READ_FAILED_BIAS,
+      });
+    }
     return undefined;
   }
 
@@ -241,7 +262,7 @@ class NativePseudoTerminal implements PseudoTerminal {
     if (bytes.length === 0) {
       return;
     }
-    const written = Number(native.jpty_write(this.handle, ptr(bytes), bytes.length));
+    const written = Number(this.library.jpty_write(this.handle, ptr(bytes), bytes.length));
     if (written < bytes.length) {
       // The native write loops over partial writes and `EINTR`, so anything short
       // is a descriptor that failed: the input was not delivered, and dropping a
@@ -257,7 +278,7 @@ class NativePseudoTerminal implements PseudoTerminal {
     // A coalesced resize landing on a terminal that died a frame ago is routine,
     // and putting a dialog in front of the user for a race we caused would be
     // worse than ignoring it.
-    native.jpty_resize(
+    this.library.jpty_resize(
       this.handle,
       clampToWinsizeField(size.columns),
       clampToWinsizeField(size.rows),
@@ -271,7 +292,7 @@ class NativePseudoTerminal implements PseudoTerminal {
       throw new PseudoTerminalFailure({ kind: "notRunning" });
     }
     // `ESRCH` — the group is already gone — is the common case, not an error.
-    native.jpty_signal(this.handle, signal);
+    this.library.jpty_signal(this.handle, signal);
   }
 
   exitCode(): number | undefined {
@@ -287,11 +308,11 @@ class NativePseudoTerminal implements PseudoTerminal {
     }
     this.closed = true;
     this.running = false;
-    native.jpty_close(this.handle);
+    this.library.jpty_close(this.handle);
   }
 
   private cacheExitCode(): void {
-    const code = native.jpty_exit_code(this.handle);
+    const code = this.library.jpty_exit_code(this.handle);
     if (code !== JPTY_NO_EXIT_CODE) {
       this.exitStatus = code;
     }
@@ -301,9 +322,16 @@ class NativePseudoTerminal implements PseudoTerminal {
 /**
  * Spawns the child and returns once the PTY is ready to read.
  *
+ * `library` is the native surface, injected as a parameter like every other
+ * dependency here: a test substitutes a scripted one to reach the paths a real
+ * terminal cannot produce on Darwin, where a read failure is not producible.
+ *
  * @throws {PseudoTerminalFailure}
  */
-export function spawnPseudoTerminal(configuration: PseudoTerminalConfiguration): PseudoTerminal {
+export function spawnPseudoTerminal(
+  configuration: PseudoTerminalConfiguration,
+  library: NativePtyLibrary = native,
+): PseudoTerminal {
   const executable = cString(configuration.executable);
   const workingDirectory = cString(configuration.workingDirectory);
   const argumentVector = cStringArray(configuration.arguments);
@@ -318,7 +346,7 @@ export function spawnPseudoTerminal(configuration: PseudoTerminalConfiguration):
   // image — or died.
   const marshalled = [executable, workingDirectory, argumentVector, environmentVector, pid];
 
-  const handle = native.jpty_spawn(
+  const handle = library.jpty_spawn(
     ptr(executable),
     ptr(argumentVector.pointers),
     ptr(environmentVector.pointers),
@@ -337,7 +365,7 @@ export function spawnPseudoTerminal(configuration: PseudoTerminalConfiguration):
     throw new PseudoTerminalFailure({ kind: "couldNotAllocateTerminal", errno: 0 });
   }
 
-  const terminal = new NativePseudoTerminal(handle as PtyHandle, spawnedPid);
+  const terminal = new NativePseudoTerminal(library, handle as PtyHandle, spawnedPid);
   // `jpty_spawn` carries cells only, which is the whole of `DEFAULT_TERMINAL_SIZE`.
   // Pixel metrics cost an extra call, so only a client that actually has them
   // pays for one — and `SIGWINCH`'s default action is to discard, so a child that
