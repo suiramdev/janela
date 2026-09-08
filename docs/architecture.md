@@ -113,7 +113,7 @@ by accident.
 | `@janela/git` | Running `git`; worktree create/list/remove/safety; `.worktreeinclude` | Leak a command string above its API, or import `@janela/forge` |
 | `@janela/pty` | `PseudoTerminal`, the native reader, sizing, signals | Know about sessions or clients |
 | `@janela/db` | Prisma store, schema, migrations, repositories | Contain business rules, or let a Prisma type escape |
-| `@janela/forge` *(planned)* | Running `gh` / `glab` | Own credentials, block a request, or import `@janela/git` |
+| `@janela/forge` | Running `gh` / `glab` | Own credentials, block a request, or import `@janela/git` |
 | `@janela/terminal` | `LiveTerminal`, authoritative grid, damage tracking, repaint encoding | Be imported *through* — no emulator type leaks upward |
 | `@janela/session` | Project and session lifecycle, automation, `ShellEnvironment`, removal planning | Import a view layer, or know a socket exists |
 | `@janela/daemon` | Listener, connections, subscriptions, peer-credential checks, the frame loop | Contain product logic that belongs in `@janela/session` |

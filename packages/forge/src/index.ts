@@ -1,12 +1,11 @@
 import type { Instant, Forge, Project, Session } from "@janela/core";
 
 /**
- * `@janela/forge` — layer 3, daemon side. **Planned.**
+ * `@janela/forge` — layer 3, daemon side.
  *
- * Designed and documented, not yet implemented — the status it has had since it was
- * first designed, carried across deliberately so the shape is pinned before someone
- * needs it in a hurry. The interfaces below are the contract; the decisions behind
- * them are docs/decisions/0012-forge-integration.md.
+ * GitHub and GitLab state, read through the user's own `gh` and `glab`. The
+ * interfaces below are the contract; the decisions behind them are
+ * docs/decisions/0012-forge-integration.md.
  *
  * Three properties are load-bearing and none of them is about GitHub:
  *
@@ -78,11 +77,4 @@ export interface ForgeServing {
   }): Promise<string | undefined>;
 }
 
-// TODO: Implement `ForgeServing` over `@janela/support/process`, invoking
-// `gh pr view --json …` and `glab mr view --output json`. Log the subcommand and
-// the failure class, never the JSON — it carries branch names and private
-// repository names. See docs/decisions/0012-forge-integration.md.
-//
-// This is a *new* seam, not one of the 26 the migration carried across: the forge
-// package was planned and empty, so there was nothing to carry. Recorded here so
-// docs/MIGRATION_MAP.md can say so.
+export * from "./forge-service.ts";
