@@ -139,12 +139,19 @@ export interface FakeTerminalOptions {
   readonly full?: Uint8Array;
   /** Thrown by both encoders, to exercise the loop's lost-terminal path. */
   readonly throwOnRepaint?: Error;
+  /**
+   * Thrown by `drain`, which is what a real terminal does when its descriptor is
+   * lost — `PseudoTerminalFailure` with `detail.kind === "readFailed"` (#17).
+   */
+  readonly throwOnDrain?: Error;
 }
 
 export interface FakeTerminal extends LiveTerminal {
   /** Client ids passed to `repaintFor`, in call order. */
   readonly repaintCalls: string[];
   readonly fullRepaintCalls: string[];
+  /** How often the frame loop fed this terminal. One per frame, or the loop is wrong. */
+  readonly drainCalls: { count: number };
   readonly attached: Map<string, GridSize>;
   readonly sendCalls: Uint8Array[];
   readonly stopCalls: { count: number };
@@ -157,6 +164,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
   const full = options.full ?? bytes("F");
   const repaintCalls: string[] = [];
   const fullRepaintCalls: string[] = [];
+  const drainCalls = { count: 0 };
   const attached = new Map<string, GridSize>();
   const sendCalls: Uint8Array[] = [];
   const stopCalls = { count: 0 };
@@ -177,6 +185,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     displayTitle: "fake",
     repaintCalls,
     fullRepaintCalls,
+    drainCalls,
     attached,
     sendCalls,
     stopCalls,
@@ -186,6 +195,10 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
       return Promise.resolve();
     },
     restart: () => Promise.resolve(),
+    drain: () => {
+      drainCalls.count += 1;
+      if (options.throwOnDrain !== undefined) throw options.throwOnDrain;
+    },
     send: (input) => {
       sendCalls.push(Uint8Array.from(input));
     },

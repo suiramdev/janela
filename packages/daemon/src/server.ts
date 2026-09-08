@@ -293,7 +293,7 @@ function errorName(error: unknown): string {
 }
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, log } = options;
+  const { terminals, sessions, log } = options;
   const dispatch = options.dispatch ?? unimplementedDispatch;
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
@@ -303,8 +303,24 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
   const open = new Set<Connection>();
   let counter = 0;
 
+  /**
+   * Every terminal the daemon holds, for the frame loop's per-frame drain.
+   *
+   * The sessions are the index because `TerminalRegistry` has no iterator: it
+   * answers `get`, `inSession` and `liveCount`, and the loop needs the terminals
+   * nobody is watching too — those are exactly the ones whose child blocks if
+   * they stop being drained. Replace this with a registry iterator the day
+   * `@janela/terminal` grows one; the loop only asks for an iterable.
+   */
+  const everyTerminal = function* (): Iterable<LiveTerminal> {
+    for (const session of sessions.sessions) {
+      yield* terminals.inSession(session.id);
+    }
+  };
+
   const frameLoop = createFrameLoop({
     terminals,
+    liveTerminals: everyTerminal,
     log,
     hasRoom: (client) => {
       const connection = connections.get(client);
@@ -573,6 +589,11 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
               type: message.type,
               error: errorName(error),
             });
+          })
+          // A request is one of the two ways a terminal becomes live, and the
+          // loop drops its timer when there is nothing left to drain.
+          .finally(() => {
+            frameLoop.wake();
           });
         continue;
       }
@@ -664,6 +685,9 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     },
 
     publish(update: StateUpdate): Promise<void> {
+      // The other way a terminal becomes live is automation, which reaches the
+      // daemon as a state change rather than a request.
+      frameLoop.wake();
       // Encoded once, however many subscribers there are.
       const frame = encodeDaemonMessage({ type: "state", update });
       // Deleting from a `Map` while iterating it is defined, which matters here:
@@ -680,10 +704,10 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
      * A partial update: the empty collections mean "unchanged", and a client
      * merges by id rather than replacing its world.
      */
-    sessionsChanged(sessions: readonly Session[]): Promise<void> {
+    sessionsChanged(changed: readonly Session[]): Promise<void> {
       return server.publish({
         projects: [],
-        sessions,
+        sessions: changed,
         terminalStates: {},
         isFullSnapshot: false,
       });

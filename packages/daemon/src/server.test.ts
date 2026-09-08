@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { GridSize, TerminalID } from "@janela/core";
+import type { GridSize, Session, TerminalID } from "@janela/core";
 import {
   FrameKind,
   MINIMUM_SUPPORTED_VERSION,
@@ -16,6 +16,7 @@ import {
   type RequestID,
 } from "@janela/protocol";
 
+import { FRAME_INTERVAL_MS } from "./frame-loop.ts";
 import {
   CONTROL_QUEUE_CAPACITY,
   DAEMON_CLIENT_NAME,
@@ -162,7 +163,13 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((active) => active.stop()));
 });
 
-function fixture(options: { readonly terminals?: readonly FakeTerminal[] } = {}): Fixture {
+function fixture(
+  options: {
+    readonly terminals?: readonly FakeTerminal[];
+    /** Sessions the daemon enumerates terminals through, for the per-frame drain. */
+    readonly sessions?: readonly Session[];
+  } = {},
+): Fixture {
   const registry = fakeRegistry(options.terminals ?? []);
   const dispatch = fakeDispatch(registry);
   const { logger, records, with: withMessage } = recordingLogger();
@@ -170,7 +177,7 @@ function fixture(options: { readonly terminals?: readonly FakeTerminal[] } = {})
   const controller = new AbortController();
 
   const server = createDaemonServer({
-    sessions: fakeSessions(),
+    sessions: fakeSessions(options.sessions ?? []),
     projects: fakeProjects(),
     terminals: registry,
     log: logger,
@@ -645,6 +652,18 @@ describe("attachment and output", () => {
     expect(daemon.server.connectionCount).toBe(2);
     expect(terminal.stopCalls.count).toBe(0);
   });
+
+  test("a terminal nobody is watching is still drained, on the daemon's own frame", async () => {
+    const terminal = fakeTerminal(terminalID());
+    // The daemon reaches its terminals through the sessions, because the registry
+    // has no iterator. No client ever connects in this test.
+    const daemon = fixture({ terminals: [terminal], sessions: [fakeSession("session")] });
+
+    await until(() => terminal.drainCalls.count > 1, "the unwatched terminal to be fed");
+    expect(daemon.server.connectionCount).toBe(0);
+    expect(terminal.repaintCalls).toEqual([]);
+    expect(terminal.stopCalls.count).toBe(0);
+  });
 });
 
 describe("lifecycle", () => {
@@ -672,5 +691,24 @@ describe("lifecycle", () => {
     await until(() => first.ended() && second.ended(), "both clients to see the close");
     expect(daemon.server.connectionCount).toBe(0);
     expect(daemon.with("daemon stopping")).toHaveLength(2);
+  });
+
+  test("a terminal that starts after the loop went to sleep is still fed", async () => {
+    const terminal = fakeTerminal(terminalID());
+    // The session appears when the terminal does, which is the order the session
+    // layer creates them in.
+    const sessions: Session[] = [];
+    const daemon = fixture({ sessions });
+
+    // Nothing live and nobody attached: the loop drops its timer after one frame.
+    await Bun.sleep(FRAME_INTERVAL_MS * 8);
+    daemon.registry.add(terminal);
+    sessions.push(fakeSession("session"));
+    await Bun.sleep(FRAME_INTERVAL_MS * 8);
+    expect(terminal.drainCalls.count).toBe(0);
+
+    // A state change is how automation-started terminals reach the daemon.
+    await daemon.server.projectsChanged([]);
+    await until(() => terminal.drainCalls.count > 1, "the woken loop to feed it");
   });
 });
