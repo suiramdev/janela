@@ -184,6 +184,47 @@
       }
     },
     {
+      // ---- The one exception, and the reason `@janela/support/process` is a
+      // separate subpath: `node:child_process` is gated *to* this package, not
+      // away from it (scripts/layers.ts, ADR 0007). One subprocess runner, so
+      // @janela/git and @janela/forge do not each spawn their own. Everything
+      // else the shared layer may not reach for still applies.
+      "files": ["packages/support/src/process.ts", "packages/support/src/process.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "react",
+                  "react/*",
+                  "react-dom",
+                  "@tauri-apps/*",
+                  "@xterm/*",
+                  "@prisma/client",
+                  "bun:ffi",
+                  "bun:sqlite",
+                  "@janela/git",
+                  "@janela/pty",
+                  "@janela/db",
+                  "@janela/forge",
+                  "@janela/terminal",
+                  "@janela/session",
+                  "@janela/daemon",
+                  "@janela/client",
+                  "@janela/design",
+                  "@janela/terminal-ui",
+                  "@janela/ui"
+                ],
+                "message": "@janela/support is the vocabulary both processes share. `node:child_process` is the single exception, here, because the one subprocess runner lives in this file."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // ---- AGENTS.md rule 4: git and forge are peers and must never import
       // each other. Shared subprocess plumbing lives in @janela/support/process.
       "files": ["packages/git/**"],

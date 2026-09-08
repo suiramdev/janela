@@ -1,6 +1,8 @@
+import { realpath, rm, stat } from "node:fs/promises";
+
 import type { AbsolutePath } from "@janela/core";
 
-import type { GitRunning } from "./git-runner.ts";
+import { GitFailure, type GitRunning } from "./git-runner.ts";
 
 /** One entry from `git worktree list --porcelain`. */
 export interface GitWorktree {
@@ -77,8 +79,120 @@ export interface WorktreeRemovalSafety {
 }
 
 export function isTriviallySafe(safety: WorktreeRemovalSafety): boolean {
-  void safety;
-  throw new Error(`not implemented: isTriviallySafe`);
+  return (
+    !safety.hasUncommittedChanges &&
+    !safety.hasUntrackedFiles &&
+    !safety.hasUnpushedCommits &&
+    !safety.isLocked &&
+    !safety.hasRunningSessions
+  );
+}
+
+/**
+ * Parses `git worktree list --porcelain -z`.
+ *
+ * `-z` and not plain `--porcelain`, because a worktree path may contain a
+ * newline and a line-splitting parser would then invent worktrees. Records are
+ * separated by two NULs, attributes within a record by one.
+ *
+ * Unknown attributes are ignored: the porcelain format is documented as
+ * append-only, so a newer git adding a line must not break an older reader.
+ */
+function parseWorktreeList(output: string): GitWorktree[] {
+  const worktrees: GitWorktree[] = [];
+
+  for (const record of output.split("\0\0")) {
+    if (record === "") continue;
+
+    let path: string | undefined;
+    let head: string | undefined;
+    let branch: string | undefined;
+    let lockReason: string | undefined;
+    let isBare = false;
+    let isDetached = false;
+    let isPrunable = false;
+
+    for (const line of record.split("\0")) {
+      if (line === "") continue;
+      const separator = line.indexOf(" ");
+      const attribute = separator === -1 ? line : line.slice(0, separator);
+      const value = separator === -1 ? undefined : line.slice(separator + 1);
+
+      switch (attribute) {
+        case "worktree":
+          path = value;
+          break;
+        case "HEAD":
+          head = value;
+          break;
+        case "branch":
+          // The short name: what the user typed, and what `createWorktree`
+          // takes. This is the one place that decides it.
+          branch = value?.replace(/^refs\/heads\//, "");
+          break;
+        case "detached":
+          isDetached = true;
+          break;
+        case "bare":
+          isBare = true;
+          break;
+        case "locked":
+          // A lock with no reason is still a lock, so the test for one is
+          // `lockReason !== undefined` and never its emptiness.
+          lockReason = value ?? "";
+          break;
+        case "prunable":
+          isPrunable = true;
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (path === undefined) continue;
+    worktrees.push({
+      // git prints absolute, canonical paths; there is nothing left to resolve.
+      path: path as AbsolutePath,
+      ...(head === undefined ? {} : { head }),
+      ...(branch === undefined ? {} : { branch }),
+      ...(lockReason === undefined ? {} : { lockReason }),
+      isBare,
+      isDetached,
+      isPrunable,
+    });
+  }
+
+  return worktrees;
+}
+
+/**
+ * Parses `git status --porcelain=v1 -z` into the two answers we need.
+ *
+ * The subtlety `-z` introduces: a rename or copy entry is *two* NUL-terminated
+ * tokens, `XY <new>` followed by the bare original path. Reading that second
+ * token as an entry of its own would take its first two characters for a status
+ * code and report nonsense.
+ */
+function parseStatus(output: string): { modified: boolean; untracked: boolean } {
+  const tokens = output.split("\0");
+  let modified = false;
+  let untracked = false;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const entry = tokens[index];
+    if (entry === undefined || entry === "") continue;
+
+    const code = entry.slice(0, 2);
+    if (code[0] === "R" || code[0] === "C" || code[1] === "R" || code[1] === "C") {
+      index += 1; // the rename/copy source, not an entry
+    }
+
+    if (code === "??") untracked = true;
+    // `!!` is an ignored file, which only appears with --ignored and is not work.
+    else if (code !== "!!") modified = true;
+  }
+
+  return { modified, untracked };
 }
 
 /**
@@ -89,22 +203,119 @@ export function isTriviallySafe(safety: WorktreeRemovalSafety): boolean {
  * of truth, and we re-read rather than try to stay in sync with it.
  */
 export function worktreeService(git: GitRunning): WorktreeServing {
-  void git;
-  throw new Error(`not implemented: worktreeService`);
+  const worktrees = async (repository: AbsolutePath): Promise<readonly GitWorktree[]> =>
+    parseWorktreeList(await git.run(["worktree", "list", "--porcelain", "-z"], repository));
+
+  return {
+    worktrees,
+
+    async createWorktree({ repository, directory, branch, startPoint }): Promise<GitWorktree> {
+      const start = startPoint === undefined ? [] : [startPoint];
+
+      if (branch === undefined) {
+        // `--detach` is not optional: a bare `worktree add <path>` invents a
+        // branch named after the directory, which is not what "no branch" means.
+        await git.run(["worktree", "add", "--detach", directory, ...start], repository);
+      } else {
+        const existing = await git.probe(
+          ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
+          repository,
+        );
+        if (existing.succeeded) {
+          // Checked out, not created: `add -b <existing>` exits non-zero, and the
+          // contract says an existing branch is checked out.
+          await git.run(["worktree", "add", directory, branch], repository);
+        } else {
+          await git.run(["worktree", "add", "-b", branch, directory, ...start], repository);
+        }
+      }
+
+      // Re-read rather than construct: the returned value is git's view, which
+      // is the only one that stays true. `realpath` because git canonicalises
+      // the path it lists (on macOS `/var/…` becomes `/private/var/…`).
+      const created = await realpath(directory);
+      const listed = (await worktrees(repository)).find((entry) => entry.path === created);
+      if (listed === undefined) {
+        // An invariant violation rather than a git error, reported as a git
+        // failure so it travels the caller's existing error path.
+        throw new GitFailure("worktree list", 0, `git did not list a worktree at ${directory}`);
+      }
+      return listed;
+    },
+
+    /**
+     * `hasRunningSessions` is always `false` here: git cannot know what is live.
+     * `@janela/session` fills it in, and it is the only layer that can.
+     */
+    async removalSafety(worktree: GitWorktree): Promise<WorktreeRemovalSafety> {
+      const isLocked = worktree.lockReason !== undefined;
+
+      if (worktree.isPrunable) {
+        // The directory is gone, so there is nothing to lose and nothing to run
+        // git against — `status` in a missing directory only fails.
+        return {
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+          hasUnpushedCommits: false,
+          isLocked,
+          hasRunningSessions: false,
+        };
+      }
+
+      const status = parseStatus(await git.run(["status", "--porcelain=v1", "-z"], worktree.path));
+
+      // With an upstream, "unpushed" is exactly what the upstream lacks.
+      const ahead = await git.probe(
+        ["log", "--format=%H", "-n", "1", "@{upstream}..HEAD"],
+        worktree.path,
+      );
+      let hasUnpushedCommits: boolean;
+      if (ahead.succeeded) {
+        hasUnpushedCommits = ahead.standardOutput.trim() !== "";
+      } else {
+        // No upstream configured (git exits 128). Then the honest answer is
+        // "commits no remote has", and for a detached HEAD also "commits no
+        // local branch has" — those survive the worktree's removal. A
+        // repository with no remotes therefore reports its commits as unpushed,
+        // which is true: nothing else holds them.
+        const unreachable = await git.run(
+          [
+            "log",
+            "--format=%H",
+            "-n",
+            "1",
+            "HEAD",
+            "--not",
+            "--remotes",
+            ...(worktree.isDetached ? ["--branches"] : []),
+          ],
+          worktree.path,
+        );
+        hasUnpushedCommits = unreachable.trim() !== "";
+      }
+
+      return {
+        hasUncommittedChanges: status.modified,
+        hasUntrackedFiles: status.untracked,
+        hasUnpushedCommits,
+        isLocked,
+        hasRunningSessions: false,
+      };
+    },
+
+    async removeWorktree({ directory, repository, force }): Promise<void> {
+      // A locked worktree fails here, and that is the point: git demands a second
+      // `--force` for one, and we never send it. Unlocking is the user's call.
+      await git.run(["worktree", "remove", ...(force ? ["--force"] : []), directory], repository);
+
+      // git leaves the directory behind in some cases (a submodule, an unmerged
+      // file it declined to delete). Removing it is what the user asked for.
+      try {
+        await stat(directory);
+      } catch {
+        return; // already gone, which is the normal case
+      }
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
 }
-
-// The four seams below were `TODO:` comments on the previous `WorktreeService`
-// methods. They stay attached to the same operations.
-
-// TODO: worktrees() — `git worktree list --porcelain -z` and parse the
-// NUL-delimited records. Use -z because worktree paths can contain newlines.
-
-// TODO: createWorktree() — `git worktree add [-b <branch>] <path> [<start-point>]`,
-// then re-read the list so the returned value is git's view rather than ours.
-
-// TODO: removalSafety() — `git status --porcelain`, `git log @{upstream}..HEAD`,
-// plus the lock state already carried on `worktree`. `hasRunningSessions` is not
-// git's answer: it is filled in by @janela/session, which is the only place that
-// knows what is live.
-
-// TODO: removeWorktree() — `git worktree remove [--force] <path>`.

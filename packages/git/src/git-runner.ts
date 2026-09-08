@@ -1,5 +1,6 @@
 import type { AbsolutePath } from "@janela/core";
 import { UserFacingError } from "@janela/support";
+import { processRunner, type ProcessRunning } from "@janela/support/process";
 
 /**
  * Runs `git` as a subprocess and returns its output.
@@ -67,14 +68,135 @@ export class GitFailure extends UserFacingError {
   }
 }
 
+export interface GitRunnerOptions {
+  /**
+   * Absolute path to the git binary. When absent it is resolved once, lazily,
+   * with `which` over `environment.PATH`.
+   */
+  readonly executable?: string;
+  /**
+   * The complete environment every git child sees, and the `PATH` git is
+   * resolved from. The daemon passes the login shell's captured environment so
+   * Homebrew's git wins over `/usr/bin/git`; defaults to this process's own.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /** Injected for tests; defaults to `processRunner()`. */
+  readonly processes?: ProcessRunning;
+  /** Per-invocation limit, because git in a daemon is never watched. */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * git is expected to be present. It is not something we can install for the
+ * user, and it is not something to report per-invocation.
+ */
+export class GitNotFound extends UserFacingError {
+  override readonly summary = "git was not found.";
+
+  constructor() {
+    super("git not found on PATH", {
+      recoverySuggestion: "Install git (for example with Homebrew) and restart Janela.",
+    });
+  }
+}
+
+export const DEFAULT_GIT_TIMEOUT_MS = 120_000;
+
+/**
+ * Commands that only read. For these the child gets `GIT_OPTIONAL_LOCKS=0`, so a
+ * background refresh never takes `index.lock` out from under the user's own git.
+ *
+ * Matched on the leading tokens rather than "the first token", because
+ * `worktree list` reads and `worktree add` does not.
+ */
+const READ_ONLY_COMMANDS: readonly (readonly string[])[] = [
+  ["status"],
+  ["log"],
+  ["diff"],
+  ["rev-parse"],
+  ["ls-files"],
+  ["show"],
+  ["for-each-ref"],
+  ["worktree", "list"],
+];
+
+function isReadOnly(args: readonly string[]): boolean {
+  return READ_ONLY_COMMANDS.some((prefix) => prefix.every((token, index) => args[index] === token));
+}
+
+/**
+ * What to call this invocation when it fails. `GitFailure.subcommand` reaches a
+ * person, so it is the command the user would recognise ("worktree add"), not
+ * the whole argv — which would carry paths and branch names into a headline.
+ */
+function subcommandOf(args: readonly string[]): string {
+  const index = args.findIndex((token) => !token.startsWith("-"));
+  const first = index === -1 ? undefined : args[index];
+  if (first === undefined) return "git";
+  if (first !== "worktree") return first;
+  const second = args[index + 1];
+  return second === undefined ? first : `${first} ${second}`;
+}
+
 /**
  * The production `GitRunning`.
  *
  * Resolves the user's `git` (Homebrew's, usually) rather than hardcoding
  * `/usr/bin/git`, because the system git is older and lacks some worktree flags.
- * Resolved once at startup from the login-shell `PATH`.
+ * Resolution happens once, on first use, and is remembered — including its
+ * failure, so a machine without git does not pay for a `PATH` walk per call.
  */
-export function gitRunner(options?: { readonly executable?: string }): GitRunning {
-  void options;
-  throw new Error(`not implemented: gitRunner`);
+export function gitRunner(options?: GitRunnerOptions): GitRunning {
+  const processes = options?.processes ?? processRunner();
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS;
+  const environment: Readonly<Record<string, string>> =
+    options?.environment ??
+    Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    );
+
+  const configured = options?.executable;
+  let resolving: Promise<string> | undefined;
+  const executable = (): Promise<string> => {
+    resolving ??= (async () => {
+      if (configured !== undefined) return configured;
+      const found = await processes.which("git", environment["PATH"] ?? "/usr/bin:/bin");
+      if (found === undefined) throw new GitNotFound();
+      return found;
+    })();
+    return resolving;
+  };
+
+  const probe = async (args: readonly string[], directory: AbsolutePath): Promise<GitOutcome> => {
+    const outcome = await processes.run({
+      executable: await executable(),
+      // `-C` on every invocation; we never `chdir`, because the daemon runs one
+      // process for every repository the user has open.
+      arguments: ["-C", directory, ...args],
+      workingDirectory: directory,
+      environment: isReadOnly(args) ? { ...environment, GIT_OPTIONAL_LOCKS: "0" } : environment,
+      timeoutMs,
+    });
+    // `timedOut` is dropped deliberately: a killed git is a failed git, and the
+    // caller's recovery is the same either way.
+    return {
+      standardOutput: outcome.standardOutput,
+      standardError: outcome.standardError,
+      exitCode: outcome.exitCode,
+      succeeded: outcome.succeeded,
+    };
+  };
+
+  return {
+    async run(args: readonly string[], directory: AbsolutePath): Promise<string> {
+      const outcome = await probe(args, directory);
+      if (!outcome.succeeded) {
+        throw new GitFailure(subcommandOf(args), outcome.exitCode, outcome.standardError.trimEnd());
+      }
+      return outcome.standardOutput;
+    },
+    probe,
+  };
 }
