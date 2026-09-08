@@ -91,7 +91,7 @@ describe("gated modules", () => {
   });
 
   test("the database has exactly one door", () => {
-    for (const pattern of ["bun:sqlite", "@prisma/client"]) {
+    for (const pattern of ["bun:sqlite", "@prisma/client", "@prisma/driver-adapter-utils"]) {
       expect(GATED_MODULES.find((g) => g.pattern === pattern)?.allowed).toEqual(["@janela/db"]);
     }
   });
