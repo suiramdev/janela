@@ -1,15 +1,26 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Instant, SessionID, TerminalID } from "@janela/core";
+import type { Instant, Session, SessionID, TerminalID } from "@janela/core";
 import type { AttentionKind, AttentionSignal } from "@janela/protocol";
 
 import {
   COALESCING_WINDOW_SECONDS,
   LONG_RUNNING_THRESHOLD_SECONDS,
   createAttentionPolicy,
+  routeAttention,
   type AttentionContext,
+  type AttentionDelivering,
+  type AttentionRoutingOptions,
+  type AttentionSource,
 } from "./attention-policy.ts";
-import { terminalID } from "./test-fakes.ts";
+import { createStores } from "./stores.ts";
+import {
+  fakeSession,
+  fakeTerminalDescriptor,
+  recordingLogger,
+  snapshot,
+  terminalID,
+} from "./test-fakes.ts";
 
 const SESSION = "s1" as SessionID;
 const OTHER_SESSION = "s2" as SessionID;
@@ -194,5 +205,271 @@ describe("forgetSession", () => {
         NOBODY_LOOKING,
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * A session with names worth asserting on: `fakeSession` names everything after
+ * its id, which cannot tell "the session name reached the notification" apart from
+ * "the terminal title did".
+ */
+function named(
+  id: string,
+  name: string,
+  terminals: readonly (readonly [TerminalID, string])[],
+): Session {
+  return {
+    ...fakeSession(id),
+    name,
+    terminals: terminals.map(([terminal, title]) => ({
+      ...fakeTerminalDescriptor(terminal),
+      title,
+    })),
+  };
+}
+
+interface Delivered {
+  readonly sessionID: SessionID;
+  readonly terminalID: TerminalID;
+  readonly sessionName: string;
+  readonly terminalTitle: string;
+  readonly kind: AttentionKind;
+}
+
+interface RecordingDelivery extends AttentionDelivering {
+  readonly delivered: readonly Delivered[];
+  readonly withdrawn: readonly SessionID[];
+  /** Makes the next `deliver` reject, the way a notification API that is down does. */
+  failNext(error: Error): void;
+}
+
+function recordingDelivery(): RecordingDelivery {
+  const delivered: Delivered[] = [];
+  const withdrawn: SessionID[] = [];
+  let failure: Error | undefined;
+
+  return {
+    delivered,
+    withdrawn,
+    failNext(error: Error): void {
+      failure = error;
+    },
+    deliver(input): Promise<void> {
+      if (failure !== undefined) {
+        const thrown = failure;
+        failure = undefined;
+        return Promise.reject(thrown);
+      }
+      delivered.push({
+        sessionID: input.signal.sessionID,
+        terminalID: input.signal.terminalID,
+        sessionName: input.sessionName,
+        terminalTitle: input.terminalTitle,
+        kind: input.signal.kind,
+      });
+      return Promise.resolve();
+    },
+    withdraw(id: SessionID): Promise<void> {
+      withdrawn.push(id);
+      return Promise.resolve();
+    },
+  };
+}
+
+/** The daemon end of the routing, as one method. */
+function emitter(): AttentionSource & { emit(emitted: AttentionSignal): void } {
+  const handlers = new Set<(emitted: AttentionSignal) => void>();
+  return {
+    onAttention(handler): () => void {
+      handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    },
+    emit(emitted: AttentionSignal): void {
+      for (const handler of handlers) handler(emitted);
+    },
+  };
+}
+
+/**
+ * The whole graph, wired the way `apps/desktop` wires it: real stores, the real
+ * policy, a recording deliverer, and the two facts only a window holds.
+ */
+function routed(
+  overrides: Partial<
+    Pick<AttentionRoutingOptions, "isApplicationActive" | "focusedTerminalID">
+  > = {},
+) {
+  const stores = createStores();
+  const source = emitter();
+  const delivery = recordingDelivery();
+  const logger = recordingLogger();
+
+  const routing = routeAttention({
+    source,
+    sessions: stores.sessions,
+    policy: createAttentionPolicy(),
+    delivery,
+    isApplicationActive: overrides.isApplicationActive ?? ((): boolean => false),
+    focusedTerminalID: overrides.focusedTerminalID ?? ((): TerminalID | undefined => undefined),
+    log: logger.log,
+  });
+
+  return { ...stores, source, delivery, logger, routing };
+}
+
+describe("routing a signal to delivery", () => {
+  test("an unwatched terminal's notification reaches delivery, named", () => {
+    const terminal = terminalID();
+    const { mirror, source, delivery } = routed();
+    mirror.apply(snapshot([named("s1", "api server", [[terminal, "claude"]])]));
+
+    source.emit(signal(notification, { terminal, session: "s1" as SessionID }));
+
+    expect(delivery.delivered).toEqual([
+      {
+        sessionID: "s1" as SessionID,
+        terminalID: terminal,
+        sessionName: "api server",
+        terminalTitle: "claude",
+        kind: notification,
+      },
+    ]);
+  });
+
+  test("the terminal the user is staring at is not interrupted, and its badge is not touched", () => {
+    const terminal = terminalID();
+    const { mirror, sessions, source, delivery } = routed({
+      isApplicationActive: () => true,
+      focusedTerminalID: () => terminal,
+    });
+    mirror.apply(
+      snapshot([named("s1", "api server", [[terminal, "claude"]])], [], {
+        [terminal]: { kind: "needsAttention" },
+      }),
+    );
+    sessions.selection = "s1" as SessionID;
+
+    source.emit(signal(notification, { terminal, session: "s1" as SessionID }));
+
+    expect(delivery.delivered).toEqual([]);
+    // The in-app channel is the daemon's `TerminalState`, and the policy has no
+    // vote on it: the sidebar is the primary channel and needs no permission.
+    expect(sessions.terminalStates[terminal]).toEqual({ kind: "needsAttention" });
+    expect(sessions.isRunning("s1" as SessionID)).toBe(true);
+  });
+
+  test("a signal for a session this mirror does not hold delivers nothing", () => {
+    const terminal = terminalID();
+    const { mirror, source, delivery } = routed();
+    mirror.apply(snapshot([named("s1", "api server", [[terminal, "claude"]])]));
+
+    source.emit(signal(notification, { terminal: terminalID(), session: "ghost" as SessionID }));
+    // Known session, unknown terminal: the click would land nowhere either.
+    source.emit(signal(notification, { terminal: terminalID(), session: "s1" as SessionID }));
+
+    expect(delivery.delivered).toEqual([]);
+  });
+
+  test("a rejecting deliverer costs one log line and not the next signal", async () => {
+    const first = terminalID();
+    const second = terminalID();
+    const { mirror, source, delivery, logger } = routed();
+    mirror.apply(
+      snapshot([
+        named("s1", "api server", [
+          [first, "claude"],
+          [second, "dev"],
+        ]),
+      ]),
+    );
+
+    delivery.failNext(new RangeError("notification centre said no"));
+    source.emit(signal(notification, { terminal: first, session: "s1" as SessionID }));
+    source.emit(signal(notification, { terminal: second, session: "s1" as SessionID }));
+    await Promise.resolve();
+
+    expect(delivery.delivered.map((entry) => entry.terminalID)).toEqual([second]);
+    expect(logger.with("attention delivery failed")).toEqual([
+      { level: "warning", message: "attention delivery failed", fields: { error: "RangeError" } },
+    ]);
+  });
+});
+
+describe("routing a removal to withdrawal", () => {
+  test("a session leaving the mirror is withdrawn and forgotten", () => {
+    const mine = terminalID();
+    const theirs = terminalID();
+    const { mirror, source, delivery } = routed();
+    const both = [
+      named("s1", "api server", [[mine, "claude"]]),
+      named("s2", "web", [[theirs, "vite"]]),
+    ];
+    mirror.apply(snapshot(both));
+
+    source.emit(signal(notification, { terminal: mine, session: "s1" as SessionID, seconds: 0 }));
+    mirror.apply(snapshot([named("s2", "web", [[theirs, "vite"]])]));
+
+    expect(delivery.withdrawn).toEqual(["s1" as SessionID]);
+
+    // Back, inside the coalescing window, and delivered again: the policy's entry
+    // for that terminal went with the session rather than suppressing this.
+    mirror.apply(snapshot(both));
+    source.emit(signal(notification, { terminal: mine, session: "s1" as SessionID, seconds: 1 }));
+
+    expect(delivery.delivered).toHaveLength(2);
+  });
+
+  test("a session that merely changed is not withdrawn", () => {
+    const terminal = terminalID();
+    const { mirror, sessions, delivery } = routed();
+    mirror.apply(snapshot([named("s1", "api server", [[terminal, "claude"]])]));
+
+    mirror.apply(snapshot([named("s1", "renamed", [[terminal, "claude"]])]));
+    sessions.selection = "s1" as SessionID;
+
+    expect(delivery.withdrawn).toEqual([]);
+  });
+});
+
+describe("the body", () => {
+  test("reaches the deliverer and nothing else", async () => {
+    const terminal = terminalID();
+    const secret: AttentionKind = {
+      kind: "notification",
+      title: "TITLE-b9d1f2",
+      body: "BODY-4c7e01",
+    };
+    const { mirror, sessions, source, delivery, logger } = routed();
+    mirror.apply(snapshot([named("s1", "api server", [[terminal, "claude"]])]));
+
+    source.emit(signal(secret, { terminal, session: "s1" as SessionID }));
+    // The paths that refuse must not log it either: an unmirrored terminal, and a
+    // deliverer that failed while holding it.
+    source.emit(signal(secret, { terminal: terminalID(), session: "s1" as SessionID }));
+    delivery.failNext(new Error("down"));
+    source.emit(signal(secret, { terminal, session: "s1" as SessionID, seconds: 30 }));
+    await Promise.resolve();
+
+    expect(delivery.delivered.map((entry) => entry.kind)).toEqual([secret]);
+    expect(logger.text()).not.toContain("BODY-4c7e01");
+    expect(logger.text()).not.toContain("TITLE-b9d1f2");
+    expect(JSON.stringify(sessions.sessions)).not.toContain("BODY-4c7e01");
+  });
+});
+
+describe("stop", () => {
+  test("ends both subscriptions", () => {
+    const terminal = terminalID();
+    const { mirror, source, delivery, routing } = routed();
+    mirror.apply(snapshot([named("s1", "api server", [[terminal, "claude"]])]));
+
+    routing.stop();
+    source.emit(signal(notification, { terminal, session: "s1" as SessionID }));
+    mirror.apply(snapshot([]));
+
+    expect(delivery.delivered).toEqual([]);
+    expect(delivery.withdrawn).toEqual([]);
   });
 });
