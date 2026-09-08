@@ -28,7 +28,7 @@ ADRs handle it.
 | `JanelaGit` | `@janela/git` | 3 | daemon | |
 | `JanelaPTY` | `@janela/pty` | 3 | daemon | Gained `native/`, a Rust cdylib. The only `bun:ffi` importer |
 | `JanelaPersistence` | `@janela/db` | 3 | daemon | Renamed. GRDB → Prisma over `bun:sqlite` |
-| `JanelaForge` *(planned)* | `@janela/forge` *(planned)* | 3 | daemon | Still planned, now with its interfaces written down |
+| `JanelaForge` *(planned)* | `@janela/forge` | 3 | daemon | Was never written in Swift; implemented here over the user's own `gh` and `glab` (#33) |
 | `JanelaTerminal` | `@janela/terminal` | 4 | daemon | SwiftTerm → `@xterm/headless` |
 | `JanelaSession` | `@janela/session` | 5 | daemon | |
 | `JanelaDaemon` | `@janela/daemon` | 6 | daemon | Gained `frame-loop.ts`, which was implicit before |
@@ -179,7 +179,9 @@ Every `TODO:` in the Swift tree, and where it now lives. None was dropped.
 Seams **added** by the migration, which are not in the 26 and are marked as new where
 they live: the PTY's native `lib.rs`, the `bun:ffi` bindings, the Prisma driver
 adapter, the reusable controls in `@janela/design`, the automation runner, the frame
-loop, the Tauri IPC transport, and the Rust shell's window/menu/bridge/sidecar.
+loop, the Tauri IPC transport, the Rust shell's window/menu/bridge/sidecar, and
+`@janela/forge`'s CLI reader — the forge package was planned and empty in Swift, so
+there was nothing to carry across.
 
 ### Seam 14 is the one that got harder
 

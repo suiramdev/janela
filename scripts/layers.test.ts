@@ -143,9 +143,7 @@ describe("the manifest is complete", () => {
     expect([...byName.keys()].toSorted()).toEqual([...expected].toSorted());
   });
 
-  test("only @janela/forge is planned", () => {
-    expect(PACKAGES.filter((p: PackageSpec) => p.planned === true).map((p) => p.name)).toEqual([
-      "@janela/forge",
-    ]);
+  test("nothing is planned any more", () => {
+    expect(PACKAGES.filter((p: PackageSpec) => p.planned === true)).toEqual([]);
   });
 });

@@ -25,6 +25,7 @@ import {
   worktreeOf,
 } from "@janela/core";
 import type { LaunchProfileRepository, SessionRepository } from "@janela/db";
+import { PullRequestUnavailable, type ForgeServing } from "@janela/forge";
 import type {
   GitWorktree,
   WorktreeIncluding,
@@ -205,6 +206,8 @@ export interface SessionServiceDependencies {
   readonly automation?: AutomationRunning;
   /** The terminal-creation seam. Production passes nothing. */
   readonly createTerminal?: typeof createLiveTerminal;
+  /** Pull-request lookups. Absent means `fromPullRequest` is refused. */
+  readonly forge?: ForgeServing;
 }
 
 export function createSessionService(
@@ -561,10 +564,30 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       }
 
       case "fromPullRequest": {
-        // Before anything is written, so there is nothing to roll back. The forge
-        // integration replaces this branch with a head-branch lookup feeding the
-        // `newWorktree` path.
-        throw new PullRequestsNotSupported();
+        const project = this.requireProject(request.projectID);
+        if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+        // An absent forge is this daemon having been composed without one, which
+        // from the user's side is the same thing as the integration not existing.
+        if (this.deps.forge === undefined) throw new PullRequestsNotSupported();
+
+        // Read-only, and never `gh pr checkout`: that would move the user's own
+        // checkout onto the pull request's branch (ADR 0012). The branch feeds
+        // the ordinary worktree path instead.
+        const branch = await this.deps.forge.pullRequestBranch({
+          project,
+          number: request.number,
+        });
+        if (branch === undefined) throw new PullRequestUnavailable(request.number);
+
+        return this.resolve({
+          kind: "newWorktree",
+          projectID: project.id,
+          branch,
+          // `worktree add -b <branch> <dir>` with no start point silently
+          // branches off HEAD when the pull request's branch was never fetched;
+          // the remote-tracking ref fails honestly instead, with git's reason.
+          startPoint: `origin/${branch}`,
+        });
       }
     }
   }
