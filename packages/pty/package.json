@@ -10,7 +10,8 @@
   "scripts": {
     "build:native": "cargo build --release --manifest-path native/Cargo.toml",
     "clean": "cargo clean --manifest-path native/Cargo.toml && rm -rf dist *.tsbuildinfo",
-    "test": "bun test",
+    "bench": "bun run bench/throughput.ts",
+    "test": "cargo test --manifest-path native/Cargo.toml && bun test",
     "typecheck": "tsc --build"
   },
   "dependencies": {

@@ -40,6 +40,25 @@
 export const READ_SIZE = 128 * 1024;
 
 /**
+ * How much one drain can move. One buffer per terminal, allocated at spawn.
+ *
+ * Derived from three measured numbers rather than picked. The emulator's curve is
+ * flat past 1 MB — 8 KB writes sustain ~6 MB/s, 64 KB ~32 MB/s, 1 MB ~140 MB/s —
+ * so a smaller buffer buys nothing but lost throughput and a larger one buys
+ * nothing at all. At the 133 MB/s the native reader sustains, one
+ * `COALESCING_WINDOW_MS` frame *is* 1.06 MB, so the buffer is sized to the thing
+ * it does. And the per-live-terminal memory budget is 8 MB for everything
+ * including scrollback (docs/performance.md § Memory), which an 8 MB drain buffer
+ * would spend on its own before the ring or a single line of history.
+ *
+ * The consequence is written into `PseudoTerminal.drain`: when the ring holds
+ * more than this, a drain takes a buffer's worth and leaves the rest. Nothing is
+ * dropped — the native side notifies its reader after every non-empty drain, so
+ * the next frame gets the next megabyte.
+ */
+export const DRAIN_BUFFER_SIZE = 1024 * 1024;
+
+/**
  * How long to accumulate before the daemon drains. One frame at 120 Hz.
  *
  * Lives here so it can be tuned against a benchmark rather than argued about.
