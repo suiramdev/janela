@@ -66,11 +66,18 @@ export const PROTOCOL_VERSION = 2;
  */
 export const MINIMUM_SUPPORTED_VERSION = 2;
 
-/** Whether this peer can talk to one advertising `other`. */
+/**
+ * Whether the two version ranges overlap: each side's current version must be at
+ * least the other's minimum.
+ *
+ * Symmetric, and deliberately not "the versions are equal": after an app update
+ * the daemon is routinely the older peer and must keep serving the terminals it
+ * is holding while it says so (ADR 0016 § Handshake).
+ */
 export function isCompatible(mine: Hello, other: Hello): boolean {
-  void mine;
-  void other;
-  throw new Error(`not implemented: isCompatible`);
+  return (
+    other.protocolVersion >= mine.minimumSupported && mine.protocolVersion >= other.minimumSupported
+  );
 }
 
 /**
