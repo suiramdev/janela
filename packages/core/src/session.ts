@@ -88,14 +88,12 @@ export type Backing =
 
 /** The worktree binding, if this session has one. */
 export function worktreeOf(session: Session): WorktreeBinding | undefined {
-  void session;
-  throw new Error(`not implemented: worktreeOf`);
+  return session.backing.kind === "worktree" ? session.backing.binding : undefined;
 }
 
 /** True when this session is standalone — no project, no automation, no forge. */
 export function isStandalone(session: Session): boolean {
-  void session;
-  throw new Error(`not implemented: isStandalone`);
+  return session.projectID === undefined;
 }
 
 /**
@@ -107,8 +105,7 @@ export function isStandalone(session: Session): boolean {
  * checkout and destroying it would be catastrophic.
  */
 export function ownsItsDirectory(session: Session): boolean {
-  void session;
-  throw new Error(`not implemented: ownsItsDirectory`);
+  return session.backing.kind === "worktree" && session.backing.binding.ownership === "managed";
 }
 
 /**

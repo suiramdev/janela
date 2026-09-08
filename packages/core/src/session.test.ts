@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { AbsolutePath, ProjectID, SessionID } from "./identifiers.ts";
 import { emptyLayout } from "./session-layout.ts";
 import type { Backing, Session, WorktreeBinding } from "./session.ts";
-import { backingViolations } from "./session.ts";
+import { backingViolations, isStandalone, ownsItsDirectory } from "./session.ts";
 
 /**
  * `identifier()` and `absolutePath()` are their own seams; these values never
@@ -71,5 +71,37 @@ describe("backingViolations", () => {
     // `WorktreeBinding.path` says a mismatch means the user moved the worktree,
     // which is something to re-resolve — not a reason to refuse to load it.
     expect(backingViolations(moved)).toEqual([]);
+  });
+});
+
+describe("ownsItsDirectory", () => {
+  test("a managed worktree is ours to delete", () => {
+    expect(ownsItsDirectory(session({ kind: "worktree", binding }, project))).toBe(true);
+  });
+
+  test("an adopted worktree existed before us and is not", () => {
+    const adopted = session(
+      { kind: "worktree", binding: { ...binding, ownership: "adopted" } },
+      project,
+    );
+    expect(ownsItsDirectory(adopted)).toBe(false);
+  });
+
+  test("a project directory is the user's checkout", () => {
+    expect(ownsItsDirectory(session({ kind: "projectDirectory" }, project))).toBe(false);
+  });
+
+  test("a folder the user picked is not ours either", () => {
+    expect(ownsItsDirectory(session({ kind: "folder" }))).toBe(false);
+  });
+});
+
+describe("isStandalone", () => {
+  test("true when there is no project", () => {
+    expect(isStandalone(session({ kind: "folder" }))).toBe(true);
+  });
+
+  test("false when there is one", () => {
+    expect(isStandalone(session({ kind: "projectDirectory" }, project))).toBe(false);
   });
 });
