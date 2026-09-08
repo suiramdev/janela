@@ -144,3 +144,55 @@ jobs:
           cp apps/daemon/janelad "$RUNNER_TEMP/isolated/"
           cd "$RUNNER_TEMP/isolated"
           ./janelad --version
+
+  # The Tauri shell. tauri-build copies `bundle.externalBin` at compile time, so
+  # the daemon sidecar is placed first; the release build embeds the Vite output.
+  shell:
+    name: Build the Tauri shell
+    runs-on: macos-15
+    needs: [check, native]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: cargo-shell-${{ runner.os }}-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-shell-${{ runner.os }}-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Generate the database client
+        run: bun run generate
+
+      - name: Build the PTY library
+        run: bun run build:native
+
+      - name: Place the daemon sidecar
+        run: bun run --cwd apps/desktop sidecar
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check
+
+      - name: Lint
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
+      - name: Build the frontend
+        run: bun run --cwd apps/desktop build
+
+      - name: Build the shell
+        run: cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol

@@ -1,0 +1,25 @@
+# Janela's Tauri shell. See docs/decisions/0023-macos-first-portable.md.
+#
+# Thin by rule: the window, the native menu, notifications, file dialogs, the
+# sidecar lifecycle and the socket bridge. Nothing here reads a protocol frame,
+# so nothing here needs a dependency that knows what a session is.
+[package]
+name = "janela"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+log = "0.4"
+tauri = { version = "2.11", features = [] }
+tauri-plugin-log = "2.9"
+tauri-plugin-notification = "2.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
