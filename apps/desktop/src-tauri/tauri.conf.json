@@ -32,7 +32,12 @@
     "icon": ["icons/icon.png"],
     "externalBin": ["binaries/janelad"],
     "macOS": {
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "15.0",
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist",
+      "files": {
+        "Library/LaunchAgents/sh.janela.janelad.plist": "launchd/sh.janela.janelad.plist"
+      }
     }
   }
 }

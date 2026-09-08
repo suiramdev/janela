@@ -9,12 +9,13 @@
   },
   "scripts": {
     "build": "vite build",
-    "bundle": "bun run sidecar && tauri build",
+    "bundle": "bun run sidecar && tauri build && bun run verify-bundle",
     "clean": "rm -rf dist src-tauri/target *.tsbuildinfo",
     "dev": "bun run sidecar && tauri dev",
     "sidecar": "bun run scripts/sidecar.ts",
     "test": "bun test",
-    "typecheck": "tsc --build"
+    "typecheck": "tsc --build",
+    "verify-bundle": "bun run scripts/verify-bundle.ts"
   },
   "dependencies": {
     "@janela/client": "workspace:*",

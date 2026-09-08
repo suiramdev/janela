@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The LaunchAgent `SMAppService` registers, sealed into Janela.app at build time.
+
+  MUST NOT be written, rewritten or generated at runtime. `smd` runs a static code
+  signature check on the whole bundle before it will load this file, so a plist added
+  or edited after signing breaks the seal and registration fails with
+  errSecCSBadResource (-67054) on every signed install — the exact failure that shows
+  up on a user's machine and never in CI. `scripts/verify-bundle.ts` asserts the file
+  is listed in the bundle's sealed resources.
+
+  No `Sockets` key, and so no socket activation: the daemon binds
+  `~/.janela/run/janelad.sock` itself in a 0700 directory it owns
+  (`packages/daemon/src/endpoint.ts`). A launchd-created socket would publish its path
+  only into the GUI login session's launchd environment, which a CLI over ssh cannot
+  read, and would tie the address to launchd — both of which ADR 0023 forbids.
+  ADR 0017, amended 2026-09-08 by #39.
+
+  No `RunAtLoad` either: registering must not start a daemon nobody asked for. A
+  client that fails to connect starts it with
+  `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>sh.janela.janelad</string>
+  <!-- Relative to the bundle root, which only SMAppService-installed agents may use.
+       Tauri's bundler puts sidecars in Contents/MacOS, not Contents/Resources. -->
+  <key>BundleProgram</key>
+  <string>Contents/MacOS/janelad</string>
+  <!-- Crash -> launchd restarts it. Deliberate exit (idle, or the user stopping the
+       background service) -> it stays down. ADR 0017. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <!-- The daemon hosts the user's builds and agents. launchd's default for an agent
+       is Background, which I/O- and CPU-throttles everything underneath it. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>

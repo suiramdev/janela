@@ -34,11 +34,23 @@
 
 // TODO: Sidecar lifecycle and launch-agent registration.
 //
-// The daemon is a compiled Bun binary shipped as a Tauri sidecar. launchd owns its
-// lifecycle through a LaunchAgent inside the bundle, socket-activated, so the *app*
-// does not start it — it connects, and launchd starts it on first connection. The
-// app's job is registration, reporting an approval requirement honestly, and never
-// terminating a running daemon on its own.
+// The daemon is a compiled Bun binary shipped as a Tauri sidecar, at
+// `Contents/MacOS/janelad` — the bundler's location, and what the sealed LaunchAgent
+// plist names as its `BundleProgram`. launchd owns its lifecycle through that agent,
+// registered with `SMAppService.agent(plistName: "sh.janela.janelad.plist")`.
+//
+// There is no socket activation (ADR 0017, amended 2026-09-08): the agent has no
+// `RunAtLoad`, so registering starts nothing. The daemon binds
+// `~/.janela/run/janelad.sock` itself, and a client that cannot connect starts it
+// with `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries. The app's job
+// is registration, reporting an approval requirement honestly, and never terminating
+// a running daemon on its own.
+//
+// The plist is sealed by the code signature and MUST NOT be written at runtime: `smd`
+// checks the bundle's signature before loading it, and a rewritten plist fails with
+// `errSecCSBadResource`. Before registering, check that the sidecar exists beside the
+// current executable; a missing one is a damaged install, which is reported rather
+// than registered.
 //
 // Note the sidecar is a single file: `bun build --compile` embeds the runtime, the
 // Prisma client, the emulator and the PTY cdylib. Verified during the migration, and

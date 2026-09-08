@@ -26,25 +26,23 @@
 
 // MARK: - Socket
 //
-// TODO: Obtain the listening descriptor from launchd rather than binding a path.
-// launchd created the socket, owns its lifetime, and starting us was its decision —
-// binding our own would race with it.
+// TODO: Bind `defaultSocketPath()` — `~/.janela/run/janelad.sock` — in a directory
+// this process creates 0700 and then re-checks with `verifySocketDirectory()`.
 //
-// This is the one place the migration is genuinely harder than what it replaced:
-// `launch_activate_socket` is a C function, and `bun:ffi` is gated to @janela/pty so
-// that Janela has exactly one FFI surface. Resolve it one of two ways, and write
-// down which:
+// This is route (b) of the two ADR 0017 originally offered, and it was taken
+// deliberately, not silently: see that ADR's 2026-09-08 amendment. The plist declares
+// no `Sockets` block, because the only static form of it — launchd's
+// `SecureSocketWithKey` — publishes the socket path solely into the GUI login
+// session's launchd environment, which a CLI over ssh cannot read, and ADR 0023
+// requires an address that survives launchd. So there is no listening descriptor to
+// inherit, no `launch_activate_socket`, and no second FFI surface: `bun:ffi` stays
+// gated to @janela/pty.
 //
-//   (a) Extend the PTY cdylib with a `janela_launch_socket()` export. One native
-//       artifact, already built and signed, and the descriptor is handed to Bun as
-//       a plain integer. This is the expected answer.
-//   (b) Bind the path ourselves and drop socket activation, accepting that the
-//       daemon is started by the app rather than by launchd. This trades away the
-//       "a user who never opens Janela never has a process" property, which ADR
-//       0017 chose deliberately. Do not take this route silently.
-//
-// Fall back to binding `defaultSocketPath()` only when running in the foreground for
-// development (`--foreground`), which is the one case where no launchd job exists.
+// The property socket activation was chosen for is kept by the client instead: the
+// agent has no `RunAtLoad`, so nothing runs until a client fails to connect and runs
+// `launchctl kickstart gui/<uid>/sh.janela.janelad`. A user who never opens Janela
+// never has a process. `--foreground` is the same code path with no launchd job
+// above it.
 
 // MARK: - Lifecycle
 //

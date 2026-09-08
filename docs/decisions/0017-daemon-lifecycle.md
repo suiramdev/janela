@@ -7,6 +7,36 @@
   Tauri shell rather than from SwiftUI. **The lifecycle decision is unchanged**:
   launchd owns it, socket activation starts it, it outlives clients and exits when
   idle. One implementation detail got harder and is called out below.
+- **Amended:** 2026-09-08 by #39 (the sidecar bundle) — **the plist is static, sealed
+  into the bundle at build time, and declares no socket**. Two things forced it, and
+  the lifecycle decision itself is unchanged: launchd owns the daemon, `KeepAlive`
+  restarts it after a crash, it outlives clients and exits when idle.
+
+  1. *A plist generated at registration time cannot work.* `smd` runs a static code
+     signature check on the whole bundle before it will load the agent, so a file
+     written into `Contents/Library/LaunchAgents/` after signing breaks the seal and
+     registration fails with `errSecCSBadResource` (-67054) — on every signed
+     install, and never in CI. The plist therefore ships as a build input
+     (`apps/desktop/src-tauri/launchd/sh.janela.janelad.plist`, placed by
+     `bundle.macOS.files`) and `scripts/verify-bundle.ts` asserts it is in the
+     signature's sealed resources.
+  2. *Socket activation is given up deliberately, and this is the ADR saying so.*
+     The `Sockets` block below is void. An absolute `SockPathName` cannot be static;
+     the alternative that would have been — launchd's `SecureSocketWithKey`, which
+     publishes the path as an environment variable — publishes it only into the GUI
+     login session's launchd domain, where a CLI over ssh cannot read it, and it ties
+     the address to launchd, which [0023](0023-macos-first-portable.md) forbids.
+     **The daemon binds `~/.janela/run/janelad.sock` itself**, in a 0700 directory it
+     owns and checks (`packages/daemon/src/endpoint.ts`), which is what the protocol
+     and the future CLI already assume. `launch_activate_socket` and the second FFI
+     surface it would have needed are not required after all.
+
+  What replaces first-connection start-up: the plist has no `RunAtLoad`, so
+  registering does not start anything, and a client that cannot connect runs
+  `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries. A user who never
+  opens Janela still never has a process — the property socket activation was chosen
+  for survives; only the trigger moved from launchd into the client. Registration
+  itself is #30.
 
 ## Context
 
@@ -48,6 +78,11 @@ Janela.app/Contents/
   Library/LaunchAgents/sh.janela.janelad.plist
   Resources/janelad                         the daemon binary
 ```
+
+> Two corrections from the 2026-09-08 amendment, kept here rather than rewritten so
+> the original reasoning stays readable: the daemon is at **`MacOS/janelad`** (Tauri's
+> bundler signs `Contents/MacOS`; a Mach-O under `Resources` is data), and the
+> `Sockets` block below is **void** — there is no socket activation.
 
 `janelad` is one file. Its runtime, the database client, the emulator and the PTY
 library are all embedded ([0020](0020-bun-daemon-runtime.md),
@@ -179,11 +214,18 @@ about panel.
 point at the right path inside the bundle. Getting this wrong fails at install time
 rather than at build time. See [0008](0008-sandboxing-and-distribution.md). CI
 compiles the sidecar and runs it from an empty directory on every push, which catches
-the class of failure where the daemon silently depends on something beside it.
+the class of failure where the daemon silently depends on something beside it — and
+since the 2026-09-08 amendment it also bundles, ad-hoc signs and runs
+`apps/desktop/scripts/verify-bundle.ts`, which is what turns "fails at install time"
+into "fails in CI".
 
-**Bad.** An absolute path in the plist's `SockPathName` means the plist is
-user-specific and cannot be a static resource. It is generated at registration
-time, which is a small amount of code doing something slightly unusual.
+**Bad, and now void.** *An absolute path in the plist's `SockPathName` means the
+plist is user-specific and cannot be a static resource. It is generated at
+registration time, which is a small amount of code doing something slightly unusual.*
+That code cannot exist: a plist written into a signed bundle fails `smd`'s static
+signature check (`errSecCSBadResource`). The plist is static and carries no socket at
+all; the daemon binds `~/.janela/run/janelad.sock` itself and clients start it with
+`launchctl kickstart`. See the 2026-09-08 amendment.
 
 ## Alternatives considered
 
