@@ -47,9 +47,148 @@ export interface BoundedQueue<T> extends AsyncIterable<T> {
   finish(): void;
 }
 
+/**
+ * A ring buffer, one parked consumer, and a FIFO of blocked producers.
+ *
+ * Single consumer by construction: `next()` parks exactly one resolver, and a
+ * second concurrent `next()` is a caller bug rather than a queue that quietly
+ * interleaves two `for await` loops over one stream.
+ *
+ * After `finish()` a `push` resolves and discards the item. The consumer is gone
+ * — a producer that awaited forever there would be a leak, and one that threw
+ * would make "the client disconnected" an error path in every caller.
+ *
+ * @throws {RangeError} when `capacity` is not a positive integer. A zero-capacity
+ * queue is not a bound, it is a queue that drops everything.
+ */
 export function boundedQueue<T>(options: BoundedQueueOptions): BoundedQueue<T> {
-  void options;
-  throw new Error(`not implemented: boundedQueue`);
+  const { capacity, onOverflow, onDrop } = options;
+  if (!Number.isInteger(capacity) || capacity < 1) {
+    throw new RangeError("capacity must be a positive integer");
+  }
+
+  /** The ring. `undefined` marks a free slot, which is why items are taken out. */
+  const slots: (T | undefined)[] = Array.from<T | undefined>({ length: capacity });
+  let head = 0;
+  let size = 0;
+  let finished = false;
+
+  /** Producers waiting for a slot, oldest first. Only ever used by `block`. */
+  const blocked: { readonly item: T; readonly resolve: () => void }[] = [];
+  /** The consumer's parked `next`, when it is waiting on an empty queue. */
+  let waiting: ((result: IteratorResult<T>) => void) | undefined;
+
+  /**
+   * Empties the slot at `index`.
+   *
+   * The cast is `noUncheckedIndexedAccess`, not optimism: the caller has already
+   * established `size > 0`, so the slot holds an item.
+   */
+  const take = (index: number): T => {
+    const value = slots[index] as T;
+    slots[index] = undefined;
+    return value;
+  };
+
+  /** Hands the item straight to a parked consumer, or stores it. */
+  const enqueue = (item: T): void => {
+    const consumer = waiting;
+    if (consumer !== undefined) {
+      // A parked consumer implies an empty ring, so there is nothing to order
+      // this item behind.
+      waiting = undefined;
+      consumer({ value: item, done: false });
+      return;
+    }
+    slots[(head + size) % capacity] = item;
+    size += 1;
+  };
+
+  const iterator: AsyncIterator<T> = {
+    next(): Promise<IteratorResult<T>> {
+      if (size > 0) {
+        const value = take(head);
+        head = (head + 1) % capacity;
+        size -= 1;
+        // The slot that just freed goes to the oldest blocked producer, in the
+        // same step, so `block` never leaves capacity unused.
+        const producer = blocked.shift();
+        if (producer !== undefined) {
+          slots[(head + size) % capacity] = producer.item;
+          size += 1;
+          producer.resolve();
+        }
+        return Promise.resolve({ value, done: false });
+      }
+      if (finished) {
+        return Promise.resolve({ value: undefined, done: true });
+      }
+      if (waiting !== undefined) {
+        throw new Error("boundedQueue has one consumer");
+      }
+      return new Promise<IteratorResult<T>>((resolve) => {
+        waiting = resolve;
+      });
+    },
+
+    return(): Promise<IteratorResult<T>> {
+      // A consumer breaking out of `for await` must not leave producers blocked
+      // on a queue nobody will drain again.
+      queue.finish();
+      return Promise.resolve({ value: undefined, done: true });
+    },
+  };
+
+  const queue: BoundedQueue<T> = {
+    get capacity(): number {
+      return capacity;
+    },
+    get size(): number {
+      return size;
+    },
+
+    push(item: T): Promise<void> {
+      if (finished) {
+        return Promise.resolve();
+      }
+      if (size < capacity) {
+        enqueue(item);
+        return Promise.resolve();
+      }
+      if (onOverflow === "dropOldest") {
+        take(head);
+        head = (head + 1) % capacity;
+        size -= 1;
+        onDrop?.(1);
+        enqueue(item);
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        blocked.push({ item, resolve });
+      });
+    },
+
+    finish(): void {
+      if (finished) return;
+      finished = true;
+      // Blocked producers are released rather than rejected: the item is lost
+      // because the consumer is gone, which is not the producer's error.
+      for (const producer of blocked.splice(0)) {
+        producer.resolve();
+      }
+      const consumer = waiting;
+      if (consumer !== undefined) {
+        waiting = undefined;
+        consumer({ value: undefined, done: true });
+      }
+    },
+
+    [Symbol.asyncIterator](): AsyncIterator<T> {
+      return iterator;
+    },
+  };
+
+  return queue;
 }
 
 /**
