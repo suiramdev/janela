@@ -5,8 +5,24 @@ import type {
   TerminalID,
   TerminalState,
 } from "@janela/core";
+import {
+  PseudoTerminalFailure,
+  spawnPseudoTerminal,
+  type PseudoTerminal,
+  type PseudoTerminalConfiguration,
+  type TerminalBytes,
+} from "@janela/pty";
+import type { Logger } from "@janela/support";
 
-import type { TerminalEventSink } from "./terminal-emulating.ts";
+import { createEmulator } from "./headless-emulator.ts";
+import {
+  DEFAULT_SCROLLBACK,
+  type TerminalEmulating,
+  type TerminalEventSink,
+} from "./terminal-emulating.ts";
+
+/** Shared, never mutated: an unstarted terminal owes every client nothing. */
+const EMPTY = new Uint8Array(0);
 
 /**
  * A live terminal: a PTY, a child process, and the authoritative screen.
@@ -66,18 +82,34 @@ export interface LiveTerminal {
    */
   send(bytes: Uint8Array): void;
 
-  /** Registers a client's viewport and returns the resulting PTY size. */
+  /**
+   * Registers or updates a client's viewport and returns the negotiated PTY size.
+   *
+   * Calling it again for a client already attached is how a resize arrives; there
+   * is no separate `resize` for that reason.
+   */
   attach(client: string, viewport: GridSize): GridSize;
 
   /** Returns the new negotiated size, or `undefined` when nobody is left attached. */
   detach(client: string): GridSize | undefined;
 
   /**
-   * Drains the PTY, feeds the emulator, and returns the repaint for one client.
+   * Drains the PTY once and feeds the emulator.
    *
-   * Called once per frame per attached client by the daemon's frame loop. The drain
-   * happens once regardless of how many clients are attached; only the encode is
-   * per client.
+   * Called once per frame by the daemon's frame loop for **every** live terminal,
+   * attached or not: a detached terminal has to keep consuming or its child
+   * blocks in `write(2)` at the high-water mark, and "your terminals survive the
+   * window closing" would be a lie. This is also where a process exit and a lost
+   * descriptor are observed, so a terminal nobody is watching still reaches
+   * `exited`.
+   */
+  drain(): void;
+
+  /**
+   * The repaint one client is owed since its last one.
+   *
+   * Encode only — `drain()` is the feed, and it happens once per frame however
+   * many clients are attached. N clients cost one drain and N encodes.
    */
   repaintFor(client: string): Uint8Array;
 
@@ -90,30 +122,6 @@ export interface LiveTerminal {
   events: TerminalEventSink | undefined;
 }
 
-// TODO: The authoritative grid. Feed drained PTY bytes to the headless emulator,
-// track damage, and expose the two encoders:
-//
-//   - `repaintFor(client)` — minimal escape sequences for what changed since that
-//     client's last revision, called once per frame per attached client.
-//   - `fullRepaintFor(client)` — the whole grid as escape sequences, sent on
-//     attach. This is what makes reattaching correct rather than lucky.
-//
-// Both are the hard part of docs/decisions/0015-daemon-owned-sessions.md, and a
-// correct-but-dumb full repaint every frame is a valid first implementation —
-// deliberately, because it means the optimisation can only make us slow, never
-// wrong.
-//
-// Test with two emulators: feed bytes to one, encode the damage, feed the result
-// to a second, and assert the two grids are identical. The migration spike did
-// exactly this and it works, including for a full-screen alternate-screen TUI with
-// the cursor left mid-screen. See docs/testing.md.
-//
-// Two things not to do, both tempting:
-//   - Do not drain the PTY once per attached client. One drain, one feed, N encodes.
-//   - Do not let a client's revision be `undefined` meaning "everything". Attach
-//     is an explicit full repaint; a sentinel here is how a routine frame
-//     accidentally becomes a full-screen redraw.
-
 /**
  * The size the PTY is set to when several clients are attached.
  *
@@ -121,10 +129,31 @@ export interface LiveTerminal {
  * that guarantees no attached client is shown a screen it cannot fit. A client
  * attaching with no viewport — the CLI, reading text — does not participate. See
  * docs/decisions/0016-daemon-protocol.md.
+ *
+ * Throws on an empty list rather than inventing an 80×24: "nobody is attached" is
+ * `detach()` returning `undefined`, and a fabricated size here would resize a
+ * running TUI to a screen no one asked for.
  */
 export function negotiatedSize(viewports: readonly GridSize[]): GridSize {
-  void viewports;
-  throw new Error(`not implemented: negotiatedSize`);
+  const first = viewports[0];
+  if (first === undefined) {
+    throw new Error("negotiatedSize: at least one viewport is required");
+  }
+  let columns = first.columns;
+  let rows = first.rows;
+  for (let index = 1; index < viewports.length; index += 1) {
+    const viewport = viewports[index];
+    if (viewport === undefined) {
+      continue;
+    }
+    if (viewport.columns < columns) {
+      columns = viewport.columns;
+    }
+    if (viewport.rows < rows) {
+      rows = viewport.rows;
+    }
+  }
+  return { columns, rows };
 }
 
 export function createLiveTerminal(options: {
@@ -132,9 +161,328 @@ export function createLiveTerminal(options: {
   readonly sessionID: SessionID;
   /** Resolved command, environment and working directory, decided by the caller. */
   readonly launch: TerminalLaunch;
+  /** Lines of scrollback. Defaults to `DEFAULT_SCROLLBACK`. */
+  readonly scrollback?: number;
+  /**
+   * Where shapes go: an id, an errno, an exit status. Absent means silent —
+   * `@janela/support`'s `log()` is not implemented yet, and a library that
+   * installs a sink during import decides the format for the whole process.
+   */
+  readonly log?: Logger;
+  /**
+   * The spawn seam. Production passes nothing. The read-failure test passes a
+   * scripted terminal, because Darwin cannot produce one: a child exiting and
+   * `revoke(2)` on the replica both make `read` return 0, which is EOF.
+   */
+  readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
 }): LiveTerminal {
-  void options;
-  throw new Error(`not implemented: createLiveTerminal`);
+  return new PtyLiveTerminal(options);
+}
+
+/**
+ * The authoritative screen: a PTY, a child, and the emulator they feed.
+ *
+ * Two things this deliberately does not do, both tempting:
+ *
+ *   - **It does not drain per attached client.** One drain, one feed, N encodes.
+ *     `drain()` is separate from `repaintFor()` for exactly that reason, and it
+ *     runs for terminals nobody is watching.
+ *   - **It does not treat a missing client revision as "everything".** A client's
+ *     first frame is whatever changed since it attached; the whole grid is
+ *     `fullRepaintFor`, explicitly. A sentinel here is how a routine frame
+ *     becomes a full-screen redraw.
+ */
+class PtyLiveTerminal implements LiveTerminal {
+  readonly id: TerminalID;
+  readonly sessionID: SessionID;
+  readonly descriptor: TerminalDescriptor;
+
+  events: TerminalEventSink | undefined;
+
+  /**
+   * An optional *field*, not a property that may hold `undefined`:
+   * `exactOptionalPropertyTypes` is on, so this is cleared with `delete`.
+   */
+  reportedWorkingDirectory?: string;
+
+  private readonly launch: TerminalLaunch;
+  private readonly scrollback: number;
+  private readonly log: Logger | undefined;
+  private readonly spawn: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+
+  private pty: PseudoTerminal | undefined;
+  private emulator: TerminalEmulating | undefined;
+  private title: string | undefined;
+  private exit: { readonly code: number } | undefined;
+  /** A `UserFacingError.summary`, so it is safe to put in front of a user. */
+  private failure: string | undefined;
+  private attention = false;
+  private readonly clients = new Map<string, { viewport: GridSize; revision: number }>();
+
+  /** Built once: the emulator is replaced on every start, the sink is not. */
+  private readonly emulatorSink: TerminalEventSink = {
+    onTitle: (title) => {
+      this.title = title;
+      this.events?.onTitle(title);
+    },
+    onWorkingDirectory: (path) => {
+      this.reportedWorkingDirectory = path;
+      this.events?.onWorkingDirectory(path);
+    },
+    onAttention: (notification) => {
+      this.attention = true;
+      this.events?.onAttention(notification);
+    },
+    // Forwarded and nothing more. Whether a finished command deserves attention
+    // depends on how long it ran and what is focused, and only a client knows
+    // the second one — see docs/decisions/0006-agent-activity-signals.md.
+    onPromptMark: (mark) => {
+      this.events?.onPromptMark(mark);
+    },
+    onExit: () => {
+      throw new Error("the emulator knows nothing about processes; drain() emits onExit");
+    },
+  };
+
+  constructor(options: {
+    readonly descriptor: TerminalDescriptor;
+    readonly sessionID: SessionID;
+    readonly launch: TerminalLaunch;
+    readonly scrollback?: number;
+    readonly log?: Logger;
+    readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+  }) {
+    this.id = options.descriptor.id;
+    this.sessionID = options.sessionID;
+    this.descriptor = options.descriptor;
+    this.launch = options.launch;
+    this.scrollback = options.scrollback ?? DEFAULT_SCROLLBACK;
+    this.log = options.log;
+    this.spawn = options.spawn ?? spawnPseudoTerminal;
+  }
+
+  /**
+   * Derived, never stored: two sources of truth for the thing the sidebar is
+   * judged on would be one too many.
+   */
+  get state(): TerminalState {
+    if (this.failure !== undefined) {
+      return { kind: "failed", message: this.failure };
+    }
+    if (this.exit !== undefined) {
+      return { kind: "exited", code: this.exit.code };
+    }
+    if (this.pty === undefined) {
+      return { kind: "idle" };
+    }
+    return this.attention ? { kind: "needsAttention" } : { kind: "running" };
+  }
+
+  get displayTitle(): string {
+    return this.title ?? this.descriptor.title;
+  }
+
+  async start(): Promise<void> {
+    if (this.pty !== undefined) {
+      return;
+    }
+    this.exit = undefined;
+    this.failure = undefined;
+    this.attention = false;
+    this.title = undefined;
+    delete this.reportedWorkingDirectory;
+    this.emulator?.dispose();
+    this.emulator = undefined;
+
+    const size = this.clients.size > 0 ? negotiatedSize(this.viewports()) : this.launch.initialSize;
+
+    try {
+      // Before the emulator, so a spawn that fails allocates no grid.
+      this.pty = this.spawn({
+        executable: this.launch.executable,
+        arguments: this.launch.arguments,
+        workingDirectory: this.launch.workingDirectory,
+        environment: this.launch.environment,
+        initialSize: { columns: size.columns, rows: size.rows, pixelWidth: 0, pixelHeight: 0 },
+      });
+    } catch (error) {
+      // Shown, not logged: the caller receives the same `UserFacingError` and the
+      // state carries its summary for every client's mirror.
+      if (error instanceof PseudoTerminalFailure) {
+        this.failure = error.summary;
+      }
+      throw error;
+    }
+
+    this.emulator = createEmulator({ size, scrollback: this.scrollback });
+    this.emulator.events = this.emulatorSink;
+    for (const entry of this.clients.values()) {
+      entry.revision = this.emulator.revision;
+    }
+  }
+
+  /**
+   * Hangs up and returns. The state stays `running` until `drain()` observes the
+   * reaped status, which is the truth: a child may ignore `SIGHUP`, and a code
+   * invented here would be a code no process ever produced.
+   */
+  async stop(): Promise<void> {
+    this.pty?.close();
+  }
+
+  async restart(): Promise<void> {
+    // The old child's status is not awaited — its reader thread reaps it, and
+    // `start()` clears the exit and failure it would have reported.
+    this.pty?.close();
+    this.pty = undefined;
+    await this.start();
+  }
+
+  drain(): void {
+    const pty = this.pty;
+    const emulator = this.emulator;
+    if (pty === undefined || emulator === undefined) {
+      return;
+    }
+
+    let bytes: TerminalBytes | undefined;
+    try {
+      bytes = pty.drain();
+    } catch (error) {
+      if (!(error instanceof PseudoTerminalFailure) || error.detail.kind !== "readFailed") {
+        throw error;
+      }
+      // Lost, not finished. No `onExit`: a client told the child exited would show
+      // a status for a process whose fate nobody knows.
+      const code = pty.exitCode();
+      this.failure = error.summary;
+      this.log?.warning("terminal read failed", {
+        terminal: this.id,
+        errno: error.detail.errno,
+        ...(code === undefined ? {} : { code }),
+      });
+      pty.close();
+      this.pty = undefined;
+      return;
+    }
+
+    if (bytes === undefined) {
+      const code = pty.exitCode();
+      if (code === undefined) {
+        // Gone but not yet reaped. The next frame asks again.
+        return;
+      }
+      this.exit = { code };
+      pty.close();
+      this.pty = undefined;
+      // The emulator is kept, so the last screen stays readable. It is disposed
+      // by the next `start()`.
+      this.log?.debug("terminal exited", { terminal: this.id, code });
+      this.events?.onExit(code);
+      return;
+    }
+
+    if (bytes.length > 0) {
+      emulator.feed(bytes);
+    }
+  }
+
+  send(bytes: Uint8Array): void {
+    const pty = this.pty;
+    if (pty === undefined) {
+      throw new PseudoTerminalFailure({ kind: "notRunning" });
+    }
+    pty.write(bytes);
+    // The one mechanical "the user has seen it" signal the daemon has. An explicit
+    // clear can replace this when the protocol grows one.
+    this.attention = false;
+  }
+
+  attach(client: string, viewport: GridSize): GridSize {
+    const existing = this.clients.get(client);
+    if (existing === undefined) {
+      // A fresh client starts level with the emulator: attaching is not an
+      // implicit full repaint, `fullRepaintFor` is the explicit one.
+      this.clients.set(client, { viewport, revision: this.emulator?.revision ?? 0 });
+    } else {
+      existing.viewport = viewport;
+    }
+    const size = negotiatedSize(this.viewports());
+    this.applySize(size);
+    return size;
+  }
+
+  detach(client: string): GridSize | undefined {
+    this.clients.delete(client);
+    if (this.clients.size === 0) {
+      // The PTY keeps the size it had. Resizing a running TUI because the last
+      // window closed would corrupt the screen the next client attaches to.
+      return undefined;
+    }
+    const size = negotiatedSize(this.viewports());
+    this.applySize(size);
+    return size;
+  }
+
+  repaintFor(client: string): Uint8Array {
+    const entry = this.entryFor(client);
+    const emulator = this.emulator;
+    if (emulator === undefined) {
+      return EMPTY;
+    }
+    const bytes = emulator.repaintSince(entry.revision);
+    entry.revision = emulator.revision;
+    return bytes;
+  }
+
+  fullRepaintFor(client: string): Uint8Array {
+    const entry = this.entryFor(client);
+    const emulator = this.emulator;
+    if (emulator === undefined) {
+      return EMPTY;
+    }
+    entry.revision = emulator.revision;
+    // Somebody is looking at the whole screen; they have seen whatever asked.
+    this.attention = false;
+    return emulator.fullRepaint();
+  }
+
+  snapshotText(options: { readonly includeScrollback: boolean }): string {
+    return this.emulator?.snapshotText(options) ?? "";
+  }
+
+  private entryFor(client: string): { viewport: GridSize; revision: number } {
+    const entry = this.clients.get(client);
+    if (entry === undefined) {
+      throw new Error(`no client "${client}" is attached to terminal ${this.id}`);
+    }
+    return entry;
+  }
+
+  private viewports(): GridSize[] {
+    const viewports: GridSize[] = [];
+    for (const entry of this.clients.values()) {
+      viewports.push(entry.viewport);
+    }
+    return viewports;
+  }
+
+  private applySize(size: GridSize): void {
+    this.emulator?.resize(size);
+    const pty = this.pty;
+    if (pty === undefined) {
+      return;
+    }
+    try {
+      pty.resize({ columns: size.columns, rows: size.rows, pixelWidth: 0, pixelHeight: 0 });
+    } catch (error) {
+      // A resize landing on a child that died a frame ago is routine, not a fault:
+      // the frame loop has not observed the exit yet.
+      if (!(error instanceof PseudoTerminalFailure) || error.detail.kind !== "notRunning") {
+        throw error;
+      }
+    }
+  }
 }
 
 /**

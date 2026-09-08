@@ -141,20 +141,22 @@ export type PromptMark =
   | { readonly kind: "commandFinished"; readonly exitCode?: number };
 
 /**
- * Builds the production emulator.
+ * Lines of scrollback per terminal. Bounded, and the bound is documented.
  *
- * The single place an emulator library is named. `scrollback` is bounded here
- * rather than by the caller because an unbounded ring buffer is the most obvious
- * way to violate non-negotiable #9, and the bound belongs next to the thing it
- * bounds.
+ * `createEmulator` — the single place an emulator library is named — lives in
+ * `headless-emulator.ts`, because a seam that imports its own implementation is
+ * a seam pointing the wrong way. Nothing outside this package can tell: it is
+ * re-exported from `index.ts` either way.
  */
-export function createEmulator(options: {
-  readonly size: GridSize;
-  readonly scrollback: number;
-}): TerminalEmulating {
-  void options;
-  throw new Error(`not implemented: createEmulator`);
-}
-
-/** Lines of scrollback per terminal. Bounded, and the bound is documented. */
 export const DEFAULT_SCROLLBACK = 10_000;
+
+/**
+ * Longest OSC-derived string — a title, a notification's title or body, a
+ * reported working directory — that may leave the emulator.
+ *
+ * xterm bounds an OSC payload at 10 MB. Nothing above this package needs more
+ * than a line of one, and a client badge, a sidebar entry or a log record is
+ * exactly where an unbounded string would land. Non-negotiable #9 applies to
+ * strings too.
+ */
+export const MAX_OSC_TEXT_LENGTH = 1024;
