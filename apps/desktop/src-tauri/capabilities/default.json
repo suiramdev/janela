@@ -1,7 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core APIs, logging, and native notifications.",
+  "description": "The main window: core APIs, logging, notifications, native dialogs, and opening a session's directory in Finder or Terminal.",
   "windows": ["main"],
-  "permissions": ["core:default", "log:default", "notification:default"]
+  "permissions": [
+    "core:default",
+    "log:default",
+    "notification:default",
+    "dialog:default",
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "/**", "app": "Terminal" }]
+    }
+  ]
 }

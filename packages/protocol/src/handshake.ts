@@ -55,26 +55,28 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    full snapshot, because merge-by-id cannot express a removal;
  *    `saveLaunchProfile`, `removeLaunchProfile` and `createTerminal` join it too,
  *    and `StateUpdate` carries the launch profiles with their availability.
+ * 4  `createTerminal.placement` (a split, persisted by the daemon) and
+ *    `removeTerminal` join `ClientMessage`.
  * ```
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /**
  * Oldest version we still accept.
  *
- * Also 3, because none of the v3 changes degrade: a v2 daemon meeting a
- * `removalPlan`, a `saveLaunchProfile` or a viewportless `attach` would close the
- * connection mid-session rather than answer, and a v2 client would read a
- * `StateUpdate` whose launch profiles it cannot see, which is exactly what the
- * version ranges exist to prevent.
- * A v2 peer's `hello` is answered with `refused` / `incompatibleVersion` carrying
+ * Also 4, because neither v4 change degrades: a v3 daemon meeting a
+ * `removeTerminal` falls off the end of its dispatch switch and answers nothing,
+ * so the client waits forever for a reply that is never coming, and a v3 daemon
+ * meeting `createTerminal.placement` would silently ignore it and open a tab
+ * where the user asked for a split.
+ * A v3 peer's `hello` is answered with `refused` / `incompatibleVersion` carrying
  * this range, the daemon keeps running and no terminal is touched (ADR 0016 §
- * Handshake, ADR 0017); a v3 client meeting a v2 daemon refuses on its own side
- * and tells the skew story — "the background service is older" — rather than
- * reporting a handshake failure. Nothing after `hello` is decoded from a refused
- * peer.
+ * Handshake, ADR 0017); a v4 client meeting a v3 daemon refuses on its own side
+ * and tells the skew story — "the background service is older", whose only
+ * button is "Restart the background service" — rather than reporting a handshake
+ * failure. Nothing after `hello` is decoded from a refused peer.
  */
-export const MINIMUM_SUPPORTED_VERSION = 3;
+export const MINIMUM_SUPPORTED_VERSION = 4;
 
 /**
  * Whether the two version ranges overlap: each side's current version must be at

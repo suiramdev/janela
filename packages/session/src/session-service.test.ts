@@ -16,6 +16,7 @@ import type { TerminalRegistry } from "@janela/terminal";
 import { createTerminalRegistry } from "@janela/terminal";
 
 import {
+  LayoutTooDeep,
   NotAWorktree,
   PullRequestsNotSupported,
   UnknownProject,
@@ -975,6 +976,141 @@ describe("createTerminal", () => {
         await rejection(fixture.sessions.createTerminal(session.id, { profileID: goneProfile })),
       ).toBeInstanceOf(UnknownLaunchProfile);
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
+    });
+  });
+
+  test("a split placement divides the pane beside it, in one tab", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const first = session.terminals[0]?.id as TerminalID;
+
+      const added = await fixture.sessions.createTerminal(session.id, {
+        placement: { kind: "split", beside: first, axis: "horizontal" },
+      });
+
+      expect(fixture.factory.created).toHaveLength(0);
+      const stored = await fixture.database.sessions.find(session.id);
+      // One tab: a split is a division of the pane, not another tab.
+      expect(stored?.layout.tabs).toHaveLength(1);
+      expect(stored?.layout.tabs[0]?.root).toMatchObject({
+        kind: "split",
+        axis: "horizontal",
+        first: { kind: "terminal", id: first },
+        second: { kind: "terminal", id: added.id },
+      });
+      expect(stored?.layout.tabs[0]?.focusedTerminalID).toBe(added.id);
+      expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first, added.id]);
+    });
+  });
+
+  test("a split beside a terminal of another session is refused", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const other = await fixture.sessions.createSession({
+        kind: "standalone",
+        directory: folderDirectory,
+      });
+      const elsewhere = other.terminals[0]?.id as TerminalID;
+
+      expect(
+        await rejection(
+          fixture.sessions.createTerminal(session.id, {
+            placement: { kind: "split", beside: elsewhere, axis: "vertical" },
+          }),
+        ),
+      ).toBeInstanceOf(UnknownTerminal);
+      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
+    });
+  });
+
+  test("the seventh split is refused: MAXIMUM_PANE_DEPTH is a bound, not a preference", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+
+      let beside = session.terminals[0]?.id as TerminalID;
+      // A bare terminal is depth 1, so five splits reach MAXIMUM_PANE_DEPTH of 6.
+      for (let index = 0; index < 5; index += 1) {
+        // oxlint-disable-next-line no-await-in-loop
+        const added = await fixture.sessions.createTerminal(session.id, {
+          placement: { kind: "split", beside, axis: "horizontal" },
+        });
+        beside = added.id;
+      }
+      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
+
+      expect(
+        await rejection(
+          fixture.sessions.createTerminal(session.id, {
+            placement: { kind: "split", beside, axis: "horizontal" },
+          }),
+        ),
+      ).toBeInstanceOf(LayoutTooDeep);
+      // Refused means nothing was added, not "added somewhere else".
+      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
+    });
+  });
+});
+
+describe("removeTerminal", () => {
+  test("closing a running pane stops it and promotes its sibling", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const first = session.terminals[0]?.id as TerminalID;
+      const added = await fixture.sessions.createTerminal(session.id, {
+        placement: { kind: "split", beside: first, axis: "horizontal" },
+      });
+      await fixture.sessions.startTerminal(added.id);
+      const live = fixture.factory.created[0];
+
+      await fixture.sessions.removeTerminal(added.id);
+
+      expect(live?.stops()).toBe(1);
+      expect(fixture.terminals.get(added.id)).toBeUndefined();
+      const stored = await fixture.database.sessions.find(session.id);
+      expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first]);
+      expect(stored?.layout.tabs).toHaveLength(1);
+      expect(stored?.layout.tabs[0]?.root).toEqual({ kind: "terminal", id: first });
+    });
+  });
+
+  test("removing the only terminal leaves one new idle terminal", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const only = session.terminals[0]?.id as TerminalID;
+
+      await fixture.sessions.removeTerminal(only);
+
+      const stored = await fixture.database.sessions.find(session.id);
+      expect(stored?.terminals).toHaveLength(1);
+      // A different terminal: a session never has zero, and it never keeps the
+      // one the user just closed either.
+      expect(stored?.terminals[0]?.id).not.toBe(only);
+      expect(stored?.layout.tabs).toHaveLength(1);
+      expect(fixture.terminals.liveCount).toBe(0);
+    });
+  });
+
+  test("an unknown terminal is an error", async () => {
+    await withSessions({}, async (fixture) => {
+      const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
+      expect(await rejection(fixture.sessions.removeTerminal(unknown))).toBeInstanceOf(
+        UnknownTerminal,
+      );
     });
   });
 });

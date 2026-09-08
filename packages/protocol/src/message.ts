@@ -1,5 +1,6 @@
 import type {
   AbsolutePath,
+  Axis,
   GridSize,
   Instant,
   LaunchProfile,
@@ -138,6 +139,11 @@ export type ClientMessage =
    *
    * Configured, not started: the reply is `text` carrying the new `TerminalID`,
    * and the client starts it with `startTerminal` when it wants the process.
+   *
+   * `placement` absent means a new focused tab. `split` means the daemon splits
+   * the pane holding `beside` along `axis` with `splitPane`, and the new terminal
+   * is focused within that tab. The split is part of the session's layout, so it
+   * is persisted by the daemon rather than being a client-local arrangement.
    */
   | {
       readonly type: "createTerminal";
@@ -145,6 +151,25 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly profileID?: LaunchProfileID;
       readonly title?: string;
+      readonly placement?: {
+        readonly kind: "split";
+        readonly beside: TerminalID;
+        readonly axis: Axis;
+      };
+    }
+  /**
+   * Close one terminal — the ⌘W path, and the only path that both stops a
+   * terminal and forgets it.
+   *
+   * Stops the process when it is live, drops the descriptor and collapses the
+   * layout with `closeTerminal`. Closing the last terminal of a session leaves
+   * one fresh idle shell behind: a session never has zero terminals
+   * (docs/decisions/0010-terminal-layout.md). Reply is `acknowledged`.
+   */
+  | {
+      readonly type: "removeTerminal";
+      readonly id: RequestID;
+      readonly terminalID: TerminalID;
     };
 
 /**

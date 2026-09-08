@@ -125,6 +125,24 @@ pub fn register_launch_agent() -> Result<String, String> {
     }
 }
 
+/// Hands the daemon's lifecycle back: launchd stops owning it.
+///
+/// The other half of "Stop and unregister" in Settings, and the reason that
+/// control states its cost first — after this the daemon is no longer restarted
+/// for anyone, and terminals last only as long as the app does.
+///
+/// A development build has nothing registered and reports success, exactly as
+/// registration reports `unsupported` rather than failing.
+#[tauri::command]
+pub fn unregister_launch_agent() -> Result<(), String> {
+    let service = match agent() {
+        Err(_) => return Ok(()),
+        Ok(service) => service,
+    };
+    unsafe { service.unregisterAndReturnError() }
+        .map_err(|error| format!("unregistration failed ({})", error.code()))
+}
+
 /// Opens System Settings at Login Items & Extensions.
 ///
 /// The other half of reporting `requires-approval` honestly: the app says what is

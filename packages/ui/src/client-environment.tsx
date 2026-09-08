@@ -13,7 +13,7 @@
  */
 
 import type { DaemonConnection, ProjectStore, SessionStore } from "@janela/client";
-import type { TerminalID } from "@janela/core";
+import type { AbsolutePath, TerminalID } from "@janela/core";
 import {
   createContext,
   useContext,
@@ -22,10 +22,63 @@ import {
   type ReactNode,
 } from "react";
 
+import type { BackgroundServiceControlling } from "./background-service.ts";
+import type { CommandID } from "./commands.ts";
+import type { SettingsStoring } from "./global-settings.ts";
+import type { ViewState } from "./view-state.ts";
+
+/**
+ * Where a chosen command arrives from.
+ *
+ * A port because the menu bar is native and lives in the shell: the views know
+ * that a command happened, not that a `tauri://` event carried it. A second
+ * client — a CLI, a browser — supplies its own source and every row still works.
+ */
+export interface CommandSource {
+  subscribe(listener: (id: CommandID) => void): () => void;
+}
+
+/**
+ * The parts of the desktop the client may ask for by name.
+ *
+ * Everything here is something only the shell can do, and each one is a *request
+ * with a person in it*: a directory the user picked, a confirmation they gave.
+ * The daemon is handed the result, never the dialog (ADR 0024).
+ */
+export interface NativeShell {
+  /** Native directory dialog; `undefined` when the user cancelled. */
+  pickDirectory(options: { readonly title: string }): Promise<AbsolutePath | undefined>;
+
+  /** Native confirmation; true when the user chose `confirmLabel`. */
+  confirm(options: {
+    readonly title: string;
+    readonly message: string;
+    readonly confirmLabel: string;
+  }): Promise<boolean>;
+
+  revealInFinder(path: AbsolutePath): Promise<void>;
+  openInTerminal(path: AbsolutePath): Promise<void>;
+}
+
 export interface ClientEnvironment {
   readonly projects: ProjectStore;
   readonly sessions: SessionStore;
   readonly connection: DaemonConnection;
+
+  /** What this window is looking at: pane focus, the open sheet, settings. */
+  readonly view: ViewState;
+
+  /** Chosen menu commands, as ids. See `COMMANDS`. */
+  readonly commands: CommandSource;
+
+  /** Directory dialogs, confirmations, Finder and Terminal.app. */
+  readonly native: NativeShell;
+
+  /** Where `GlobalSettings` are kept. The app supplies the storage. */
+  readonly settings: SettingsStoring;
+
+  /** Stopping `janelad`, with the cost shown first. */
+  readonly service: BackgroundServiceControlling;
 
   /**
    * Stops `janelad` so the next connection starts the new build.

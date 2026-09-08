@@ -26,19 +26,28 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { ClientEnvironmentProvider, type ClientEnvironment } from "./client-environment.tsx";
 import {
-  MainWindow,
-  Sidebar,
-  SessionDetail,
-  attachPane,
   resolveLocalLayout,
-  sessionStatus,
-  sidebarRows,
   withFocusedTab,
   withFocusedTerminal,
   withFraction,
   type LocalLayoutEntry,
   type PanePath,
+} from "./layout-edits.ts";
+import {
+  MainWindow,
+  Sidebar,
+  SessionDetail,
+  attachPane,
+  shouldStartOnAttach,
 } from "./main-window.tsx";
+import { sessionStatus, sidebarRows } from "./sidebar-model.ts";
+import {
+  inertNativeShell,
+  memorySettingsStore,
+  neverCommands,
+  recordingService,
+} from "./test-fakes.ts";
+import { createViewState } from "./view-state.ts";
 
 // ---------------------------------------------------------------------------
 // Values. Built here rather than imported: @janela/client's fakes are not
@@ -130,6 +139,8 @@ function fakeEnvironment(options: {
     sessions,
     selection: options.selection,
     terminalStates: states,
+    launchProfiles: [],
+    launchProfileAvailability: {},
     inProject: (id) => sessions.filter((candidate) => candidate.projectID === id),
     standaloneSessions: sessions.filter((candidate) => candidate.projectID === undefined),
     isRunning: (id) => {
@@ -150,7 +161,17 @@ function fakeEnvironment(options: {
     disconnect: async () => {},
   };
 
-  return { projects, sessions: sessionStore, connection, restartDaemon: () => {} };
+  return {
+    projects,
+    sessions: sessionStore,
+    connection,
+    view: createViewState(sessionStore),
+    commands: neverCommands(),
+    native: inertNativeShell(),
+    settings: memorySettingsStore(),
+    service: recordingService(),
+    restartDaemon: () => {},
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +319,46 @@ describe("resolveLocalLayout", () => {
     const resolved = resolveLocalLayout(entry, replacement, ids);
 
     expect(resolved.local).toBe(replacement);
+  });
+
+  test("a daemon-side split keeps the tab this window was looking at", () => {
+    const twoTabs: SessionLayout = {
+      tabs: [
+        { root: { kind: "terminal", id: terminalID("a") }, focusedTerminalID: terminalID("a") },
+        { root: { kind: "terminal", id: terminalID("b") }, focusedTerminalID: terminalID("b") },
+      ],
+      focusedTabIndex: 1,
+    };
+    const entry: LocalLayoutEntry = { base: twoTabs, local: withFocusedTab(twoTabs, 0) };
+
+    // The daemon split a pane: a whole new layout, same stored tab selection.
+    const split: SessionLayout = { ...twoTabs, tabs: [...twoTabs.tabs] };
+    const resolved = resolveLocalLayout(entry, split, [terminalID("a"), terminalID("b")]);
+
+    // Tab selection is this window's. Adopting the daemon's would move the user
+    // off the tab they were on every time they split a pane.
+    expect(resolved.local.focusedTabIndex).toBe(0);
+  });
+
+  test("the daemon moving the tab itself is followed: that is what ⌘T is", () => {
+    const oneTab: SessionLayout = {
+      tabs: [
+        { root: { kind: "terminal", id: terminalID("a") }, focusedTerminalID: terminalID("a") },
+      ],
+      focusedTabIndex: 0,
+    };
+    const entry: LocalLayoutEntry = { base: oneTab, local: oneTab };
+
+    const appended: SessionLayout = {
+      tabs: [
+        ...oneTab.tabs,
+        { root: { kind: "terminal", id: terminalID("b") }, focusedTerminalID: terminalID("b") },
+      ],
+      focusedTabIndex: 1,
+    };
+    const resolved = resolveLocalLayout(entry, appended, [terminalID("a"), terminalID("b")]);
+
+    expect(resolved.local.focusedTabIndex).toBe(1);
   });
 });
 
@@ -515,6 +576,20 @@ describe("MainWindow markup", () => {
     expect(markup).toContain("No session selected");
     expect(markup).not.toContain('role="tablist"');
   });
+
+  test("an open sheet renders as a labelled dialog over the window", () => {
+    const environment = fakeEnvironment({ sessions: [session("s")] });
+    environment.view.openSheet({ kind: "jumpList" });
+
+    const markup = renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <MainWindow />
+      </ClientEnvironmentProvider>,
+    );
+
+    expect(markup).toContain('aria-label="Go to Session"');
+    expect(markup).toContain("<dialog");
+  });
 });
 
 describe("SessionDetail markup", () => {
@@ -531,7 +606,7 @@ describe("SessionDetail markup", () => {
 
     const markup = renderToStaticMarkup(
       <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID="s" />
+        <SessionDetail sessionID={sessionID("s")} />
       </ClientEnvironmentProvider>,
     );
 
@@ -539,6 +614,8 @@ describe("SessionDetail markup", () => {
     expect(markup).toContain('role="tab"');
     expect(markup).toContain("zsh");
     expect(markup).toContain('aria-label="Terminal: zsh — running"');
+    // The one creation affordance in the window, and the same action as ⌘T.
+    expect(markup).toContain('aria-label="New Terminal"');
   });
 
   test("a session the mirror does not have says so", () => {
@@ -546,7 +623,7 @@ describe("SessionDetail markup", () => {
 
     const markup = renderToStaticMarkup(
       <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID="ghost" />
+        <SessionDetail sessionID={sessionID("ghost")} />
       </ClientEnvironmentProvider>,
     );
 
@@ -558,12 +635,33 @@ describe("SessionDetail markup", () => {
 
     const markup = renderToStaticMarkup(
       <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID="s" />
+        <SessionDetail sessionID={sessionID("s")} />
       </ClientEnvironmentProvider>,
     );
 
     expect(markup).toContain("No terminals in this session");
     expect(markup).not.toContain('role="tablist"');
+  });
+});
+
+describe("shouldStartOnAttach", () => {
+  const configured = terminal("t1");
+  const automatic = { ...configured, startsAutomatically: true };
+
+  test("a session just created here starts its shell on the first attach", () => {
+    expect(shouldStartOnAttach(automatic, undefined)).toBe(true);
+    expect(shouldStartOnAttach(automatic, { kind: "idle" })).toBe(true);
+  });
+
+  test("a restored terminal spawns nothing: relaunching the app is not a start", () => {
+    expect(shouldStartOnAttach(configured, undefined)).toBe(false);
+  });
+
+  test("a terminal that is running, or has finished, is left alone", () => {
+    expect(shouldStartOnAttach(automatic, { kind: "running" })).toBe(false);
+    expect(shouldStartOnAttach(automatic, { kind: "exited", code: 0 })).toBe(false);
+    expect(shouldStartOnAttach(automatic, { kind: "failed", message: "no such" })).toBe(false);
+    expect(shouldStartOnAttach(undefined, undefined)).toBe(false);
   });
 });
 

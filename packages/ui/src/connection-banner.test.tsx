@@ -25,6 +25,13 @@ import {
   bannerModel,
   runningSummary,
 } from "./connection-banner.tsx";
+import {
+  inertNativeShell,
+  memorySettingsStore,
+  neverCommands,
+  recordingService,
+} from "./test-fakes.ts";
+import { createViewState } from "./view-state.ts";
 
 const AT = instant("2026-01-01T00:00:00.000Z");
 
@@ -73,6 +80,8 @@ function fakeEnvironment(options: {
     sessions,
     selection: undefined,
     terminalStates: states,
+    launchProfiles: [],
+    launchProfileAvailability: {},
     inProject: () => [],
     standaloneSessions: sessions,
     isRunning: (id) => {
@@ -97,6 +106,11 @@ function fakeEnvironment(options: {
     projects,
     sessions: sessionStore,
     connection,
+    view: createViewState(sessionStore),
+    commands: neverCommands(),
+    native: inertNativeShell(),
+    settings: memorySettingsStore(),
+    service: recordingService(),
     restartDaemon: options.onRestart ?? (() => {}),
   };
 }

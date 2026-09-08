@@ -29,6 +29,20 @@
   on the login-shell `PATH` only the daemon has — and installing a tool must not
   edit the user's profile. `isBuiltIn` crosses the wire and is **ignored** on
   save: a client able to set it could mint an undeletable profile.
+- **Amended:** 2026-09-09 by the command surface (#37) — protocol **version 4**,
+  two additions that make a split part of the session rather than an arrangement
+  one window remembers: `createTerminal` gains an optional
+  `placement: { kind: "split", beside: TerminalID, axis: Axis }` — the daemon
+  splits the pane holding `beside` with `splitPane` and persists the result — and
+  `removeTerminal` joins `ClientMessage`, stopping the process if it is live,
+  dropping the descriptor and collapsing the layout, leaving one fresh idle shell
+  behind when it was the session's last (ADR 0010's "never zero"). The minimum
+  supported version moves to 4: a v3 daemon meeting `removeTerminal` falls off the
+  end of its dispatch switch and answers *nothing*, so the client would wait on a
+  reply that is never coming — worse than a refusal. A v3 peer is refused with
+  `incompatibleVersion`, the daemon keeps running and no terminal is touched; the
+  app shows the version-skew banner whose only button is "Restart the background
+  service".
 
 ## Context
 
@@ -178,7 +192,9 @@ enum ClientMessage {
     case snapshotText(TerminalID, TextRange)  // what the CLI asks for
     case saveLaunchProfile(LaunchProfile)  // upsert; isBuiltIn ignored (v3)
     case removeLaunchProfile(LaunchProfileID)                            // (v3)
-    case createTerminal(SessionID, profileID: LaunchProfileID?)          // (v3)
+    case createTerminal(SessionID, profileID: LaunchProfileID?,
+                        placement: Placement?)      // (v3; placement is v4)
+    case removeTerminal(TerminalID)        // stops it, forgets it, collapses (v4)
 }
 
 enum DaemonMessage {
