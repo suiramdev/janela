@@ -57,6 +57,18 @@ ship alongside. That is the whole reason it wins.
   the previous version and migrates forward. **`prisma db push` is forbidden outside
   a scratch database** — it produces nothing to test, which would quietly retire
   0005's second rule.
+- **The CLI writes migrations; the daemon applies them.** `prisma migrate deploy`
+  needs Node, the `prisma` package and the `prisma/` directory, and the compiled
+  sidecar has none of the three — so each migration is imported into the binary as
+  text (`import … with { type: "text" }`, the same mechanism that embeds the PTY
+  dylib) and applied by `applyMigrations` in `@janela/db`, one transaction each,
+  against Prisma's own `_prisma_migrations` table with Prisma's own checksum
+  (sha256-hex of the raw SQL text). Byte-compatible in both directions, and tested
+  as such: a database the daemon migrated reports "up to date" to
+  `prisma migrate status`, and one the CLI migrated is left alone by the daemon.
+  The corollary is a rule with teeth: **`MIGRATIONS` gains one entry per migration
+  directory, by exact name**, or the shipped daemon silently never migrates while
+  `bun run` works perfectly. A disk-parity test is what enforces it.
 - **The driver adapter is ours.** Prisma's adapter interface is small and its types
   are first-party (`@prisma/driver-adapter-utils`). A third-party `bun:sqlite`
   adapter exists and works — it is the reference implementation for ours — but it is
