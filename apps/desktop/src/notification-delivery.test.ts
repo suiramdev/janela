@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { AttentionDelivering } from "@janela/client";
 import type { Instant, SessionID, TerminalID } from "@janela/core";
 import type { AttentionKind, AttentionSignal } from "@janela/protocol";
 import type { LogRecord, Logger } from "@janela/support";
@@ -21,6 +22,8 @@ const TERMINAL = "t1" as TerminalID;
 /** A body no other string in this file contains, so a leak is unambiguous. */
 const SECRET_BODY = "BODY-4c7e01";
 const SECRET_TITLE = "TITLE-b9d1f2";
+const SECRET_SESSION_NAME = "SESSION-1de9c4";
+const SECRET_TERMINAL_TITLE = "TERMINAL-7ac35b";
 
 function signal(kind: AttentionKind, session: SessionID = SESSION): AttentionSignal {
   return {
@@ -429,5 +432,81 @@ describe("what the user reads", () => {
     expect(notificationContent(input({ kind: "promptFinished", durationSeconds: 12 })).body).toBe(
       "A command finished after 12s.",
     );
+  });
+});
+
+describe("non-negotiable 11: bodies are never logged and never persisted", () => {
+  /**
+   * The rule's only defence.
+   *
+   * Every logger call site here is correct today — ids, counts, booleans and
+   * `nameOf(error)` — and nothing stopped the next person adding `body` to one of
+   * them. This drives the whole lifecycle past a recording logger and asserts the
+   * sentinels appear in no message and no field, on any path.
+   *
+   * All four strings are pinned, not just the body. The composed notification
+   * title carries the terminal's OSC 0 title, which is the user's output too — a
+   * log line quoting `notification.title` leaks it exactly as surely.
+   */
+  test("no log record from any path carries the body or the title", async () => {
+    const carrying: AttentionKind = {
+      kind: "notification",
+      title: SECRET_TITLE,
+      body: SECRET_BODY,
+    };
+    const secretly = (
+      session: SessionID = SESSION,
+    ): Parameters<AttentionDelivering["deliver"]>[0] => ({
+      ...input(carrying, session),
+      sessionName: SECRET_SESSION_NAME,
+      terminalTitle: SECRET_TERMINAL_TITLE,
+    });
+
+    const granted = fakePlugin();
+    const grantedLog = recordingLogger();
+    const { adapter } = delivery(granted, { log: grantedLog.log });
+
+    // Deliver, click, withdraw — every path that has the content in scope.
+    await adapter.deliver(secretly());
+    const posted = granted.sent[0];
+    if (posted === undefined) throw new Error("nothing posted");
+    granted.click(posted);
+    await Promise.resolve();
+    await adapter.deliver(secretly(OTHER));
+    await adapter.withdraw(OTHER);
+
+    // And the refusing paths, which hold the content just as long.
+    const denied = fakePlugin();
+    denied.alreadyGranted = false;
+    denied.response = "denied";
+    const deniedLog = recordingLogger();
+    const refusing = delivery(denied, { log: deniedLog.log }).adapter;
+    await refusing.deliver(secretly());
+
+    const failing = fakePlugin();
+    failing.removalFails = true;
+    failing.listenerFails = true;
+    const failingLog = recordingLogger();
+    const degraded = delivery(failing, { log: failingLog.log }).adapter;
+    await degraded.deliver(secretly());
+    await degraded.withdraw(SESSION);
+    await Promise.resolve();
+
+    const records = [...grantedLog.records, ...deniedLog.records, ...failingLog.records];
+    // Vacuously true if nothing logged: the paths above must have said something.
+    expect(records.length).toBeGreaterThan(5);
+
+    for (const record of records) {
+      const written = `${record.message} ${JSON.stringify(record.fields ?? {})}`;
+      expect(written).not.toContain(SECRET_BODY);
+      expect(written).not.toContain(SECRET_TITLE);
+      expect(written).not.toContain(SECRET_SESSION_NAME);
+      expect(written).not.toContain(SECRET_TERMINAL_TITLE);
+    }
+
+    // The content did travel — otherwise this proves only that nothing happened.
+    expect(granted.sent[0]?.body).toContain(SECRET_BODY);
+    expect(granted.sent[0]?.body).toContain(SECRET_TITLE);
+    expect(granted.sent[0]?.title).toContain(SECRET_TERMINAL_TITLE);
   });
 });
