@@ -123,6 +123,8 @@ async function withSessions(
       readonly failCopy?: Error;
     };
     readonly automation?: boolean;
+    /** The automation fake attaches a terminal per run, as a real runner does. */
+    readonly automationAttaches?: boolean;
     readonly failCreate?: Error;
     readonly safety?: Parameters<typeof fakeWorktrees>[0] extends undefined
       ? never
@@ -168,7 +170,10 @@ async function withSessions(
               ? {}
               : { failCopy: options.include.failCopy }),
           });
-    const automation = fakeAutomation({ events });
+    const automation = fakeAutomation({
+      events,
+      ...(options.automationAttaches === true ? { attaches: true } : {}),
+    });
     const factory = fakeCreateTerminal(events);
     const terminals = createTerminalRegistry();
 
@@ -440,6 +445,37 @@ describe("createSession", () => {
     } finally {
       await database.dispose();
     }
+  });
+
+  test("an automation terminal lands in the session before the user's, and persists", async () => {
+    await withSessions({ automation: true, automationAttaches: true }, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+
+      // The automation terminal first, because it was created first; the user's
+      // terminal after it, and focused — a `pnpm dev` starting must not take the
+      // tab the user is about to type in.
+      expect(session.terminals.map((terminal) => terminal.role)).toEqual([
+        { kind: "automation", event: "sessionStart" },
+        { kind: "user" },
+      ]);
+      expect(session.layout.tabs).toHaveLength(2);
+      expect(session.layout.focusedTabIndex).toBe(1);
+      expect(session.layout.tabs[0]?.focusedTerminalID).toBe(fixture.automation.attached[0]?.id);
+
+      // Reloaded from the same database: the descriptor is the record that
+      // `sessionStart` has already fired, so it has to survive a restart.
+      await fixture.sessions.load();
+      const restored = fixture.sessions.find(session.id);
+      expect(restored?.terminals.map((terminal) => terminal.role)).toEqual([
+        { kind: "automation", event: "sessionStart" },
+        { kind: "user" },
+      ]);
+      expect(restored?.terminals[0]?.startsAutomatically).toBe(false);
+      expect(restored?.layout).toEqual(session.layout);
+    });
   });
 
   test("a worktree git refuses leaves no session behind", async () => {

@@ -20,7 +20,6 @@ import {
   newTerminalID,
   now,
   ownsItsDirectory,
-  singleTerminalLayout,
   supportsWorktrees,
   worktreeOf,
 } from "@janela/core";
@@ -663,7 +662,15 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     if (automation === undefined) return;
 
     try {
-      await automation.run({ event, project, session });
+      await automation.run({
+        event,
+        project,
+        session,
+        // The sink: each automation terminal is appended, persisted and announced
+        // *before* its process starts, which is what "automation is visible"
+        // means for a teardown the user is watching.
+        attach: (descriptor) => this.attachAutomationTerminal(session, descriptor),
+      });
     } catch {
       // Visible and non-fatal, by product rule: the command's own terminal shows
       // what happened, and the session is still usable.
@@ -695,10 +702,47 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       createdAt: now(),
     };
 
-    session.terminals = [descriptor];
-    session.layout = singleTerminalLayout(descriptor.id);
+    this.appendTerminalTab(session, descriptor, { focus: true });
     await this.deps.repository.save(session);
     await this.publish();
+  }
+
+  /**
+   * An automation terminal, visible before its process starts.
+   *
+   * Persisted as well as announced: the `sessionStart` descriptor *is* the record
+   * that the event has fired, so a daemon restart must find it in the database
+   * rather than re-run `pnpm dev`.
+   */
+  private async attachAutomationTerminal(
+    session: Session,
+    descriptor: TerminalDescriptor,
+  ): Promise<void> {
+    this.appendTerminalTab(session, descriptor, { focus: false });
+    await this.deps.repository.save(session);
+    await this.publish();
+  }
+
+  /**
+   * Appends a terminal as its own tab.
+   *
+   * Focus is a parameter because the two callers disagree for a reason: the user
+   * asked for their own terminal, and an automation command starting while they
+   * read the output of the last one must not steal the tab out from under them.
+   */
+  private appendTerminalTab(
+    session: Session,
+    descriptor: TerminalDescriptor,
+    options: { readonly focus: boolean },
+  ): void {
+    session.terminals = [...session.terminals, descriptor];
+    session.layout = {
+      tabs: [
+        ...session.layout.tabs,
+        { root: { kind: "terminal", id: descriptor.id }, focusedTerminalID: descriptor.id },
+      ],
+      focusedTabIndex: options.focus ? session.layout.tabs.length : session.layout.focusedTabIndex,
+    };
   }
 
   private async createTerminal(
