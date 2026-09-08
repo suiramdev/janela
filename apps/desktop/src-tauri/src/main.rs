@@ -23,40 +23,28 @@
 // TODO: The window and the native menu, built from @janela/ui's COMMANDS table so the
 // menu and the in-app command palette cannot drift apart.
 
-// TODO: The socket bridge. Connect to `~/.janela/run/janelad.sock`, read
-// length-prefixed frames, and relay them to the WebView as raw bytes — never base64,
-// never JSON-wrapped. Relay input and control frames the other way.
+// The socket bridge is `bridge.rs`: it relays length-prefixed frames as raw bytes
+// in both directions and applies the two back-pressure policies — coalesced
+// repaints may drop their oldest, control frames and input may not. Getting that
+// wrong shows up as a terminal that is subtly corrupt after a stall.
 //
-// Back-pressure lives here, on the daemon→WebView direction, and the two policies
-// are different: coalesced repaint frames may drop their oldest, control frames and
-// input may not. Getting this wrong shows up as a terminal that is subtly corrupt
-// after a stall, which is the worst kind of bug to find late.
+// Launch-agent registration is `agent.rs`: `SMAppService.agent(plistName:)` over
+// the plist sealed into `Contents/Library/LaunchAgents`, with
+// `launchctl kickstart` standing in for socket activation (ADR 0017, amended
+// 2026-09-08). The sidecar is a single compiled Bun binary at
+// `Contents/MacOS/janelad`, which is what keeps ADR 0008's signing story at two
+// binaries rather than three. Neither module reads a frame's meaning, and neither
+// writes a plist.
 
-// TODO: Sidecar lifecycle and launch-agent registration.
-//
-// The daemon is a compiled Bun binary shipped as a Tauri sidecar, at
-// `Contents/MacOS/janelad` — the bundler's location, and what the sealed LaunchAgent
-// plist names as its `BundleProgram`. launchd owns its lifecycle through that agent,
-// registered with `SMAppService.agent(plistName: "sh.janela.janelad.plist")`.
-//
-// There is no socket activation (ADR 0017, amended 2026-09-08): the agent has no
-// `RunAtLoad`, so registering starts nothing. The daemon binds
-// `~/.janela/run/janelad.sock` itself, and a client that cannot connect starts it
-// with `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries. The app's job
-// is registration, reporting an approval requirement honestly, and never terminating
-// a running daemon on its own.
-//
-// The plist is sealed by the code signature and MUST NOT be written at runtime: `smd`
-// checks the bundle's signature before loading it, and a rewritten plist fails with
-// `errSecCSBadResource`. Before registering, check that the sidecar exists beside the
-// current executable; a missing one is a damaged install, which is reported rather
-// than registered.
-//
-// Note the sidecar is a single file: `bun build --compile` embeds the runtime, the
-// Prisma client, the emulator and the PTY cdylib. Verified during the migration, and
-// it is what keeps ADR 0008's signing story at two binaries rather than three.
+mod agent;
+mod bridge;
 
 use std::time::Instant;
+
+use agent::{
+    launch_agent_status, open_login_items_settings, register_launch_agent, stop_background_service,
+};
+use bridge::{bridge_close, bridge_connect, bridge_receive, bridge_send, BridgeState};
 
 use tauri::webview::PageLoadEvent;
 
@@ -78,6 +66,17 @@ fn main() {
                 );
             }
         })
+        .manage(BridgeState::default())
+        .invoke_handler(tauri::generate_handler![
+            bridge_connect,
+            bridge_receive,
+            bridge_send,
+            bridge_close,
+            launch_agent_status,
+            register_launch_agent,
+            open_login_items_settings,
+            stop_background_service,
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run the Janela shell");
 }

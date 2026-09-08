@@ -160,7 +160,17 @@ export const PACKAGES: readonly PackageSpec[] = [
     dir: "apps/daemon",
     layer: 7,
     side: "daemon",
-    deps: ["@janela/support", "@janela/daemon", "@janela/db"],
+    deps: [
+      "@janela/support",
+      "@janela/core",
+      "@janela/protocol",
+      "@janela/git",
+      "@janela/pty",
+      "@janela/db",
+      "@janela/terminal",
+      "@janela/session",
+      "@janela/daemon",
+    ],
   },
 
   // ---- Client ---------------------------------------------------------------
@@ -303,9 +313,9 @@ export const GATED_MODULES: readonly GatedModule[] = [
   },
   {
     pattern: "node:net",
-    allowed: ["@janela/daemon"],
+    allowed: ["@janela/daemon", "@janela/janelad"],
     reason:
-      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket (ADR 0016).",
+      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket (ADR 0016). `apps/daemon` binds the path and hands the bound server down, because socket activation was given up and there is no descriptor to inherit (ADR 0017, amended 2026-09-08 by #39) — `@janela/daemon` still never binds and never chooses a path.",
   },
   {
     pattern: "react",

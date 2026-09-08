@@ -15,9 +15,15 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
+    "@janela/core": "workspace:*",
     "@janela/daemon": "workspace:*",
     "@janela/db": "workspace:*",
-    "@janela/support": "workspace:*"
+    "@janela/git": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/pty": "workspace:*",
+    "@janela/session": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@janela/terminal": "workspace:*"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"

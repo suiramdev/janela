@@ -13,10 +13,15 @@ publish = false
 tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
+libc = "0.2"
 log = "0.4"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-service-management = { version = "0.3", features = ["SMAppService"] }
 tauri = { version = "2.11", features = [] }
 tauri-plugin-log = "2.9"
 tauri-plugin-notification = "2.3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "sync", "time"] }
 
 [profile.release]
 opt-level = 3

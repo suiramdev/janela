@@ -237,6 +237,7 @@ function scriptedTerminal(read: bigint, exitCode: number): PseudoTerminal {
     jpty_exit_code: () => exitCode,
     jpty_close: () => undefined,
     jpty_drop_all: () => 0,
+    jpty_peer_credential: () => -1n,
   };
   return spawnPseudoTerminal(
     {
