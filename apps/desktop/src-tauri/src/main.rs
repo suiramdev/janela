@@ -44,4 +44,28 @@
 // Prisma client, the emulator and the PTY cdylib. Verified during the migration, and
 // it is what keeps ADR 0008's signing story at two binaries rather than three.
 
-fn main() {}
+use std::time::Instant;
+
+use tauri::webview::PageLoadEvent;
+
+fn main() {
+    // Launch budget instrument (docs/performance.md § Launch): `main` → the WebView
+    // reports the page loaded. Process start → `main` is dyld work this cannot see;
+    // the JS side logs navigation → first frame separately.
+    let launched_at = Instant::now();
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .on_page_load(move |_webview, payload| {
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                log::info!(
+                    target: "app",
+                    "window loaded {} ms after main",
+                    launched_at.elapsed().as_millis()
+                );
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("failed to run the Janela shell");
+}

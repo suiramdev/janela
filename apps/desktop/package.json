@@ -9,9 +9,10 @@
   },
   "scripts": {
     "build": "vite build",
-    "bundle": "tauri build",
+    "bundle": "bun run sidecar && tauri build",
     "clean": "rm -rf dist src-tauri/target *.tsbuildinfo",
-    "dev": "tauri dev",
+    "dev": "bun run sidecar && tauri dev",
+    "sidecar": "bun run scripts/sidecar.ts",
     "test": "bun test",
     "typecheck": "tsc --build"
   },
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",
+    "@tailwindcss/vite": "4.3.3",
     "@tauri-apps/cli": "2.11.4",
     "@vitejs/plugin-react": "6.1.0",
     "tailwindcss": "4.3.3",

@@ -1,0 +1,2 @@
+# Capability schemas tauri-build regenerates on every compile.
+/gen/schemas

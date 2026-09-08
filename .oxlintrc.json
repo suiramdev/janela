@@ -39,7 +39,17 @@
 
     "import/no-cycle": "error",
     "import/no-self-import": "error",
-    "import/no-duplicates": "error"
+    "import/no-duplicates": "error",
+
+    // A stylesheet has no export to bind. `import "./styles.css"` is how the
+    // bundler learns the app has one, and it is the only unassigned import the
+    // client is allowed.
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+
+    // React 19 with the automatic runtime (`"jsx": "react-jsx"` in
+    // tsconfig.base.json): JSX compiles to `jsx()` from `react/jsx-runtime`, so a
+    // `React` binding in scope would be an unused import, not a requirement.
+    "react/react-in-jsx-scope": "off"
   },
   "overrides": [
     {
