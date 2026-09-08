@@ -27,15 +27,38 @@
  * See docs/testing.md.
  */
 
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+/**
+ * The git the fixtures run, resolved once from the developer's `PATH`.
+ *
+ * `Bun.spawn` and not `node:child_process`: that module is gated to
+ * `@janela/support` by `scripts/layers.ts`, and the gate scans this package too.
+ */
+const GIT = Bun.which("git") ?? "/usr/bin/git";
+
 /** A directory that deletes itself when disposed. */
 export interface TemporaryDirectory extends AsyncDisposable {
   readonly path: string;
   join(...components: string[]): string;
 }
 
-export function temporaryDirectory(label?: string): Promise<TemporaryDirectory> {
-  void label;
-  throw new Error(`not implemented: temporaryDirectory`);
+export async function temporaryDirectory(label?: string): Promise<TemporaryDirectory> {
+  const created = await mkdtemp(join(tmpdir(), `janela-${label ?? "test"}-`));
+  // Realpath, because on macOS `os.tmpdir()` is `/var/folders/…` while every
+  // path git prints back is `/private/var/folders/…`. A fixture path that does
+  // not compare equal to git's own answer makes every worktree assertion a lie.
+  const path = await realpath(created);
+
+  return {
+    path,
+    join: (...components: string[]) => join(path, ...components),
+    async [Symbol.asyncDispose](): Promise<void> {
+      await rm(path, { recursive: true, force: true });
+    },
+  };
 }
 
 /**
@@ -54,9 +77,69 @@ export interface GitFixture extends AsyncDisposable {
   commit(file: string, contents: string, message?: string): Promise<void>;
 }
 
-export function gitFixture(label?: string): Promise<GitFixture> {
-  void label;
-  throw new Error(`not implemented: gitFixture`);
+export async function gitFixture(label?: string): Promise<GitFixture> {
+  const directory = await temporaryDirectory(label ?? "git");
+  const path = directory.join("repo");
+  const home = directory.join("home");
+  await mkdir(path, { recursive: true });
+  await mkdir(home, { recursive: true });
+
+  // `PATH` is passed through rather than minimised so git finds its own helpers,
+  // and so a `gitRunner()` under test resolves the same binary the fixture used.
+  // Everything else is pinned so the suite does not read the developer's config.
+  const environment: Record<string, string> = {
+    PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+    HOME: home,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_AUTHOR_NAME: "Janela Test",
+    GIT_AUTHOR_EMAIL: "test@janela.invalid",
+    GIT_COMMITTER_NAME: "Janela Test",
+    GIT_COMMITTER_EMAIL: "test@janela.invalid",
+    LANG: "C",
+  };
+
+  const git = async (...args: string[]): Promise<string> => {
+    const child = Bun.spawn([GIT, ...args], {
+      cwd: path,
+      env: environment,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [standardOutput, standardError, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    if (code !== 0) {
+      throw new Error(`git ${args[0] ?? ""} exited ${code}: ${standardError.trimEnd()}`);
+    }
+    return standardOutput;
+  };
+
+  const commit = async (file: string, contents: string, message?: string): Promise<void> => {
+    await mkdir(dirname(join(path, file)), { recursive: true });
+    await writeFile(join(path, file), contents, "utf8");
+    await git("add", "--", file);
+    await git("commit", "-q", "-m", message ?? `add ${file}`);
+  };
+
+  await git("init", "-q", "-b", "main");
+  await git("config", "commit.gpgsign", "false");
+  await git("config", "user.name", "Janela Test");
+  await git("config", "user.email", "test@janela.invalid");
+  await commit("README.md", "# fixture\n", "initial");
+
+  return {
+    path,
+    git,
+    commit,
+    async [Symbol.asyncDispose](): Promise<void> {
+      await directory[Symbol.asyncDispose]();
+    },
+  };
 }
 
 /** A log sink that records, for asserting that we log shapes and not content. */
