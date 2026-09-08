@@ -15,6 +15,23 @@
 - **Amended:** 2026-08-26 by [0015](0015-daemon-owned-sessions.md) — the bundle now
   ships a second executable and a LaunchAgent. Unsandboxed, hardened, notarized,
   outside the App Store is unchanged, and applies to both binaries.
+- **Amended:** 2026-09-08 by #39 (the sidecar bundle) — unchanged in substance, three
+  corrections of fact now that the bundle exists. **The daemon is at
+  `Contents/MacOS/janelad`**, not `Contents/Resources/janelad`: Tauri's bundler copies
+  `externalBin` into `Contents/MacOS` and signs what is there, and Apple treats a
+  Mach-O under `Resources` as data rather than code. **The entitlements are exactly
+  two**, in `apps/desktop/src-tauri/Entitlements.plist`, shared by both executables
+  because the bundler signs every Mach-O with one entitlements file:
+  `com.apple.security.cs.allow-jit` — measured, not assumed: under the hardened
+  runtime without it JSC drops to the interpreter and a compute-bound script goes
+  58 ms → 2692 ms — and `com.apple.security.cs.disable-library-validation`, without
+  which the daemon's `dlopen` of its embedded PTY dylib fails outright (also
+  measured). App Sandbox is off by the absence of the key, which is what the gate
+  asserts. **The gate is `apps/desktop/scripts/verify-bundle.ts`**, not `make
+  app-build`: it runs at the end of `bun run --cwd apps/desktop bundle`, in CI on
+  every push against an ad-hoc signature, and demands a Developer ID authority, a
+  secure timestamp, a stapled ticket and Gatekeeper acceptance when release
+  credentials are present.
 
 ## Context
 
@@ -56,12 +73,14 @@ Terminal.app — which is itself not sandboxed.
   forecloses that channel. The MAS also disallows the `SMAppService` agent layout
   [0017](0017-daemon-lifecycle.md) depends on, which makes that door doubly shut.
 - **Two executables, one signature story.** `Contents/MacOS/Janela` and
-  `Contents/Resources/janelad` are both Developer ID signed with the hardened
+  `Contents/MacOS/janelad` (`Contents/Resources/janelad` as first written; corrected
+  by the 2026-09-08 amendment) are both Developer ID signed with the hardened
   runtime and notarized as one bundle. The LaunchAgent plist ships at
-  `Contents/Library/LaunchAgents/`. Signing the app but not the daemon produces a
-  bundle that notarizes and then fails at registration — a failure that appears at
-  install time on a user's machine rather than in CI, so `make app-build` verifies
-  both binaries' signatures.
+  `Contents/Library/LaunchAgents/`, sealed by the app's signature. Signing the app
+  but not the daemon produces a bundle that notarizes and then fails at registration
+  — a failure that appears at install time on a user's machine rather than in CI, so
+  `bun run --cwd apps/desktop bundle` verifies both binaries' signatures before it
+  exits.
 - **No network entitlement is requested.** Janela does not phone home. Forge
   integration reaches the network only through the user's `gh`/`glab` child
   processes, which are their own — this app never opens a socket

@@ -145,10 +145,19 @@ jobs:
           cd "$RUNNER_TEMP/isolated"
           ./janelad --version
 
-  # The Tauri shell. tauri-build copies `bundle.externalBin` at compile time, so
-  # the daemon sidecar is placed first; the release build embeds the Vite output.
+  # The Tauri shell, as a bundle. tauri-build copies `bundle.externalBin` at compile
+  # time, so the daemon sidecar is placed first; `tauri build` then builds the
+  # frontend and the release binary, assembles Janela.app, and ad-hoc signs both
+  # executables with the hardened runtime and `src-tauri/Entitlements.plist`.
+  #
+  # The verify step at the end of `bun run bundle` is what makes this job worth its
+  # minutes: it proves the layout, the sealed LaunchAgent plist, the hardened runtime
+  # and the entitlements on every push. Developer ID signing and notarization need
+  # credentials this workflow deliberately does not have — they are the release
+  # workflow's, and an empty `APPLE_SIGNING_IDENTITY` here would be a worse failure
+  # than none at all.
   shell:
-    name: Build the Tauri shell
+    name: Bundle and verify the app
     runs-on: macos-15
     needs: [check, native]
     steps:
@@ -191,8 +200,5 @@ jobs:
       - name: Lint
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
-      - name: Build the frontend
-        run: bun run --cwd apps/desktop build
-
-      - name: Build the shell
-        run: cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml --features tauri/custom-protocol
+      - name: Bundle, sign (ad-hoc) and verify
+        run: bun run --cwd apps/desktop bundle
