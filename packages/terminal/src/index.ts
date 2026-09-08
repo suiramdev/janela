@@ -9,6 +9,9 @@
  * enforced rather than reviewed. See docs/decisions/0018-terminal-engine.md.
  */
 
+// `createEmulator` only: `HeadlessEmulator` itself stays inside the package, so
+// the emulator library is nameable in exactly one module.
+export { createEmulator } from "./headless-emulator.ts";
 export * from "./live-terminal.ts";
 export * from "./registry.ts";
 export * from "./terminal-emulating.ts";

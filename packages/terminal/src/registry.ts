@@ -1,4 +1,4 @@
-import type { SessionID, TerminalID } from "@janela/core";
+import type { SessionID, TerminalID, TerminalState } from "@janela/core";
 
 import type { LiveTerminal } from "./live-terminal.ts";
 
@@ -40,5 +40,65 @@ export interface TerminalRegistry {
 }
 
 export function createTerminalRegistry(): TerminalRegistry {
-  throw new Error(`not implemented: createTerminalRegistry`);
+  return new MapTerminalRegistry();
+}
+
+/**
+ * A terminal is live when it holds a process.
+ *
+ * Local, and deliberately: `@janela/core`'s `isLive` is still unimplemented and
+ * belongs to whoever owns that package's seams. Switch to it when it lands —
+ * there must be one answer to this question, not two.
+ */
+function isLiveState(state: TerminalState): boolean {
+  return state.kind === "running" || state.kind === "needsAttention";
+}
+
+class MapTerminalRegistry implements TerminalRegistry {
+  private readonly terminals = new Map<TerminalID, LiveTerminal>();
+
+  get(id: TerminalID): LiveTerminal | undefined {
+    return this.terminals.get(id);
+  }
+
+  register(terminal: LiveTerminal): void {
+    // A restart keeps a terminal's identity, so there is no legitimate second
+    // registration — and replacing one silently would orphan a live child.
+    if (this.terminals.has(terminal.id)) {
+      throw new Error(`terminal ${terminal.id} is already registered`);
+    }
+    this.terminals.set(terminal.id, terminal);
+  }
+
+  remove(id: TerminalID): void {
+    this.terminals.delete(id);
+  }
+
+  inSession(id: SessionID): readonly LiveTerminal[] {
+    // A filter, not an index: the scale target is 40 terminals, and a second map
+    // to keep in step is a bug surface bought with nothing.
+    const found: LiveTerminal[] = [];
+    for (const terminal of this.terminals.values()) {
+      if (terminal.sessionID === id) {
+        found.push(terminal);
+      }
+    }
+    return found;
+  }
+
+  get liveCount(): number {
+    let count = 0;
+    for (const terminal of this.terminals.values()) {
+      if (isLiveState(terminal.state)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async hangUpAll(): Promise<void> {
+    // `stop()` on an idle or exited terminal is a no-op, so there is nothing to
+    // filter and no state to consult first.
+    await Promise.all([...this.terminals.values()].map((terminal) => terminal.stop()));
+  }
 }

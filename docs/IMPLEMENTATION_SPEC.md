@@ -1537,10 +1537,10 @@ bare terminal as 1.
 
 ### 3.1 @janela/terminal — Emulator Seam and Live Terminal
 
-**Status**: seam. The interfaces, the event sink and the constants exist with
-their `TODO:` bodies; nothing is implemented. Issue #21 owns the emulator and
-the live terminal, issue #32 owns the repaint encoder. Layer 4, daemon side
-(`scripts/layers.ts`).
+**Status**: implemented (issue #21). `HeadlessEmulator` in
+`packages/terminal/src/headless-emulator.ts` is the only module that names
+`@xterm/headless`; `repaintSince` is the sanctioned full repaint until #32
+lands. The gated-module rules are in `scripts/layers.ts`.
 
 **Requirements**: ADR 0018 (rules; reasoning in 0004), ADR 0015, ADR 0006
 (no inferred agent state), `docs/performance.md` § Terminal throughput.
@@ -1594,14 +1594,24 @@ export type PromptMark =
   | { readonly kind: "commandStart" }
   | { readonly kind: "commandFinished"; readonly exitCode?: number };
 
+export const DEFAULT_SCROLLBACK = 10_000;
+
+/** Longest OSC-derived string that may leave the emulator. */
+export const MAX_OSC_TEXT_LENGTH = 1024;
+```
+
+`createEmulator` lives beside its implementation, in
+`packages/terminal/src/headless-emulator.ts`, and is re-exported from the
+package index — a seam that imports its own implementation is a seam pointing
+the wrong way:
+
+```ts
 export function createEmulator(options: {
   readonly size: GridSize;
   readonly scrollback: number;
 }): TerminalEmulating {
   // …
 }
-
-export const DEFAULT_SCROLLBACK = 10_000;
 ```
 
 #### LiveTerminal
@@ -1631,6 +1641,9 @@ export interface LiveTerminal {
 
   detach(client: string): GridSize | undefined;
 
+  /** Drains the PTY once and feeds the emulator. Once per frame, per terminal. */
+  drain(): void;
+
   repaintFor(client: string): Uint8Array;
 
   fullRepaintFor(client: string): Uint8Array;
@@ -1648,6 +1661,12 @@ export function createLiveTerminal(options: {
   readonly descriptor: TerminalDescriptor;
   readonly sessionID: SessionID;
   readonly launch: TerminalLaunch;
+  /** Defaults to DEFAULT_SCROLLBACK. */
+  readonly scrollback?: number;
+  /** Absent means silent: `@janela/support`'s `log()` is not implemented yet. */
+  readonly log?: Logger;
+  /** The spawn seam. Production passes nothing; the read-failure test scripts it. */
+  readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
 }): LiveTerminal {
   // …
 }
@@ -1838,13 +1857,14 @@ export function createTerminalRegistry(): TerminalRegistry {
 
 **Seams**:
 
-- `createEmulator` (issue #21) — the only place `@xterm/headless` is named.
 - `repaintSince` / `repaintFor` / `fullRepaintFor` (issue #32) — damage
-  tracking and minimal-sequence encoding; see § 6.1. A full repaint every
-  frame is the valid first implementation.
-- `createLiveTerminal`, `negotiatedSize` and `createTerminalRegistry` (issue
-  #21) — the PTY-to-emulator binding, viewport negotiation and the daemon's
-  single source of truth for "what is running".
+  tracking and minimal-sequence encoding; see § 6.1. Implemented as a full
+  repaint per changed frame, which is the sanctioned first implementation: the
+  optimisation can only make us slow, never wrong. The receiver is reset with
+  RIS first, so a repaint is correct onto a populated renderer and not only a
+  blank one.
+- `createEmulator`, `createLiveTerminal`, `negotiatedSize` and
+  `createTerminalRegistry` (issue #21) — done.
 
 ---
 
