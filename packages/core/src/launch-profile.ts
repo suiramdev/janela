@@ -93,3 +93,96 @@ export const BUILT_IN_PROFILES: readonly Omit<LaunchProfile, "id">[] = [
     isBuiltIn: true,
   },
 ];
+
+// MARK: - Availability
+
+/**
+ * Which profiles can actually be started, keyed by id.
+ *
+ * This is the one fact about a profile that `@janela/core` cannot compute: it
+ * depends on the user's real `PATH`, captured from their login shell in the
+ * daemon (`resolveShellEnvironment`, `@janela/session`). So the daemon computes
+ * this record and sends it; the client filters on it and never probes anything
+ * itself — a client cannot spawn a process, and the layering gate makes that
+ * structural.
+ *
+ * **An absent entry means hidden.** Not "assume available": a profile shown in a
+ * picker and then failing to start is exactly the "shown broken" outcome the
+ * product forbids, and the login-shell built-in is available by rule, so the
+ * picker is never empty while we wait to be told.
+ */
+export type LaunchProfileAvailability = Readonly<Record<LaunchProfileID, boolean>>;
+
+/**
+ * True when this profile means "the user's login shell", which is what an empty
+ * `command` is defined to mean. Named because `command[0] === undefined` at a
+ * call site explains the mechanism and not the rule.
+ */
+export function usesLoginShell(profile: Pick<LaunchProfile, "command">): boolean {
+  return profile.command[0] === undefined;
+}
+
+/**
+ * Whether an executable has to be looked up on `PATH`.
+ *
+ * A name containing a separator is a path, and is used as written — the same rule
+ * `resolveTerminalLaunch` applies, which deliberately does **not** stat it. Two
+ * copies of this predicate would be two chances for a profile to be hidden here
+ * and then fail to launch there.
+ */
+export function needsPathLookup(executable: string): boolean {
+  return !executable.includes("/");
+}
+
+/**
+ * Resolves availability for `profiles` against a synchronous "is this on `PATH`"
+ * predicate.
+ *
+ * The predicate is injected because the lookup is I/O and this package has none.
+ * The daemon passes one closed over the captured environment; a test passes a set
+ * membership. Every profile gets an entry, so the record distinguishes "we looked
+ * and it is missing" from "nobody has said".
+ */
+export function profileAvailability(
+  profiles: readonly LaunchProfile[],
+  isOnPath: (executable: string) => boolean,
+): LaunchProfileAvailability {
+  const availability: Record<LaunchProfileID, boolean> = {};
+  for (const profile of profiles) {
+    const executable = profile.command[0];
+    availability[profile.id] =
+      executable === undefined || !needsPathLookup(executable) || isOnPath(executable);
+  }
+  return availability;
+}
+
+/**
+ * Whether this profile may be offered to the user.
+ *
+ * The login shell is always available: resolving it needs no `PATH` lookup, only
+ * the login shell the daemon already captured. A path-bearing `argv[0]` is
+ * likewise taken at its word, because launching it does the same.
+ */
+export function isProfileAvailable(
+  profile: LaunchProfile,
+  availability: LaunchProfileAvailability,
+): boolean {
+  const executable = profile.command[0];
+  if (executable === undefined || !needsPathLookup(executable)) return true;
+  return availability[profile.id] ?? false;
+}
+
+/**
+ * The profiles a picker may show, in the order given.
+ *
+ * Order is preserved rather than chosen: which profiles a menu shows and in what
+ * sequence is a presentation decision made by the view that shows them, and a
+ * picker that reorders itself as binaries appear and disappear would move the
+ * user's target between keystrokes.
+ */
+export function availableProfiles(
+  profiles: readonly LaunchProfile[],
+  availability: LaunchProfileAvailability,
+): readonly LaunchProfile[] {
+  return profiles.filter((profile) => isProfileAvailable(profile, availability));
+}

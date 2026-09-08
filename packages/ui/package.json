@@ -17,7 +17,8 @@
     "@janela/core": "workspace:*",
     "@janela/design": "workspace:*",
     "@janela/protocol": "workspace:*",
-    "@janela/terminal-ui": "workspace:*"
+    "@janela/terminal-ui": "workspace:*",
+    "lucide-react": "1.33.0"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",

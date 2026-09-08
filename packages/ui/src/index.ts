@@ -12,3 +12,20 @@
 export * from "./commands.ts";
 export * from "./connection-banner.tsx";
 export * from "./main-window.tsx";
+
+// ---- Launch profiles and the settings surface (#38).
+export * from "./argv-editor.tsx";
+export * from "./automation-editing.ts";
+export * from "./background-service.ts";
+export * from "./controls.tsx";
+export * from "./global-settings.ts";
+export * from "./launch-profile-picker.tsx";
+export * from "./profile-editing.ts";
+export * from "./profile-icons.tsx";
+export * from "./project-settings-sheet.tsx";
+export * from "./settings-general.tsx";
+export * from "./settings-notifications.tsx";
+export * from "./settings-profiles.tsx";
+export * from "./settings-terminal.tsx";
+export * from "./settings-window.tsx";
+export * from "./styles.ts";
