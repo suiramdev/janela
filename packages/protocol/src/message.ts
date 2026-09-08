@@ -68,17 +68,29 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly name: string;
     }
+  /**
+   * What removing this session would do, so a client can describe it before
+   * asking. The reply is `text` carrying `serializeRemovalPlan` JSON — parse it
+   * with `parseRemovalPlan`.
+   */
+  | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
 
   // ---- Terminals
   /**
    * Attach to a terminal's output. `viewport` participates in the size
    * negotiation described in docs/decisions/0016-daemon-protocol.md.
+   *
+   * Absent, the attachment is input and scope only: the client may type and is
+   * subscribed to the terminal, but receives no repaints and takes no part in
+   * size negotiation. That is the CLI's reading path — ADR 0016, "a client
+   * attaching with no viewport does not participate". Participation is chosen
+   * here; attach again with a viewport to change it.
    */
   | {
       readonly type: "attach";
       readonly id: RequestID;
       readonly terminalID: TerminalID;
-      readonly viewport: GridSize;
+      readonly viewport?: GridSize;
     }
   | { readonly type: "detach"; readonly id: RequestID; readonly terminalID: TerminalID }
   /**
@@ -163,7 +175,11 @@ export interface StateUpdate {
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   /**
    * True when this is the complete picture rather than a change to part of it.
-   * Sent once after `subscribe`, and again after any reconnection.
+   *
+   * Sent after `subscribe`, after any reconnection — and, as it happens, on every
+   * state change the daemon announces: a client that merges by id cannot express
+   * a deletion, so a removal propagates as absence from a complete list. A
+   * partial update is therefore an addition or an edit, never a removal.
    */
   readonly isFullSnapshot: boolean;
 }

@@ -50,21 +50,27 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  * 2  `Input`/`Output` payloads begin with a 16-byte big-endian UUID header (see
  *    `RAW_HEADER_LENGTH` in message-coder.ts); `FrameDecoder.end()` reports a
  *    stream that closed mid-frame.
+ * 3  `removalPlan` joins `ClientMessage`; `attach.viewport` becomes optional,
+ *    meaning input and scope without rendering; every state announcement is a
+ *    full snapshot, because merge-by-id cannot express a removal.
  * ```
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /**
  * Oldest version we still accept.
  *
- * Also 2: a v1 peer never had a raw-frame encoding to be compatible with, so
- * there is nothing to keep working. Its `hello` is answered with `refused` /
- * `incompatibleVersion` carrying this range, the daemon keeps running and no
- * terminal is touched (ADR 0016 § Handshake, ADR 0017), and the client explains
- * the restart rather than reporting a handshake failure. Nothing after `hello`
- * is decoded from a refused peer.
+ * Also 3, because none of the v3 changes degrade: a v2 daemon meeting a
+ * `removalPlan` or a viewportless `attach` would close the connection mid-session
+ * rather than answer, which is exactly what the version ranges exist to prevent.
+ * A v2 peer's `hello` is answered with `refused` / `incompatibleVersion` carrying
+ * this range, the daemon keeps running and no terminal is touched (ADR 0016 §
+ * Handshake, ADR 0017); a v3 client meeting a v2 daemon refuses on its own side
+ * and tells the skew story — "the background service is older" — rather than
+ * reporting a handshake failure. Nothing after `hello` is decoded from a refused
+ * peer.
  */
-export const MINIMUM_SUPPORTED_VERSION = 2;
+export const MINIMUM_SUPPORTED_VERSION = 3;
 
 /**
  * Whether the two version ranges overlap: each side's current version must be at

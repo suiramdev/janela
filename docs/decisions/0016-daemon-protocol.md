@@ -9,6 +9,15 @@
   to the same no-base64 rule as the socket. The `Hello` and message sketches below
   are shown in their original Swift; the shipped shapes are in `@janela/protocol` and
   are the same shapes.
+- **Amended:** 2026-09-08 by the request dispatcher (#35) — protocol **version 3**:
+  `removalPlan` joins `ClientMessage` and is answered as `text` carrying the JSON of
+  `SessionRemovalPreview`; `attach.viewport` becomes optional and an absent one means
+  input and scope without rendering, which is the CLI rule below made explicit on the
+  wire; and **every state announcement is a full snapshot**, because a client merges
+  by id and merge-by-id cannot express a removal — see § Removals below. The minimum
+  supported version moves with it: a v2 peer meeting a `removalPlan` or a viewportless
+  `attach` would close the connection mid-session, so the ranges must not overlap. A
+  v2 peer is refused with `incompatibleVersion` and no terminal is touched.
 
 ## Context
 
@@ -150,7 +159,8 @@ enum ClientMessage {
     case subscribe(SubscriptionScope)      // projects, sessions, or one terminal
     case createSession(SessionCreationRequest)
     case removeSession(SessionID, RemovalOptions)
-    case attach(TerminalID, viewport: GridSize)
+    case removalPlan(SessionID)            // what removing it would do (v3)
+    case attach(TerminalID, viewport: GridSize?)  // absent viewport: no rendering (v3)
     case detach(TerminalID)
     case input(TerminalID, bytes: [UInt8])  // raw frame kind
     case resize(TerminalID, GridSize)
@@ -181,6 +191,21 @@ has exactly one `TIOCSWINSZ`. The daemon resolves it: **the size is the minimum 
 all attached viewports**, which is tmux's rule and the only one that guarantees no
 attached client is shown a screen it cannot fit. A client attaching with no
 viewport (the CLI, reading text) does not participate.
+
+A viewportless attachment is not a lesser attachment: it may type, and it is
+subscribed to the terminal. It simply has no size to contribute and no screen to
+repaint, so the frame loop never registers it. Participation is chosen at attach
+time — a client that grows a window attaches again with a viewport.
+
+### Removals
+
+A `StateUpdate` carries whole objects and a client merges them by id, which can
+express an addition and an edit but not a deletion. Two ways out: carry removed ids
+alongside the objects, or make every announcement the complete list. We take the
+second. It costs one pass over the sessions per announcement — human-rate work,
+kilobytes — and it removes a whole class of bug where a client's mirror keeps a
+session the daemon has forgotten. `isFullSnapshot` therefore reads "replace your
+world with this", and a partial update is an addition or an edit, never a removal.
 
 ## Consequences
 
