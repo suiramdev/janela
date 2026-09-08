@@ -18,6 +18,17 @@
   supported version moves with it: a v2 peer meeting a `removalPlan` or a viewportless
   `attach` would close the connection mid-session, so the ranges must not overlap. A
   v2 peer is refused with `incompatibleVersion` and no terminal is touched.
+- **Amended:** 2026-09-09 by launch profiles (#38's wire, authored in #35) — still
+  version 3, because the two land together and nothing has shipped between them:
+  `saveLaunchProfile` (an upsert of a whole `LaunchProfile`, keyed by the id the
+  client minted), `removeLaunchProfile`, and `createTerminal` — a terminal in a
+  session that already exists, configured and not started, answered as `text`
+  carrying the new `TerminalID`. `StateUpdate` gains `launchProfiles` and
+  `launchProfileAvailability`. Availability is a separate record rather than a
+  field on the profile because it is a fact about *this machine now* — it depends
+  on the login-shell `PATH` only the daemon has — and installing a tool must not
+  edit the user's profile. `isBuiltIn` crosses the wire and is **ignored** on
+  save: a client able to set it could mint an undeletable profile.
 
 ## Context
 
@@ -165,6 +176,9 @@ enum ClientMessage {
     case input(TerminalID, bytes: [UInt8])  // raw frame kind
     case resize(TerminalID, GridSize)
     case snapshotText(TerminalID, TextRange)  // what the CLI asks for
+    case saveLaunchProfile(LaunchProfile)  // upsert; isBuiltIn ignored (v3)
+    case removeLaunchProfile(LaunchProfileID)                            // (v3)
+    case createTerminal(SessionID, profileID: LaunchProfileID?)          // (v3)
 }
 
 enum DaemonMessage {
