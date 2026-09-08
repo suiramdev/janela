@@ -4,23 +4,24 @@
  * The second and last package allowed to name a terminal library.
  */
 
+export * from "./coalesce.ts";
+export * from "./grid-fit.ts";
+export * from "./surface-controller.ts";
 export * from "./terminal-rendering.ts";
+export * from "./terminal-surface.tsx";
+export * from "./xterm-rendering.ts";
 
-// TODO: `TerminalSurface`, a React component wrapping the renderer and conforming
-// to `TerminalRendering`.
-//
-// Three things it must not do, and all three are tempting:
+// `TerminalSurface` wraps the renderer and never does the three tempting things:
 //
 //   - **Own a PTY.** The library will happily start a process; that is the daemon's
-//     job now, and a client that spawns one has broken the architecture. The
-//     layering gate stops the import; nothing stops a `spawn` option, so do not
-//     pass one.
-//   - **Interpret input.** Forward bytes, do not translate them.
-//   - **Re-render on output.** The surface is fed imperatively through a ref. A
-//     component that puts terminal bytes in state will re-render React 60 times a
-//     second and turn the cheapest path in the client into the most expensive one.
+//     job, and a client that spawns one has broken the architecture. The layering
+//     gate stops the import; nothing stops a `spawn` option, so none is passed.
+//   - **Interpret input.** `onData`/`onBinary` are encoded to bytes and forwarded.
+//     No key handler is registered anywhere in this package.
+//   - **Re-render on output.** Bytes arrive through `TerminalSurfaceHandle.feed`
+//     and go straight into the renderer; the component holds no state at all.
 //
-// Also: report the viewport in *cells*, derived from the measured cell metrics, and
-// coalesce resizes during a divider drag — docs/performance.md § Interaction budgets
-// a reflow at one frame, and an uncoalesced drag sends one resize per mouse move
-// across two process boundaries.
+// The viewport is reported in *cells*, measured from what xterm drew, and resize
+// votes are coalesced to one per frame — docs/performance.md § Interaction budgets
+// a reflow at one frame, and an uncoalesced divider drag would send one resize per
+// mouse move across two process boundaries.
