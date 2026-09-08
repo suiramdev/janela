@@ -1,0 +1,75 @@
+import { describe, expect, test } from "bun:test";
+
+import type { AbsolutePath, ProjectID, SessionID } from "./identifiers.ts";
+import { emptyLayout } from "./session-layout.ts";
+import type { Backing, Session, WorktreeBinding } from "./session.ts";
+import { backingViolations } from "./session.ts";
+
+/**
+ * `identifier()` and `absolutePath()` are their own seams; these values never
+ * leave the test, so they are branded directly.
+ */
+const directory = "/Users/x/code/janela" as AbsolutePath;
+const project = "1c8c9c8e-0e1a-4f2c-9a10-6c1c1f0b9f11" as ProjectID;
+
+const binding: WorktreeBinding = {
+  path: directory,
+  ownership: "managed",
+  includedPaths: [],
+};
+
+const session = (backing: Backing, projectID?: ProjectID): Session => ({
+  id: "0f6e1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" as SessionID,
+  ...(projectID === undefined ? {} : { projectID }),
+  name: "feature",
+  directory,
+  backing,
+  terminals: [],
+  layout: emptyLayout,
+  accent: "none",
+  createdAt: "2026-01-02T03:04:05.000Z" as Session["createdAt"],
+  lastActiveAt: "2026-01-02T03:04:05.000Z" as Session["lastActiveAt"],
+  isPinned: false,
+});
+
+describe("backingViolations", () => {
+  test("a folder session with no project is fine", () => {
+    expect(backingViolations(session({ kind: "folder" }))).toEqual([]);
+  });
+
+  test("a folder session inside a project is refused", () => {
+    expect(backingViolations(session({ kind: "folder" }, project))).toEqual([
+      "folder backing must not belong to a project",
+    ]);
+  });
+
+  test("a projectDirectory session with a project is fine", () => {
+    expect(backingViolations(session({ kind: "projectDirectory" }, project))).toEqual([]);
+  });
+
+  test("a projectDirectory session with no project is refused", () => {
+    expect(backingViolations(session({ kind: "projectDirectory" }))).toEqual([
+      "projectDirectory backing requires a project",
+    ]);
+  });
+
+  test("a worktree session with a project is fine", () => {
+    expect(backingViolations(session({ kind: "worktree", binding }, project))).toEqual([]);
+  });
+
+  test("a worktree session with no project is refused", () => {
+    expect(backingViolations(session({ kind: "worktree", binding }))).toEqual([
+      "worktree backing requires a project",
+    ]);
+  });
+
+  test("a binding path that drifted from the directory is not a violation", () => {
+    const moved = session(
+      { kind: "worktree", binding: { ...binding, path: "/elsewhere" as AbsolutePath } },
+      project,
+    );
+    // `WorktreeBinding.path` says a mismatch means the user moved the worktree,
+    // which is something to re-resolve — not a reason to refuse to load it.
+    expect(backingViolations(moved)).toEqual([]);
+  });
+});

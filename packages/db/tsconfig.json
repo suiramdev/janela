@@ -3,11 +3,11 @@
   "compilerOptions": {
     "lib": ["ES2023"],
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "types": ["bun"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "generated", "native/target", "src-tauri"],
+  "include": ["src/**/*", "generated/**/*"],
+  "exclude": ["node_modules", "dist", "native/target", "src-tauri"],
   "references": [
     {
       "path": "../../packages/support"

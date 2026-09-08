@@ -173,6 +173,23 @@ export type WorktreeOwnership = "managed" | "adopted";
  * violates one of these arrived from somewhere that should not have produced it.
  */
 export function backingViolations(session: Session): readonly string[] {
-  void session;
-  throw new Error(`not implemented: backingViolations`);
+  const reasons: string[] = [];
+  const hasProject = session.projectID !== undefined;
+
+  switch (session.backing.kind) {
+    case "folder":
+      if (hasProject) reasons.push("folder backing must not belong to a project");
+      break;
+    case "projectDirectory":
+      if (!hasProject) reasons.push("projectDirectory backing requires a project");
+      break;
+    case "worktree":
+      if (!hasProject) reasons.push("worktree backing requires a project");
+      break;
+  }
+
+  // Deliberately not checked here: `binding.path` against `directory`. A
+  // mismatch means the user moved the worktree, which is something to re-resolve
+  // rather than a reason to refuse to load the session — see `WorktreeBinding.path`.
+  return reasons;
 }

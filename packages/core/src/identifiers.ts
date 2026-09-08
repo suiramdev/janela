@@ -21,20 +21,32 @@ export type TerminalID = Identifier<"Terminal">;
 export type LaunchProfileID = Identifier<"LaunchProfile">;
 export type AutomationID = Identifier<"Automation">;
 
+/**
+ * A UUID, as `crypto.randomUUID` writes it: lowercase, hyphenated, no braces.
+ * Case-insensitive on the way in, because a row written by hand or by another
+ * tool is still a perfectly good id.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** One implementation for all five: the brand is the only thing that differs. */
+function fresh<Subject extends string>(): Identifier<Subject> {
+  return crypto.randomUUID() as Identifier<Subject>;
+}
+
 export function newProjectID(): ProjectID {
-  throw new Error(`not implemented: newProjectID`);
+  return fresh<"Project">();
 }
 export function newSessionID(): SessionID {
-  throw new Error(`not implemented: newSessionID`);
+  return fresh<"Session">();
 }
 export function newTerminalID(): TerminalID {
-  throw new Error(`not implemented: newTerminalID`);
+  return fresh<"Terminal">();
 }
 export function newLaunchProfileID(): LaunchProfileID {
-  throw new Error(`not implemented: newLaunchProfileID`);
+  return fresh<"LaunchProfile">();
 }
 export function newAutomationID(): AutomationID {
-  throw new Error(`not implemented: newAutomationID`);
+  return fresh<"Automation">();
 }
 
 /**
@@ -45,8 +57,8 @@ export function newAutomationID(): AutomationID {
  * for. Validates that it is a UUID.
  */
 export function identifier<Subject extends string>(raw: string): Identifier<Subject> {
-  void raw;
-  throw new Error(`not implemented: identifier`);
+  if (!UUID.test(raw)) throw new Error(`not a UUID: ${raw}`);
+  return raw as Identifier<Subject>;
 }
 
 /**
@@ -62,10 +74,18 @@ export function identifier<Subject extends string>(raw: string): Identifier<Subj
  */
 export type AbsolutePath = string & { readonly [brand]: "AbsolutePath" };
 
-/** Throws when `raw` is not absolute. */
+/**
+ * Throws when `raw` is not absolute.
+ *
+ * A leading `/` is the whole rule, and no `node:path`: this module is shared with
+ * the client bundle, where that import does not belong, and Janela is macOS-first
+ * (docs/decisions/0023-macos-first-portable.md). Nothing is normalised — a path
+ * that came from git or from `execve` is already the path the user's tools see,
+ * and rewriting it would break the equality comparisons the sidebar depends on.
+ */
 export function absolutePath(raw: string): AbsolutePath {
-  void raw;
-  throw new Error(`not implemented: absolutePath`);
+  if (!raw.startsWith("/")) throw new Error(`not an absolute path: ${raw}`);
+  return raw as AbsolutePath;
 }
 
 /**
@@ -79,13 +99,21 @@ export function absolutePath(raw: string): AbsolutePath {
 export type Instant = string & { readonly [brand]: "Instant" };
 
 export function now(): Instant {
-  throw new Error(`not implemented: now`);
+  return instant(new Date());
 }
+
+/**
+ * Canonicalises to `YYYY-MM-DDTHH:MM:SS.mmmZ`, which is what makes two Instants
+ * describing the same moment compare equal as strings — a database round-trip
+ * through `DATETIME` and an offset-bearing string from a forge must not produce
+ * two different values for one timestamp.
+ */
 export function instant(raw: string | Date): Instant {
-  void raw;
-  throw new Error(`not implemented: instant`);
+  const date = raw instanceof Date ? raw : new Date(raw);
+  if (Number.isNaN(date.getTime())) throw new Error(`not an instant: ${String(raw)}`);
+  return date.toISOString() as Instant;
 }
+
 export function toDate(value: Instant): Date {
-  void value;
-  throw new Error(`not implemented: toDate`);
+  return new Date(value);
 }
