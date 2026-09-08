@@ -62,12 +62,84 @@ export const LONG_RUNNING_THRESHOLD_SECONDS = 10;
  *   `LONG_RUNNING_THRESHOLD_SECONDS`.
  */
 export function createAttentionPolicy(): AttentionPolicy {
-  throw new Error(`not implemented: createAttentionPolicy`);
+  /**
+   * One entry per terminal that was delivered inside the window.
+   *
+   * Ids and a number — never the signal, and never `kind.body` or `kind.title`.
+   * A policy that held onto notification text would be a policy that leaks it the
+   * first time someone logs its state (AGENTS.md non-negotiable 11).
+   *
+   * Bounded by the terminals that signalled inside the window, because every call
+   * prunes and `forgetSession` removes the rest.
+   */
+  const delivered = new Map<TerminalID, { readonly sessionID: SessionID; readonly at: number }>();
+
+  return {
+    shouldDeliver(signal: AttentionSignal, context: AttentionContext): boolean {
+      // Daemon time against daemon time: the daemon stamps `occurredAt`, so two
+      // clients on two machines with two clocks agree about the window, and this
+      // needs no clock of its own to be testable.
+      const now = Date.parse(signal.occurredAt);
+
+      for (const [terminalID, entry] of delivered) {
+        const elapsed = now - entry.at;
+        // An unparseable stamp expires immediately rather than sticking forever:
+        // a `NaN` comparison is false for every operator, so nothing else would
+        // ever remove it.
+        if (Number.isNaN(elapsed) || elapsed >= COALESCING_WINDOW_MS) delivered.delete(terminalID);
+      }
+
+      // Already delivered inside the window. Covers a duplicate `signal.id` from a
+      // second delivery path and a chatty program's four bells with one rule.
+      if (delivered.has(signal.terminalID)) return false;
+
+      // The user is looking straight at it. Not recorded, because nothing was
+      // delivered — if they switch away and it rings again, that is news.
+      if (
+        context.isApplicationActive &&
+        context.selectedSessionID === signal.sessionID &&
+        context.focusedTerminalID === signal.terminalID
+      ) {
+        return false;
+      }
+
+      if (!isWorthInterrupting(signal)) return false;
+
+      delivered.set(signal.terminalID, { sessionID: signal.sessionID, at: now });
+      return true;
+    },
+
+    forgetSession(id: SessionID): void {
+      for (const [terminalID, entry] of delivered) {
+        if (entry.sessionID === id) delivered.delete(terminalID);
+      }
+    },
+  };
 }
 
-// TODO: Expire delivered entries past the coalescing window, and clear a session's
-// entries when it is removed. A notification for a session that no longer exists is
-// a bug the user sees.
+/** The coalescing window, in the units `Date.parse` returns. */
+const COALESCING_WINDOW_MS = COALESCING_WINDOW_SECONDS * 1_000;
+
+/**
+ * The kind rules, separated from the focus and coalescing rules because they are
+ * the part a product decision changes.
+ */
+function isWorthInterrupting(signal: AttentionSignal): boolean {
+  switch (signal.kind.kind) {
+    case "bell":
+      // Badge only. A program ringing the bell has not said why.
+      return false;
+    case "notification":
+      // The program asked for a notification by name, and that is consent.
+      return true;
+    case "promptFinished":
+      return (
+        signal.kind.exitCode !== undefined &&
+        signal.kind.exitCode !== 0 &&
+        signal.kind.durationSeconds >= LONG_RUNNING_THRESHOLD_SECONDS
+      );
+  }
+}
 
 /**
  * How a delivered signal reaches the user.
