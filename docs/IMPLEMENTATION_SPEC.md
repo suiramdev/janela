@@ -1870,10 +1870,13 @@ export function createTerminalRegistry(): TerminalRegistry {
 
 ### 3.2 @janela/session — Project and Session Services
 
-**Status**: Seams. Every function in this package throws
-`not implemented` today; the interfaces and their ordering rules are the
-contract. Issues #25 (project service), #26 (session creation, removal and
-`.worktreeinclude` wiring) and #27 (automation runner) own the bodies.
+**Status**: Partly implemented. `ProjectService`, `SessionService` and
+`resolveShellEnvironment` are done (issue #25), which owns the `createSession`
+ordering, the `git worktree add` and the user's first terminal. Two collaborators
+are still seams, each injected and called at the step below when present and
+skipped when absent: the `.worktreeinclude` copy — `WorktreeIncluding` in
+`@janela/git`, and all issue #26 owns — and the automation runner —
+`AutomationRunning`, and all issue #27 owns.
 
 **Requirements**: ADR 0009, ADR 0013, ADR 0014 (as amended by ADR 0015), ADR
 0015, `docs/domain-model.md` § AutomationCommand, `AGENTS.md` non-negotiable 12.

@@ -254,9 +254,9 @@ app  →  ClientMessage.createSession({ kind: "newWorktree", … })
           │  socket
           ▼
         SessionService (@janela/session, in the daemon)
+          ├─ persist the session with backing: worktree, and announce it
           ├─ createWorktree()          → git worktree add -b …
           ├─ worktreeInclude.copy()    → git ls-files -o -i --exclude-from
-          ├─ persist the session with backing: worktree
           ├─ automation.run(worktreeCreated)  → a terminal, visible
           ├─ automation.run(sessionStart)     → a terminal, visible
           └─ create the user's TerminalDescriptor (not started)
@@ -266,8 +266,12 @@ app  →  ClientMessage.createSession({ kind: "newWorktree", … })
 ```
 
 Nothing blocks: progress is published as state updates, and the requesting client may
-disconnect mid-flight without affecting the outcome. The ordering is fixed and
-documented because scripts depend on it.
+disconnect mid-flight without affecting the outcome. Persisting first is deliberate —
+the session is visible and selectable before a `worktree add` that may take seconds —
+and what pays for it is the rollback: a `createWorktree` failure removes the record
+again, announces the shortened list, and rethrows git's own error. Everything after
+that is ordered because scripts depend on it: a `worktreeCreated` command that ran
+before the copy would find no `.env`.
 
 ### Starting a terminal
 

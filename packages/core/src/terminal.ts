@@ -94,8 +94,7 @@ export type TerminalState =
   | { readonly kind: "failed"; readonly message: string };
 
 export function isLive(state: TerminalState): boolean {
-  void state;
-  throw new Error(`not implemented: isLive`);
+  return state.kind === "running" || state.kind === "needsAttention";
 }
 
 /**

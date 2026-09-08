@@ -62,8 +62,7 @@ export interface Project {
 
 /** True when this project can offer worktree-backed sessions. */
 export function supportsWorktrees(project: Project): boolean {
-  void project;
-  throw new Error(`not implemented: supportsWorktrees`);
+  return project.git !== undefined;
 }
 
 // MARK: - Git
