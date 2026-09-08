@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { chmod, mkdir } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
 import { join } from "node:path";
 
 import {
   absolutePath,
+  BUILT_IN_PROFILES,
   newProjectID,
   newSessionID,
   newTerminalID,
@@ -162,6 +164,46 @@ describe("daemonEnvironment", () => {
       // The whole of "sessions restore as idle": a configured terminal that has
       // not been started costs nothing, so startup spawns no process at all.
       expect(environment.terminals.liveCount).toBe(0);
+    } finally {
+      await environment.database.close();
+    }
+  });
+
+  test("seeds the built-in launch profiles and probes them against the captured PATH", async () => {
+    await using directory = await temporaryDirectory("environment");
+    // A PATH holding exactly one of the built-ins' executables. If the graph
+    // handed the profile service anything other than the shell capture — a
+    // synthetic environment, `process.env`, nothing at all — the availability
+    // below would not match this directory's contents.
+    const bin = join(directory.path, "bin");
+    await mkdir(bin, { recursive: true });
+    await Bun.write(join(bin, "codex"), "#!/bin/sh\n");
+    await chmod(join(bin, "codex"), 0o755);
+
+    const environment = await daemonEnvironment({
+      databasePath: join(directory.path, "janela.sqlite"),
+      foreground: true,
+      shell: { ...shell, resolved: { PATH: bin } },
+    });
+    try {
+      const byName = new Map(
+        environment.launchProfiles.profiles.map((profile) => [profile.name, profile]),
+      );
+      // Seeded on first open, so a fresh install has something to start.
+      expect(byName.size).toBe(BUILT_IN_PROFILES.length);
+
+      const codex = byName.get("Codex");
+      const claude = byName.get("Claude Code");
+      expect(codex).toBeDefined();
+      expect(claude).toBeDefined();
+      if (codex !== undefined) {
+        expect(environment.launchProfiles.availability[codex.id]).toBe(true);
+      }
+      if (claude !== undefined) {
+        // Not installed on this PATH. Availability is a fact about the machine,
+        // not something the user authored — so it is reported, not an error.
+        expect(environment.launchProfiles.availability[claude.id]).toBe(false);
+      }
     } finally {
       await environment.database.close();
     }

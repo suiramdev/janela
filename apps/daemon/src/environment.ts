@@ -12,9 +12,11 @@ import { openDatabase, type JanelaDatabase } from "@janela/db";
 import { gitRunner, worktreeService } from "@janela/git";
 import { readPeerCredential } from "@janela/pty";
 import {
+  createLaunchProfileService,
   createProjectService,
   createSessionService,
   resolveShellEnvironment,
+  type LaunchProfileService,
   type ProjectRemovalObserving,
   type ProjectService,
   type SessionService,
@@ -75,6 +77,7 @@ export interface DaemonEnvironment {
   readonly server: DaemonServer;
   readonly sessions: SessionService;
   readonly projects: ProjectService;
+  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
   readonly database: JanelaDatabase;
 }
@@ -147,14 +150,33 @@ export async function daemonEnvironment(
   });
   deferredRemoval.service = sessions;
 
+  const launchProfiles = createLaunchProfileService({
+    repository: database.launchProfiles,
+    // The real capture, because a profile's availability *is* a fact about this
+    // PATH. A synthetic environment here would report every tool as missing.
+    shell,
+    log: logger,
+  });
+
   await projects.load();
   await sessions.load();
+  // Seeds the built-ins, reads them all, and probes the captured `PATH`. Probing
+  // is `which` per profile, not a spawn of the tool, so an uninstalled agent
+  // costs one lookup and no process.
+  await launchProfiles.load();
 
-  // No `dispatch`: turning a message into calls on these services is #35's, and
-  // the server answers a request with a log line until it is injected here.
+  // `launchProfiles` is a *required* dependency now that #35 put profiles on the
+  // wire: the server reads them for every announcement and the dispatcher writes
+  // them, and it takes the same `database.launchProfiles` repository the session
+  // service already reads — one handle to one SQLite file (ADR 0019).
+  //
+  // No `dispatch`: `createDaemonServer` builds `createRequestDispatch` itself and
+  // binds `announce` to the server it is constructing, which is the one cycle this
+  // root cannot break from outside.
   const daemonServer = createDaemonServer({
     sessions,
     projects,
+    launchProfiles,
     terminals,
     log: log("protocol"),
   });
@@ -164,6 +186,7 @@ export async function daemonEnvironment(
     server: daemonServer,
     sessions,
     projects,
+    launchProfiles,
     terminals,
     database,
 
