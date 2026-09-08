@@ -43,14 +43,28 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
 /**
  * Bump on any breaking change. There is no minor version: a change is either
  * compatible, in which case it needs no number, or it is not.
+ *
+ * ```text
+ * 1  scaffold: framing and JSON control messages. Raw frames had no defined
+ *    encoding at all, so nothing ever spoke it.
+ * 2  `Input`/`Output` payloads begin with a 16-byte big-endian UUID header (see
+ *    `RAW_HEADER_LENGTH` in message-coder.ts); `FrameDecoder.end()` reports a
+ *    stream that closed mid-frame.
+ * ```
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
- * Oldest version we still accept. Equal to `PROTOCOL_VERSION` until there is a
- * second version to be compatible with.
+ * Oldest version we still accept.
+ *
+ * Also 2: a v1 peer never had a raw-frame encoding to be compatible with, so
+ * there is nothing to keep working. Its `hello` is answered with `refused` /
+ * `incompatibleVersion` carrying this range, the daemon keeps running and no
+ * terminal is touched (ADR 0016 § Handshake, ADR 0017), and the client explains
+ * the restart rather than reporting a handshake failure. Nothing after `hello`
+ * is decoded from a refused peer.
  */
-export const MINIMUM_SUPPORTED_VERSION = 1;
+export const MINIMUM_SUPPORTED_VERSION = 2;
 
 /** Whether this peer can talk to one advertising `other`. */
 export function isCompatible(mine: Hello, other: Hello): boolean {
