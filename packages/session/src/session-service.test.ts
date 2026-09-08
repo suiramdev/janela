@@ -19,6 +19,7 @@ import {
   NotAWorktree,
   PullRequestsNotSupported,
   UnknownProject,
+  UnknownLaunchProfile,
   UnknownSession,
   UnknownTerminal,
   WorktreesUnsupported,
@@ -877,6 +878,67 @@ describe("startTerminal", () => {
       );
       // The second click on "stop" must not be an error.
       await fixture.sessions.stopTerminal(unknown);
+    });
+  });
+});
+
+describe("createTerminal", () => {
+  test("a second terminal arrives as a new focused tab, configured and not started", async () => {
+    const profile: LaunchProfile = {
+      id: newLaunchProfileID(),
+      name: "Claude Code",
+      iconName: "sparkles",
+      command: ["claude"],
+      environment: {},
+      isAgent: true,
+      isBuiltIn: false,
+    };
+
+    await withSessions({ profiles: [profile] }, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+
+      const added = await fixture.sessions.createTerminal(session.id, { profileID: profile.id });
+
+      // Nothing spawned: a terminal the user asked for still costs nothing until
+      // `startTerminal`, which is what makes opening a session free.
+      expect(fixture.factory.created).toHaveLength(0);
+      expect(fixture.terminals.get(added.id)).toBeUndefined();
+      expect(added.title).toBe("Claude Code");
+      expect(added.profileID).toBe(profile.id);
+
+      const stored = await fixture.database.sessions.find(session.id);
+      const first = session.terminals[0];
+      if (first === undefined) throw new Error("the session has no first terminal");
+      expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first.id, added.id]);
+      // A tab, not a split: where a split goes is a question only the user
+      // looking at the panes can answer.
+      expect(stored?.layout.tabs).toHaveLength(2);
+      expect(stored?.layout.focusedTabIndex).toBe(1);
+      expect(stored?.layout.tabs[1]?.focusedTerminalID).toBe(added.id);
+    });
+  });
+
+  test("an unknown session, and a profile that has been deleted, are both refused", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const unknownSession = "00000000-0000-4000-8000-000000000000" as SessionID;
+      const goneProfile = newLaunchProfileID();
+
+      expect(await rejection(fixture.sessions.createTerminal(unknownSession))).toBeInstanceOf(
+        UnknownSession,
+      );
+      // Silently starting a login shell instead would answer a question the user
+      // did not ask.
+      expect(
+        await rejection(fixture.sessions.createTerminal(session.id, { profileID: goneProfile })),
+      ).toBeInstanceOf(UnknownLaunchProfile);
+      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
     });
   });
 });

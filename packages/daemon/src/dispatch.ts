@@ -1,4 +1,11 @@
-import type { GridSize, Project, Session, TerminalID, TerminalState } from "@janela/core";
+import type {
+  GridSize,
+  LaunchProfile,
+  Project,
+  Session,
+  TerminalID,
+  TerminalState,
+} from "@janela/core";
 import {
   FrameError,
   serializeRemovalPlan,
@@ -9,7 +16,7 @@ import {
   type SubscriptionScope,
   type UserFacingFailure,
 } from "@janela/protocol";
-import type { ProjectService, SessionService } from "@janela/session";
+import type { LaunchProfileService, ProjectService, SessionService } from "@janela/session";
 import { UnknownTerminal } from "@janela/session";
 import { UnexpectedFailure, isUserFacing, type Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
@@ -89,8 +96,18 @@ export interface RequestDispatching {
 export interface RequestDispatchOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
+  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
   readonly log: Logger;
+  /**
+   * Publishes the world after a change nothing else announces.
+   *
+   * Sessions and projects reach subscribers through `StateObserving`, which their
+   * services already call. Launch profiles have no observer because the wire is
+   * their only writer — this is that path, and it is here rather than in
+   * `@janela/session` so the brain keeps knowing nothing about subscribers.
+   */
+  readonly announce: () => Promise<void>;
 }
 
 /** The name of an error, for a log field. Never its message: that is peer-influenced. */
@@ -100,26 +117,34 @@ export function errorName(error: unknown): string {
 }
 
 /**
- * The whole world as one `StateUpdate`: both lists, and every registered
- * terminal's state.
+ * The whole world as one `StateUpdate`: both lists, the launch profiles with
+ * their availability, and every registered terminal's state.
  *
  * Composed per announcement rather than per frame, so its cost is human-rate. It
  * exists because a client merges by id and therefore cannot express a removal:
  * the only way to say "that session is gone" is to send a complete list without
  * it (docs/decisions/0015-daemon-owned-sessions.md).
  */
-export function fullStateSnapshot(
-  projects: readonly Project[],
-  sessions: readonly Session[],
-  terminals: TerminalRegistry,
-): StateUpdate {
+export function fullStateSnapshot(world: {
+  readonly projects: readonly Project[];
+  readonly sessions: readonly Session[];
+  readonly launchProfiles: LaunchProfileService;
+  readonly terminals: TerminalRegistry;
+}): StateUpdate {
   const terminalStates: Record<TerminalID, TerminalState> = {};
-  for (const session of sessions) {
-    for (const terminal of terminals.inSession(session.id)) {
+  for (const session of world.sessions) {
+    for (const terminal of world.terminals.inSession(session.id)) {
       terminalStates[terminal.id] = terminal.state;
     }
   }
-  return { projects, sessions, terminalStates, isFullSnapshot: true };
+  return {
+    projects: world.projects,
+    sessions: world.sessions,
+    terminalStates,
+    launchProfiles: world.launchProfiles.profiles,
+    launchProfileAvailability: world.launchProfiles.availability,
+    isFullSnapshot: true,
+  };
 }
 
 /**
@@ -137,7 +162,7 @@ export function fullStateSnapshot(
  *   to an idle terminal shows an idle terminal.
  */
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const { sessions, projects, terminals, log } = options;
+  const { sessions, projects, launchProfiles, terminals, log, announce } = options;
 
   /** The terminal a request names, or a failure a person can read. */
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
@@ -164,7 +189,12 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           // populated by the time the client's `request()` settles.
           connection.send({
             type: "state",
-            update: fullStateSnapshot(projects.projects, sessions.sessions, terminals),
+            update: fullStateSnapshot({
+              projects: projects.projects,
+              sessions: sessions.sessions,
+              launchProfiles,
+              terminals,
+            }),
           });
         }
         return { type: "acknowledged", id };
@@ -241,6 +271,31 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
       case "stopTerminal":
         await sessions.stopTerminal(message.terminalID);
         return { type: "acknowledged", id };
+
+      case "saveLaunchProfile": {
+        const { profile } = message;
+        if (!isLaunchProfile(profile)) throw new TypeError("save with an unusable profile");
+        await launchProfiles.save(profile);
+        // Profiles have no `StateObserving` path of their own: this is how the
+        // save reaches every subscriber, including the client that asked.
+        await announce();
+        return { type: "acknowledged", id };
+      }
+
+      case "removeLaunchProfile":
+        await launchProfiles.remove(message.profileID);
+        await announce();
+        return { type: "acknowledged", id };
+
+      case "createTerminal": {
+        const descriptor = await sessions.createTerminal(message.sessionID, {
+          ...(message.profileID === undefined ? {} : { profileID: message.profileID }),
+          ...(typeof message.title === "string" ? { title: message.title } : {}),
+        });
+        // Configured, not started: `startTerminal` is still the only spawn. The
+        // id comes back because the client needs it to attach.
+        return { type: "text", id, text: descriptor.id };
+      }
 
       case "snapshotText": {
         const terminal = requireTerminal(message.terminalID);
@@ -346,6 +401,43 @@ function isGridSize(size: unknown): size is GridSize {
     columns >= 1 &&
     rows >= 1
   );
+}
+
+/**
+ * A profile a client may save. Same reason as `isGridSize`: the decoder checked
+ * the discriminant and nothing else, and this reaches the database.
+ *
+ * `name` and `iconName` are not policed beyond being strings — an empty name is a
+ * bad profile, not a malformed one, and the settings surface is where a person is
+ * told so. `isBuiltIn` is not read at all: the service decides it.
+ */
+function isLaunchProfile(value: unknown): value is LaunchProfile {
+  if (typeof value !== "object" || value === null) return false;
+  const profile = value as {
+    readonly id?: unknown;
+    readonly name?: unknown;
+    readonly iconName?: unknown;
+    readonly command?: unknown;
+    readonly environment?: unknown;
+    readonly isAgent?: unknown;
+  };
+  return (
+    typeof profile.id === "string" &&
+    profile.id.length > 0 &&
+    typeof profile.name === "string" &&
+    typeof profile.iconName === "string" &&
+    Array.isArray(profile.command) &&
+    // argv, and every element of it: a number in here reaches `execve` as a
+    // stringified surprise, and `["zsh", null]` is not an argument list.
+    profile.command.every((argument) => typeof argument === "string") &&
+    isStringRecord(profile.environment) &&
+    typeof profile.isAgent === "boolean"
+  );
+}
+
+function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 /**

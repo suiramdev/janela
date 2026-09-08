@@ -2,6 +2,8 @@ import type {
   AbsolutePath,
   GridSize,
   Instant,
+  LaunchProfile,
+  LaunchProfileID,
   Project,
   ProjectID,
   ProjectSettings,
@@ -106,6 +108,43 @@ export type ClientMessage =
       readonly id: RequestID;
       readonly terminalID: TerminalID;
       readonly includeScrollback: boolean;
+    }
+
+  // ---- Launch profiles
+  /**
+   * Upsert, keyed by the profile's own id: the client mints one with
+   * `newLaunchProfileID()` for a profile it is creating, so the id it selects in
+   * its editor is the id the daemon stores and there is no round trip to wait on.
+   *
+   * `isBuiltIn` is carried for completeness and **ignored**: a stored profile
+   * keeps whatever it already was, and anything new is a user profile. A client
+   * able to set it could mint an undeletable profile, or make a built-in
+   * removable.
+   */
+  | {
+      readonly type: "saveLaunchProfile";
+      readonly id: RequestID;
+      readonly profile: LaunchProfile;
+    }
+  /** Refused for a built-in: those are overridden by copying, never deleted. */
+  | {
+      readonly type: "removeLaunchProfile";
+      readonly id: RequestID;
+      readonly profileID: LaunchProfileID;
+    }
+  /**
+   * A new terminal in a session that already exists — ⌘T, with a profile chosen
+   * from the picker. Absent `profileID` means the login shell.
+   *
+   * Configured, not started: the reply is `text` carrying the new `TerminalID`,
+   * and the client starts it with `startTerminal` when it wants the process.
+   */
+  | {
+      readonly type: "createTerminal";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly profileID?: LaunchProfileID;
+      readonly title?: string;
     };
 
 /**
@@ -173,6 +212,21 @@ export interface StateUpdate {
   readonly projects: readonly Project[];
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
+  /**
+   * Every launch profile, built-in and user-authored, in the daemon's order.
+   * Empty in a partial update means "unchanged", exactly as `projects` does.
+   */
+  readonly launchProfiles: readonly LaunchProfile[];
+  /**
+   * Whether each profile's executable was found on the captured login-shell
+   * `PATH`. Keyed separately from the profile because it is a fact about this
+   * machine right now, not part of what the user authored — a profile whose tool
+   * is not installed is still a profile, and reinstalling the tool must not
+   * require editing it.
+   *
+   * A profile with an empty `command` is the login shell and is always available.
+   */
+  readonly launchProfileAvailability: Readonly<Record<LaunchProfileID, boolean>>;
   /**
    * True when this is the complete picture rather than a change to part of it.
    *

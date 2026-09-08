@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { GridSize, Project, Session, SessionID, TerminalID } from "@janela/core";
+import type {
+  GridSize,
+  LaunchProfile,
+  LaunchProfileID,
+  Project,
+  Session,
+  SessionID,
+  TerminalDescriptor,
+  TerminalID,
+} from "@janela/core";
 import {
   FrameKind,
   decodeDaemonMessage,
@@ -13,12 +22,19 @@ import {
   type RequestID,
   type SessionRemovalPreview,
 } from "@janela/protocol";
-import type { ProjectService, SessionRemovalPlan, SessionService } from "@janela/session";
+import type {
+  LaunchProfileService,
+  ProjectService,
+  SessionRemovalPlan,
+  SessionService,
+} from "@janela/session";
 import { UserFacingError } from "@janela/support";
 
 import { createDaemonServer, type DaemonServer } from "./server.ts";
 import {
   clientHello,
+  fakeLaunchProfiles,
+  fakeProfile,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -39,6 +55,28 @@ const STDERR = "fatal: could not read Username for https://example.invalid";
 
 class GitFailure extends UserFacingError {
   override readonly summary = "Couldn't create the session.";
+}
+
+/** Stands in for `@janela/session`'s `BuiltInProfileProtected`, which is its own test's. */
+class BuiltInProfile extends UserFacingError {
+  override readonly summary = "Built-in profiles can't be deleted.";
+
+  constructor() {
+    super("built-in launch profile cannot be removed", {
+      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
+    });
+  }
+}
+
+/** What `createTerminal` hands back: only the fields the dispatcher reads. */
+function fakeDescriptor(id: TerminalID): TerminalDescriptor {
+  return {
+    id,
+    title: "Shell",
+    startsAutomatically: true,
+    role: { kind: "user" },
+    createdAt: "2026-01-01T00:00:00.000Z" as TerminalDescriptor["createdAt"],
+  };
 }
 
 /**
@@ -94,6 +132,8 @@ function fixture(
     readonly projects?: readonly Project[];
     readonly sessionOverrides?: Partial<SessionService>;
     readonly projectOverrides?: Partial<ProjectService>;
+    readonly profiles?: readonly LaunchProfile[];
+    readonly profileOverrides?: Partial<LaunchProfileService>;
   } = {},
 ): Fixture {
   const registry = fakeRegistry(options.terminals ?? []);
@@ -104,6 +144,7 @@ function fixture(
   const server = createDaemonServer({
     sessions: fakeSessions(options.sessions ?? [], options.sessionOverrides ?? {}),
     projects: fakeProjects(options.projects ?? [], options.projectOverrides ?? {}),
+    launchProfiles: fakeLaunchProfiles(options.profiles ?? [], options.profileOverrides ?? {}),
     terminals: registry,
     log: logger,
     handshakeDeadlineMs: 250,
@@ -446,8 +487,10 @@ describe("state", () => {
       state: { kind: "idle" },
       sessionID: second.id,
     });
+    const profile = fakeProfile("p1");
     const daemon = fixture({
       sessions: [first, second],
+      profiles: [profile],
       projects: [],
       terminals: [terminal],
     });
@@ -463,6 +506,8 @@ describe("state", () => {
         projects: [],
         sessions: [first, second],
         terminalStates: { [terminal.id]: { kind: "idle" } },
+        launchProfiles: [profile],
+        launchProfileAvailability: { [profile.id]: true },
         isFullSnapshot: true,
       },
     });
@@ -491,6 +536,8 @@ describe("state", () => {
         projects: [],
         sessions: [survivor],
         terminalStates: {},
+        launchProfiles: [],
+        launchProfileAvailability: {},
         isFullSnapshot: true,
       },
     });
@@ -608,6 +655,129 @@ describe("sessions", () => {
       },
     });
     expect(everythingSaid(peer, daemon.records)).not.toContain(STDERR);
+  });
+});
+
+describe("launch profiles", () => {
+  test("a saved profile is stored and announced to every state subscriber", async () => {
+    const saved: LaunchProfile[] = [];
+    const profile = fakeProfile("p1", { name: "Claude Code", command: ["claude"] });
+    const daemon = fixture({
+      profiles: [profile],
+      profileOverrides: {
+        save: (value) => {
+          saved.push(value);
+          return Promise.resolve(value);
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
+    await peer.reply(1 as RequestID);
+    await peer.send(request({ type: "saveLaunchProfile", id: 2 as RequestID, profile }));
+
+    expect(await peer.reply(2 as RequestID)).toEqual({
+      type: "acknowledged",
+      id: 2 as RequestID,
+    });
+    expect(saved).toEqual([profile]);
+    // Profiles have no `StateObserving` path: without the dispatcher announcing,
+    // a settings window would show a profile no other client can see.
+    await until(
+      () => peer.controls.filter((message) => message.type === "state").length === 2,
+      "the announcement",
+    );
+    const announced = peer.controls.findLast((message) => message.type === "state");
+    expect(announced?.type === "state" ? announced.update.launchProfiles : undefined).toEqual([
+      profile,
+    ]);
+  });
+
+  test("a profile that is not a profile is refused, and nothing is stored", async () => {
+    const saved: LaunchProfile[] = [];
+    const daemon = fixture({
+      profileOverrides: {
+        save: (value) => {
+          saved.push(value);
+          return Promise.resolve(value);
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      encodeClientMessage({
+        type: "saveLaunchProfile",
+        id: 1 as RequestID,
+        // argv with a hole in it: the wire has no type system, and this reaches
+        // `execve` if nobody looks.
+        profile: { ...fakeProfile("p1"), command: ["zsh", null] },
+      } as unknown as ClientMessage),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+    expect(saved).toEqual([]);
+  });
+
+  test("removing a built-in is refused in the user's own words", async () => {
+    const daemon = fixture({
+      profileOverrides: {
+        remove: () => Promise.reject(new BuiltInProfile()),
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "removeLaunchProfile",
+        id: 1 as RequestID,
+        profileID: "p1" as LaunchProfileID,
+      }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({
+      type: "failed",
+      id: 1 as RequestID,
+      failure: {
+        summary: "Built-in profiles can't be deleted.",
+        recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
+      },
+    });
+  });
+
+  test("createTerminal configures a terminal and answers with its id", async () => {
+    const asked: { session: SessionID; profileID?: LaunchProfileID; title?: string }[] = [];
+    const created = terminalID();
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        createTerminal: (session, options) => {
+          asked.push({ session, ...options });
+          return Promise.resolve(fakeDescriptor(created));
+        },
+        startTerminal: () => Promise.reject(new Error("nothing may start here")),
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "createTerminal",
+        id: 1 as RequestID,
+        sessionID: "s1" as SessionID,
+        profileID: "p1" as LaunchProfileID,
+      }),
+    );
+
+    // The id comes back because the client needs it to attach; the process does
+    // not exist yet, and `startTerminal` is still the only thing that spawns one.
+    expect(await peer.reply(1 as RequestID)).toEqual({
+      type: "text",
+      id: 1 as RequestID,
+      text: created,
+    });
+    expect(asked).toEqual([{ session: "s1" as SessionID, profileID: "p1" as LaunchProfileID }]);
   });
 });
 

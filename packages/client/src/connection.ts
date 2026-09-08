@@ -494,6 +494,9 @@ export function createConnection(options: {
             projects: [],
             sessions: [],
             terminalStates: { [message.terminalID]: { kind: "exited", code: message.code } },
+            // Empty collections mean "unchanged" in a partial.
+            launchProfiles: [],
+            launchProfileAvailability: {},
             isFullSnapshot: false,
           });
           return;

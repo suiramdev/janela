@@ -52,7 +52,9 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    stream that closed mid-frame.
  * 3  `removalPlan` joins `ClientMessage`; `attach.viewport` becomes optional,
  *    meaning input and scope without rendering; every state announcement is a
- *    full snapshot, because merge-by-id cannot express a removal.
+ *    full snapshot, because merge-by-id cannot express a removal;
+ *    `saveLaunchProfile`, `removeLaunchProfile` and `createTerminal` join it too,
+ *    and `StateUpdate` carries the launch profiles with their availability.
  * ```
  */
 export const PROTOCOL_VERSION = 3;
@@ -61,8 +63,10 @@ export const PROTOCOL_VERSION = 3;
  * Oldest version we still accept.
  *
  * Also 3, because none of the v3 changes degrade: a v2 daemon meeting a
- * `removalPlan` or a viewportless `attach` would close the connection mid-session
- * rather than answer, which is exactly what the version ranges exist to prevent.
+ * `removalPlan`, a `saveLaunchProfile` or a viewportless `attach` would close the
+ * connection mid-session rather than answer, and a v2 client would read a
+ * `StateUpdate` whose launch profiles it cannot see, which is exactly what the
+ * version ranges exist to prevent.
  * A v2 peer's `hello` is answered with `refused` / `incompatibleVersion` carrying
  * this range, the daemon keeps running and no terminal is touched (ADR 0016 §
  * Handshake, ADR 0017); a v3 client meeting a v2 daemon refuses on its own side

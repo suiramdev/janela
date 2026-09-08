@@ -1,4 +1,4 @@
-import type { AbsolutePath, ProjectID, SessionID, TerminalID } from "@janela/core";
+import type { AbsolutePath, LaunchProfileID, ProjectID, SessionID, TerminalID } from "@janela/core";
 import { UserFacingError } from "@janela/support";
 
 /**
@@ -107,6 +107,37 @@ export class LaunchProfileUnavailable extends UserFacingError {
     });
     this.summary = `${profileName} isn't installed.`;
     this.profileName = profileName;
+  }
+}
+
+/** A profile id that no longer resolves: two settings windows, one deletion. */
+export class UnknownLaunchProfile extends UserFacingError {
+  override readonly summary = "That launch profile no longer exists.";
+  readonly profile: LaunchProfileID;
+
+  constructor(profile: LaunchProfileID) {
+    super(`launch profile ${profile} not found`);
+    this.profile = profile;
+  }
+}
+
+/**
+ * Deleting a built-in was asked for and refused.
+ *
+ * Built-ins are the profiles Janela ships; a user who wants a different Claude
+ * Code copies it and edits the copy, which is also what keeps the seed idempotent
+ * — a deleted built-in would come back on the next daemon start and look like a
+ * bug.
+ */
+export class BuiltInProfileProtected extends UserFacingError {
+  override readonly summary = "Built-in profiles can't be deleted.";
+  readonly profile: LaunchProfileID;
+
+  constructor(profile: LaunchProfileID) {
+    super("built-in launch profile cannot be removed", {
+      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
+    });
+    this.profile = profile;
   }
 }
 

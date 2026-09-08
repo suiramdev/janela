@@ -1,6 +1,8 @@
 import type {
   AbsolutePath,
   GridSize,
+  LaunchProfile,
+  LaunchProfileID,
   Project,
   ProjectID,
   Session,
@@ -20,7 +22,12 @@ import {
   type Hello,
   type MessageTransport,
 } from "@janela/protocol";
-import type { ProjectService, SessionCreationRequest, SessionService } from "@janela/session";
+import type {
+  LaunchProfileService,
+  ProjectService,
+  SessionCreationRequest,
+  SessionService,
+} from "@janela/session";
 import type { LogRecord, Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 
@@ -479,6 +486,7 @@ export function fakeSessions(
       return sessions.filter((session) => session.projectID === undefined);
     },
     createSession: (_request: SessionCreationRequest) => Promise.reject(new Error(NOT_CALLED)),
+    createTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removalPlan: () => Promise.reject(new Error(NOT_CALLED)),
     removeSession: () => Promise.reject(new Error(NOT_CALLED)),
     rename: () => Promise.reject(new Error(NOT_CALLED)),
@@ -499,6 +507,44 @@ export function fakeProjects(
     addProject: () => Promise.reject(new Error(NOT_CALLED)),
     removeProject: () => Promise.reject(new Error(NOT_CALLED)),
     updateSettings: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
+  };
+}
+
+/**
+ * The launch profiles, as far as the daemon can tell.
+ *
+ * `availability` defaults to "everything the profiles list is available", because
+ * the interesting daemon behaviour is that it publishes whatever the service says
+ * — the probing itself is `@janela/session`'s, and tested there against a real
+ * `which`.
+ */
+export function fakeLaunchProfiles(
+  profiles: readonly LaunchProfile[] = [],
+  overrides: Partial<LaunchProfileService> = {},
+): LaunchProfileService {
+  const availability: Record<LaunchProfileID, boolean> = {};
+  for (const profile of profiles) availability[profile.id] = true;
+  return {
+    profiles,
+    availability,
+    load: () => Promise.resolve(),
+    save: () => Promise.reject(new Error(NOT_CALLED)),
+    remove: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
+  };
+}
+
+/** A launch profile, for the tests that only care that one crossed the wire. */
+export function fakeProfile(id: string, overrides: Partial<LaunchProfile> = {}): LaunchProfile {
+  return {
+    id: id as LaunchProfileID,
+    name: id,
+    iconName: "terminal",
+    command: [id],
+    environment: {},
+    isAgent: false,
+    isBuiltIn: false,
     ...overrides,
   };
 }

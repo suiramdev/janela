@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import type {
   AbsolutePath,
   Backing,
+  LaunchProfileID,
   Project,
   ProjectID,
   Session,
@@ -40,6 +41,7 @@ import type { AutomationRunning } from "./automation-runner.ts";
 import {
   NotAWorktree,
   PullRequestsNotSupported,
+  UnknownLaunchProfile,
   UnknownProject,
   UnknownSession,
   UnknownTerminal,
@@ -105,9 +107,26 @@ export interface SessionService {
 
   rename(id: SessionID, name: string): Promise<void>;
 
+  /**
+   * A new terminal in a session that already exists — ⌘T, with a profile the user
+   * picked. It arrives as a new tab, focused, and it is *configured, not started*:
+   * nothing spawns until `startTerminal`, which is what keeps opening a session
+   * free (AGENTS.md § Laziness is a feature).
+   *
+   * @throws {UnknownSession} @throws {UnknownLaunchProfile}
+   */
+  createTerminal(id: SessionID, options?: NewTerminalOptions): Promise<TerminalDescriptor>;
+
   /** Starts a configured-but-idle terminal. Attaching never starts anything. */
   startTerminal(id: TerminalID): Promise<void>;
   stopTerminal(id: TerminalID): Promise<void>;
+}
+
+/** What the user chose in the ⌘T picker. Both fields absent is a plain shell. */
+export interface NewTerminalOptions {
+  readonly profileID?: LaunchProfileID;
+  /** Overrides the tab title, which otherwise follows the profile's name. */
+  readonly title?: string;
 }
 
 /**
@@ -434,6 +453,44 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     await this.publish();
   }
 
+  async createTerminal(
+    id: SessionID,
+    options: NewTerminalOptions = {},
+  ): Promise<TerminalDescriptor> {
+    const session = this.find(id);
+    if (session === undefined) throw new UnknownSession(id);
+
+    const profileID = options.profileID;
+    const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
+    // Absent is a plain shell; named-but-missing is the settings window that
+    // deleted the profile while the picker was open, and silently starting a
+    // shell instead would be answering a different question.
+    if (profileID !== undefined && profile === undefined) throw new UnknownLaunchProfile(profileID);
+
+    const descriptor: TerminalDescriptor = {
+      id: newTerminalID(),
+      title: options.title ?? profile?.name ?? "Shell",
+      ...(profile === undefined ? {} : { profileID: profile.id }),
+      startsAutomatically: true,
+      role: { kind: "user" },
+      createdAt: now(),
+    };
+
+    session.terminals = [...session.terminals, descriptor];
+    // A new tab rather than a split: ⌘T is "another terminal", and where a split
+    // goes is a question only the user looking at the panes can answer.
+    session.layout = {
+      tabs: [
+        ...session.layout.tabs,
+        { root: { kind: "terminal", id: descriptor.id }, focusedTerminalID: descriptor.id },
+      ],
+      focusedTabIndex: session.layout.tabs.length,
+    };
+    await this.deps.repository.save(session);
+    await this.publish();
+    return descriptor;
+  }
+
   async startTerminal(id: TerminalID): Promise<void> {
     const located = this.locate(id);
     if (located === undefined) throw new UnknownTerminal(id);
@@ -441,7 +498,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
     let live = this.deps.terminals.get(id);
     if (live === undefined) {
-      live = await this.createTerminal(session, descriptor);
+      live = await this.liveTerminalFor(session, descriptor);
       this.deps.terminals.register(live);
     }
 
@@ -701,7 +758,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     await this.publish();
   }
 
-  private async createTerminal(
+  private async liveTerminalFor(
     session: Session,
     descriptor: TerminalDescriptor,
   ): Promise<LiveTerminal> {

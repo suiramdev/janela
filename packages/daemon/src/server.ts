@@ -19,7 +19,12 @@ import {
   type StateUpdate,
   type SubscriptionScope,
 } from "@janela/protocol";
-import type { ProjectService, SessionService, StateObserving } from "@janela/session";
+import type {
+  LaunchProfileService,
+  ProjectService,
+  SessionService,
+  StateObserving,
+} from "@janela/session";
 import { boundedQueue, type BoundedQueue, type Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 
@@ -149,6 +154,8 @@ const CLIENT_NAME_LOG_LIMIT = 64;
 export interface DaemonServerOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
+  /** Read for every announcement, and written by `saveLaunchProfile`. */
+  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
@@ -231,9 +238,27 @@ function validatedHello(value: unknown): Hello | undefined {
 }
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, log } = options;
+  const { terminals, sessions, projects, launchProfiles, log } = options;
   const dispatch =
-    options.dispatch ?? createRequestDispatch({ sessions, projects, terminals, log });
+    options.dispatch ??
+    createRequestDispatch({
+      sessions,
+      projects,
+      launchProfiles,
+      terminals,
+      log,
+      // Bound late, to the server being built: a saved profile has no
+      // `StateObserving` path to travel, because the wire is its only writer.
+      announce: () =>
+        server.publish(
+          fullStateSnapshot({
+            projects: projects.projects,
+            sessions: sessions.sessions,
+            launchProfiles,
+            terminals,
+          }),
+        ),
+    });
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
   /** Peers past their handshake, keyed by the id the frame loop uses. */
@@ -662,12 +687,26 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
      * pass over the sessions per announcement, which is human-rate work.
      */
     sessionsChanged(changed: readonly Session[]): Promise<void> {
-      return server.publish(fullStateSnapshot(projects.projects, changed, terminals));
+      return server.publish(
+        fullStateSnapshot({
+          projects: projects.projects,
+          sessions: changed,
+          launchProfiles,
+          terminals,
+        }),
+      );
     },
 
     /** Same rule as `sessionsChanged`, from the other side. */
     projectsChanged(changed: readonly Project[]): Promise<void> {
-      return server.publish(fullStateSnapshot(changed, sessions.sessions, terminals));
+      return server.publish(
+        fullStateSnapshot({
+          projects: changed,
+          sessions: sessions.sessions,
+          launchProfiles,
+          terminals,
+        }),
+      );
     },
 
     canExitWhenIdle(): boolean {

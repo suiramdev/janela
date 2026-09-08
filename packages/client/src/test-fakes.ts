@@ -1,5 +1,6 @@
 import type {
   AbsolutePath,
+  LaunchProfile,
   Project,
   ProjectID,
   Session,
@@ -357,8 +358,18 @@ export function snapshot(
   sessions: readonly Session[],
   projects: readonly Project[] = [],
   terminalStates: Readonly<Record<TerminalID, TerminalState>> = {},
+  launchProfiles: readonly LaunchProfile[] = [],
 ): StateUpdate {
-  return { projects, sessions, terminalStates, isFullSnapshot: true };
+  return {
+    projects,
+    sessions,
+    terminalStates,
+    launchProfiles,
+    launchProfileAvailability: Object.fromEntries(
+      launchProfiles.map((profile) => [profile.id, true]),
+    ),
+    isFullSnapshot: true,
+  };
 }
 
 export function partial(
@@ -366,7 +377,15 @@ export function partial(
   projects: readonly Project[] = [],
   terminalStates: Readonly<Record<TerminalID, TerminalState>> = {},
 ): StateUpdate {
-  return { projects, sessions, terminalStates, isFullSnapshot: false };
+  return {
+    projects,
+    sessions,
+    terminalStates,
+    // Empty is "unchanged", the same rule the other collections follow.
+    launchProfiles: [],
+    launchProfileAvailability: {},
+    isFullSnapshot: false,
+  };
 }
 
 /** A `state` message, ready for `connection.say`. */

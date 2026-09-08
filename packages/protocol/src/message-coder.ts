@@ -49,6 +49,9 @@ const CLIENT_MESSAGE_TYPES = {
   startTerminal: true,
   stopTerminal: true,
   resize: true,
+  saveLaunchProfile: true,
+  removeLaunchProfile: true,
+  createTerminal: true,
   snapshotText: true,
 } as const satisfies Record<ClientMessage["type"], true>;
 
