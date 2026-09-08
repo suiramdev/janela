@@ -13,10 +13,28 @@
       "path": "../../packages/support"
     },
     {
-      "path": "../../packages/daemon"
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/git"
+    },
+    {
+      "path": "../../packages/pty"
     },
     {
       "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/terminal"
+    },
+    {
+      "path": "../../packages/session"
+    },
+    {
+      "path": "../../packages/daemon"
     },
     {
       "path": "../../packages/test-support"

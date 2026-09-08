@@ -18,9 +18,15 @@
       "name": "@janela/janelad",
       "version": "0.0.0",
       "dependencies": {
+        "@janela/core": "workspace:*",
         "@janela/daemon": "workspace:*",
         "@janela/db": "workspace:*",
+        "@janela/git": "workspace:*",
+        "@janela/protocol": "workspace:*",
+        "@janela/pty": "workspace:*",
+        "@janela/session": "workspace:*",
         "@janela/support": "workspace:*",
+        "@janela/terminal": "workspace:*",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",

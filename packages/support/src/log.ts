@@ -84,14 +84,33 @@ export const LOG_SUBSYSTEM = "sh.janela.Janela";
  * decide the format for everyone.
  */
 export function setLogSink(sink: LogSink): void {
-  void sink;
-  throw new Error(`not implemented: setLogSink`);
+  currentSink = sink;
 }
 
 /** The logger for one category. Cheap; hold it in a module constant. */
 export function log(category: LogCategory): Logger {
-  void category;
-  throw new Error(`not implemented: log`);
+  // One closure per level rather than five near-identical methods. `fields` is
+  // spread conditionally because `exactOptionalPropertyTypes` makes
+  // `{ fields: undefined }` a different type from a record without the key —
+  // and a sink that writes `"fields": null` for every record is noise.
+  const at =
+    (level: LogLevel) =>
+    (message: string, fields?: LogRecord["fields"]): void => {
+      currentSink.write({
+        level,
+        category,
+        message,
+        ...(fields === undefined ? {} : { fields }),
+      });
+    };
+
+  return {
+    debug: at("debug"),
+    info: at("info"),
+    notice: at("notice"),
+    warning: at("warning"),
+    error: at("error"),
+  };
 }
 
 /**
@@ -104,3 +123,12 @@ export const nullLogSink: LogSink = {
     // during import must not decide the format for the whole process.
   },
 };
+
+/**
+ * The process's sink. Module-level mutable state, and the only such state in the
+ * repository — a logger is the one dependency it would be absurd to thread through
+ * every constructor, and `setLogSink` is called once by a composition root before
+ * anything logs. Declared after `nullLogSink` because a `const` is not initialised
+ * until its statement runs.
+ */
+let currentSink: LogSink = nullLogSink;

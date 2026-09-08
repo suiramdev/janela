@@ -1,4 +1,6 @@
 import { lstatSync, type Stats } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { UserFacingError, type Logger } from "@janela/support";
 
@@ -28,7 +30,12 @@ export const MAXIMUM_SOCKET_PATH_LENGTH = 104;
  *   outcome than not starting.
  */
 export function defaultSocketPath(): string {
-  throw new Error(`not implemented: defaultSocketPath`);
+  const path = join(homedir(), ".janela", "run", "janelad.sock");
+  // Bytes, not characters: `sun_path` is a byte array, and a home directory with
+  // a non-ASCII character costs more than one byte per character in it.
+  const byteCount = Buffer.byteLength(path, "utf8");
+  if (byteCount > MAXIMUM_SOCKET_PATH_LENGTH) throw new SocketPathTooLong(byteCount);
+  return path;
 }
 
 /**

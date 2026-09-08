@@ -89,6 +89,7 @@ export interface NativePtyLibrary {
   jpty_exit_code(handle: number): number;
   jpty_close(handle: number): void;
   jpty_drop_all(): number;
+  jpty_peer_credential(fd: number, out: Pointer, outLength: number, outPid: Pointer): bigint;
 }
 
 function open(): NativePtyLibrary {
@@ -116,6 +117,10 @@ function open(): NativePtyLibrary {
       jpty_exit_code: { args: [FFIType.i32], returns: FFIType.i32 },
       jpty_close: { args: [FFIType.i32], returns: FFIType.void },
       jpty_drop_all: { args: [], returns: FFIType.i32 },
+      jpty_peer_credential: {
+        args: [FFIType.i32, FFIType.ptr, FFIType.u64, FFIType.ptr],
+        returns: FFIType.i64,
+      },
     }).symbols;
   } catch (cause) {
     // Not a `PseudoTerminalFailure`: a missing native artifact is a build

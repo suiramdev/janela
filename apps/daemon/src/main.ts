@@ -1,11 +1,12 @@
 /**
  * `janelad` — the process that owns the user's terminals.
  *
- * One per user, started by launchd on first connection to its socket, and outliving
- * every client. See docs/decisions/0017-daemon-lifecycle.md.
+ * One per user and outliving every client. See
+ * docs/decisions/0017-daemon-lifecycle.md.
  *
  * This file is deliberately thin: process plumbing only, nothing worth testing.
- * Everything with behaviour lives in `@janela/daemon` and below, where it can be
+ * Everything with behaviour lives in `environment.ts`, `socket.ts` and
+ * `lifecycle.ts` beside it, and in `@janela/daemon` and below, where it can be
  * exercised without a process.
  *
  * Shipped as a single compiled binary — `bun build --compile` embeds the runtime,
@@ -14,61 +15,97 @@
  * docs/decisions/0020-bun-daemon-runtime.md.
  */
 
-// MARK: - Signals
-//
-// TODO: Handle SIGTERM (launchd at logout) by hanging up every PTY and exiting
-// cleanly, and SIGINT the same way for a foreground developer run. Ignore SIGPIPE —
-// a client vanishing mid-write is routine and must never kill the daemon.
-//
-// Note the ordering that matters: hang up the PTYs *before* exiting, so children get
-// SIGHUP rather than being reparented onto launchd. `TerminalRegistry.hangUpAll()`
-// is that step.
+import { defaultDatabasePath } from "@janela/db";
+import { log, setLogSink } from "@janela/support";
 
-// MARK: - Socket
-//
-// TODO: Bind `defaultSocketPath()` — `~/.janela/run/janelad.sock` — in a directory
-// this process creates 0700 and then re-checks with `verifySocketDirectory()`.
-//
-// This is route (b) of the two ADR 0017 originally offered, and it was taken
-// deliberately, not silently: see that ADR's 2026-09-08 amendment. The plist declares
-// no `Sockets` block, because the only static form of it — launchd's
-// `SecureSocketWithKey` — publishes the socket path solely into the GUI login
-// session's launchd environment, which a CLI over ssh cannot read, and ADR 0023
-// requires an address that survives launchd. So there is no listening descriptor to
-// inherit, no `launch_activate_socket`, and no second FFI surface: `bun:ffi` stays
-// gated to @janela/pty.
-//
-// The property socket activation was chosen for is kept by the client instead: the
-// agent has no `RunAtLoad`, so nothing runs until a client fails to connect and runs
-// `launchctl kickstart gui/<uid>/sh.janela.janelad`. A user who never opens Janela
-// never has a process. `--foreground` is the same code path with no launchd job
-// above it.
-
-// MARK: - Lifecycle
-//
-// TODO: After the last client disconnects, exit if no terminal is live — but only
-// after an idle grace period, so quitting and reopening the app does not tear down
-// and rebuild the world. A daemon holding live terminals never exits on its own;
-// that asymmetry is the entire feature.
-
-// TODO: Build the object graph (`daemonEnvironment()` below), open the database, run
-// migrations, restore sessions as idle, then serve until cancelled.
-//
-// Migration failure is the interesting error: it means the daemon cannot start, and
-// the only way a user learns about it is a client that cannot connect. Log it
-// clearly and exit non-zero so launchd's KeepAlive does not spin.
+import { daemonEnvironment } from "./environment.ts";
+import { createIdleMonitor, isDaemonIdle, shutdown } from "./lifecycle.ts";
 
 /**
- * The daemon object graph.
+ * The version `--version` prints.
  *
- * Constructor injection from one place, exactly as in the app. There is no service
- * locator, no singleton graph, and nothing global — which is also what makes the
- * whole graph substitutable in `@janela/daemon`'s tests.
+ * A literal rather than an import of `package.json`: `bun build --compile` would
+ * have to embed the manifest, and a daemon whose version depends on a file being
+ * next to it is a daemon that reports the wrong version from a bundle. The app's
+ * own version lives in `tauri.conf.json`, and the two are released together.
  */
-export function daemonEnvironment(options: {
-  readonly databasePath: string;
-  readonly foreground: boolean;
-}): Promise<{ serve(signal: AbortSignal): Promise<void> }> {
-  void options;
-  throw new Error(`not implemented: daemonEnvironment`);
+const JANELAD_VERSION = "0.0.0";
+
+/**
+ * The daemon's sink: one JSON object per line on stderr.
+ *
+ * launchd captures stderr, and JSON keeps a record readable next to the client's,
+ * which goes through Tauri's log plugin. Records only ever carry shapes — an id, a
+ * count, an exit status — because that is what `LogRecord.fields` is for; terminal
+ * traffic, command output and environment values never reach one by construction.
+ */
+function installLogSink(): void {
+  setLogSink({
+    write: (record) => {
+      process.stderr.write(`${JSON.stringify(record)}\n`);
+    },
+  });
+}
+
+async function main(argv: readonly string[]): Promise<void> {
+  if (argv.includes("--version")) {
+    // Touches nothing else: CI runs `./janelad --version` from an empty directory
+    // to prove the compiled binary carries its own runtime.
+    process.stdout.write(`${JANELAD_VERSION}\n`);
+    return;
+  }
+
+  installLogSink();
+  const logger = log("app");
+  const foreground = argv.includes("--foreground");
+  const environment = await daemonEnvironment({
+    databasePath: defaultDatabasePath(),
+    foreground,
+  }).catch((error: unknown) => {
+    // The interesting error is a failed migration: it means the daemon cannot
+    // start, and the only way a user learns about it is a client that cannot
+    // connect. Exit non-zero so launchd's KeepAlive does not spin.
+    logger.error("daemon start failed", {
+      error: error instanceof Error ? error.name : "unknown",
+    });
+    return process.exit(1);
+  });
+
+  const controller = new AbortController();
+  const stop = (): void => {
+    void shutdown({
+      terminals: environment.terminals,
+      log: logger,
+      stopServing: () => controller.abort(),
+      finish: (code) => process.exit(code),
+    });
+  };
+
+  // `once`, so a second SIGTERM while the sweep is in flight does not start a
+  // second one. Never kill the terminals harder than SIGHUP: terminating them is
+  // always the user's explicit choice (non-negotiable #7).
+  process.once("SIGTERM", stop);
+  process.once("SIGINT", stop);
+  // A client vanishing mid-write is routine and must never kill a daemon holding
+  // another client's terminals. Bun follows Node in ignoring SIGPIPE and
+  // surfacing EPIPE on the socket instead, which `socketTransport` already
+  // absorbs; this is explicit so a runtime that does not cannot take us down.
+  process.on("SIGPIPE", () => {});
+
+  const idle = createIdleMonitor({
+    isIdle: () => isDaemonIdle(environment.server),
+    onIdleExpired: stop,
+  });
+  idle.start();
+
+  try {
+    await environment.serve(controller.signal);
+  } finally {
+    idle.stop();
+    await environment.database.close();
+  }
+}
+
+if (import.meta.main) {
+  await main(process.argv.slice(2));
 }

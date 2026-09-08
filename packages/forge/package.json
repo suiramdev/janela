@@ -2,7 +2,7 @@
   "name": "@janela/forge",
   "version": "0.0.0",
   "private": true,
-  "description": "GitHub and GitLab state, through the user's own gh and glab. Planned.",
+  "description": "GitHub and GitLab state, through the user's own gh and glab.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

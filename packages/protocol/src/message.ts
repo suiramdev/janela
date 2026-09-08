@@ -2,6 +2,8 @@ import type {
   AbsolutePath,
   GridSize,
   Instant,
+  LaunchProfile,
+  LaunchProfileID,
   Project,
   ProjectID,
   ProjectSettings,
@@ -68,17 +70,29 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly name: string;
     }
+  /**
+   * What removing this session would do, so a client can describe it before
+   * asking. The reply is `text` carrying `serializeRemovalPlan` JSON — parse it
+   * with `parseRemovalPlan`.
+   */
+  | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
 
   // ---- Terminals
   /**
    * Attach to a terminal's output. `viewport` participates in the size
    * negotiation described in docs/decisions/0016-daemon-protocol.md.
+   *
+   * Absent, the attachment is input and scope only: the client may type and is
+   * subscribed to the terminal, but receives no repaints and takes no part in
+   * size negotiation. That is the CLI's reading path — ADR 0016, "a client
+   * attaching with no viewport does not participate". Participation is chosen
+   * here; attach again with a viewport to change it.
    */
   | {
       readonly type: "attach";
       readonly id: RequestID;
       readonly terminalID: TerminalID;
-      readonly viewport: GridSize;
+      readonly viewport?: GridSize;
     }
   | { readonly type: "detach"; readonly id: RequestID; readonly terminalID: TerminalID }
   /**
@@ -94,6 +108,43 @@ export type ClientMessage =
       readonly id: RequestID;
       readonly terminalID: TerminalID;
       readonly includeScrollback: boolean;
+    }
+
+  // ---- Launch profiles
+  /**
+   * Upsert, keyed by the profile's own id: the client mints one with
+   * `newLaunchProfileID()` for a profile it is creating, so the id it selects in
+   * its editor is the id the daemon stores and there is no round trip to wait on.
+   *
+   * `isBuiltIn` is carried for completeness and **ignored**: a stored profile
+   * keeps whatever it already was, and anything new is a user profile. A client
+   * able to set it could mint an undeletable profile, or make a built-in
+   * removable.
+   */
+  | {
+      readonly type: "saveLaunchProfile";
+      readonly id: RequestID;
+      readonly profile: LaunchProfile;
+    }
+  /** Refused for a built-in: those are overridden by copying, never deleted. */
+  | {
+      readonly type: "removeLaunchProfile";
+      readonly id: RequestID;
+      readonly profileID: LaunchProfileID;
+    }
+  /**
+   * A new terminal in a session that already exists — ⌘T, with a profile chosen
+   * from the picker. Absent `profileID` means the login shell.
+   *
+   * Configured, not started: the reply is `text` carrying the new `TerminalID`,
+   * and the client starts it with `startTerminal` when it wants the process.
+   */
+  | {
+      readonly type: "createTerminal";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly profileID?: LaunchProfileID;
+      readonly title?: string;
     };
 
 /**
@@ -162,8 +213,27 @@ export interface StateUpdate {
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   /**
+   * Every launch profile, built-in and user-authored, in the daemon's order.
+   * Empty in a partial update means "unchanged", exactly as `projects` does.
+   */
+  readonly launchProfiles: readonly LaunchProfile[];
+  /**
+   * Whether each profile's executable was found on the captured login-shell
+   * `PATH`. Keyed separately from the profile because it is a fact about this
+   * machine right now, not part of what the user authored — a profile whose tool
+   * is not installed is still a profile, and reinstalling the tool must not
+   * require editing it.
+   *
+   * A profile with an empty `command` is the login shell and is always available.
+   */
+  readonly launchProfileAvailability: Readonly<Record<LaunchProfileID, boolean>>;
+  /**
    * True when this is the complete picture rather than a change to part of it.
-   * Sent once after `subscribe`, and again after any reconnection.
+   *
+   * Sent after `subscribe`, after any reconnection — and, as it happens, on every
+   * state change the daemon announces: a client that merges by id cannot express
+   * a deletion, so a removal propagates as absence from a complete list. A
+   * partial update is therefore an addition or an edit, never a removal.
    */
   readonly isFullSnapshot: boolean;
 }

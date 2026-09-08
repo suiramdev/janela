@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { LogRecord, Logger } from "@janela/support";
@@ -12,6 +12,7 @@ import {
   SocketPathTooLong,
   XUCRED_BYTE_LENGTH,
   XUCRED_VERSION,
+  defaultSocketPath,
   isAuthorized,
   verifyPeer,
   verifySocketDirectory,
@@ -108,6 +109,18 @@ describe("the socket endpoint", () => {
     expect(error.reason).toContain("120");
     expect(error.reason).toContain("104");
     expect(error.recoverySuggestion).toBeDefined();
+  });
+
+  test("the default path is `~/.janela/run/janelad.sock` and fits sun_path", () => {
+    const path = defaultSocketPath();
+
+    expect(path.startsWith(`${homedir()}/`)).toBe(true);
+    expect(path.endsWith("/.janela/run/janelad.sock")).toBe(true);
+    // The rule the seam exists for: the returned path is short enough to bind.
+    // A home directory long enough to break this throws instead, which is the
+    // other half — and cannot be provoked without a seam this API deliberately
+    // does not have.
+    expect(Buffer.byteLength(path, "utf8")).toBeLessThanOrEqual(MAXIMUM_SOCKET_PATH_LENGTH);
   });
 });
 

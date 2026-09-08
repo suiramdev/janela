@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import type {
   AbsolutePath,
   Backing,
+  LaunchProfileID,
   Project,
   ProjectID,
   Session,
@@ -20,11 +21,11 @@ import {
   newTerminalID,
   now,
   ownsItsDirectory,
-  singleTerminalLayout,
   supportsWorktrees,
   worktreeOf,
 } from "@janela/core";
 import type { LaunchProfileRepository, SessionRepository } from "@janela/db";
+import { PullRequestUnavailable, type ForgeServing } from "@janela/forge";
 import type {
   GitWorktree,
   WorktreeIncluding,
@@ -40,6 +41,7 @@ import type { AutomationRunning } from "./automation-runner.ts";
 import {
   NotAWorktree,
   PullRequestsNotSupported,
+  UnknownLaunchProfile,
   UnknownProject,
   UnknownSession,
   UnknownTerminal,
@@ -105,9 +107,26 @@ export interface SessionService {
 
   rename(id: SessionID, name: string): Promise<void>;
 
+  /**
+   * A new terminal in a session that already exists — ⌘T, with a profile the user
+   * picked. It arrives as a new tab, focused, and it is *configured, not started*:
+   * nothing spawns until `startTerminal`, which is what keeps opening a session
+   * free (AGENTS.md § Laziness is a feature).
+   *
+   * @throws {UnknownSession} @throws {UnknownLaunchProfile}
+   */
+  createTerminal(id: SessionID, options?: NewTerminalOptions): Promise<TerminalDescriptor>;
+
   /** Starts a configured-but-idle terminal. Attaching never starts anything. */
   startTerminal(id: TerminalID): Promise<void>;
   stopTerminal(id: TerminalID): Promise<void>;
+}
+
+/** What the user chose in the ⌘T picker. Both fields absent is a plain shell. */
+export interface NewTerminalOptions {
+  readonly profileID?: LaunchProfileID;
+  /** Overrides the tab title, which otherwise follows the profile's name. */
+  readonly title?: string;
 }
 
 /**
@@ -205,6 +224,8 @@ export interface SessionServiceDependencies {
   readonly automation?: AutomationRunning;
   /** The terminal-creation seam. Production passes nothing. */
   readonly createTerminal?: typeof createLiveTerminal;
+  /** Pull-request lookups. Absent means `fromPullRequest` is refused. */
+  readonly forge?: ForgeServing;
 }
 
 export function createSessionService(
@@ -434,6 +455,38 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     await this.publish();
   }
 
+  async createTerminal(
+    id: SessionID,
+    options: NewTerminalOptions = {},
+  ): Promise<TerminalDescriptor> {
+    const session = this.find(id);
+    if (session === undefined) throw new UnknownSession(id);
+
+    const profileID = options.profileID;
+    const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
+    // Absent is a plain shell; named-but-missing is the settings window that
+    // deleted the profile while the picker was open, and silently starting a
+    // shell instead would be answering a different question.
+    if (profileID !== undefined && profile === undefined) throw new UnknownLaunchProfile(profileID);
+
+    const descriptor: TerminalDescriptor = {
+      id: newTerminalID(),
+      title: options.title ?? profile?.name ?? "Shell",
+      ...(profile === undefined ? {} : { profileID: profile.id }),
+      startsAutomatically: true,
+      role: { kind: "user" },
+      createdAt: now(),
+    };
+
+    // A new tab rather than a split, focused: ⌘T is "another terminal", and where
+    // a split goes is a question only the user looking at the panes can answer.
+    // Focused, unlike an automation terminal, because the user just asked for it.
+    this.appendTerminalTab(session, descriptor, { focus: true });
+    await this.deps.repository.save(session);
+    await this.publish();
+    return descriptor;
+  }
+
   async startTerminal(id: TerminalID): Promise<void> {
     const located = this.locate(id);
     if (located === undefined) throw new UnknownTerminal(id);
@@ -441,7 +494,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
     let live = this.deps.terminals.get(id);
     if (live === undefined) {
-      live = await this.createTerminal(session, descriptor);
+      live = await this.liveTerminalFor(session, descriptor);
       this.deps.terminals.register(live);
     }
 
@@ -561,10 +614,30 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       }
 
       case "fromPullRequest": {
-        // Before anything is written, so there is nothing to roll back. The forge
-        // integration replaces this branch with a head-branch lookup feeding the
-        // `newWorktree` path.
-        throw new PullRequestsNotSupported();
+        const project = this.requireProject(request.projectID);
+        if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+        // An absent forge is this daemon having been composed without one, which
+        // from the user's side is the same thing as the integration not existing.
+        if (this.deps.forge === undefined) throw new PullRequestsNotSupported();
+
+        // Read-only, and never `gh pr checkout`: that would move the user's own
+        // checkout onto the pull request's branch (ADR 0012). The branch feeds
+        // the ordinary worktree path instead.
+        const branch = await this.deps.forge.pullRequestBranch({
+          project,
+          number: request.number,
+        });
+        if (branch === undefined) throw new PullRequestUnavailable(request.number);
+
+        return this.resolve({
+          kind: "newWorktree",
+          projectID: project.id,
+          branch,
+          // `worktree add -b <branch> <dir>` with no start point silently
+          // branches off HEAD when the pull request's branch was never fetched;
+          // the remote-tracking ref fails honestly instead, with git's reason.
+          startPoint: `origin/${branch}`,
+        });
       }
     }
   }
@@ -663,7 +736,15 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     if (automation === undefined) return;
 
     try {
-      await automation.run({ event, project, session });
+      await automation.run({
+        event,
+        project,
+        session,
+        // The sink: each automation terminal is appended, persisted and announced
+        // *before* its process starts, which is what "automation is visible"
+        // means for a teardown the user is watching.
+        attach: (descriptor) => this.attachAutomationTerminal(session, descriptor),
+      });
     } catch {
       // Visible and non-fatal, by product rule: the command's own terminal shows
       // what happened, and the session is still usable.
@@ -695,13 +776,56 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       createdAt: now(),
     };
 
-    session.terminals = [descriptor];
-    session.layout = singleTerminalLayout(descriptor.id);
+    this.appendTerminalTab(session, descriptor, { focus: true });
     await this.deps.repository.save(session);
     await this.publish();
   }
 
-  private async createTerminal(
+  /**
+   * An automation terminal, visible before its process starts.
+   *
+   * Persisted as well as announced: the `sessionStart` descriptor *is* the record
+   * that the event has fired, so a daemon restart must find it in the database
+   * rather than re-run `pnpm dev`.
+   */
+  private async attachAutomationTerminal(
+    session: Session,
+    descriptor: TerminalDescriptor,
+  ): Promise<void> {
+    this.appendTerminalTab(session, descriptor, { focus: false });
+    await this.deps.repository.save(session);
+    await this.publish();
+  }
+
+  /**
+   * Appends a terminal as its own tab.
+   *
+   * Focus is a parameter because the two callers disagree for a reason: the user
+   * asked for their own terminal, and an automation command starting while they
+   * read the output of the last one must not steal the tab out from under them.
+   */
+  private appendTerminalTab(
+    session: Session,
+    descriptor: TerminalDescriptor,
+    options: { readonly focus: boolean },
+  ): void {
+    session.terminals = [...session.terminals, descriptor];
+    session.layout = {
+      tabs: [
+        ...session.layout.tabs,
+        { root: { kind: "terminal", id: descriptor.id }, focusedTerminalID: descriptor.id },
+      ],
+      focusedTabIndex: options.focus ? session.layout.tabs.length : session.layout.focusedTabIndex,
+    };
+  }
+
+  /**
+   * The `LiveTerminal` for a descriptor: resolved launch, no process yet.
+   *
+   * Named for what it returns rather than "createTerminal", which is the public
+   * method a client calls to add one to a session.
+   */
+  private async liveTerminalFor(
     session: Session,
     descriptor: TerminalDescriptor,
   ): Promise<LiveTerminal> {

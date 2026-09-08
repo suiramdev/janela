@@ -1117,6 +1117,77 @@ pub extern "C" fn jpty_drop_all() -> i32 {
     count
 }
 
+// ---------------------------------------------------------------- peer credential
+
+/// `SOL_LOCAL` from `<sys/un.h>`. `libc` does not export it for Apple targets.
+const SOL_LOCAL: c_int = 0;
+/// `LOCAL_PEERCRED` — fills a `struct xucred` for the peer of a `AF_UNIX` socket.
+const LOCAL_PEERCRED: c_int = 0x001;
+/// `LOCAL_PEERPID` — the peer's pid, as an `i32`.
+const LOCAL_PEERPID: c_int = 0x002;
+
+/// Read the peer credential of a connected Unix socket.
+///
+/// This lives here rather than in the daemon because `bun:ffi` is gated to this
+/// package (ADR 0021) and Bun exposes no peer-credential accessor: without this
+/// export `verifyPeer` refuses every peer as `credential-unavailable` and no
+/// client can connect. It is the only export here that has nothing to do with a
+/// pseudo-terminal, and it earns the exception by being the alternative to a
+/// second FFI surface.
+///
+/// **Interprets nothing.** The bytes go up exactly as the kernel wrote them, and
+/// `@janela/daemon`'s `verifyPeer` checks the version, the length and the uid.
+/// A reader that decided anything here would be a second authorization rule in a
+/// language the tests for that rule are not written in.
+///
+/// Returns the `optlen` the kernel reported for the `xucred` — which the caller
+/// compares against `sizeof(struct xucred)`, so a short fill stays visible — or
+/// `-errno` when that call failed. A failed pid call writes `-1` to `out_pid` and
+/// is **not** an error: a pid is never an authorization input, only a log field.
+///
+/// # Safety
+///
+/// `out` must be writable for `out_len` bytes and `out_pid` for one `i32`.
+#[no_mangle]
+pub unsafe extern "C" fn jpty_peer_credential(
+    fd: c_int,
+    out: *mut u8,
+    out_len: usize,
+    out_pid: *mut i32,
+) -> isize {
+    if out.is_null() || out_pid.is_null() {
+        return -(libc::EFAULT as isize);
+    }
+
+    let mut pid: i32 = -1;
+    let mut pid_len = std::mem::size_of::<i32>() as libc::socklen_t;
+    let pid_read = unsafe {
+        libc::getsockopt(
+            fd,
+            SOL_LOCAL,
+            LOCAL_PEERPID,
+            (&raw mut pid).cast::<c_void>(),
+            &raw mut pid_len,
+        )
+    };
+    unsafe { out_pid.write(if pid_read == 0 { pid } else { -1 }) };
+
+    let mut length = out_len as libc::socklen_t;
+    let read = unsafe {
+        libc::getsockopt(
+            fd,
+            SOL_LOCAL,
+            LOCAL_PEERCRED,
+            out.cast::<c_void>(),
+            &raw mut length,
+        )
+    };
+    if read != 0 {
+        return -(errno() as isize);
+    }
+    length as isize
+}
+
 // ---------------------------------------------------------------- plumbing
 
 fn errno() -> i32 {
@@ -1529,5 +1600,77 @@ mod tests {
         ring.len = HIGH_WATER - 1;
         assert!(!ring.gate_closed());
         ring.len = 0;
+    }
+
+    /// `sizeof(struct xucred)` on macOS. Pinned here, in the language that can
+    /// see the header, and mirrored in `peer-credential.ts` with a comment.
+    const XUCRED_LENGTH: usize = 76;
+
+    #[test]
+    fn peer_credential_reports_our_own_uid_and_pid_over_a_socketpair() {
+        use std::os::fd::AsRawFd;
+
+        let (a, _b) = std::os::unix::net::UnixStream::pair().expect("socketpair");
+        let mut buffer = [0u8; XUCRED_LENGTH];
+        let mut pid: i32 = 0;
+
+        let optlen = unsafe {
+            jpty_peer_credential(
+                a.as_raw_fd(),
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &raw mut pid,
+            )
+        };
+
+        // The whole struct, so `verifyPeer`'s truncation check passes.
+        assert_eq!(optlen, XUCRED_LENGTH as isize);
+        // `cr_version`, native-endian, first in the struct.
+        assert_eq!(
+            u32::from_ne_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]),
+            0
+        );
+        // `cr_uid` follows it.
+        assert_eq!(
+            u32::from_ne_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]),
+            unsafe { libc::getuid() }
+        );
+        // Both ends of a socketpair are this process.
+        assert_eq!(pid, unsafe { libc::getpid() });
+    }
+
+    #[test]
+    fn peer_credential_on_a_closed_descriptor_fails_rather_than_inventing_a_uid() {
+        let mut buffer = [0u8; XUCRED_LENGTH];
+        let mut pid: i32 = 0;
+
+        let outcome =
+            unsafe { jpty_peer_credential(-1, buffer.as_mut_ptr(), buffer.len(), &raw mut pid) };
+
+        assert!(outcome < 0, "expected -errno, got {outcome}");
+        // A pid is never an authorization input, so its failure is reported as
+        // "unknown" rather than as an error of its own.
+        assert_eq!(pid, -1);
+    }
+
+    #[test]
+    fn peer_credential_reports_a_short_read_rather_than_padding_it() {
+        use std::os::fd::AsRawFd;
+
+        let (a, _b) = std::os::unix::net::UnixStream::pair().expect("socketpair");
+        let mut buffer = [0xffu8; XUCRED_LENGTH];
+        let mut pid: i32 = 0;
+
+        // A caller-sized buffer smaller than the struct: the kernel fills what it
+        // can and reports it, and the length reaching TypeScript is what makes
+        // `verifyPeer` refuse it as `credential-truncated`.
+        let optlen =
+            unsafe { jpty_peer_credential(a.as_raw_fd(), buffer.as_mut_ptr(), 8, &raw mut pid) };
+
+        assert!(optlen >= 0, "expected a length, got {optlen}");
+        assert!(
+            optlen < XUCRED_LENGTH as isize,
+            "expected a short read, got {optlen}"
+        );
     }
 }

@@ -7,6 +7,7 @@ import type {
   TerminalDescriptor,
   TerminalState,
 } from "@janela/core";
+import { newTerminalID, now } from "@janela/core";
 import type {
   GitOutcome,
   GitRunning,
@@ -322,13 +323,23 @@ export function fakeInclude(options: {
 export interface FakeAutomation {
   readonly automation: AutomationRunning;
   readonly runs: readonly { readonly event: string; readonly session: SessionID }[];
+  /** Descriptors handed to the brain's sink, in order. */
+  readonly attached: readonly TerminalDescriptor[];
 }
 
 export function fakeAutomation(options?: {
   readonly fail?: Error;
   readonly events?: EventLog;
+  /**
+   * Attach one automation terminal per run, which is what a real runner does
+   * before starting anything. Off by default: most tests here are about the
+   * creation order, and an extra terminal in every announcement would say
+   * nothing about it.
+   */
+  readonly attaches?: boolean;
 }): FakeAutomation {
   const runs: { event: string; session: SessionID }[] = [];
+  const attached: TerminalDescriptor[] = [];
 
   return {
     automation: {
@@ -336,10 +347,22 @@ export function fakeAutomation(options?: {
         options?.events?.record(`automation.${request.event}`);
         runs.push({ event: request.event, session: request.session.id });
         if (options?.fail !== undefined) throw options.fail;
+        if (options?.attaches === true) {
+          const descriptor: TerminalDescriptor = {
+            id: newTerminalID(),
+            title: "fake",
+            startsAutomatically: false,
+            role: { kind: "automation", event: request.event },
+            createdAt: now(),
+          };
+          attached.push(descriptor);
+          await request.attach(descriptor);
+        }
         return { event: request.event, commands: [] };
       },
     },
     runs,
+    attached,
   };
 }
 

@@ -27,6 +27,7 @@ import {
 import {
   clientHello,
   fakeDispatch,
+  fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -179,6 +180,7 @@ function fixture(
   const server = createDaemonServer({
     sessions: fakeSessions(options.sessions ?? []),
     projects: fakeProjects(),
+    launchProfiles: fakeLaunchProfiles(),
     terminals: registry,
     log: logger,
     dispatch,
@@ -253,7 +255,7 @@ describe("the handshake", () => {
 
     expect(client.controls()[0]).toEqual({
       type: "refused",
-      refusal: { kind: "incompatibleVersion", daemonMinimum: 2, daemonCurrent: 2 },
+      refusal: { kind: "incompatibleVersion", daemonMinimum: 3, daemonCurrent: 3 },
     });
     await until(() => client.ended(), "the connection to close");
 
@@ -427,7 +429,14 @@ describe("fan-out", () => {
     const update = subscriber.controls().find((message) => message.type === "state");
     expect(update).toEqual({
       type: "state",
-      update: { projects: [], sessions: [session], terminalStates: {}, isFullSnapshot: false },
+      update: {
+        projects: [],
+        sessions: [session],
+        terminalStates: {},
+        launchProfiles: [],
+        launchProfileAvailability: {},
+        isFullSnapshot: true,
+      },
     });
     expect(terminalScoped.controls().some((message) => message.type === "state")).toBe(false);
     expect(silent.controls()).toHaveLength(1);
