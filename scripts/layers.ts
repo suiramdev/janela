@@ -290,6 +290,12 @@ export const GATED_MODULES: readonly GatedModule[] = [
       "Prisma is an implementation detail of @janela/db. A generated client type in a service signature is a leaked schema (ADR 0019).",
   },
   {
+    pattern: "@prisma/driver-adapter-utils",
+    allowed: ["@janela/db"],
+    reason:
+      "The driver adapter's types and constants. Same door as @prisma/client: a Prisma column type or adapter error in a signature above @janela/db is a leaked schema (ADR 0019).",
+  },
+  {
     pattern: "node:child_process",
     allowed: ["@janela/support"],
     reason:
