@@ -108,8 +108,7 @@ export type Forge = "gitHub" | "gitLab";
  * broken.
  */
 export function forgeExecutable(forge: Forge): string {
-  void forge;
-  throw new Error(`not implemented: forgeExecutable`);
+  return forge === "gitHub" ? "gh" : "glab";
 }
 
 // MARK: - Settings

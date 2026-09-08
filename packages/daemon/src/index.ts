@@ -6,6 +6,7 @@
  * so `apps/daemon` names `node:net` too, for the bind alone (ADR 0017, amended).
  */
 
+export * from "./dispatch.ts";
 export * from "./endpoint.ts";
 export * from "./frame-loop.ts";
 export * from "./listener.ts";

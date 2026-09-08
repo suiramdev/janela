@@ -14,4 +14,5 @@ export * from "./frame.ts";
 export * from "./handshake.ts";
 export * from "./message-coder.ts";
 export * from "./message.ts";
+export * from "./removal-plan.ts";
 export * from "./transport.ts";

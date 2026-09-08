@@ -197,18 +197,21 @@ describe("the handshake", () => {
     if (peer === undefined) throw new Error("no connection");
     await until(() => peer.controls().length > 0, "the hello");
 
-    peer.say(daemonHello({ protocolVersion: 3, minimumSupported: 3 }));
+    // One version past ours, whatever ours is: the assertion is about a range
+    // that does not overlap, not about a particular number.
+    const newer = PROTOCOL_VERSION + 1;
+    peer.say(daemonHello({ protocolVersion: newer, minimumSupported: newer }));
     await until(() => connection.status.kind === "refused", "the refusal");
 
     expect(connection.status).toEqual({
       kind: "refused",
-      refusal: { kind: "incompatibleVersion", daemonMinimum: 3, daemonCurrent: 3 },
+      refusal: { kind: "incompatibleVersion", daemonMinimum: newer, daemonCurrent: newer },
     });
     await Bun.sleep(5);
     expect(daemon.connections).toHaveLength(1);
     expect(logger.with("daemon version incompatible")[0]?.fields).toEqual({
-      daemonMinimum: 3,
-      daemonCurrent: 3,
+      daemonMinimum: newer,
+      daemonCurrent: newer,
     });
   });
 

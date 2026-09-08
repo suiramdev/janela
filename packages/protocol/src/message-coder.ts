@@ -42,12 +42,16 @@ const CLIENT_MESSAGE_TYPES = {
   updateProjectSettings: true,
   createSession: true,
   removeSession: true,
+  removalPlan: true,
   renameSession: true,
   attach: true,
   detach: true,
   startTerminal: true,
   stopTerminal: true,
   resize: true,
+  saveLaunchProfile: true,
+  removeLaunchProfile: true,
+  createTerminal: true,
   snapshotText: true,
 } as const satisfies Record<ClientMessage["type"], true>;
 

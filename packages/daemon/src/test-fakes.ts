@@ -1,6 +1,8 @@
 import type {
   AbsolutePath,
   GridSize,
+  LaunchProfile,
+  LaunchProfileID,
   Project,
   ProjectID,
   Session,
@@ -20,17 +22,18 @@ import {
   type Hello,
   type MessageTransport,
 } from "@janela/protocol";
-import type { ProjectService, SessionCreationRequest, SessionService } from "@janela/session";
+import type {
+  LaunchProfileService,
+  ProjectService,
+  SessionCreationRequest,
+  SessionService,
+} from "@janela/session";
 import type { LogRecord, Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 
+import type { ClientConnection, RequestDispatching } from "./dispatch.ts";
 import type { PeerCredential } from "./endpoint.ts";
-import type {
-  AcceptedConnection,
-  ClientConnection,
-  ConnectionListening,
-  RequestDispatching,
-} from "./server.ts";
+import type { AcceptedConnection, ConnectionListening } from "./server.ts";
 
 /**
  * Fakes for the daemon's own tests.
@@ -144,6 +147,10 @@ export interface FakeTerminalOptions {
    * lost — `PseudoTerminalFailure` with `detail.kind === "readFailed"` (#17).
    */
   readonly throwOnDrain?: Error;
+  /** What `snapshotText` returns, for the CLI's read path. */
+  readonly snapshot?: string;
+  /** The session this terminal belongs to. Defaults to `"session"`. */
+  readonly sessionID?: SessionID;
 }
 
 export interface FakeTerminal extends LiveTerminal {
@@ -153,8 +160,12 @@ export interface FakeTerminal extends LiveTerminal {
   /** How often the frame loop fed this terminal. One per frame, or the loop is wrong. */
   readonly drainCalls: { count: number };
   readonly attached: Map<string, GridSize>;
+  /** Every `attach`, in order: the upsert history a resize shows up in. */
+  readonly attachCalls: { client: string; viewport: GridSize }[];
   readonly sendCalls: Uint8Array[];
   readonly stopCalls: { count: number };
+  /** Times `start` was called. Attaching must never move this. */
+  readonly startCalls: { count: number };
 }
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -168,6 +179,8 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
   const attached = new Map<string, GridSize>();
   const sendCalls: Uint8Array[] = [];
   const stopCalls = { count: 0 };
+  const startCalls = { count: 0 };
+  const attachCalls: { client: string; viewport: GridSize }[] = [];
 
   const descriptor: TerminalDescriptor = {
     id,
@@ -179,7 +192,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
 
   return {
     id,
-    sessionID: "session" as SessionID,
+    sessionID: options.sessionID ?? ("session" as SessionID),
     descriptor,
     state: options.state ?? { kind: "running" },
     displayTitle: "fake",
@@ -187,9 +200,14 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     fullRepaintCalls,
     drainCalls,
     attached,
+    attachCalls,
     sendCalls,
     stopCalls,
-    start: () => Promise.resolve(),
+    startCalls,
+    start: () => {
+      startCalls.count += 1;
+      return Promise.resolve();
+    },
     stop: () => {
       stopCalls.count += 1;
       return Promise.resolve();
@@ -203,6 +221,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
       sendCalls.push(Uint8Array.from(input));
     },
     attach: (client, viewport) => {
+      attachCalls.push({ client, viewport });
       attached.set(client, viewport);
       return viewport;
     },
@@ -220,7 +239,8 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
       fullRepaintCalls.push(client);
       return full;
     },
-    snapshotText: () => "",
+    snapshotText: ({ includeScrollback }) =>
+      includeScrollback ? `${options.snapshot ?? ""}+scrollback` : (options.snapshot ?? ""),
     events: undefined,
   };
 }
@@ -446,7 +466,17 @@ export async function readFrame(transport: MessageTransport): Promise<Frame> {
 
 const NOT_CALLED = "the daemon must not call this";
 
-export function fakeSessions(sessions: readonly Session[] = []): SessionService {
+/**
+ * The brain, as far as the daemon can tell.
+ *
+ * Every mutating method rejects by default, which is what makes the fan-out tests
+ * meaningful: a server that quietly created a session would fail them. `overrides`
+ * are spread last, so a dispatch test replaces exactly the calls it is about.
+ */
+export function fakeSessions(
+  sessions: readonly Session[] = [],
+  overrides: Partial<SessionService> = {},
+): SessionService {
   return {
     sessions,
     load: () => Promise.resolve(),
@@ -456,15 +486,20 @@ export function fakeSessions(sessions: readonly Session[] = []): SessionService 
       return sessions.filter((session) => session.projectID === undefined);
     },
     createSession: (_request: SessionCreationRequest) => Promise.reject(new Error(NOT_CALLED)),
+    createTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removalPlan: () => Promise.reject(new Error(NOT_CALLED)),
     removeSession: () => Promise.reject(new Error(NOT_CALLED)),
     rename: () => Promise.reject(new Error(NOT_CALLED)),
     startTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     stopTerminal: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
   };
 }
 
-export function fakeProjects(projects: readonly Project[] = []): ProjectService {
+export function fakeProjects(
+  projects: readonly Project[] = [],
+  overrides: Partial<ProjectService> = {},
+): ProjectService {
   return {
     projects,
     load: () => Promise.resolve(),
@@ -472,6 +507,45 @@ export function fakeProjects(projects: readonly Project[] = []): ProjectService 
     addProject: () => Promise.reject(new Error(NOT_CALLED)),
     removeProject: () => Promise.reject(new Error(NOT_CALLED)),
     updateSettings: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
+  };
+}
+
+/**
+ * The launch profiles, as far as the daemon can tell.
+ *
+ * `availability` defaults to "everything the profiles list is available", because
+ * the interesting daemon behaviour is that it publishes whatever the service says
+ * — the probing itself is `@janela/session`'s, and tested there against a real
+ * `which`.
+ */
+export function fakeLaunchProfiles(
+  profiles: readonly LaunchProfile[] = [],
+  overrides: Partial<LaunchProfileService> = {},
+): LaunchProfileService {
+  const availability: Record<LaunchProfileID, boolean> = {};
+  for (const profile of profiles) availability[profile.id] = true;
+  return {
+    profiles,
+    availability,
+    load: () => Promise.resolve(),
+    save: () => Promise.reject(new Error(NOT_CALLED)),
+    remove: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
+  };
+}
+
+/** A launch profile, for the tests that only care that one crossed the wire. */
+export function fakeProfile(id: string, overrides: Partial<LaunchProfile> = {}): LaunchProfile {
+  return {
+    id: id as LaunchProfileID,
+    name: id,
+    iconName: "terminal",
+    command: [id],
+    environment: {},
+    isAgent: false,
+    isBuiltIn: false,
+    ...overrides,
   };
 }
 

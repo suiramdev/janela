@@ -22,6 +22,7 @@ import { OUTPUT_QUEUE_CAPACITY, createDaemonServer, type DaemonServer } from "./
 import {
   clientHello,
   fakeDispatch,
+  fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -184,6 +185,7 @@ async function fixture(
   const daemon = createDaemonServer({
     sessions: fakeSessions(),
     projects: fakeProjects(),
+    launchProfiles: fakeLaunchProfiles(),
     terminals: registry,
     log: logger,
     dispatch,

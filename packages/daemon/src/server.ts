@@ -15,13 +15,26 @@ import {
   type HandshakeRefusal,
   type Hello,
   type MessageTransport,
+  type RequestID,
   type StateUpdate,
   type SubscriptionScope,
 } from "@janela/protocol";
-import type { ProjectService, SessionService, StateObserving } from "@janela/session";
+import type {
+  LaunchProfileService,
+  ProjectService,
+  SessionService,
+  StateObserving,
+} from "@janela/session";
 import { boundedQueue, type BoundedQueue, type Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 
+import {
+  createRequestDispatch,
+  errorName,
+  fullStateSnapshot,
+  type ClientConnection,
+  type RequestDispatching,
+} from "./dispatch.ts";
 import type { PeerCredential } from "./endpoint.ts";
 import { createFrameLoop, type FrameLoop } from "./frame-loop.ts";
 
@@ -138,77 +151,11 @@ const DAEMON_HELLO: Hello = {
 /** Longest peer-supplied `clientName` that reaches a log. */
 const CLIENT_NAME_LOG_LIMIT = 64;
 
-/**
- * One accepted peer after its handshake. What a request dispatcher sees.
- *
- * Every method is non-blocking: a dispatcher handling a request may not be made
- * to wait on another client's socket, and `send` in particular queues rather than
- * writes.
- */
-export interface ClientConnection {
-  /** The `client` string given to `LiveTerminal.attach`/`detach` and the frame loop. */
-  readonly id: string;
-  readonly credential: PeerCredential;
-  /** From the peer's Hello. For logs and UI, never authorisation. */
-  readonly clientName: string;
-  readonly attached: ReadonlySet<TerminalID>;
-  subscribe(scope: SubscriptionScope): void;
-  /**
-   * Registers the viewport with the terminal and the frame loop.
-   *
-   * The loop sends `fullRepaintFor` on its next frame, before any delta, so an
-   * `attach` handler does not send one itself.
-   */
-  attach(terminal: LiveTerminal, viewport: GridSize): GridSize;
-  detach(terminalID: TerminalID): GridSize | undefined;
-  /** Queues a control message. Never waits; a peer that is not reading is disconnected. */
-  send(message: DaemonMessage): void;
-}
-
-/**
- * What a message *means*, which is deliberately not this package's business.
- *
- * The seam exists so the accept loop can be finished, tested and reasoned about
- * without the request handlers, and so the handlers cannot quietly acquire a
- * socket.
- */
-export interface RequestDispatching {
-  /**
-   * Handles one request. `message.type` is never `"hello"`.
-   *
-   * Not awaited by the read loop, so a slow `createSession` never delays the next
-   * keystroke — which also means it must *answer* with `acknowledged` / `failed` /
-   * `text` rather than throw. A rejection is logged and the connection survives.
-   */
-  request(connection: ClientConnection, message: ClientMessage): Promise<void>;
-  /**
-   * Terminal input. The terminal exists; whether this connection is attached to
-   * it is the dispatcher's check.
-   *
-   * `bytes` is a view into the decoder's buffer and is valid only during the
-   * call. Copy it or write it through, never keep it.
-   */
-  input(connection: ClientConnection, terminal: LiveTerminal, bytes: Uint8Array): void;
-}
-
-// TODO: request dispatch. Turning a `ClientMessage` into calls on
-// `SessionService`/`ProjectService`, and terminal input into a PTY write, is the
-// next piece of work; the server takes it as a dependency so the accept loop does
-// not have to grow a switch statement to be finished.
-//
-// Until it is injected, a request is answered with a log line rather than a crash:
-// a daemon that dies on the first `subscribe` would take the user's terminals with
-// it.
-const unimplementedDispatch: RequestDispatching = {
-  request: () => Promise.reject(new Error("not implemented: request dispatch")),
-  input: () => {
-    throw new Error("not implemented: input dispatch");
-  },
-};
-
 export interface DaemonServerOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
+  /** Read for every announcement, and written by `saveLaunchProfile`. */
+  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
@@ -253,6 +200,10 @@ interface Connection extends ClientConnection {
   hasStateScope: boolean;
   readonly terminalScopes: Set<TerminalID>;
   readonly attached: Set<TerminalID>;
+  /** The subset of `attached` that carries a viewport and therefore gets repaints. */
+  readonly rendering: Set<TerminalID>;
+  /** Unanswered request ids. The dispatcher's bookkeeping, held per connection. */
+  readonly inFlight: Set<RequestID>;
   /** Replies, state and attention. Never dropped; a full queue disconnects. */
   readonly control: BoundedQueue<Frame>;
   /** Coalesced repaints. Oldest-dropped, and then re-owed as a full repaint. */
@@ -286,15 +237,28 @@ function validatedHello(value: unknown): Hello | undefined {
   return { protocolVersion, minimumSupported, clientName };
 }
 
-/** The name of an error, for a log field. Never its message: that is peer-influenced. */
-function errorName(error: unknown): string {
-  if (error instanceof FrameError) return error.detail.kind;
-  return error instanceof Error ? error.name : "unknown";
-}
-
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, log } = options;
-  const dispatch = options.dispatch ?? unimplementedDispatch;
+  const { terminals, sessions, projects, launchProfiles, log } = options;
+  const dispatch =
+    options.dispatch ??
+    createRequestDispatch({
+      sessions,
+      projects,
+      launchProfiles,
+      terminals,
+      log,
+      // Bound late, to the server being built: a saved profile has no
+      // `StateObserving` path to travel, because the wire is its only writer.
+      announce: () =>
+        server.publish(
+          fullStateSnapshot({
+            projects: projects.projects,
+            sessions: sessions.sessions,
+            launchProfiles,
+            terminals,
+          }),
+        ),
+    });
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
   /** Peers past their handshake, keyed by the id the frame loop uses. */
@@ -392,6 +356,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     counter += 1;
     const id = `c${counter}`;
     const attached = new Set<TerminalID>();
+    const rendering = new Set<TerminalID>();
 
     const connection: Connection = {
       id,
@@ -401,6 +366,8 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       hasStateScope: false,
       terminalScopes: new Set<TerminalID>(),
       attached,
+      rendering,
+      inFlight: new Set<RequestID>(),
       control: boundedQueue<Frame>({
         capacity: CONTROL_QUEUE_CAPACITY,
         onOverflow: "block",
@@ -412,8 +379,10 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
           log.debug("output frames dropped", { client: id, dropped });
           // A delta is incremental: the frames that survive do not describe what
           // the dropped one did. Re-owe a full repaint for everything this client
-          // is attached to, which is what makes dropping safe at all.
-          for (const terminalID of attached) frameLoop.attach(id, terminalID);
+          // renders, which is what makes dropping safe at all. Only the rendering
+          // attachments: registering a viewportless one would ask the terminal for
+          // a repaint for a client it has never heard of, and `repaintFor` throws.
+          for (const terminalID of rendering) frameLoop.attach(id, terminalID);
         },
       }),
       closed: false,
@@ -427,10 +396,17 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         connection.terminalScopes.add(scope.terminalID);
       },
 
-      attach(terminal: LiveTerminal, viewport: GridSize): GridSize {
-        const size = terminal.attach(id, viewport);
+      attach(terminal: LiveTerminal, viewport?: GridSize): GridSize | undefined {
         attached.add(terminal.id);
         connection.terminalScopes.add(terminal.id);
+        if (viewport === undefined) {
+          // Input and scope, no rendering: the terminal never learns about this
+          // client, so it takes no part in size negotiation and the frame loop has
+          // nothing to send it (ADR 0016).
+          return undefined;
+        }
+        const size = terminal.attach(id, viewport);
+        rendering.add(terminal.id);
         frameLoop.attach(id, terminal.id);
         return size;
       },
@@ -438,6 +414,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       detach(terminalID: TerminalID): GridSize | undefined {
         frameLoop.detach(id, terminalID);
         attached.delete(terminalID);
+        rendering.delete(terminalID);
         connection.terminalScopes.delete(terminalID);
         return terminals.get(terminalID)?.detach(id);
       },
@@ -701,26 +678,35 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     },
 
     /**
-     * A partial update: the empty collections mean "unchanged", and a client
-     * merges by id rather than replacing its world.
+     * The complete picture, not just the sessions that changed.
+     *
+     * `changed` is the whole current session list — that is `StateObserving`'s
+     * contract — and a client merges by id, which cannot express a deletion. So
+     * the other collections are composed here and the update is a full snapshot:
+     * a removed session propagates by being absent from it. Composing costs one
+     * pass over the sessions per announcement, which is human-rate work.
      */
     sessionsChanged(changed: readonly Session[]): Promise<void> {
-      return server.publish({
-        projects: [],
-        sessions: changed,
-        terminalStates: {},
-        isFullSnapshot: false,
-      });
+      return server.publish(
+        fullStateSnapshot({
+          projects: projects.projects,
+          sessions: changed,
+          launchProfiles,
+          terminals,
+        }),
+      );
     },
 
-    /** Same rule as `sessionsChanged`: empty `sessions` means "unchanged". */
-    projectsChanged(projects: readonly Project[]): Promise<void> {
-      return server.publish({
-        projects,
-        sessions: [],
-        terminalStates: {},
-        isFullSnapshot: false,
-      });
+    /** Same rule as `sessionsChanged`, from the other side. */
+    projectsChanged(changed: readonly Project[]): Promise<void> {
+      return server.publish(
+        fullStateSnapshot({
+          projects: changed,
+          sessions: sessions.sessions,
+          launchProfiles,
+          terminals,
+        }),
+      );
     },
 
     canExitWhenIdle(): boolean {

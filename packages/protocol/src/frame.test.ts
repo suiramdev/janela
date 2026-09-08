@@ -31,8 +31,8 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("the raw-frame header is a wire change: version 2", () => {
-    expect(PROTOCOL_VERSION).toBe(2);
+  test("removalPlan and the optional attach viewport are a wire change: version 3", () => {
+    expect(PROTOCOL_VERSION).toBe(3);
   });
 });
 

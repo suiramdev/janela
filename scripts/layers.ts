@@ -119,7 +119,6 @@ export const PACKAGES: readonly PackageSpec[] = [
     layer: 3,
     side: "daemon",
     deps: ["@janela/support", "@janela/core"],
-    planned: true,
   },
   {
     name: "@janela/terminal",
