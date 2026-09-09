@@ -172,7 +172,9 @@ async function fixture(
   // asserts its own path fits before it binds.
   expect(Buffer.byteLength(path)).toBeLessThan(MAXIMUM_SOCKET_PATH_LENGTH);
 
-  const server = createServer();
+  // `socketListener` insists on it: a queued socket that is still flowing loses
+  // whatever the peer wrote before the accept loop reached it (#43).
+  const server = createServer({ pauseOnConnect: true });
   server.listen(path);
   await once(server, "listening");
 
@@ -381,5 +383,57 @@ describe("the socket listener", () => {
     );
     expect(client.outputs()[0]?.text).toBe("F");
     expect(client.outputs()[0]?.terminalID).toBe(terminal.id);
+  });
+
+  test("holds a connection accepted before the accept loop starts — on a server that was not yet listening", async () => {
+    // Built by hand rather than through `fixture()`, whose order is
+    // listen-then-listener: the order under test is the opposite one, which is
+    // what `serve()` in `apps/daemon` does since #43.
+    const directory = await temporaryDirectory("listener");
+    const path = directory.join("d.sock");
+    expect(Buffer.byteLength(path)).toBeLessThan(MAXIMUM_SOCKET_PATH_LENGTH);
+
+    const registry = fakeRegistry([]);
+    const dispatch = fakeDispatch(registry);
+    const { logger } = recordingLogger();
+    const ownUid = currentUid();
+    const controller = new AbortController();
+
+    const server = createServer({ pauseOnConnect: true });
+    const listener = socketListener({
+      server,
+      credentials: () => ({ xucred: xucred(ownUid), pid: 7 }),
+      ownUid,
+      log: logger,
+    });
+    server.listen(path);
+    await once(server, "listening");
+
+    const client = await socketClient(path);
+    client.write(clientHello());
+    // Accepted and queued, with nobody accepting and nobody reading: this is the
+    // window a cold start opens, and both the socket and its bytes must survive.
+    await Bun.sleep(20);
+
+    const daemon = createDaemonServer({
+      sessions: fakeSessions(),
+      projects: fakeProjects(),
+      launchProfiles: fakeLaunchProfiles(),
+      terminals: registry,
+      log: logger,
+      dispatch,
+      handshakeDeadlineMs: 500,
+    });
+    const serving = daemon.serve(listener, controller.signal);
+
+    try {
+      await until(() => client.controls().length === 1, "the daemon's hello");
+      expect(client.controls()[0]?.type).toBe("hello");
+    } finally {
+      controller.abort();
+      await serving;
+      client.destroy();
+      await directory[Symbol.asyncDispose]();
+    }
   });
 });

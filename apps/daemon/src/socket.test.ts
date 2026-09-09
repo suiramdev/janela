@@ -25,6 +25,16 @@ function closed(server: Server): Promise<void> {
   return promise;
 }
 
+/**
+ * The handler `bindDaemonSocket` insists on. These tests ask only whether the
+ * path answers, so it hangs up.
+ */
+function armedServer(): Server {
+  const server = createServer();
+  server.on("connection", (socket) => socket.destroy());
+  return server;
+}
+
 /** Whether anything answers on `path`. The client's own liveness question. */
 function answers(path: string): Promise<boolean> {
   const probe = connect(path);
@@ -41,23 +51,25 @@ describe("bindDaemonSocket", () => {
   test("creates the run directory 0700 and binds inside it", async () => {
     await using directory = await temporaryDirectory("socket");
     const path = join(directory.path, "run", "janelad.sock");
+    const server = armedServer();
 
-    const outcome = await bindDaemonSocket({ path, ownUid: ownUid(), log: silent });
+    const outcome = await bindDaemonSocket({ server, path, ownUid: ownUid(), log: silent });
 
     expect(outcome.kind).toBe("bound");
     expect((await stat(join(directory.path, "run"))).mode & 0o777).toBe(0o700);
     expect(await answers(path)).toBe(true);
-    if (outcome.kind === "bound") await closed(outcome.server);
+    await closed(server);
   });
 
   test("the socket file is 0600 — SockPathMode's replacement", async () => {
     await using directory = await temporaryDirectory("socket");
     const path = join(directory.path, "run", "janelad.sock");
+    const server = armedServer();
 
-    const outcome = await bindDaemonSocket({ path, ownUid: ownUid(), log: silent });
+    await bindDaemonSocket({ server, path, ownUid: ownUid(), log: silent });
 
     expect((await stat(path)).mode & 0o777).toBe(SOCKET_FILE_MODE);
-    if (outcome.kind === "bound") await closed(outcome.server);
+    await closed(server);
   });
 
   test("a world-readable run directory refuses to serve", async () => {
@@ -69,6 +81,7 @@ describe("bindDaemonSocket", () => {
     // Creating it 0700 is not the same as it *being* 0700: the socket is a
     // capability, so a directory anyone can enter is a refusal, not a warning.
     const thrown = await bindDaemonSocket({
+      server: armedServer(),
       path: join(run, "janelad.sock"),
       ownUid: ownUid(),
       log: silent,
@@ -89,11 +102,12 @@ describe("bindDaemonSocket", () => {
     // fails with EADDRINUSE against any existing file.
     await writeFile(path, "leftover");
 
-    const outcome = await bindDaemonSocket({ path, ownUid: ownUid(), log: silent });
+    const server = armedServer();
+    const outcome = await bindDaemonSocket({ server, path, ownUid: ownUid(), log: silent });
 
     expect(outcome.kind).toBe("bound");
     expect(await answers(path)).toBe(true);
-    if (outcome.kind === "bound") await closed(outcome.server);
+    await closed(server);
   });
 
   test("a live incumbent yields `already-serving` and keeps accepting", async () => {
@@ -107,7 +121,12 @@ describe("bindDaemonSocket", () => {
     incumbent.listen(path, up.resolve);
     await up.promise;
 
-    const outcome = await bindDaemonSocket({ path, ownUid: ownUid(), log: silent });
+    const outcome = await bindDaemonSocket({
+      server: armedServer(),
+      path,
+      ownUid: ownUid(),
+      log: silent,
+    });
 
     expect(outcome.kind).toBe("already-serving");
     // The whole point: the second daemon does nothing, so the terminals the
@@ -122,6 +141,7 @@ describe("bindDaemonSocket", () => {
     await mkdir(run, { recursive: true, mode: 0o700 });
 
     const thrown = await bindDaemonSocket({
+      server: armedServer(),
       path: join(run, "janelad.sock"),
       ownUid: ownUid() + 1,
       log: silent,
@@ -131,5 +151,26 @@ describe("bindDaemonSocket", () => {
     );
 
     expect(thrown).toBeInstanceOf(SocketDirectoryUnsafe);
+  });
+
+  test("refuses a server with no connection handler, before touching the path", async () => {
+    await using directory = await temporaryDirectory("socket");
+    const path = join(directory.path, "run", "janelad.sock");
+
+    // A programming error in the composition root, not a user's situation: a
+    // server bound before its handler exists drops whatever it accepts first,
+    // and the peer sees a healthy, silent socket (#43).
+    const thrown = await bindDaemonSocket({
+      server: createServer(),
+      path,
+      ownUid: ownUid(),
+      log: silent,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(await answers(path)).toBe(false);
   });
 });

@@ -178,8 +178,9 @@ await pause(500);
 if (state === undefined) {
   console.log("No state announcement arrived.");
   console.log(
-    "If the daemon also sent no hello, this is the swallowed-connection defect in\n" +
-      "docs/survival-proof.md § Defects: run this again.",
+    "The daemon sent no state. If it also sent no hello, it is not the start-up\n" +
+      "race any more — #43 fixed that, and the daemon answers a connection accepted\n" +
+      "mid-start — so look at whether a daemon is running at all.",
   );
   process.exit(1);
 }

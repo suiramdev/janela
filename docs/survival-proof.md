@@ -62,12 +62,13 @@ throughout. **A local ad-hoc build is enough to exercise the whole daemon
 lifecycle** — no signing identity required.
 
 Two defects were found that no unit test could have found, and both were filed
-rather than fixed on that run: **D1** and **D2**. **D2 has since been fixed by
-#44** — protocol 5, the negotiated grid inside the repaint — and step 5's verdict
-above is the re-run, not the original. **D1 is still open.** Two more — **D9** and
-**D10** — were found in the app shell, and both **are** fixed here, because with
-either one in place the packaged app cannot reach its daemon at all and no verdict
-above could have been observed.
+rather than fixed on the run above: **D1** and **D2**. **Both have since been
+fixed** — D1 by #43, which registers the connection handler before `listen` and
+gives the client a handshake deadline, and D2 by #44, protocol 5, the negotiated
+grid inside the repaint. Step 5's verdict above is therefore the re-run rather
+than the original. Two more — **D9** and **D10** — were found in the app shell,
+and both **are** fixed here, because with either one in place the packaged app
+cannot reach its daemon at all and no verdict above could have been observed.
 
 ---
 
@@ -471,42 +472,46 @@ repository has no DOM under `bun test` and deliberately adds none.
 
 ## Defects
 
-### D1 — a client that connects while the daemon is starting is swallowed, forever
+### D1 — a client that connected while the daemon was starting was swallowed, forever
 
-**Severity: high.** `bindDaemonSocket` calls `server.listen()`, awaits it, then
-`await chmod(path, 0o600)` and returns; only afterwards does `socketListener()`
-register `server.on("connection")`. A connection accepted inside that window is
-emitted with no listener, so the socket is created, dropped, and never spoken to.
-The peer sees a healthy, open, silent socket.
+**Severity: high. FIXED by #43**, and kept here because the measurement is what
+made the fix a design change rather than a reordering. `bindDaemonSocket` called
+`server.listen()`, awaited it, then `await chmod(path, 0o600)` and returned; only
+afterwards did `socketListener()` register `server.on("connection")`. A connection
+accepted inside that window was emitted with no listener, so the socket was
+created, dropped, and never spoken to. The peer saw a healthy, open, silent
+socket.
 
-**Measured:** a client that spins on `connect` and handshakes immediately is never
-answered, **10 times out of 10**. One that waits is always answered, and a
-swallowed connection does not poison later ones.
+**Measured:** a client that spun on `connect` and handshook immediately was never
+answered, **10 times out of 10**. One that waited was always answered, and a
+swallowed connection did not poison later ones.
 
-It does not stop there, because `@janela/client` awaits the daemon's hello with no
+It did not stop there, because `@janela/client` awaited the daemon's hello with no
 deadline of its own (`packages/client/src/connection.ts`, the `first.value` read).
-Only the daemon has a handshake deadline, and it never armed one — it never made a
-`Connection`. **Observed** by pointing the app at a listener that accepts and says
-nothing: after 25 seconds the app was still `{"kind":"connecting"}`, one status
-transition, no retry, no timeout, an empty sidebar and a permanent "Connecting…".
-The user's sessions are all still there and completely invisible.
+Only the daemon had a handshake deadline, and it never armed one — it never made a
+`Connection`. **Observed** by pointing the app at a listener that accepted and
+said nothing: after 25 seconds the app was still `{"kind":"connecting"}`, one
+status transition, no retry, no timeout, an empty sidebar and a permanent
+"Connecting…". The user's sessions were all still there and completely invisible.
 
-The reason this matters more than a start-up race usually would: the app's only
+The reason this mattered more than a start-up race usually would: the app's only
 way to start a daemon is `bridge_connect` failing, running `launchctl kickstart`,
-and retrying with a 250 ms backoff. That retry aims *straight at the window*. It is
+and retrying with a 250 ms backoff. That retry aimed *straight at the window*. It is
 the first-launch path and the after-a-crash path — steps 3 and 7 of this very
 document.
 
-**Fix sketch, and why it is not done here.** Two changes in two packages, and the
-second is a design call: register the connection handler before `listen` (which
-means constructing the listener before `bindDaemonSocket` hands back a listening
-server, so the shape of that seam changes), and give the client a handshake
-deadline so a silent peer becomes a retry instead of a hang. `apps/daemon` +
-`packages/daemon` + `packages/client`.
+**The fix.** Two changes in two packages, and the second was a design call:
+register the connection handler before `listen` (which means constructing the
+listener before `bindDaemonSocket` binds, so the shape of that seam changed), and
+give the client a handshake deadline so a silent peer becomes a retry instead of a
+hang. `apps/daemon` + `packages/daemon` + `packages/client`.
 
-**Workaround in the meantime:** readiness means "the daemon answered a hello", not
-"the socket accepted me". That is what `startDaemon` in the automated test does,
-and it is why it retries; `scripts/survival-probe.ts` says so when it gets nothing.
+**Fixed by #43.** The listener is constructed before the bind, `bindDaemonSocket`
+refuses a server with no `connection` handler (and `socketListener` refuses one
+that does not pause what it accepts, or the queued socket's first bytes are read
+off and dropped), and `@janela/client` gives the daemon `HANDSHAKE_DEADLINE_MS`
+(5 s) to answer hello — a miss is a retry under the usual backoff, not a refusal.
+`survival.test.ts`'s readiness is a bare `connect` again.
 
 ### D2 — nothing on the wire carried the negotiated size, so a larger client could not letterbox
 

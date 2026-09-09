@@ -33,8 +33,16 @@ export const PENDING_CONNECTION_CAPACITY = 16;
 
 export interface SocketListenerOptions {
   /**
-   * Bound and listening already: the descriptor launchd handed us, wrapped by
-   * `apps/daemon`, or a path bound for `--foreground`.
+   * Created by the caller with `{ pauseOnConnect: true }`, and handed here
+   * **before** it listens.
+   *
+   * Two halves of one rule. This constructor registers the `connection` handler,
+   * and the runtime drops a connection accepted while there is none — so the bind
+   * must come after (#43). And a socket held in `pending` is still flowing unless
+   * the server paused it on accept, so whatever the peer wrote before the accept
+   * loop reached it is read off the socket and discarded: the peer's `hello`
+   * vanishes and both sides wait for each other. Sockets accepted before
+   * `accept()` runs are held in `pending`, up to `PENDING_CONNECTION_CAPACITY`.
    *
    * This package never binds and never chooses a path, because launchd owns the
    * socket (ADR 0017). Whoever binds calls `verifySocketDirectory` first.
@@ -61,6 +69,13 @@ const UNAUTHORIZED = encodeFrame(
 
 export function socketListener(options: SocketListenerOptions): ConnectionListening {
   const { server, credentials, ownUid, log } = options;
+  // `pauseOnConnect` is a construction option Node's `Server` type does not
+  // surface, so reading it back is the only way to hold a caller to it — and a
+  // listener that queues *flowing* sockets loses whatever the peer wrote before
+  // the accept loop reached it.
+  if (!("pauseOnConnect" in server) || server.pauseOnConnect !== true) {
+    throw new Error("socketListener: create the server with { pauseOnConnect: true } (#43)");
+  }
 
   const pending: Socket[] = [];
   let waiting: (() => void) | undefined;

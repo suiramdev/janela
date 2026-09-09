@@ -112,6 +112,25 @@ function connected(path: string): Promise<Socket> {
 }
 
 /**
+ * Connects the instant the kernel accepts, with no readiness signal at all —
+ * the shape of the app's retry after `launchctl kickstart`.
+ */
+function connectedEventually(path: string): Promise<Socket> {
+  const { promise, resolve } = Promise.withResolvers<Socket>();
+  const attempt = (): void => {
+    const socket = connect(path);
+    socket.once("connect", () => resolve(socket));
+    socket.once("error", () => {
+      socket.destroy();
+      // Yield between attempts: a synchronous retry starves the loop it is racing.
+      setImmediate(attempt);
+    });
+  };
+  attempt();
+  return promise;
+}
+
+/**
  * Resolves when the daemon reports that it is listening.
  *
  * `serve()` resolves when serving *ends*, so a test needs a readiness signal —
@@ -261,4 +280,60 @@ describe("daemonEnvironment", () => {
       await environment.database.close();
     }
   });
+
+  /**
+   * One start, raced by a client that is already spinning on `connect`.
+   *
+   * A function rather than a loop body so the rounds — which must be sequential,
+   * one daemon at a time — cost one awaited call each.
+   */
+  async function racedStart(root: string, round: number): Promise<void> {
+    const socketPath = join(root, String(round), "d.sock");
+    const environment = await daemonEnvironment({
+      databasePath: join(root, `${round}.sqlite`),
+      foreground: true,
+      socketPath,
+      shell,
+    });
+    const controller = new AbortController();
+    // Racing the bind deliberately: this connector is already spinning when
+    // `serve()` starts, so it lands in the window between `listen` and the accept
+    // loop — the window a cold `launchctl kickstart` start opens.
+    const arriving = connectedEventually(socketPath);
+    const serving = environment.serve(controller.signal);
+
+    try {
+      const socket = await arriving;
+      const reply = firstFrame(socket);
+      socket.write(HELLO);
+      // The bug under test is a silence, so the failure detector has to be a real
+      // deadline: there is no event to await when nothing is coming. The passing
+      // path resolves on the reply and never spends the 2 s.
+      const frame = await Promise.race([reply, Bun.sleep(2_000).then(() => undefined)]);
+
+      if (frame === undefined) {
+        throw new Error(
+          `round ${round}: the daemon accepted the connection and never answered the hello`,
+        );
+      }
+      expect(decodeDaemonMessage(frame).type).toBe("hello");
+      socket.destroy();
+    } finally {
+      controller.abort();
+      await serving;
+      await environment.database.close();
+    }
+  }
+
+  test("a client that connects the instant the socket exists is answered, ten times out of ten", async () => {
+    // A short label on purpose: the socket path has to stay under `sun_path`'s
+    // 104 bytes once the per-round directory is appended.
+    await using directory = await temporaryDirectory("startup");
+
+    for (let round = 1; round <= 10; round += 1) {
+      // One daemon at a time: the rounds are the measurement, not a workload.
+      // oxlint-disable-next-line no-await-in-loop
+      await racedStart(directory.path, round);
+    }
+  }, 60_000);
 });

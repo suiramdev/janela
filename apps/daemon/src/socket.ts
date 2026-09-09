@@ -1,5 +1,5 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
-import { connect, createServer, type Server } from "node:net";
+import { connect, type Server } from "node:net";
 import { dirname } from "node:path";
 
 import { verifySocketDirectory, SOCKET_DIRECTORY_MODE } from "@janela/daemon";
@@ -38,8 +38,8 @@ import type { Logger } from "@janela/support";
 export const SOCKET_FILE_MODE = 0o600;
 
 export type BindOutcome =
-  /** Ours, listening, and ready for `socketListener`. */
-  | { readonly kind: "bound"; readonly server: Server }
+  /** Ours and listening; every connection accepted from here on reaches the caller's handler. */
+  | { readonly kind: "bound" }
   /**
    * Something already answers on the path.
    *
@@ -78,11 +78,22 @@ async function isServing(path: string): Promise<boolean> {
  *   the directory is safe must not serve.
  */
 export async function bindDaemonSocket(options: {
+  /**
+   * Created by the caller, with its `connection` handler already attached.
+   * The handler must exist before `listen`: a connection accepted before one
+   * does is emitted to nobody and dropped, and the peer sees a healthy, silent
+   * socket (#43). `socketListener()` attaches it at construction.
+   */
+  readonly server: Server;
   readonly path: string;
   readonly ownUid: number;
   readonly log: Logger;
 }): Promise<BindOutcome> {
-  const { path, ownUid, log } = options;
+  const { server, path, ownUid, log } = options;
+  if (server.listenerCount("connection") === 0) {
+    throw new Error("bindDaemonSocket: attach the connection handler before binding (#43)");
+  }
+
   const directory = dirname(path);
 
   await mkdir(directory, { recursive: true, mode: SOCKET_DIRECTORY_MODE });
@@ -102,7 +113,6 @@ export async function bindDaemonSocket(options: {
     // ENOENT is the normal case: the first ever start.
   });
 
-  const server = createServer();
   const listening = Promise.withResolvers<void>();
   server.once("error", listening.reject);
   server.listen(path, () => {
@@ -114,5 +124,5 @@ export async function bindDaemonSocket(options: {
   // After `listen`, because the file does not exist before it.
   await chmod(path, SOCKET_FILE_MODE);
   log.info("listening");
-  return { kind: "bound", server };
+  return { kind: "bound" };
 }

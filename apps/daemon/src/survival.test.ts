@@ -175,52 +175,16 @@ interface DaemonProcess {
   readonly stop: () => Promise<void>;
 }
 
-/**
- * Whether a connection made *now* gets a handshake answered.
- *
- * Not `connect()` succeeding, which is what this check used to be and what any
- * reasonable person would write. **A client that connects in the window between
- * the daemon's `listen()` and its accept loop being wired is accepted by libuv,
- * dropped on the floor, and never spoken to again** — `bindDaemonSocket` logs
- * "listening" and `await chmod`s the socket file before `socketListener()`
- * registers `server.on("connection")`, and a connection emitted with no listener
- * is lost. Measured: a client that spins on `connect` and handshakes immediately
- * is never answered, 10 times out of 10; one that waits is always answered.
- *
- * That is a defect in the daemon, filed rather than fixed here (see
- * docs/survival-proof.md § Defects), and it is why readiness has to be "the
- * daemon answered me" rather than "the socket accepted me". Do not simplify this
- * back to a bare `connect` — the suite will fail one run in two, on a different
- * test each time.
- */
-async function handshakeAnswered(path: string): Promise<boolean> {
-  const connecting = Promise.withResolvers<Socket | undefined>();
+/** Whether the daemon's socket accepts a connection right now. */
+function accepts(path: string): Promise<boolean> {
+  const { promise, resolve } = Promise.withResolvers<boolean>();
   const socket = connect(path);
-  socket.once("connect", () => connecting.resolve(socket));
-  socket.once("error", () => connecting.resolve(undefined));
-  const opened = await connecting.promise;
-  if (opened === undefined) return false;
-
-  const answered = Promise.withResolvers<boolean>();
-  opened.once("data", () => answered.resolve(true));
-  opened.once("close", () => answered.resolve(false));
-  opened.write(
-    encodeFrame(
-      encodeClientMessage({
-        type: "hello",
-        hello: {
-          protocolVersion: PROTOCOL_VERSION,
-          minimumSupported: MINIMUM_SUPPORTED_VERSION,
-          clientName: "survival-readiness",
-        },
-      }),
-    ),
-  );
-  // A local socket answers in about a millisecond. Anything slower than this is
-  // the swallowed-connection defect above, and the answer is to try again.
-  const verdict = await Promise.race([answered.promise, Bun.sleep(400).then(() => false)]);
-  opened.destroy();
-  return verdict;
+  socket.once("connect", () => {
+    socket.destroy();
+    resolve(true);
+  });
+  socket.once("error", () => resolve(false));
+  return promise;
 }
 
 /** `SIGKILL` to processes that should already be gone. */
@@ -244,8 +208,9 @@ function reap(pids: readonly number[]): void {
  * push a neighbouring test's RAM-disk fixture past its timeout. So it is opt-in
  * rather than free.
  *
- * Readiness is a handshake the daemon answers, not a socket that accepts: see
- * `handshakeAnswered`.
+ * Readiness is the socket accepting: since #43 a connection accepted before the
+ * accept loop runs is queued, not dropped, so `probeClient`'s zero-delay hello is
+ * the proof.
  */
 async function startDaemon(home: string, alone = false): Promise<DaemonProcess> {
   const isolated = join(home, "isolated");
@@ -304,8 +269,8 @@ async function startDaemon(home: string, alone = false): Promise<DaemonProcess> 
   started.add(daemon);
 
   await waitFor(
-    `the compiled sidecar answers a handshake on ${daemon.socketPath}`,
-    async () => ((await handshakeAnswered(daemon.socketPath)) ? true : undefined),
+    `the compiled sidecar accepts on ${daemon.socketPath}`,
+    async () => ((await accepts(daemon.socketPath)) ? true : undefined),
     daemon.log,
   );
   return daemon;
