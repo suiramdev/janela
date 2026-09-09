@@ -3673,8 +3673,8 @@ is wrong; issue #30 lands the composition root and settles it.
 - `bun run daemon:restart`: the client reconnects, re-subscribes, and receives a
   full snapshot and a fresh full repaint; the sessions the restarted daemon
   restored from its database appear as idle.
-- Back-pressure: a stalled WebView drops coalesced repaints and loses no control
-  frame and no input byte.
+- Back-pressure: a stalled WebView is severed and reconnects into a full snapshot
+  and full repaints; no frame is dropped, in either direction.
 - Notification delivery is manual, as are the approval and denial paths — the
   policy that decides them is unit-tested in `@janela/client` (§ 4.1) against a
   recording deliverer, which is what keeps the app's part to an adapter.

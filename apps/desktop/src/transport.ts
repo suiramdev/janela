@@ -29,10 +29,14 @@ import { invoke } from "@tauri-apps/api/core";
  *
  * ## Back-pressure and reconnection are not here
  *
- * Back-pressure is the shell's, where the two policies live: coalesced repaints may
- * drop their oldest, control frames and input may not. Input has no queue at all —
- * `bridge_send` awaits the socket write, so the promise this returns *is* the
- * back-pressure.
+ * Back-pressure is the shell's, and it is one policy: **nothing is dropped**. A
+ * WebView that stops draining for 32 output frames or 64 control frames has its
+ * connection severed, and `incoming()` throws `BridgeRefused` named
+ * `bridge-stalled`. That is lossless — the client reconnects into a full snapshot
+ * and full repaints — where dropping a repaint would not be: repaints are deltas,
+ * so a lost one is a grid that stays quietly wrong and a daemon that cannot know.
+ * Input has no queue at all — `bridge_send` awaits the socket write, so the
+ * promise this returns *is* the back-pressure.
  *
  * Reconnection is `@janela/client`'s (#28): it counts the attempt, applies the
  * backoff, and calls `openTauriTransport` again. The shell makes one connect
