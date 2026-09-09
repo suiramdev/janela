@@ -16,10 +16,12 @@
  */
 
 import { defaultDatabasePath } from "@janela/db";
-import { log, setLogSink } from "@janela/support";
+import { log } from "@janela/support";
 
+import { parseDaemonArguments, USAGE } from "./arguments.ts";
 import { daemonEnvironment } from "./environment.ts";
 import { createIdleMonitor, isDaemonIdle, shutdown } from "./lifecycle.ts";
+import { defaultLogPath, installDaemonLogSink } from "./log-file.ts";
 
 /**
  * The version `--version` prints.
@@ -31,33 +33,35 @@ import { createIdleMonitor, isDaemonIdle, shutdown } from "./lifecycle.ts";
  */
 const JANELAD_VERSION = "0.0.0";
 
-/**
- * The daemon's sink: one JSON object per line on stderr.
- *
- * launchd captures stderr, and JSON keeps a record readable next to the client's,
- * which goes through Tauri's log plugin. Records only ever carry shapes — an id, a
- * count, an exit status — because that is what `LogRecord.fields` is for; terminal
- * traffic, command output and environment values never reach one by construction.
- */
-function installLogSink(): void {
-  setLogSink({
-    write: (record) => {
-      process.stderr.write(`${JSON.stringify(record)}\n`);
-    },
-  });
-}
-
 async function main(argv: readonly string[]): Promise<void> {
-  if (argv.includes("--version")) {
+  const parsed = parseDaemonArguments(argv);
+  if (parsed.kind === "usage") {
+    // Before `defaultDatabasePath()`, before any `mkdir`, before the sink: an
+    // argument the daemon cannot honour leaves no socket, no database and no log
+    // file behind. The defect in #49 was that `--socket` was *silently* ignored.
+    process.stderr.write(`janelad: ${parsed.problem}\n${USAGE}`);
+    process.exit(2);
+  }
+
+  if (parsed.kind === "version") {
     // Touches nothing else: CI runs `./janelad --version` from an empty directory
     // to prove the compiled binary carries its own runtime.
     process.stdout.write(`${JANELAD_VERSION}\n`);
     return;
   }
 
-  installLogSink();
+  // The daemon owns its log file, because nothing else can: launchd captures
+  // stderr into `/dev/null` here — the plist declares no `StandardErrorPath` and
+  // could not name a per-user path — so on a real install the records went nowhere
+  // (#45). `--foreground` mirrors the same lines to stderr synchronously, so a
+  // developer's pipe shows a record when it happens rather than when the event
+  // loop next turns.
+  const sink = installDaemonLogSink({
+    path: defaultLogPath(),
+    mirrorToStderr: parsed.foreground,
+  });
   const logger = log("app");
-  const foreground = argv.includes("--foreground");
+  const foreground = parsed.foreground;
   const environment = await daemonEnvironment({
     databasePath: defaultDatabasePath(),
     foreground,
@@ -103,6 +107,8 @@ async function main(argv: readonly string[]): Promise<void> {
   } finally {
     idle.stop();
     await environment.database.close();
+    // Last, so anything the shutdown path logs is still on disk.
+    sink.close();
   }
 }
 

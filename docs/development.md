@@ -9,7 +9,8 @@
 > Current: [`AGENTS.md`](../AGENTS.md) for commands and layering,
 > [`architecture.md`](architecture.md) for the system,
 > [`MIGRATION_MAP.md`](MIGRATION_MAP.md) for where every module, type and seam went.
-> Rewriting this file is a tracked follow-up.
+> § Debugging and § The daemon are current (#45, #49); the sections above them
+> still describe the Swift stack.
 
 
 Getting set up, working day to day, and what to build first.
@@ -234,21 +235,50 @@ These are independent of each other and each is a reasonable PR on its own:
 ## Debugging
 
 ```bash
-# Live logs from BOTH processes (they share a subsystem on purpose)
-log stream --predicate 'subsystem == "sh.janela.Janela"' --level debug
+# The daemon's log: one JSON record per line, newest last
+tail -f ~/Library/Logs/sh.janela.Janela/janelad.log
 
-# Just the daemon
-log stream --predicate 'subsystem == "sh.janela.Janela"' --process janelad
+# The app's log, from Tauri's log plugin, lands in the same directory
+tail -f ~/Library/Logs/sh.janela.Janela/Janela.log
 
-# Recent logs
-log show --predicate 'subsystem == "sh.janela.Janela"' --last 10m
+# Only the socket: connections, handshakes, refusals
+grep '"category":"protocol"' ~/Library/Logs/sh.janela.Janela/janelad.log | tail -n 20
 
 # Inspect the database (the daemon owns it; read-only is polite)
 sqlite3 -readonly ~/Library/Application\ Support/sh.janela.Janela/janela.sqlite
 
-# Start from a clean slate
-rm -rf ~/Library/Application\ Support/sh.janela.Janela ~/.janela
+# Start from a clean slate — with no daemon running
+rm -rf ~/Library/Application\ Support/sh.janela.Janela ~/.janela ~/Library/Logs/sh.janela.Janela
 ```
+
+A record is one line of JSON, `time` first:
+
+```json
+{"time":"2026-09-09T08:00:00.000Z","level":"info","category":"protocol","message":"listening"}
+```
+
+`level` is one of `debug`, `info`, `notice`, `warning`, `error`; `category` names
+the subsystem; `fields` is present when the record carries any. The file rotates
+at 4 MiB and one previous file is kept as `janelad.log.1`, so it costs at most
+8 MiB however long the daemon runs — a log file is the classic place where
+[AGENTS.md](../AGENTS.md) non-negotiable 9 gets forgotten.
+
+A launchd daemon and one you started with `--foreground` write the same file, in
+the same place; `--foreground` also mirrors every line to stderr, synchronously, so
+a pipe shows a record when it happens rather than when the event loop next turns.
+There is no `os_log` route and nothing to `log stream`: reaching the unified log
+from Bun would need `bun:ffi`, which the layering gate keeps inside
+`@janela/pty`, and the daemon opens its own file instead ([`apps/daemon/src/log-file.ts`](../apps/daemon/src/log-file.ts)).
+That file is also why the LaunchAgent declares no `StandardErrorPath` — launchd
+takes a literal path with no `~` expansion, and the plist is sealed into the
+bundle for every user of the machine.
+
+What never appears in it: terminal traffic, command output, file contents,
+notification bodies, environment values (non-negotiable 11). A record is an id, a
+count, an exit status, an error name. The sink enforces the shape — anything
+carrying a control character or longer than 120 characters is written as
+`<4096 characters elided>` — so if you find real content in there, that is a bug
+worth filing.
 
 ### The daemon
 
@@ -257,20 +287,43 @@ iterate on a new one.** Symptoms are a handshake refusal, or worse, behaviour fr
 code you edited ten minutes ago.
 
 ```bash
-make daemon-restart      # stop it; launchd starts the new one on next connect
-pgrep -lf janelad        # is one running, and which binary is it?
-lsof -U | grep janelad   # who is connected to the socket
-
-# Run it in the foreground instead, for a debugger or plain stdout:
-.build/debug/janelad --socket /tmp/janela-dev.sock --foreground
+bun run daemon:status     # is one running, which binary, and who is connected
+bun run daemon:restart    # SIGTERM: hangs up every terminal it holds and exits 0
+lsof -U | grep janelad    # who is connected to the socket
 ```
+
+An installed build registers a LaunchAgent, and a daemon that exits deliberately
+stays down: the next client that fails to connect starts it again with
+`launchctl kickstart gui/<uid>/sh.janela.janelad`. A dev build registers nothing,
+so in development **you** run the daemon:
+
+```bash
+bun run --cwd apps/daemon dev   # source, --foreground, your real HOME; serves `bun run app`
+```
+
+To run one that cannot touch your own sessions, move `HOME`: the socket, the
+database and the log all derive from it.
+
+```bash
+bun run --cwd apps/daemon build          # the compiled sidecar; `bun run daemon:build` can hit turbo's cache and restore nothing
+export ISO=/tmp/jdev && mkdir -p "$ISO"  # /tmp, never $TMPDIR: sun_path is 104 bytes
+HOME=$ISO ./apps/daemon/janelad --foreground
+HOME=$ISO bun run scripts/survival-probe.ts    # a second client, from another shell
+tail -f $ISO/Library/Logs/sh.janela.Janela/janelad.log
+```
+
+There is **no `--socket` flag, deliberately**: it would move the socket and leave
+the database shared with the resident daemon, so two daemons would restore the same
+sessions into two sets of terminals. `janelad` refuses any argument it does not
+parse — exit 2, before it opens the database, binds the socket or creates the log
+file — so nothing can be silently ignored again (#49).
 
 The socket lives at `~/.janela/run/janelad.sock`, not in Application Support — see
 [ADR 0016](decisions/0016-daemon-protocol.md) for the `sun_path` reason.
 
 A daemon holding live terminals will not exit on its own, which is correct and
-occasionally inconvenient. `make daemon-restart` terminates them deliberately; that
-is the same cost a user pays after an app update, so it is worth feeling.
+occasionally inconvenient. `bun run daemon:restart` terminates them deliberately;
+that is the same cost a user pays after an app update, so it is worth feeling.
 
 Profiling: see [`performance.md`](performance.md) § How to measure.
 
@@ -278,7 +331,7 @@ Profiling: see [`performance.md`](performance.md) § How to measure.
 
 ## Committing
 
-`make check` must pass. Beyond that:
+`bun run check` must pass. Beyond that:
 
 - Write commit messages that explain **why**. The diff shows what.
 - Changing an architectural decision means adding or superseding an ADR, in the
