@@ -141,34 +141,3 @@ export async function gitFixture(label?: string): Promise<GitFixture> {
     },
   };
 }
-
-/** A log sink that records, for asserting that we log shapes and not content. */
-export interface RecordingLogSink {
-  readonly records: readonly { readonly message: string; readonly fields?: unknown }[];
-  install(): void;
-  reset(): void;
-}
-
-export function recordingLogSink(): RecordingLogSink {
-  throw new Error(`not implemented: recordingLogSink`);
-}
-
-/**
- * A recording `ProcessRunning`, for the things we *do* fake.
- *
- * Note it is typed structurally rather than by importing `@janela/support/process`:
- * that subpath is daemon-only, and this package is linked by both sides.
- */
-export interface FakeProcessRunner {
-  /** Every invocation, in order, so a test can assert the argv it expected. */
-  readonly invocations: readonly {
-    readonly executable: string;
-    readonly arguments: readonly string[];
-  }[];
-  /** Queues a response for the next matching invocation. */
-  stub(match: string, outcome: { stdout?: string; stderr?: string; exitCode?: number }): void;
-}
-
-export function fakeProcessRunner(): FakeProcessRunner {
-  throw new Error(`not implemented: fakeProcessRunner`);
-}

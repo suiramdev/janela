@@ -263,10 +263,15 @@ Run `bun run check`. It must pass. Then confirm:
 
 ## Current state
 
-The repository is **scaffolded, not implemented**. Packages export their interfaces
-and their `TODO:` seams; the bodies are not written. Search for `TODO:` to find the
-seams — they are placed deliberately, and each carries a doc comment describing what
-belongs there and which traps to avoid.
+The repository is **implemented**. Every seam the scaffold left has a body, and the
+central bet is proven end to end: `docs/survival-proof.md` records a run against an
+installed, signed bundle where the app was quit and its terminals kept running. Read
+that document before you change the daemon, the transport or the app lifecycle — it
+also lists what could *not* be tested, and why.
+
+What is not built is the **CLI**. ADR 0015 justifies daemon ownership partly on it,
+and `@janela/protocol` was shaped to serve it, but `apps/` holds only `daemon` and
+`desktop`. If you add it, it must go through the protocol like any other client.
 
 The stack changed from Swift to Tauri and TypeScript. If you know the previous
 codebase, or you are reading a document that mentions Swift, start with
@@ -283,4 +288,5 @@ GitHub Issues for `suiramdev/janela`. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` at root, ADRs under `docs/decisions/`. See `docs/agents/domain.md`.
+ADRs under `docs/decisions/`, the domain model and its vocabulary in
+[`docs/domain-model.md`](docs/domain-model.md). See `docs/agents/domain.md`.

@@ -162,7 +162,7 @@ Every `TODO:` in the Swift tree, and where it now lives. None was dropped.
 | 11 | `JanelaDaemon/DaemonServer.swift:45` | `packages/daemon/src/server.ts` | The accept loop; one bad connection must not take down the daemon |
 | 12 | `JanelaDaemon/DaemonServer.swift:56` | `packages/daemon/src/server.ts` | Fan-out to subscribers, each with a bounded queue |
 | 13 | `janelad/main.swift:17` | `apps/daemon/src/main.ts` | SIGTERM/SIGINT: hang up PTYs before exiting; ignore SIGPIPE |
-| 14 | `janelad/main.swift:26` | `apps/daemon/src/main.ts` | Socket activation via `launch_activate_socket` — **now harder**, see note below |
+| 14 | `janelad/main.swift:26` | `apps/daemon/src/main.ts` | Socket activation via `launch_activate_socket` — **given up deliberately**, see note below |
 | 15 | `janelad/main.swift:36` | `apps/daemon/src/main.ts` | Idle exit after a grace period, never while terminals are live |
 | 16 | `janelad/main.swift:43` | `apps/daemon/src/main.ts` | Build the object graph, migrate, restore sessions idle, serve |
 | 17 | `JanelaClient/DaemonConnection.swift:59` | `packages/client/src/connection.ts` | Connect, handshake, subscribe, pump frames, reconnect with backoff |
@@ -178,20 +178,29 @@ Every `TODO:` in the Swift tree, and where it now lives. None was dropped.
 
 Seams **added** by the migration, which are not in the 26 and are marked as new where
 they live: the PTY's native `lib.rs`, the `bun:ffi` bindings, the Prisma driver
-adapter, the reusable controls in `@janela/design`, the automation runner, the frame
-loop, the Tauri IPC transport, the Rust shell's window/menu/bridge/sidecar, and
-`@janela/forge`'s CLI reader — the forge package was planned and empty in Swift, so
-there was nothing to carry across.
+adapter, the automation runner, the frame loop, the Tauri IPC transport, the Rust
+shell's window/menu/bridge/sidecar, and `@janela/forge`'s CLI reader — the forge
+package was planned and empty in Swift, so there was nothing to carry across.
 
-### Seam 14 is the one that got harder
+One planned seam was **retired rather than built**: a closed set of reusable controls
+in `@janela/design`. Every screen built its markup over the tokens instead, and the
+controls that emerged (`TextField`, `NumberField`, `SwitchField`, `Violations`,
+`Section`) turned out to be Janela-specific, so they live in `@janela/ui`.
+`@janela/design` is a token package, and its doc comment says so.
+
+### Seam 14 is the one that got harder, and it was given up
 
 `launch_activate_socket` is a C function, and `bun:ffi` is deliberately gated to
-`@janela/pty` so Janela has exactly one FFI surface. The expected resolution is one
-more export on that existing library — already built, signed and located. The
-alternative, binding the path ourselves, would trade away socket activation and with
-it "a user who never opens Janela never has a process running", which
-[ADR 0017](decisions/0017-daemon-lifecycle.md) chose deliberately. **Do not take that
-route silently.** Both options are written into the `TODO`.
+`@janela/pty` so Janela has exactly one FFI surface. Binding it would have meant a
+second FFI surface for one call.
+
+**Socket activation was given up deliberately, and
+[ADR 0017](decisions/0017-daemon-lifecycle.md) is the amendment saying so.** The
+bundled plist declares no `Sockets` key; the daemon binds the fixed path itself, and
+a client that cannot connect runs `launchctl kickstart gui/<uid>/sh.janela.janelad`
+and retries. The property socket activation was chosen for survives: a user who never
+opens Janela still never has a process running. `#31` exercised this path on an
+installed bundle.
 
 ---
 

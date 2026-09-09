@@ -21,11 +21,6 @@
 /** The 4-point grid everything snaps to. */
 export const GRID_UNIT = 4;
 
-export function grid(multiple: number): string {
-  void multiple;
-  throw new Error(`not implemented: grid`);
-}
-
 /**
  * Sidebar bounds. Below the minimum, session names truncate uselessly — and they sit
  * indented under a project, so they start further right than the width alone

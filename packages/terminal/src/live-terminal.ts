@@ -164,9 +164,9 @@ export function createLiveTerminal(options: {
   /** Lines of scrollback. Defaults to `DEFAULT_SCROLLBACK`. */
   readonly scrollback?: number;
   /**
-   * Where shapes go: an id, an errno, an exit status. Absent means silent —
-   * `@janela/support`'s `log()` is not implemented yet, and a library that
-   * installs a sink during import decides the format for the whole process.
+   * Where shapes go: an id, an errno, an exit status. Absent means silent — a
+   * library that installs a sink during import decides the format for the whole
+   * process, so the caller passes one or gets nothing.
    */
   readonly log?: Logger;
   /**
