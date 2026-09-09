@@ -577,20 +577,24 @@ neither invents a new noun.
 
 ### D5 — `nextRequestID()` is a shipped export that throws
 
-**Severity: low.** `packages/protocol/src/message.ts` exports
+**Severity: low. FIXED by #47.** `packages/protocol/src/message.ts` exports
 `nextRequestID(): RequestID` whose body is `throw new Error("not implemented:
 nextRequestID")`, and nothing in the repository calls it — every client mints its
-own ids. Delete it or implement it; an exported function that throws is a trap for
-the CLI author who finds it by autocomplete.
+own ids. Both it and `isAutomation(role)` in `packages/core/src/terminal.ts` —
+same shape, also uncalled — are deleted; a caller that ever needs one writes it
+then.
 
 ### D6 — turbo does not know where the sidecar is written
 
-**Severity: low, but it fails confusingly.** `turbo.json` declares `build` outputs
-as `dist/**`; `@janela/janelad`'s build writes `apps/daemon/janelad`. Every build
-prints `WARNING no output files found for task @janela/janelad#build`, and on a
-cache *hit* turbo replays the logs and restores nothing — so `bun run daemon:build`
-can report success while leaving no binary on disk, and `sidecar.ts` then fails at
-`copyFileSync` with `ENOENT`. Escape hatch: `bun run --cwd apps/daemon build`.
+**Severity: low, but it fails confusingly. FIXED by #48.** `turbo.json` declares
+`build` outputs as `dist/**`; `@janela/janelad`'s build writes
+`apps/daemon/janelad`. Every build prints `WARNING no output files found for task
+@janela/janelad#build`, and on a cache *hit* turbo replays the logs and restores
+nothing — so `bun run daemon:build` can report success while leaving no binary on
+disk, and `sidecar.ts` then fails at `copyFileSync` with `ENOENT`.
+`apps/daemon/turbo.json` now declares `janelad` (and the `--sourcemap` sibling
+`main.js.map`) as the build's output, so a cache hit restores the binary;
+verified by building, deleting the binary, and building again.
 
 ### D7 — `docs/development.md` § The daemon documents commands that do not exist
 
@@ -604,7 +608,7 @@ worse than stale: following it touches the daemon holding your own work.
 
 ### D8 — one test's timeout is load-sensitive, and this suite is the load
 
-**Severity: low, and found by accident.** `packages/git`'s
+**Severity: low, and found by accident. FIXED by #50.** `packages/git`'s
 `"a cross-device copy falls back, says so, and still delivers the bytes"` builds a
 RAM disk through `crossDeviceVolume()` and runs under `bun test`'s default 5 s
 timeout. It passes alone every time. It failed once here at exactly 5000 ms, in a
@@ -614,8 +618,8 @@ times — an `hdiutil` attach does not care whose I/O it is queued behind.
 The survival suite now copies once instead of seven times, and three forced full
 runs afterwards were clean, so the symptom is gone. The fragility is not: a test
 that attaches a volume needs an explicit timeout, the way `packages/pty`'s slow
-tests already carry `45_000`. Left for whoever owns that file — this branch does
-not edit it.
+tests already carry `45_000`. Both tests that attach a volume in that file now
+carry `45_000`.
 
 ### D9 — registration was unreachable, so no install ever armed the daemon
 

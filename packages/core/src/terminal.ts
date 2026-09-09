@@ -55,11 +55,6 @@ export type TerminalRole =
   /** A project automation command runs here. */
   | { readonly kind: "automation"; readonly event: AutomationEvent };
 
-export function isAutomation(role: TerminalRole): boolean {
-  void role;
-  throw new Error(`not implemented: isAutomation`);
-}
-
 /**
  * Coarse lifecycle state of a live terminal, as the UI needs to render it.
  *

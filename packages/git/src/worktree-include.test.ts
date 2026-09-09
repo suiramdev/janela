@@ -286,6 +286,9 @@ describe("worktreeinclude copying", () => {
     expect(consumed).toBeLessThan(16 * 1024 * 1024);
   });
 
+  // Attaching a volume queues behind whoever else is doing I/O, and under a full
+  // `bun run check` that is a 71 MB sidecar copy. 45 s matches packages/pty's slow
+  // tests (#50).
   test("a cross-device copy falls back, says so, and still delivers the bytes", async () => {
     const log = recordingLogger();
     await using world = await setup("wi-exdev", { log });
@@ -310,7 +313,7 @@ describe("worktreeinclude copying", () => {
     const notices = log.records.filter((entry) => entry.level === "notice");
     expect(notices).toHaveLength(1);
     expect(notices[0]?.fields).toMatchObject({ reason: "EXDEV" });
-  });
+  }, 45_000);
 
   test("symlinks are recreated, never followed", async () => {
     await using world = await setup("wi-symlink");
@@ -485,5 +488,5 @@ describe("worktreeinclude logging", () => {
       expect(rendered).not.toContain(".env");
       expect(rendered).not.toContain("node_modules");
     }
-  });
+  }, 45_000);
 });
