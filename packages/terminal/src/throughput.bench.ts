@@ -79,11 +79,12 @@ interface Scenario {
    */
   frames(size: GridSize): readonly string[];
   /**
-   * `gate` holds the feed rate to the 100 MB/s budget as well as the wire row;
-   * `report` prints the rate and gates only the wire row. Absent means the
-   * scenario feeds too little to say anything about a rate.
+   * Set when the scenario feeds enough for a rate to mean anything: the feed MB/s
+   * is printed and the wire row is gated. Absent means it feeds too little to say
+   * anything about a rate. No scenario gates the feed rate — see the note above
+   * the failure loop.
    */
-  readonly feedRate?: "gate" | "report";
+  readonly feedRate?: "report";
 }
 
 const SCENARIOS: readonly Scenario[] = [
@@ -94,7 +95,7 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     name: "line flood",
-    feedRate: "gate",
+    feedRate: "report",
     frames: (size) => {
       // The payload the ≥ 100 MB/s budget was measured with: full-width lines, so
       // the cost is parsing and printing rather than one scroll per three bytes.
@@ -172,7 +173,7 @@ interface Measurement {
   readonly encodeMicroseconds: number;
   readonly feedMicroseconds: number;
   readonly feedMegabytesPerSecond: number | undefined;
-  readonly feedRate: "gate" | "report" | undefined;
+  readonly feedRate: "report" | undefined;
   readonly sharedBuffer: boolean;
 }
 

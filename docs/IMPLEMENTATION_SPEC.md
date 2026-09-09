@@ -1537,10 +1537,13 @@ bare terminal as 1.
 
 ### 3.1 @janela/terminal — Emulator Seam and Live Terminal
 
-**Status**: implemented (issue #21). `HeadlessEmulator` in
+**Status**: implemented (issues #21, #32). `HeadlessEmulator` in
 `packages/terminal/src/headless-emulator.ts` is the only module that names
-`@xterm/headless`; `repaintSince` is the sanctioned full repaint until #32
-lands. The gated-module rules are in `scripts/layers.ts`.
+`@xterm/headless`; `repaintSince` is the damage encoder — the library's per-parse
+dirty rows bounded by a shadow-grid diff, scroll-aware, with a full repaint kept
+for a resize, a buffer switch, a RIS, a client claiming a revision from the future
+and a client further behind than the scroll ring remembers. The bytes half is
+`repaint-encoder.ts`. The gated-module rules are in `scripts/layers.ts`.
 
 **Requirements**: ADR 0018 (rules; reasoning in 0004), ADR 0015, ADR 0006
 (no inferred agent state), `docs/performance.md` § Terminal throughput.
@@ -1777,8 +1780,10 @@ export function createTerminalRegistry(): TerminalRegistry {
    rows; and identical again for a 100×30 alternate-screen TUI with the cursor
    left mid-screen, in 1802 bytes, with cursor position and buffer type
    preserved. A correct-but-dumb full repaint every frame is always a valid
-   fallback for `repaintSince`, which is why the encoder can be deferred to
-   issue #32: the hard optimisation risks slowness, never wrongness.
+   fallback for `repaintSince` — which is why the encoder could be deferred to
+   issue #32, and why the encoder that landed answers a resize, a buffer switch,
+   a RIS and a client it cannot catch up with this way: the hard optimisation
+   risks slowness, never wrongness.
 
 6. **Events are parsed in the feed path**, and the list is deliberately short
    and mechanical — every entry corresponds to a real escape sequence or a real
@@ -1857,12 +1862,12 @@ export function createTerminalRegistry(): TerminalRegistry {
 
 **Seams**:
 
-- `repaintSince` / `repaintFor` / `fullRepaintFor` (issue #32) — damage
-  tracking and minimal-sequence encoding; see § 6.1. Implemented as a full
-  repaint per changed frame, which is the sanctioned first implementation: the
-  optimisation can only make us slow, never wrong. The receiver is reset with
-  RIS first, so a repaint is correct onto a populated renderer and not only a
-  blank one.
+- `repaintSince` / `repaintFor` / `fullRepaintFor` (issue #32) — done. Damage
+  tracking and minimal-sequence encoding; see § 6.1. A full repaint is still the
+  answer to a resize, a buffer switch, a RIS, a client from the future and a
+  client further behind than the scroll ring, and it is prefixed with RIS so it
+  is correct onto a populated renderer and not only a blank one. Measured before
+  and after in `docs/performance.md` § Regressions › Repaint encoding.
 - `createEmulator`, `createLiveTerminal`, `negotiatedSize` and
   `createTerminalRegistry` (issue #21) — done.
 
@@ -4021,9 +4026,11 @@ normalises those into `AttentionSignal` with an `AttentionKind` of `bell`,
 
 ### 6.1 Damage Tracking and Minimal Escape Sequence Encoding
 
-**Status**: Seam, and the most complex piece in the system. A naive full
-repaint every frame is a correct placeholder, so everything above this section
-is functional before any of it is written. Issue #32.
+**Status**: implemented (issue #32). `repaintSince` in
+`packages/terminal/src/headless-emulator.ts` tracks damage; the bytes are
+`packages/terminal/src/repaint-encoder.ts`. Measured before and after in
+`docs/performance.md` § Regressions › Repaint encoding. It was built last, as
+planned: the placeholder made every section above it shippable.
 
 **Requirements**: ADR 0018, ADR 0016.
 
@@ -4082,9 +4089,20 @@ fullRepaint(): Uint8Array;
    the bound. If a profile shows socket bytes rising with throughput, damage
    coalescing is broken.
 
-6. **Deliberately last.** Built when it is the remaining cost, not before,
-   because the placeholder makes every section above it shippable and this one
-   is the only place where being clever can produce a wrong screen.
+6. **Built last**, as planned — the placeholder made every section above it
+   shippable, and this is the only place where being clever can produce a wrong
+   screen. What shipped, against the decisions above: the library's own per-parse
+   dirty rows narrowed by a shadow-grid diff (its tracker marks the whole scroll
+   region on any scroll and both cursor rows on any move, so it is a bound on
+   where to look, not an answer); absolute `CUP` per row rather than relative
+   moves, because a row is the unit that changed; `ECH` + `CUF` over erased runs
+   and a trailing `EL`, never a bare `CUF`, because an erased cell carries a
+   background colour a fresh receiver would not miss but a populated one would;
+   `CSI 0 m` per frame and an SGR diff per cell, with `22` before `1`/`2` because
+   `22` clears bold *and* dim; and a screen scroll expressed as `CUP` to the last
+   row plus line feeds, so the client's own scrollback receives what ours did —
+   and only while the scroll region is the whole screen, since otherwise our line
+   feed would scroll the client's region instead.
 
 **Test strategy**:
 
@@ -4101,6 +4119,26 @@ fullRepaint(): Uint8Array;
   repaint bounded by grid size, not a replay of the history.
 - A flood: assert the encoded bytes per second track the frame rate, and that
   memory plateaus rather than climbing.
+
+**What the tests actually cover**, against that list:
+`packages/terminal/src/headless-emulator.test.ts` § "damage encoder" runs the
+two-emulator round-trip over prompt typing, colours and every flag, wide
+characters (including one forced to wrap), combined characters replaced by other
+combined characters, background-colour erasures, normal-buffer scrolling with a
+scrollback comparison, a scroll region, alternate-screen switches in both
+directions, cursor moves and pending wrap, modes, a resize mid-stream, a program
+RIS, a title-only chunk, `clearScrollback`, a client from the future, a client
+past the scroll ring, a flood bounded against the socket budget, the
+diff-every-row fallback, and 300 seeded random steps.
+`spikes/emulator-xterm/round-trip.ts` runs the same corpus against
+**`@xterm/xterm`** — the library the client really renders with — which is the
+only measurement of the divergence ADR 0018 accepted; it is identical on every
+case, both libraries on Unicode version 6.
+Two items on the list above are *not* covered: recorded output from real
+full-screen programs (`vim`, `htop`, an agent TUI), and a wide character split by
+a resize — a resize is answered with a full repaint, so the second is a property
+of `fullRepaint`, but the first is a real gap and the seeded fuzz is a weaker
+substitute for it.
 
 ---
 

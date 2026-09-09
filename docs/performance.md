@@ -152,9 +152,17 @@ the whole flood test.
 **A stalled client.** A phone on a bad connection, or a suspended app, must not slow
 the daemon or any other client. Each attached client has its own output queue with
 its own bound; past that bound the daemon drops the queued *diffs* and marks the
-client for a full repaint on recovery. Dropping a coalesced repaint is safe in a way
-dropping PTY bytes never is — the grid remains authoritative, so the next frame is
-correct regardless.
+client for a full repaint on recovery. Dropping a coalesced repaint is safe there
+in a way dropping PTY bytes never is — the daemon knows it dropped one, so it owes
+that client a full repaint and the next frame is correct regardless.
+
+**The app's bridge does not have that option, so it severs instead.** A frame that
+has already left the daemon is one the daemon believes was delivered; dropping it
+in the Tauri shell would leave the client's grid quietly wrong with nothing to
+notice. So overflow of either bridge queue — 32 output frames, 64 control frames —
+severs the connection, `@janela/client` reconnects, and the daemon answers with a
+full snapshot and full repaints. A connection is cheap; a terminal is never touched
+(AGENTS.md non-negotiable 7).
 
 Panes in the same session still get their own `DispatchIO` channel and parse queue,
 so a flooding pane cannot starve the pane beside it. Test it by splitting once and
@@ -214,28 +222,31 @@ Janela should stay comfortable at:
 
 ### Signposts
 
-Defined in `JanelaSupport/Log.swift`:
+Defined in `packages/support/src/signpost.ts`. `begin(name, id)` returns an
+interval; a composition root installs a sink with `setSignpostSink`, and until it
+does, `begin` hands back one shared no-op object and reads no clock — which is
+what makes it callable once per frame per attached client. A browser composition
+root's sink is where `performance.measure` belongs; the module deliberately does
+not call it, because a timeline entry per repaint is an unbounded buffer.
 
-| Signposter | Covers | Process |
+| Name | Covers | Wired |
 | --- | --- | --- |
-| `Signpost.launch` | Process start → first interactive frame | app |
-| `Signpost.connect` | Socket connect → handshake → first state | app |
-| `Signpost.attach` | Attach request → first painted frame | app |
-| `Signpost.render` | Renderer feed and redraw | app |
-| `Signpost.daemonStart` | Socket activation → database open → ready | daemon |
-| `Signpost.terminal` | Spawn, first byte, exit | daemon |
-| `Signpost.encode` | Damage → repaint bytes, per frame per client | daemon |
-| `Signpost.git` | Each git invocation | daemon |
-| `Signpost.sessionCreate` | Worktree add → include copy → automation started | daemon |
-| `Signpost.forge` | Each `gh`/`glab` invocation | daemon |
+| `repaint` | One encode — `repaintFor`/`fullRepaintFor`, per frame per client. Records `client`, `bytes`, `full`. | yes, `@janela/terminal` |
+| `attach` | Daemon side: attach → the first full repaint encoded. Client side: those bytes → a painted frame. | daemon half only |
+| `launch` | Process start → interactive window | not yet — `apps/desktop/src/main.tsx` still logs its own `requestAnimationFrame` line |
+| `connect` | Connect + handshake + first full state | not yet |
+| `terminal` | PTY spawn → first byte | not yet |
+| `git` | One git invocation | not yet |
+| `sessionCreate` | Worktree add → include copy → automation started | not yet |
+| `forge` | One `gh`/`glab` invocation | not yet |
 
-Signposts from two processes interleave correctly in Instruments as long as both use
-the same subsystem, which is why `janelad` logs under `sh.janela.Janela` rather than
-a subsystem of its own. A trace showing only one process will mislead you about
-where the time went.
+Records from both processes carry the same names, so a daemon log and a client log
+can be read side by side — which is why `janelad` logs under `sh.janela.Janela`
+rather than a subsystem of its own.
 
-Use `.debug` for anything per-frame or per-chunk; it costs almost nothing when the
-subsystem is not being collected.
+Fields are *shapes*: an id, a count, a byte total. Never terminal traffic,
+command output or environment values (AGENTS.md non-negotiable 11) — a sink writes
+to the same log everything else does.
 
 ### Instruments
 
