@@ -1217,8 +1217,6 @@ export type TerminalRole =
   | { readonly kind: "user" }
   | { readonly kind: "automation"; readonly event: AutomationEvent };
 
-export function isAutomation(role: TerminalRole): boolean;
-
 export type TerminalState =
   | { readonly kind: "idle" }
   | { readonly kind: "running" }
@@ -2394,8 +2392,6 @@ twelve carry a `RequestID`.
 ```ts
 export type RequestID = number & { readonly __brand: "RequestID" };
 
-export function nextRequestID(): RequestID;
-
 export type ClientMessage =
   | { readonly type: "hello"; readonly hello: Hello }
   | { readonly type: "subscribe"; readonly id: RequestID; readonly scope: SubscriptionScope }
@@ -2875,7 +2871,7 @@ the emulator and the PTY cdylib (ADR 0020).
 - `frameDecoder()`, `encodeFrame` and the six coder functions in
   `packages/protocol/src/message-coder.ts`, including the 16-byte raw header
   described above (issue #22).
-- `isCompatible` and `nextRequestID` (issue #22).
+- `isCompatible` (issue #22).
 - `defaultSocketPath()` and `isAuthorized()` in
   `packages/daemon/src/endpoint.ts` (issue #23).
 - `createDaemonServer()`, its accept loop and its fan-out (issues #23, #35).
@@ -3823,9 +3819,9 @@ schema (§ 1.3).
 
 - `temporaryDatabase()`, a real PTY and a real emulator. Create a project with
   a `sessionStart` command `["echo", "started"]`, create a session in it, then
-  assert: a terminal exists whose role is automation for `sessionStart`
-  (`isAutomation(role)`); its state goes `running` → `exited(0)`; and
-  `snapshotText({includeScrollback: false})` contains `started`.
+  assert: a terminal exists whose role is
+  `{ kind: "automation", event: "sessionStart" }`; its state goes `running` →
+  `exited(0)`; and `snapshotText({includeScrollback: false})` contains `started`.
 - A command exiting non-zero: the terminal stays live-but-exited, the report
   records the code, and the session is still usable — failure is non-fatal.
 - Two commands for one event: `AutomationReport.commands` is in declaration

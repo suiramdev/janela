@@ -19,10 +19,6 @@ import type { HandshakeRefusal, Hello } from "./handshake.ts";
 /** Correlates a request with its reply. */
 export type RequestID = number & { readonly __brand: "RequestID" };
 
-export function nextRequestID(): RequestID {
-  throw new Error(`not implemented: nextRequestID`);
-}
-
 /**
  * What a client can say.
  *

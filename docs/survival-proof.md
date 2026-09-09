@@ -577,11 +577,12 @@ neither invents a new noun.
 
 ### D5 — `nextRequestID()` is a shipped export that throws
 
-**Severity: low.** `packages/protocol/src/message.ts` exports
+**Severity: low. FIXED by #47.** `packages/protocol/src/message.ts` exports
 `nextRequestID(): RequestID` whose body is `throw new Error("not implemented:
 nextRequestID")`, and nothing in the repository calls it — every client mints its
-own ids. Delete it or implement it; an exported function that throws is a trap for
-the CLI author who finds it by autocomplete.
+own ids. Both it and `isAutomation(role)` in `packages/core/src/terminal.ts` —
+same shape, also uncalled — are deleted; a caller that ever needs one writes it
+then.
 
 ### D6 — turbo does not know where the sidecar is written
 
