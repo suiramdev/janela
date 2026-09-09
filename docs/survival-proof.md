@@ -18,29 +18,54 @@ compiled sidecar).
 
 ## Verdict, last run
 
-Run on 2026-09-09 against `apps/daemon/janelad` compiled from `04f3ea8` + this
-branch, and the Tauri shell built from the same tree.
+Run on 2026-09-09 in **two passes**, because the first pass could not reach
+launchd at all:
+
+- **Pass A — dev build**, `apps/daemon/janelad` compiled from `04f3ea8` + this
+  branch, started by hand under an isolated `HOME`. No LaunchAgent.
+- **Pass B — the installed, signed bundle**: `bun run app:build`, copied to
+  `/Applications/Janela.app`, registered as a real Login Item, its sidecar owned
+  by launchd, writing to the real `~/.janela` and the real `janela.sqlite`. This
+  is the pass the verdicts below come from, and it required two fixes to the app
+  shell before it could talk to its own daemon at all (**D9**, **D10**).
 
 | # | Step | Verdict |
 | --- | --- | --- |
-| 1 | Start a session, run a long-lived process that emits output | **Pass** — through the app's own UI |
-| 2 | Quit the app entirely | **Pass** |
-| 3 | `janelad` is still alive and the child is still running | **Pass** for the daemon and its child. The *launchd* half is untested — see § What was not tested |
-| 4 | Relaunch, attach, grid is correct and output continued while detached | **Pass**, with one wart: which session was selected is not restored |
-| 5 | A second client at a different viewport: the daemon resolves to the minimum, the larger client letterboxes rather than scales | **Split.** Minimum: **pass**. Grows back on detach: **pass**. Does not scale: **pass**. **Letterboxes: fail** — no mechanism exists (defect **D2**) |
-| 6 | Restart the daemon under version skew: the connection is refused and no terminal dies | **Pass** at the protocol level, against the compiled daemon. The app's banner under two real builds is untested |
-| 7 | `SIGKILL` `janelad`: launchd restarts it and every affected session reappears as idle | **Pass** for the recovery half — a replacement daemon rebinds and restores every session as idle, and recovery kills nothing. **launchd's part is untested** |
+| 1 | Start a session, run a long-lived process that emits output | **Pass** — through the app's own UI, on the installed bundle |
+| 2 | Quit the app entirely | **Pass** — app gone from the process table, daemon pid and child pid unchanged |
+| 3 | `janelad` is still alive and the child is still running | **Pass, including the launchd half.** The daemon was launchd's own (`launchctl print` → `state = running`, `runs = 2`), the app was gone, the child was still `Rs`, and the screen advanced from ~`0036` to `0170` with nothing attached |
+| 4 | Relaunch, attach, grid is correct and output continued while detached | **Pass** — 44 unbroken lines, `survival-tick-0768` → `0811`, live cursor. One wart: which session was selected is not restored (**D4**) |
+| 5 | A second client at a different viewport: the daemon resolves to the minimum, the larger client letterboxes rather than scales | **Split.** Minimum: **pass** (`12 40`, wrapping at 40 columns). Grows back on detach: **pass** (`45 127`). Does not scale: **pass**. **Letterboxes: fail** — no mechanism exists (**D2**) |
+| 6 | Restart the daemon under version skew: the connection is refused and no terminal dies | **Pass, both halves.** The launchd daemon refused a version-5 client with `incompatibleVersion`, kept serving, and its child kept producing (`0050` → `0067`). A real second build — a client at protocol 5 against the compiled daemon at 4 — showed the banner and did **not** retry |
+| 7 | `SIGKILL` `janelad`: launchd restarts it and every affected session reappears as idle | **Pass, including launchd.** With **no app running**, so nothing could `kickstart` it, `kill -9` was answered by launchd in **1 second**: new pid, `runs` 2 → 3. Every session came back, every terminal `idle`, nothing respawned |
 
 **No step required killing a terminal to recover.** That is non-negotiable 7 and
 it held everywhere, including under a refused handshake and after a `SIGKILL`.
 
 The bet itself — quit the app with work running, come back, find it still running
-with a correct screen — **holds**. It was observed, not inferred: the emitter was
-at `survival-tick-0008` when the app quit, the app was gone from the process
-table, and the relaunched window showed `survival-tick-0216` through `0259` live.
+with a correct screen — **holds**, on the installed build, with launchd owning the
+daemon. It was observed, not inferred: the emitter was at `survival-tick-0036`
+when the app quit, the app was gone from the process table, the screen reached
+`0170` while nothing was attached, and the relaunched window showed `0768`
+through `0811` live.
 
-Two defects were found that no unit test could have found. Both are filed rather
-than fixed here, because both need a decision in a lower package: see § Defects.
+### The largest unknown, now answered
+
+**`SMAppService` accepts an ad-hoc-signed bundle.** The previous handoff called
+this "the single largest unknown", because a refusal would have made ADR 0017's
+lifecycle unprovable outside a Developer ID build. It does not refuse:
+`register_launch_agent` returned `registered` (not `requires-approval`, so no
+approval prompt), `sfltool dumpbtm` shows the agent as
+`[enabled, allowed, notified]` under parent `sh.janela.Janela`, and macOS raised
+its own "Janela can run in the background" notification. `TeamIdentifier=not set`
+throughout. **A local ad-hoc build is enough to exercise the whole daemon
+lifecycle** — no signing identity required.
+
+Two defects were found that no unit test could have found, and both are filed
+rather than fixed: **D1** and **D2**. Two more — **D9** and **D10** — were found
+in the app shell, and both **are** fixed here, because with either one in place
+the packaged app cannot reach its daemon at all and no verdict above could have
+been observed.
 
 ---
 
@@ -121,6 +146,46 @@ HOME=$ISO bun run scripts/survival-probe.ts --attach <id> --columns 40 --rows 12
 HOME=$ISO bun run scripts/survival-probe.ts --attach <id> --send 'stty size\n'
 ```
 
+### Pass B: the installed bundle, which is the only way to reach launchd
+
+Steps 3, 6 and 7 are really about launchd, and no isolation trick reaches it: the
+agent's plist is *sealed into the bundle*, `SMAppService` resolves it relative to
+the running app's bundle, and there is no socket or `HOME` override that moves the
+registered job. So this pass touches the real machine, and you must have the
+operator's consent before starting it.
+
+```bash
+bun run app:build                     # ~50 s warm, several minutes cold
+cp -R apps/desktop/src-tauri/target/release/bundle/macos/Janela.app /Applications/
+codesign --verify --strict /Applications/Janela.app
+open -a /Applications/Janela.app      # registers the Login Item on first start
+
+launchctl print gui/$(id -u)/sh.janela.janelad | grep -E 'state =|runs =|pid ='
+sfltool dumpbtm | grep -A6 janelad    # the Login Items record itself
+```
+
+What this pass costs, and what you are promising to undo:
+
+- **Several GB** under `apps/desktop/src-tauri/target`.
+- **A Login Item** in System Settings > General > Login Items. macOS also raises
+  its own "Janela can run in the background" notification.
+- **The real `~/.janela/run` and the real `janela.sqlite`.** Expect sessions that
+  are already there; record them first (`sqlite3 … 'select id,name from Session'`)
+  so you can tell yours from theirs, and remove only yours afterwards.
+
+To undo it: **Settings > General > Background service > Stop and Unregister**, and
+confirm. Then verify — do not assume the call succeeded:
+
+```bash
+launchctl print gui/$(id -u)/sh.janela.janelad   # must say: Could not find service
+pgrep -f 'MacOS/janelad' || echo 'no janelad resident'
+sfltool dumpbtm | grep -c janelad                # must be 0
+rm -rf /Applications/Janela.app
+```
+
+`launchctl bootout` is not a substitute: it stops the job but can leave the Login
+Items record behind, and the promise is that System Settings looks as it did.
+
 ---
 
 ## The procedure
@@ -169,17 +234,20 @@ ps -p <child pid> -o pid=,stat=,command=
 HOME=$ISO bun run scripts/survival-probe.ts --attach <id> --hold 1
 ```
 
-**Observed:** the child was still `-zsh`, still `Rs`, and the screen had advanced
-from `survival-tick-0008` to `survival-tick-0074` with nobody watching. **Pass.**
+**Observed, pass A (dev build):** the child was still `-zsh`, still `Rs`, and the
+screen had advanced from `survival-tick-0008` to `survival-tick-0074` with nobody
+watching.
+
+**Observed, pass B (installed bundle, daemon owned by launchd):** the app was
+gone from the process table, `launchctl print gui/$(id -u)/sh.janela.janelad`
+reported `state = running` with `runs = 2`, the child was still `Rs`, and the
+screen advanced from ~`0036` to `0170`. **Pass, both halves** — what survived the
+app is not merely a daemon someone started, it is launchd's daemon.
 
 The idle-exit rule cannot fire here and that is the point: `isDaemonIdle` requires
 no connections *and* `terminals.liveCount === 0`, so a daemon holding a running
 terminal is never idle. A configured-but-never-started terminal is a different
 story — it *is* idle, and a daemon holding only those exits after five minutes.
-
-> **What this step does not prove.** The daemon here was started by hand, so what
-> survived the app is the daemon and its child — not launchd's grip on them. The
-> launchd half needs a bundled `Janela.app`; see § What was not tested.
 
 ### Step 4 — relaunch, attach, and read the screen
 
@@ -257,35 +325,65 @@ mutation-checking it is what proves the assertion is load-bearing.
 For the app's side of the story you need two builds, because the version lives in
 one file both binaries read (`packages/protocol/src/handshake.ts`). Set
 `PROTOCOL_VERSION` **and** `MINIMUM_SUPPORTED_VERSION` to 5 — bumping only the
-first still overlaps and is compatible — rebuild the app, and leave the old
-daemon resident. Expect the version-skew banner. **Two warnings:** `bun test`
-fails while that edit is in place (`frame.test.ts` pins the version, deliberately),
-so never commit it; and do not press the banner's button.
+first still overlaps and is compatible — then run a client built from *that* tree
+against the compiled daemon built from the unedited one. A dev client is enough:
+it reads the frontend from Vite, so the edit needs no rebuild of the daemon.
+
+**Observed:** the client logged
+`handshake refused {"refusal":"incompatibleVersion"}`, went to
+`{"kind":"refused"}`, tore the connection down and **did not retry** — one
+refusal, no reconnect loop. The banner read, verbatim:
+
+> Janela was updated. The background service is still running your terminals on
+> the previous version. Restart it when you are ready — this will close your
+> terminals.
+
+No raw stderr in it, and the button states its cost before it is pressed
+(non-negotiables 10 and 7). Meanwhile the launchd daemon and its child were
+untouched: same pids, and the emitter advanced `0050` → `0067` across the whole
+episode. **Pass, both halves.**
+
+**Two warnings:** `bun test` fails while that edit is in place (`frame.test.ts`
+pins the version, deliberately), so never commit it — revert it and confirm
+`git diff` is empty; and **do not press the banner's button** (see § Rules).
 
 ### Step 7 — `SIGKILL`
 
+Run this against the **installed bundle**, and run it with **no app open** — an
+app would `kickstart` the daemon on the next failed connect, and then you cannot
+tell launchd's `KeepAlive` from the app's retry. That distinction is the whole
+step.
+
 ```bash
-DPID=$(pgrep -f 'apps/daemon/janelad')
-ORPHANS=$(pgrep -P "$DPID")        # capture BEFORE the kill; see below
+pgrep -f 'MacOS/janela$'              # must be empty, or attribution is lost
+DPID=$(pgrep -f 'MacOS/janelad')
+ORPHANS=$(pgrep -P "$DPID")           # capture BEFORE the kill; see below
+launchctl print gui/$(id -u)/sh.janela.janelad | grep -E 'runs|pid ='
 kill -9 "$DPID"
-ls -l "$ISO/.janela/run/janelad.sock"   # still there, stale
-HOME=$ISO TMPDIR=$ISO ./apps/daemon/janelad --foreground   # launchd's job, done by hand
-HOME=$ISO bun run scripts/survival-probe.ts
+for i in $(seq 1 20); do sleep 1; pgrep -f 'MacOS/janelad'; done   # watch for a NEW pid
+launchctl print gui/$(id -u)/sh.janela.janelad | grep -E 'runs|pid ='
+bun run scripts/survival-probe.ts
 ```
 
-**Observed (automated, see below):** the replacement daemon found the stale socket,
-unlinked it, rebound, and restored the session from SQLite with its terminal
-**idle** and nothing spawned. Starting it again worked normally. **Pass** — and
-recovery needed no `rm`, no repair, and no terminal killed.
+**Observed:** launchd replaced the daemon **after one second**, with no client in
+existence to ask it to — a new pid, and `runs` went 2 → 3. The replacement found
+the stale socket, unlinked it, rebound, and restored **all four** sessions from
+SQLite with **every terminal `idle`** and nothing spawned. The relaunched app
+showed the session with its running indicator gone. **Pass, including launchd** —
+and recovery needed no `rm`, no repair, and no terminal killed by us.
 
-Two things to expect:
+Three things to expect:
 
-- **The old children are orphaned, not reaped.** `SIGKILL` skips `hangUpAll()`, so
-  the shells are reparented and keep running invisibly. That is what "terminals
-  are gone, sessions restored as idle" means in ADR 0017 — do not read a surviving
-  orphan as a terminal that survived, and clean them up: `kill -9 $ORPHANS`.
-- **`launchctl` is what this step is really about**, and a hand-started daemon
-  cannot show it. See below.
+- **The child dies, and that is the kernel, not us.** The PTY master lives in the
+  daemon; `SIGKILL` closes it, the slave gets `SIGHUP`, the shell exits. A
+  `SIGKILL`ed daemon cannot avoid this, which is exactly *why* step 7 asks for
+  sessions "reappearing as idle" rather than still running. Non-negotiable 7
+  governs our deliberate choices; it is not a promise to survive `kill -9`.
+- **Any child that does outlive it is orphaned, not reaped.** `SIGKILL` skips
+  `hangUpAll()`. Do not read a surviving orphan as a terminal that survived, and
+  clean them up: `kill -9 $ORPHANS`.
+- **The socket file outlives the process.** That is the case the replacement must
+  handle, and it does.
 
 ---
 
@@ -465,35 +563,116 @@ that attaches a volume needs an explicit timeout, the way `packages/pty`'s slow
 tests already carry `45_000`. Left for whoever owns that file — this branch does
 not edit it.
 
+### D9 — registration was unreachable, so no install ever armed the daemon
+
+**Severity: high. Release blocker. Fixed on this branch.**
+
+`register_launch_agent` read `service.status()` and early-returned unless it was
+exactly `NotRegistered`:
+
+```rust
+if status != SMAppServiceStatus::NotRegistered {
+    return Ok(describe(status).to_string());
+}
+```
+
+macOS reports an agent that has **never been registered** as `NotFound`, not
+`NotRegistered`. So on every real install the guard fired, `registerAndReturnError`
+was never called, no Login Item was ever created — and because ADR 0017 has no
+`RunAtLoad` and starts the daemon only via `launchctl kickstart`, there was no
+service to kickstart. The app logged `launch agent {"status":"not-found"}` and then
+`daemon-unavailable` forever. **A shipped Janela could not start its daemon at
+all**, from `/Applications` or from the build directory.
+
+Independent confirmation, before any code was changed —
+`backgroundtaskmanagementd`:
+
+```
+effectiveItemDisposition: record not found: appURL=/Applications/Janela.app,
+  url=/Contents/Library/LaunchAgents/sh.janela.janelad.plist, type=agent
+```
+
+The fix is the condition: only `Enabled` and `RequiresApproval` mean "nothing to
+do". With it, `register_launch_agent` returns `registered` and the Login Item
+appears — which is what made steps 3, 6 and 7 provable.
+
+**Why no test caught it:** `agent()` returns `unsupported` for any executable
+outside `Contents/MacOS`, so every test and every `tauri dev` run takes the
+early-out before reaching the status check. This code path only exists in a
+bundle, and nothing before this run had ever executed it.
+
+### D10 — the packaged app could not send a single frame to its daemon
+
+**Severity: high. Release blocker. Fixed on this branch.**
+
+With D9 fixed and the daemon running, the packaged app still could not connect.
+`bridge_connect` succeeded and every `bridge_send` failed with
+`expected-raw-body`, so the hello never went out:
+
+```
+protocol: hello not sent {"error":"expected-raw-body"}
+protocol: connection torn down {"reason":"hello not sent"}
+```
+
+The cause is the CSP. Tauri's IPC has two paths (`tauri-2.11.5/scripts/ipc-protocol.js`):
+the custom protocol sends a `Uint8Array` as `application/octet-stream`, which
+arrives as `InvokeBody::Raw`; if that `fetch` is blocked it falls back to
+`postMessage`, which JSON-stringifies the whole envelope and turns the bytes into
+an array of numbers — `InvokeBody::Json`, which `bridge_send` correctly refuses.
+The fallback's own comment names the trigger: *"either the webview blocked a
+custom protocol or it was a CSP error"*.
+
+`tauri.conf.json` declared `default-src 'self'` and **no `connect-src`**, and
+`ipc://localhost` is not `'self'`. Fix, which is the value Tauri's own
+documentation prescribes:
+
+```
+"csp": "default-src 'self' ipc: http://ipc.localhost; style-src …"
+```
+
+**Why no test caught it, and why nobody noticed in development:** in dev the
+frontend is served by Vite over `http://localhost:1420`, which never carries the
+bundle's CSP, so the custom-protocol fetch is allowed and the raw path works. The
+failure exists **only** in the packaged app. `transport.test.ts` injects the
+`invoke` seam and asserts the exact bytes handed to it — correctly, and it cannot
+see a CSP. This is the whole class of bug the issue's "the compiled sidecar is
+what must be tested" clause exists for, applied to the client instead.
+
+Both D9 and D10 are one-line changes with no behavioural ambiguity, and both were
+declared rather than folded silently into the test commit: the verdicts above were
+observed on a bundle rebuilt and re-verified **with both fixes in place**
+(`bundle ok — adhoc — janela, janelad hardened; sh.janela.janelad.plist sealed`).
+
 ---
 
 ## What was not tested, and what it would take
 
-**launchd.** Steps 3, 6 and 7 each have a launchd half that a dev build cannot
-reach: `agent.rs` returns `unsupported` for any executable outside
-`Contents/MacOS`, so `tauri dev` registers no LaunchAgent, and
-`launchctl kickstart` targets a service that does not exist. Untested, therefore:
+The launchd halves of steps 3, 6 and 7 **were** tested in the end, on an
+installed, ad-hoc-signed bundle with a real Login Item; see § Verdict. What
+remains untested is narrower.
 
-- that `KeepAlive.SuccessfulExit=false` restarts a `SIGKILL`ed daemon;
-- that `SMAppService.agentServiceWithPlistName` accepts an ad-hoc-signed bundle,
-  and whether it needs approval in Login Items first — nothing in the repository
-  records an observed outcome either way;
-- that the app's reconnect loop recovers a session list after launchd restarts the
-  daemon underneath it.
+**A Developer ID build.** Everything here ran on `signingIdentity: "-"` with
+`TeamIdentifier=not set`. `SMAppService` accepted it, which is the surprising and
+useful result — but a notarized, stapled build is a different code identity, and
+`smd` is entitled to treat it differently. Nothing about *this* run predicts a
+notarized one. What it takes: release credentials and
+`APPLE_SIGNING_IDENTITY=… bun run app:build`.
 
-What it takes: `bun run app:build` (a cold 506-crate release build), installing the
-produced `Janela.app`, letting it register a **Login Item** on the machine, and
-`kill -9`ing the daemon that then holds the real `~/.janela` and the real
-`janela.sqlite`. That is a change to the operator's System Settings and their own
-data, so it is deliberately not something this procedure does on its own
-initiative. If `SMAppService` refuses the ad-hoc bundle, the fallback is
-`launchctl bootstrap gui/$UID <bundle>/Contents/Library/LaunchAgents/sh.janela.janelad.plist`,
-which loads the same shipped plist by hand — that would prove `KeepAlive` but not
-registration, and the two must be reported separately rather than as one tick.
+**`requires-approval`.** Registration returned `registered` directly, so the
+approval path — `SMAppService` returning `RequiresApproval`, the app's degraded
+mode, and `openSystemSettingsLoginItems` — never ran. It is reachable by denying
+the item in System Settings > General > Login Items and relaunching.
 
-**The app's version-skew banner.** Step 6 was proven at the protocol level with a
-probe that claims version 5. The banner, its running-session summary and its button
-need two real builds; see step 6.
+**Programmatic unregistration.** `unregister_launch_agent` is bundle-relative:
+only `Janela.app` itself can call `SMAppService.unregister` for its own agent, so
+it cannot be driven from a script, and the only path to it is the settings
+surface's **Stop and Unregister** (which asks for confirmation first — observed).
+`launchctl bootout` is *not* equivalent: it stops the job but can leave the Login
+Items entry behind. Anyone re-running this procedure must budget for pressing that
+button by hand.
+
+**Reboot.** ADR 0015 is explicit that sessions surviving a *reboot* is a larger
+promise than it makes, and nothing here tests one.
 
 **Deltas.** `repaintSince` is still a placeholder that answers any revision
 mismatch with a whole grid, so every repaint observed here was a full one. Nothing
