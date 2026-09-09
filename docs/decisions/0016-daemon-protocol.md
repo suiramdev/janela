@@ -47,6 +47,27 @@
   `incompatibleVersion`, the daemon keeps running and no terminal is touched; the
   app shows the version-skew banner whose only button is "Restart the background
   service".
+- **Amended:** 2026-09-09 by the negotiated size (#44) — protocol **version 5**, and
+  the smallest possible change: **a repaint carries the grid it is correct at.**
+  `fullRepaint` emits `CSI 8 ; rows ; cols t` between its RIS and the screen, and a
+  client is re-sent one whenever the negotiation moves *or* overrules the viewport it
+  asked for. Nothing new joins `ClientMessage` or `DaemonMessage`. The size travels
+  in the raw output frame because it describes those very bytes: arriving out of
+  band it would race them, and a client would paint one geometry's screen into
+  another's grid — which is exactly the bug being fixed, only intermittent. It also
+  keeps the rule below honest, that `input` and `output` are the only
+  high-frequency messages; this is neither, it is a debt discharged on the next
+  frame after a human-rate event. The minimum supported version moves to 5 because
+  this change degrades **silently**: a v4 peer parses the sequence and drops it —
+  measured against `@xterm/xterm` 6.0.0, which gates parameter 8 on
+  `windowOptions.setWinSizeChars` and then implements no case for it — so it renders
+  a 127-column screen at a 40-column PTY's geometry, wrapping every line at the
+  wrong column with nothing to report. A v4 peer is refused with
+  `incompatibleVersion`, the daemon keeps running, no terminal is touched, and the
+  app shows the version-skew banner. A client acts on the sequence itself:
+  `packages/terminal-ui`'s `xtermRendering` registers the CSI handler the library
+  does not have, and resizing from it deliberately casts no vote — echoing the
+  minimum back as a proposal is how a minimum would become permanent.
 
 ## Context
 
@@ -231,6 +252,14 @@ A viewportless attachment is not a lesser attachment: it may type, and it is
 subscribed to the terminal. It simply has no size to contribute and no screen to
 repaint, so the frame loop never registers it. Participation is chosen at attach
 time — a client that grows a window attaches again with a viewport.
+
+**And the resolution is told to the clients** (v5). A client that asked for more
+than it got must know, or it renders the smaller screen into its own larger grid at
+its own wrap column — the honest alternative, letterboxing the difference, needs the
+number. The daemon says it as `CSI 8 ; rows ; cols t` inside the repaint, on the
+attach that overrules a viewport and on every later renegotiation in either
+direction, including the growth when the smallest client detaches. It is never
+scaled to fit: a scaled monospace grid is a blurry one.
 
 ### Removals
 

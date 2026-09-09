@@ -67,18 +67,22 @@ describe("letterboxMargins", () => {
     ).toEqual({ width: 1, height: 7 });
   });
 
-  test("a grid smaller than the box letterboxes the difference", () => {
-    // Another client is attached and smaller, so the daemon sized the PTY down.
-    expect(
-      letterboxMargins(
-        { width: 800, height: 400 },
-        { width: 8, height: 16 },
-        {
-          columns: 60,
-          rows: 10,
-        },
-      ),
-    ).toEqual({ width: 320, height: 240 });
+  test("a grid the daemon negotiated smaller letterboxes the difference", () => {
+    // The values #31 measured in the app, derived rather than chosen: the pane is
+    // a real box, the grid it could show is what `gridThatFits` says, and the grid
+    // it is actually given is the 40×12 a second, smaller client held. Before
+    // protocol 5 the second argument here was a number no call site could produce,
+    // which is how a tested helper passed for a shipped feature — see
+    // docs/survival-proof.md § D2.
+    const box = { width: 1016, height: 720 };
+    const cell = { width: 8, height: 16 };
+    const ours = gridThatFits(box, cell);
+    expect(ours).toEqual({ columns: 127, rows: 45 });
+
+    const announced = { columns: 40, rows: 12 };
+
+    expect(letterboxMargins(box, cell, ours)).toEqual({ width: 0, height: 0 });
+    expect(letterboxMargins(box, cell, announced)).toEqual({ width: 696, height: 528 });
   });
 
   test("a grid larger than the box never reports a negative margin", () => {

@@ -59,9 +59,17 @@ export interface TerminalEmulating {
    * round-tripped through this and compared byte-identical, cursor position and
    * buffer type included.
    *
+   * **It must announce `size` as `CSI 8 ; rows ; cols t`, after any reset and
+   * before the content** (protocol 5). It is the only thing that tells a client
+   * what geometry the screen it is being handed is correct at, and a client
+   * bigger than the negotiated grid has nothing to letterbox to without it — the
+   * defect `docs/survival-proof.md` § D2 recorded. An implementation that drops
+   * it renders every line at the wrong wrap column and reports no error.
+   *
    * A correct-but-dumb full repaint every frame is always a valid fallback for
    * `repaintSince`, and that is deliberate: it means the hard optimisation can
-   * never make us wrong, only slow.
+   * never make us wrong, only slow. It also means a damage encoder that cannot
+   * express a resize may answer one with this.
    */
   fullRepaint(): Uint8Array;
 

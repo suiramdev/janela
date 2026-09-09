@@ -459,6 +459,74 @@ describe("size negotiation", () => {
   });
 });
 
+/**
+ * The half of the negotiation that reaches a client (protocol 5).
+ *
+ * The size is not on any control message: it rides the repaint as
+ * `CSI 8 ; rows ; cols t`, because it describes the very bytes it travels with.
+ * These assert the exact sequence each client receives, against a real PTY and a
+ * real emulator — without them, `letterboxMargins` in `@janela/terminal-ui` is
+ * only ever handed the client's own grid and can absorb rounding and nothing
+ * else, which is `docs/survival-proof.md` § D2.
+ */
+describe("the negotiated size on the wire", () => {
+  /** A started terminal with `client` attached and already told its size. */
+  async function attached(id: string, client: string, viewport: GridSize): Promise<LiveTerminal> {
+    const terminal = live(id, shellLaunch("exec cat", viewport));
+    terminal.attach(client, viewport);
+    await terminal.start();
+    // Discharges the debt every fresh attachment carries, so what the tests
+    // observe afterwards is caused by the second client and nothing else.
+    terminal.fullRepaintFor(client);
+    expect(terminal.repaintFor(client)).toHaveLength(0);
+    return terminal;
+  }
+
+  test("a smaller client joining is announced to the client already attached", async () => {
+    const terminal = await attached("t-announce-join", "big", { columns: 127, rows: 45 });
+
+    terminal.attach("small", { columns: 40, rows: 12 });
+
+    // The larger client is the one that has to letterbox, and this is the only
+    // thing that tells it to.
+    expect(decoder.decode(terminal.repaintFor("big"))).toContain("\x1b[8;12;40t");
+  });
+
+  test("an overruled viewport is answered with the negotiated size, not silence", async () => {
+    // The window-resized-while-a-smaller-client-holds case. The negotiation does
+    // not move — the minimum is still the other client's — so an announcement
+    // keyed on "the size changed" would say nothing, and this client would render
+    // at its own width against a grid a third of it, with nothing to correct it.
+    const terminal = await attached("t-announce-overruled", "big", { columns: 127, rows: 45 });
+    terminal.attach("small", { columns: 40, rows: 12 });
+    expect(terminal.repaintFor("big").length).toBeGreaterThan(0);
+
+    expect(terminal.attach("big", { columns: 120, rows: 44 })).toEqual({ columns: 40, rows: 12 });
+
+    expect(decoder.decode(terminal.repaintFor("big"))).toContain("\x1b[8;12;40t");
+  });
+
+  test("growing back when the smaller client detaches is announced too", async () => {
+    const terminal = await attached("t-announce-grow", "big", { columns: 127, rows: 45 });
+    terminal.attach("small", { columns: 40, rows: 12 });
+    expect(terminal.repaintFor("big").length).toBeGreaterThan(0);
+
+    expect(terminal.detach("small")).toEqual({ columns: 127, rows: 45 });
+
+    expect(decoder.decode(terminal.repaintFor("big"))).toContain("\x1b[8;45;127t");
+  });
+
+  test("a client told its size is owed nothing on the next frame", async () => {
+    // The announcement is a debt, not a per-frame prefix: 120 Hz of `CSI 8 t`
+    // would be a resize storm on a client that already agrees.
+    const terminal = await attached("t-announce-once", "big", { columns: 127, rows: 45 });
+    terminal.attach("small", { columns: 40, rows: 12 });
+
+    expect(terminal.repaintFor("big").length).toBeGreaterThan(0);
+    expect(terminal.repaintFor("big")).toHaveLength(0);
+  });
+});
+
 describe("repaints", () => {
   test("are per client, and a full repaint always resets the receiver first", async () => {
     const terminal = live("t-repaint", shellLaunch("stty raw -echo; printf READY; exec cat"));

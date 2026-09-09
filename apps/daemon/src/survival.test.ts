@@ -817,14 +817,17 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       ).toBe("acknowledged");
 
       // Asked of the child, because the child is the only party that cannot be
-      // wrong about its own window size — and because nothing on the wire tells a
-      // client what the negotiated size is.
+      // wrong about its own window size.
       large.type(terminalID, "stty size\n");
       const shared = await waitFor("the child reports the negotiated size", async () => {
         const sizes = reportedSizes(await snapshot(large, terminalID, true));
         return sizes.length > 0 ? sizes : undefined;
       });
       expect(shared.at(-1)).toBe("12 40");
+      // And the client learned it too, which is the half that used to be missing:
+      // the negotiated grid rides the repaint as `CSI 8 ; rows ; cols t` (protocol
+      // 5), so a client larger than the minimum has something to letterbox to.
+      expect(repaintText(large)).toContain("\u001b[8;12;40t");
 
       expect((await small.ask({ type: "detach", id: requestID(), terminalID })).type).toBe(
         "acknowledged",

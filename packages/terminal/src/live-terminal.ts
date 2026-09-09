@@ -217,7 +217,19 @@ class PtyLiveTerminal implements LiveTerminal {
   /** A `UserFacingError.summary`, so it is safe to put in front of a user. */
   private failure: string | undefined;
   private attention = false;
-  private readonly clients = new Map<string, { viewport: GridSize; revision: number }>();
+  /**
+   * Per client: its viewport, the revision it has seen, and whether it still has
+   * to be told the negotiated grid.
+   *
+   * `owesSize` is what makes the announcement survive an encoder that only ever
+   * sends deltas: it forces the full path, which is the only thing that carries
+   * `CSI 8 t`. A resize invalidates a client's whole screen anyway, so a delta
+   * against the old geometry would be meaningless even if one existed.
+   */
+  private readonly clients = new Map<
+    string,
+    { viewport: GridSize; revision: number; owesSize: boolean }
+  >();
 
   /** Built once: the emulator is replaced on every start, the sink is not. */
   private readonly emulatorSink: TerminalEventSink = {
@@ -403,12 +415,24 @@ class PtyLiveTerminal implements LiveTerminal {
     if (existing === undefined) {
       // A fresh client starts level with the emulator: attaching is not an
       // implicit full repaint, `fullRepaintFor` is the explicit one.
-      this.clients.set(client, { viewport, revision: this.emulator?.revision ?? 0 });
+      this.clients.set(client, {
+        viewport,
+        revision: this.emulator?.revision ?? 0,
+        owesSize: true,
+      });
     } else {
       existing.viewport = viewport;
     }
     const size = negotiatedSize(this.viewports());
     this.applySize(size);
+    // An overruled vote is told again even though the negotiation did not move:
+    // this client asked for a grid it is not getting, and nothing else would ever
+    // correct it. Without this, a window resized while a smaller client holds the
+    // minimum renders at its own width against the smaller PTY, permanently.
+    const entry = this.clients.get(client);
+    if (entry !== undefined && (size.columns !== viewport.columns || size.rows !== viewport.rows)) {
+      entry.owesSize = true;
+    }
     return size;
   }
 
@@ -428,7 +452,12 @@ class PtyLiveTerminal implements LiveTerminal {
     const entry = this.entryFor(client);
     const emulator = this.emulator;
     if (emulator === undefined) {
+      // Nothing is painted and nothing is owed yet: the flag survives to the
+      // first repaint after `start()`.
       return EMPTY;
+    }
+    if (entry.owesSize) {
+      return this.fullRepaintFor(client);
     }
     const bytes = emulator.repaintSince(entry.revision);
     entry.revision = emulator.revision;
@@ -442,6 +471,8 @@ class PtyLiveTerminal implements LiveTerminal {
       return EMPTY;
     }
     entry.revision = emulator.revision;
+    // The whole grid states its own dimensions, so this discharges the debt.
+    entry.owesSize = false;
     // Somebody is looking at the whole screen; they have seen whatever asked.
     this.attention = false;
     return emulator.fullRepaint();
@@ -451,7 +482,7 @@ class PtyLiveTerminal implements LiveTerminal {
     return this.emulator?.snapshotText(options) ?? "";
   }
 
-  private entryFor(client: string): { viewport: GridSize; revision: number } {
+  private entryFor(client: string): { viewport: GridSize; revision: number; owesSize: boolean } {
     const entry = this.clients.get(client);
     if (entry === undefined) {
       throw new Error(`no client "${client}" is attached to terminal ${this.id}`);
@@ -467,8 +498,22 @@ class PtyLiveTerminal implements LiveTerminal {
     return viewports;
   }
 
+  /**
+   * Sets the size everywhere it is held, and owes every attached client the news.
+   *
+   * The emulator is asked first because it is what `CSI 8 t` reports, and it is
+   * the one that clamps.
+   */
   private applySize(size: GridSize): void {
-    this.emulator?.resize(size);
+    const emulator = this.emulator;
+    const before = emulator?.size;
+    emulator?.resize(size);
+    const after = emulator?.size;
+    if (after !== undefined && (after.columns !== before?.columns || after.rows !== before?.rows)) {
+      // Everyone, not just the client that caused it: the minimum is a fact about
+      // the terminal, and the client that did not move is the one being letterboxed.
+      for (const entry of this.clients.values()) entry.owesSize = true;
+    }
     const pty = this.pty;
     if (pty === undefined) {
       return;
