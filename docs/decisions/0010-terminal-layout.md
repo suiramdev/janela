@@ -74,6 +74,36 @@ What this explicitly is **not**:
 - No cross-session drag of a terminal in v1. It is a plausible addition; it is not
   scope.
 
+### Amendment 2026-09-09 (#37)
+
+The chord table as shipped, now that every row of `COMMANDS` is wired:
+
+|Chord|Action|
+|---|---|
+|`⌘D` / `⌘⇧D`|Split right / split down|
+|`⌘⌥←→↑↓`|Move pane focus, in tab-then-tree order — it crosses into the next tab at the end|
+|`⌘[` / `⌘]`|Previous / next **tab**|
+|`⌘⇧[` / `⌘⇧]`|Previous / next **session**|
+|`⌘W`|Close the focused **pane**|
+|`⌘T`|A new tab, through the launch-profile picker|
+
+Two changes from the list above, and both are decisions rather than drift:
+
+- **The bracket pair moved up a level.** It switches sessions; tabs get the same
+  pair without `⇧`. The app is judged on how cheaply you switch *session*, so that
+  is what gets the chord the hand already knows.
+- **`⌘W` closes a pane, so the window has no Close item at all.** A terminal user
+  reaches for `⌘W` a hundred times a day, and a window holding a running agent is
+  not something to close by reflex. Quit is `⌘Q`.
+
+Still no `Ctrl` chord, still no interception, still no binding surface.
+
+Splits and pane closes are now **daemon-persisted**, through
+`createTerminal.placement` and `removeTerminal` (protocol v4): a split the user
+made is part of the session and survives the window closing. Pane *focus*, tab
+selection and divider fractions remain client-local, exactly as this ADR says —
+they are per-window facts, and there is no wire message for them.
+
 ## Consequences
 
 **Good.** The sidebar keeps its resolution: each terminal is individually visible

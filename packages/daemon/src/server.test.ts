@@ -255,7 +255,13 @@ describe("the handshake", () => {
 
     expect(client.controls()[0]).toEqual({
       type: "refused",
-      refusal: { kind: "incompatibleVersion", daemonMinimum: 3, daemonCurrent: 3 },
+      refusal: {
+        kind: "incompatibleVersion",
+        // The range, not a literal: which version is current is `frame.test.ts`'s
+        // to pin, and this test is about what a refusal *is*.
+        daemonMinimum: MINIMUM_SUPPORTED_VERSION,
+        daemonCurrent: PROTOCOL_VERSION,
+      },
     });
     await until(() => client.ended(), "the connection to close");
 

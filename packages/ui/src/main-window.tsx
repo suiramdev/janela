@@ -1,10 +1,7 @@
-import type { DaemonConnection, SessionStore } from "@janela/client";
+import type { DaemonConnection } from "@janela/client";
 import {
   emptyLayout,
   focusedTab,
-  layoutViolations,
-  paneTerminalIDs,
-  repairLayout,
   FRACTION_RANGE,
   type Axis,
   type GridSize,
@@ -38,7 +35,18 @@ import {
 } from "react";
 
 import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
+import { createCommandDispatch, selectSession } from "./command-dispatch.ts";
+import type { CommandID } from "./commands.ts";
 import { ConnectionBanner } from "./connection-banner.tsx";
+import {
+  resolveLocalLayout,
+  withFocusedTab,
+  withFocusedTerminal,
+  withSplitFraction,
+  type PanePath,
+} from "./layout-edits.ts";
+import { SheetHost } from "./sheets.tsx";
+import { sidebarRows, statusText, type SessionStatus } from "./sidebar-model.ts";
 
 export * from "./client-environment.tsx";
 
@@ -85,6 +93,41 @@ export function MainWindow(): ReactElement {
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
   const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
 
+  const { view, commands, settings } = environment;
+
+  const dispatch = useMemo(
+    () =>
+      createCommandDispatch({
+        projects: environment.projects,
+        sessions: environment.sessions,
+        connection: environment.connection,
+        view,
+        native: environment.native,
+      }),
+    [environment, view],
+  );
+
+  const run = useCallback(
+    (id: CommandID) => {
+      // Best-effort, like every other request a view makes: a command issued while
+      // the daemon is away fails, and the window keeps rendering the mirror.
+      void dispatch(id).catch(swallowRequestFailure);
+    },
+    [dispatch],
+  );
+
+  useEffect(() => commands.subscribe(run), [commands, run]);
+
+  useEffect(() => {
+    // Once, at startup. Settings that refuse to load must not stop the window
+    // painting, which is why the port answers with the defaults rather than
+    // throwing.
+    void settings.load().then((loaded) => {
+      view.setSettings(loaded);
+      return undefined;
+    }, swallowRequestFailure);
+  }, [settings, view]);
+
   // A selection naming a session the mirror no longer has renders as no selection.
   // The store repairs it on the next full snapshot; until then this is honest.
   const selected =
@@ -109,6 +152,7 @@ export function MainWindow(): ReactElement {
         )}
       </div>
       <ConnectionBanner />
+      <SheetHost dispatch={run} />
     </div>
   );
 }
@@ -123,106 +167,7 @@ const SIDEBAR_STYLE = {
   maxWidth: SIDEBAR_WIDTH.maximum,
 } as const;
 
-// MARK: - Sidebar model
-
-/** What a session row shows, in precedence order. */
-export type SessionStatus = "attention" | "running" | "failed" | "idle";
-
-/**
- * One row of the sidebar, flat.
- *
- * A flat array rather than a tree, and that is the point: the shape is fixed at two
- * levels by docs/decisions/0009-projects-sessions-terminals.md, and a recursive row
- * type would quietly permit the third level that ADR forbids.
- */
-export type SidebarRow =
-  | {
-      readonly kind: "session";
-      readonly session: Session;
-      readonly status: SessionStatus;
-      readonly indented: boolean;
-    }
-  | { readonly kind: "project"; readonly project: Project; readonly isExpanded: boolean };
-
-/**
- * Derived only from what the daemon reported.
- *
- * A terminal with no reported state counts as nothing: the daemon has not spoken
- * about it, and rendering it as running would be a lie this client invented
- * (AGENTS.md § Non-negotiables 6).
- */
-export function sessionStatus(
-  session: Session,
-  states: Readonly<Record<TerminalID, TerminalState>>,
-): SessionStatus {
-  let running = false;
-  let failed = false;
-  for (const terminal of session.terminals) {
-    const state = states[terminal.id];
-    if (state === undefined) continue;
-    if (state.kind === "needsAttention") return "attention";
-    if (state.kind === "running") running = true;
-    else if (state.kind === "failed") failed = true;
-    else if (state.kind === "exited" && state.code !== 0) failed = true;
-  }
-  if (running) return "running";
-  return failed ? "failed" : "idle";
-}
-
-/**
- * Standalone sessions first, then one row per project with its sessions inside.
- *
- * Grouping happens here rather than through `SessionStore.inProject`, which builds
- * a fresh array per call and would therefore be a new reference on every render.
- * Mirror order throughout: the daemon decided the order and this does not second-
- * guess it.
- */
-export function sidebarRows(
-  projects: readonly Project[],
-  sessions: readonly Session[],
-  states: Readonly<Record<TerminalID, TerminalState>>,
-  expansionOverrides: ReadonlyMap<ProjectID, boolean>,
-): readonly SidebarRow[] {
-  const rows: SidebarRow[] = [];
-  for (const session of sessions) {
-    if (session.projectID === undefined) {
-      rows.push({
-        kind: "session",
-        session,
-        status: sessionStatus(session, states),
-        indented: false,
-      });
-    }
-  }
-  for (const project of projects) {
-    const isExpanded = expansionOverrides.get(project.id) ?? project.isExpanded;
-    rows.push({ kind: "project", project, isExpanded });
-    if (!isExpanded) continue;
-    for (const session of sessions) {
-      if (session.projectID === project.id) {
-        rows.push({
-          kind: "session",
-          session,
-          status: sessionStatus(session, states),
-          indented: true,
-        });
-      }
-    }
-  }
-  return rows;
-}
-
-/** The state, as words. It travels beside the colour, never instead of it. */
-export function statusText(status: SessionStatus): string {
-  return STATUS_TEXT[status];
-}
-
-const STATUS_TEXT: Record<SessionStatus, string> = {
-  attention: "needs attention",
-  running: "running",
-  failed: "failed",
-  idle: "idle",
-};
+// MARK: - Sidebar
 
 const STATUS_DOT: Record<SessionStatus, string> = {
   attention: "bg-attention",
@@ -231,22 +176,7 @@ const STATUS_DOT: Record<SessionStatus, string> = {
   idle: "bg-transparent",
 };
 
-// MARK: - Sidebar
-
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
-
-/**
- * The one field of the mirror a client owns.
- *
- * `SessionStore.selection` is documented as purely local — never sent, never
- * received — and its setter notifies, so this assignment is the whole of "select a
- * session". It lives in a function rather than inline in the view because it is
- * the only place any view writes to a store, and that deserves to be one line
- * someone can find.
- */
-function selectSession(store: SessionStore, id: SessionID): void {
-  store.selection = id;
-}
 
 /**
  * Two levels, and never a third: standalone sessions, then collapsible projects
@@ -371,103 +301,6 @@ function SessionRow(props: {
 
 // MARK: - Layout model
 
-/** A route from a tab's root to one of its splits. Empty addresses the root. */
-export type PanePath = readonly ("first" | "second")[];
-
-/**
- * A session's local layout, and the mirror layout it was derived from.
- *
- * `base` is held by reference on purpose: it is how "the daemon changed the layout"
- * is told apart from "the user dragged a divider", with no deep comparison and no
- * revision counter on the wire.
- */
-export interface LocalLayoutEntry {
-  readonly base: SessionLayout;
-  readonly local: SessionLayout;
-}
-
-/**
- * The layout to render.
- *
- * Adopts the mirror's layout — repaired first when it violates the algebra's
- * invariants — whenever `base` no longer matches it by reference; otherwise keeps
- * the local edits. Validation and repair are `@janela/core`'s (`layoutViolations`,
- * `repairLayout`): a view that invented its own would be a second opinion about an
- * invariant.
- */
-export function resolveLocalLayout(
-  entry: LocalLayoutEntry | undefined,
-  mirror: SessionLayout,
-  existingTerminalIDs: readonly TerminalID[],
-): LocalLayoutEntry {
-  if (entry !== undefined && entry.base === mirror) return entry;
-  const violations = layoutViolations(mirror, existingTerminalIDs);
-  const adopted = violations.length === 0 ? mirror : repairLayout(mirror, existingTerminalIDs);
-  return { base: mirror, local: adopted };
-}
-
-function clampFraction(fraction: number): number {
-  if (!Number.isFinite(fraction)) return 0.5;
-  return Math.min(FRACTION_RANGE.maximum, Math.max(FRACTION_RANGE.minimum, fraction));
-}
-
-/**
- * Sets the fraction of the split at `path`, rebuilding only that path.
- *
- * `resizeSplit` in `@janela/core` addresses a split by a terminal it contains,
- * which cannot name the divider of an outer split whose children are both splits.
- * A divider knows its own path, so it says so.
- */
-export function withFraction(root: Pane, path: PanePath, fraction: number): Pane {
-  const step = path[0];
-  if (step === undefined) {
-    return root.kind === "split" ? { ...root, fraction: clampFraction(fraction) } : root;
-  }
-  if (root.kind !== "split") return root;
-  const child = root[step];
-  const replaced = withFraction(child, path.slice(1), fraction);
-  if (replaced === child) return root;
-  return step === "first" ? { ...root, first: replaced } : { ...root, second: replaced };
-}
-
-/** The same, for the layout's focused tab. */
-export function withSplitFraction(
-  layout: SessionLayout,
-  path: PanePath,
-  fraction: number,
-): SessionLayout {
-  const index = layout.focusedTabIndex;
-  const tab = layout.tabs[index];
-  if (tab === undefined) return layout;
-  const root = withFraction(tab.root, path, fraction);
-  if (root === tab.root) return layout;
-  return {
-    ...layout,
-    tabs: layout.tabs.map((existing, at) => (at === index ? { ...existing, root } : existing)),
-  };
-}
-
-/** Focuses the terminal and the tab holding it. Unchanged when it is not there. */
-export function withFocusedTerminal(layout: SessionLayout, id: TerminalID): SessionLayout {
-  const index = layout.tabs.findIndex((tab) => paneTerminalIDs(tab.root).includes(id));
-  const tab = index === -1 ? undefined : layout.tabs[index];
-  if (tab === undefined) return layout;
-  if (layout.focusedTabIndex === index && tab.focusedTerminalID === id) return layout;
-  return {
-    tabs: layout.tabs.map((existing, at) =>
-      at === index ? { ...existing, focusedTerminalID: id } : existing,
-    ),
-    focusedTabIndex: index,
-  };
-}
-
-/** Focuses a tab by index, clamped rather than trusted. */
-export function withFocusedTab(layout: SessionLayout, index: number): SessionLayout {
-  if (layout.tabs.length === 0) return layout;
-  const clamped = Math.min(layout.tabs.length - 1, Math.max(0, Math.trunc(index)));
-  return clamped === layout.focusedTabIndex ? layout : { ...layout, focusedTabIndex: clamped };
-}
-
 /** A tab's own title, else the focused terminal's, else something honest. */
 export function tabLabel(tab: LayoutTab, terminals: readonly TerminalDescriptor[]): string {
   if (tab.title !== undefined) return tab.title;
@@ -503,8 +336,6 @@ function isFailureState(state: TerminalState | undefined): boolean {
 
 // MARK: - Session detail
 
-const NO_LAYOUTS: ReadonlyMap<string, LocalLayoutEntry> = new Map<string, LocalLayoutEntry>();
-
 /**
  * A request from a view is best-effort.
  *
@@ -524,61 +355,45 @@ function swallowRequestFailure(): undefined {
  * component by session: switching away and back keeps the arrangement. It does not
  * survive the window closing — persistence needs a protocol message (#35).
  */
-export function SessionDetail(props: { readonly sessionID: string }): ReactElement {
+export function SessionDetail(props: { readonly sessionID: SessionID }): ReactElement {
   const sessionID = props.sessionID;
   const environment = useClientEnvironment();
-  const { connection, onFocusedTerminalChange } = environment;
+  const { connection, onFocusedTerminalChange, view } = environment;
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
   const states = useStoreValue(environment.sessions, () => environment.sessions.terminalStates);
   const isConnected = useStoreValue(connection, () => connection.status.kind === "connected");
+  const layouts = useStoreValue(view, () => view.layouts);
 
-  const sessionStore = environment.sessions;
   const session = sessions.find((candidate) => candidate.id === sessionID);
   const mirrorLayout = session?.layout ?? emptyLayout;
   const terminals = session?.terminals ?? NO_TERMINALS;
   const terminalIDs = terminals.map((terminal) => terminal.id);
 
-  // Local edits, keyed by session. Written only from an event; the resolution
-  // below is pure, so there is nothing for an effect to synchronise.
-  const [edits, setEdits] = useState(NO_LAYOUTS);
-  const layout = resolveLocalLayout(edits.get(sessionID), mirrorLayout, terminalIDs).local;
-
-  const applyLayout = useCallback(
-    (change: (layout: SessionLayout) => SessionLayout) => {
-      // The mirror is read here, at the moment of the edit, rather than captured
-      // from a render: an edit applies to the layout that is on screen now, and
-      // the mirror may have replaced it since this handler was created.
-      const live = sessionStore.sessions.find((candidate) => candidate.id === sessionID);
-      const mirror = live?.layout ?? emptyLayout;
-      const ids = (live?.terminals ?? NO_TERMINALS).map((terminal) => terminal.id);
-      setEdits((current) => {
-        const resolved = resolveLocalLayout(current.get(sessionID), mirror, ids);
-        const local = change(resolved.local);
-        if (local === resolved.local) return current;
-        return new Map(current).set(sessionID, { base: resolved.base, local });
-      });
-    },
-    [sessionStore, sessionID],
-  );
+  // The edits live in `ViewState` rather than here: a menu chord and a
+  // notification both move pane focus, and neither of them is in this tree.
+  const layout = resolveLocalLayout(layouts.get(sessionID), mirrorLayout, terminalIDs).local;
 
   const focusTerminal = useCallback(
     (id: TerminalID) => {
-      applyLayout((current) => withFocusedTerminal(current, id));
+      view.applyLayout(sessionID, (current) => withFocusedTerminal(current, id));
     },
-    [applyLayout],
+    [view, sessionID],
   );
   const focusTab = useCallback(
     (index: number) => {
-      applyLayout((current) => withFocusedTab(current, index));
+      view.applyLayout(sessionID, (current) => withFocusedTab(current, index));
     },
-    [applyLayout],
+    [view, sessionID],
   );
   const setFraction = useCallback(
     (path: PanePath, fraction: number) => {
-      applyLayout((current) => withSplitFraction(current, path, fraction));
+      view.applyLayout(sessionID, (current) => withSplitFraction(current, path, fraction));
     },
-    [applyLayout],
+    [view, sessionID],
   );
+  const newTerminal = useCallback(() => {
+    view.openSheet({ kind: "profilePicker", sessionID });
+  }, [view, sessionID]);
 
   const tab = focusedTab(layout);
   const focusedTerminalID = tab?.focusedTerminalID;
@@ -606,7 +421,12 @@ export function SessionDetail(props: { readonly sessionID: string }): ReactEleme
 
   return (
     <div className="flex h-full flex-col">
-      <TabStrip layout={layout} terminals={terminals} onFocusTab={focusTab} />
+      <TabStrip
+        layout={layout}
+        terminals={terminals}
+        onFocusTab={focusTab}
+        onNewTerminal={newTerminal}
+      />
       <div className="min-h-0 flex-1">
         {tab === undefined ? (
           <p className="flex h-full items-center justify-center text-sm text-neutral-500">
@@ -636,15 +456,16 @@ const ROOT_PATH: PanePath = [];
 /**
  * Always rendered when the session has a tab, even a single one.
  *
- * There is no "+" here and no keyboard chord anywhere in this package: creation and
- * bindings are #37's, and this is the row they will land in.
+ * The `+` is the only creation affordance in the window that is not also a menu
+ * item — and it is the same action, opening the same picker ⌘T does.
  */
 function TabStrip(props: {
   readonly layout: SessionLayout;
   readonly terminals: readonly TerminalDescriptor[];
   readonly onFocusTab: (index: number) => void;
+  readonly onNewTerminal: () => void;
 }): ReactElement | null {
-  const { layout, terminals, onFocusTab } = props;
+  const { layout, terminals, onFocusTab, onNewTerminal } = props;
   if (layout.tabs.length === 0) return null;
   return (
     <div
@@ -661,6 +482,15 @@ function TabStrip(props: {
           onFocusTab={onFocusTab}
         />
       ))}
+      <button
+        type="button"
+        aria-label="New Terminal"
+        title="New Terminal ⌘T"
+        onClick={onNewTerminal}
+        className="rounded-small px-2 py-1 text-xs hover:bg-black/5"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -867,9 +697,24 @@ function TerminalPane(props: {
   const { terminalID, descriptor, state, isFocused, connection, isConnected, onFocusTerminal } =
     props;
 
+  const environment = useClientEnvironment();
+  const view = environment.view;
+  const store = environment.sessions;
+
   const handleRef = useRef<TerminalSurfaceHandle | null>(null);
   const isAttachedRef = useRef(false);
   const [attachViewport, setAttachViewport] = useState<GridSize | undefined>(undefined);
+
+  // A ref callback rather than an effect: the handle exists at the moment React
+  // hands it over, and the cleanup React runs on unmount is the unregistration.
+  const registerSurface = useCallback(
+    (handle: TerminalSurfaceHandle | null) => {
+      handleRef.current = handle;
+      if (handle === null) return undefined;
+      return view.registerSurface(terminalID, handle);
+    },
+    [view, terminalID],
+  );
 
   const feed = useCallback((bytes: Uint8Array) => {
     handleRef.current?.feed(bytes);
@@ -891,12 +736,42 @@ function TerminalPane(props: {
   useEffect(() => {
     if (!isConnected || attachViewport === undefined) return;
     isAttachedRef.current = true;
-    const release = attachPane(connection, terminalID, feed, attachViewport);
+
+    // The one place a client asks for a process: a session just created in the UI
+    // carries `startsAutomatically`, which means "tell the opening client to ask".
+    // A restored session carries `false`, so relaunching the app spawns nothing.
+    //
+    // Read from the store rather than from props: what matters is the state at the
+    // moment of the attach, and a terminal that has since exited must not be
+    // started again by a re-render.
+    const owner = store.sessions.find((session) =>
+      session.terminals.some((terminal) => terminal.id === terminalID),
+    );
+    const current = owner?.terminals.find((terminal) => terminal.id === terminalID);
+
+    // **Start first.** `attach` names a *live* terminal — the daemon deliberately
+    // never starts one for you (non-negotiable #5) and refuses an attach to a
+    // terminal that has not spawned, which would leave this pane rendering nothing
+    // and swallowing every keystroke. Nothing is missed by attaching a beat later:
+    // the daemon answers an attach with a full repaint.
+    const started = shouldStartOnAttach(current, store.terminalStates[terminalID])
+      ? connection.request({ type: "startTerminal", terminalID }).catch(swallowRequestFailure)
+      : Promise.resolve(undefined);
+
+    let release: (() => void) | undefined;
+    let unmounted = false;
+    void started.then(() => {
+      if (unmounted) return undefined;
+      release = attachPane(connection, terminalID, feed, attachViewport);
+      return undefined;
+    });
+
     return () => {
+      unmounted = true;
       isAttachedRef.current = false;
-      release();
+      release?.();
     };
-  }, [isConnected, connection, terminalID, feed, attachViewport]);
+  }, [isConnected, connection, terminalID, feed, attachViewport, store]);
 
   const handleInput = useCallback(
     (bytes: Uint8Array) => {
@@ -921,7 +796,7 @@ function TerminalPane(props: {
       className="relative h-full w-full"
     >
       <TerminalSurface
-        ref={handleRef}
+        ref={registerSurface}
         label={`Terminal: ${title} — ${stateText}`}
         focused={isFocused}
         onInput={handleInput}
@@ -942,6 +817,23 @@ function TerminalPane(props: {
 
 const FOCUSED_PANE_STYLE = { outline: "2px solid AccentColor", outlineOffset: "-2px" } as const;
 const UNFOCUSED_PANE_STYLE = { outline: "2px solid transparent", outlineOffset: "-2px" } as const;
+
+/**
+ * Whether attaching to this pane should also ask for its process.
+ *
+ * `startsAutomatically` is the daemon saying "the client that opens this should
+ * ask" — set on the terminal a new session is created with, and `false` on every
+ * terminal restored from the database, so relaunching the app spawns nothing.
+ * Anything already running, exited or failed is left alone: a pane that finished
+ * is not restarted by being looked at.
+ */
+export function shouldStartOnAttach(
+  descriptor: TerminalDescriptor | undefined,
+  state: TerminalState | undefined,
+): boolean {
+  if (descriptor?.startsAutomatically !== true) return false;
+  return state === undefined || state.kind === "idle";
+}
 
 /**
  * Subscribes, then attaches — in that order.

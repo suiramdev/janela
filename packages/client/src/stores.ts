@@ -1,4 +1,6 @@
 import type {
+  LaunchProfile,
+  LaunchProfileAvailability,
   Project,
   ProjectID,
   Session,
@@ -42,6 +44,18 @@ export interface SessionStore {
 
   inProject(id: ProjectID): readonly Session[];
   readonly standaloneSessions: readonly Session[];
+
+  /**
+   * Every launch profile the daemon knows, in its order.
+   *
+   * Here rather than in a store of their own because a profile is only ever read
+   * alongside a session — the ⌘T picker, the settings window, the profile a split
+   * inherits — and a second store would be a second notification for one apply.
+   */
+  readonly launchProfiles: readonly LaunchProfile[];
+
+  /** Whether each profile's executable was found on this machine, as reported. */
+  readonly launchProfileAvailability: LaunchProfileAvailability;
 
   /**
    * Whether a session has any live terminal.
@@ -172,6 +186,8 @@ export function createStores(): {
   let projects: readonly Project[] = [];
   let sessions: readonly Session[] = [];
   let terminalStates: Readonly<Record<TerminalID, TerminalState>> = {};
+  let launchProfiles: readonly LaunchProfile[] = [];
+  let launchProfileAvailability: LaunchProfileAvailability = {};
   let selection: SessionID | undefined;
   let stale = true;
   /** Recomputed only when `sessions` changes; the sidebar reads it every render. */
@@ -218,6 +234,12 @@ export function createStores(): {
       get terminalStates(): Readonly<Record<TerminalID, TerminalState>> {
         return terminalStates;
       },
+      get launchProfiles(): readonly LaunchProfile[] {
+        return launchProfiles;
+      },
+      get launchProfileAvailability(): LaunchProfileAvailability {
+        return launchProfileAvailability;
+      },
       inProject: (id) => sessions.filter((session) => session.projectID === id),
       get standaloneSessions(): readonly Session[] {
         return standalone;
@@ -241,6 +263,10 @@ export function createStores(): {
           // that no longer exists, and keeping its last state would render a dead
           // terminal as running.
           terminalStates = { ...update.terminalStates };
+          // Same reason: a profile absent from a full snapshot was deleted, and a
+          // merge would leave it in the picker forever.
+          launchProfiles = [...update.launchProfiles];
+          launchProfileAvailability = { ...update.launchProfileAvailability };
 
           if (selection !== undefined && !sessions.some((session) => session.id === selection)) {
             selection = neighbourOf(previous, selection, sessions);
@@ -251,6 +277,15 @@ export function createStores(): {
           sessions = mergeByID(sessions, update.sessions);
           if (Object.keys(update.terminalStates).length > 0) {
             terminalStates = { ...terminalStates, ...update.terminalStates };
+          }
+          if (update.launchProfiles.length > 0) {
+            launchProfiles = mergeByID(launchProfiles, update.launchProfiles);
+          }
+          if (Object.keys(update.launchProfileAvailability).length > 0) {
+            launchProfileAvailability = {
+              ...launchProfileAvailability,
+              ...update.launchProfileAvailability,
+            };
           }
           // Selection survives: the selected session may simply not have changed.
           // Only a full snapshot proves it is gone.

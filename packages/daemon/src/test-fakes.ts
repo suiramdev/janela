@@ -487,11 +487,13 @@ export function fakeSessions(
     },
     createSession: (_request: SessionCreationRequest) => Promise.reject(new Error(NOT_CALLED)),
     createTerminal: () => Promise.reject(new Error(NOT_CALLED)),
+    removeTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removalPlan: () => Promise.reject(new Error(NOT_CALLED)),
     removeSession: () => Promise.reject(new Error(NOT_CALLED)),
     rename: () => Promise.reject(new Error(NOT_CALLED)),
     startTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     stopTerminal: () => Promise.reject(new Error(NOT_CALLED)),
+    restartTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     ...overrides,
   };
 }

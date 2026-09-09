@@ -18,6 +18,14 @@ import {
   now,
   singleTerminalLayout,
 } from "@janela/core";
+import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
+
+import type { CommandSource, NativeShell } from "./client-environment.tsx";
+import {
+  DEFAULT_GLOBAL_SETTINGS,
+  type GlobalSettings,
+  type SettingsStoring,
+} from "./global-settings.ts";
 
 /**
  * Fixtures for this package's own tests.
@@ -112,6 +120,20 @@ export function fakeProject(overrides: Partial<Project> = {}): Project {
   };
 }
 
+/** A project that is a plain folder: no git, so no worktree sessions. */
+export function fakeFolderProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: newProjectID(),
+    name: "notes",
+    directory: absolutePath("/tmp/janela-fake-folder"),
+    settings: fakeSettings(),
+    accent: "none",
+    isExpanded: true,
+    addedAt: now(),
+    ...overrides,
+  };
+}
+
 /** Terminal states keyed by id, the shape `StateUpdate` carries. */
 export function states(
   ...entries: readonly [TerminalID, TerminalState][]
@@ -158,4 +180,83 @@ export function recordingService(): RecordingService {
       calls.push("stopAndUnregister");
     },
   };
+}
+
+/**
+ * A shell that answers "no" to everything a person would have answered.
+ *
+ * Cancelling a dialog and refusing a confirmation are the interesting defaults: a
+ * test that wanted the other answer says so, and one that forgot cannot
+ * accidentally assert on a path a user never agreed to.
+ */
+export function inertNativeShell(): RecordingNativeShell {
+  const calls: string[] = [];
+  return {
+    calls,
+    pickDirectory(options) {
+      calls.push(`pickDirectory:${options.title}`);
+      return Promise.resolve(undefined);
+    },
+    confirm(options) {
+      calls.push(`confirm:${options.title}`);
+      return Promise.resolve(false);
+    },
+    revealInFinder(path) {
+      calls.push(`revealInFinder:${path}`);
+      return Promise.resolve();
+    },
+    openInTerminal(path) {
+      calls.push(`openInTerminal:${path}`);
+      return Promise.resolve();
+    },
+  };
+}
+
+export interface RecordingNativeShell extends NativeShell {
+  readonly calls: string[];
+}
+
+/** A command source nothing ever emits from. */
+export function neverCommands(): CommandSource {
+  return { subscribe: () => () => {} };
+}
+
+/** Settings that survive as long as the fake does. */
+export function memorySettingsStore(initial = DEFAULT_GLOBAL_SETTINGS): RecordingSettingsStore {
+  let stored = initial;
+  const saved: GlobalSettings[] = [];
+  return {
+    saved,
+    load: () => Promise.resolve(stored),
+    save(settings) {
+      stored = settings;
+      saved.push(settings);
+      return Promise.resolve();
+    },
+  };
+}
+
+export interface RecordingSettingsStore extends SettingsStoring {
+  readonly saved: GlobalSettings[];
+}
+
+/** A mounted terminal surface, recording only what the view state asks of it. */
+export function fakeSurfaceHandle(): RecordingSurfaceHandle {
+  const calls: string[] = [];
+  return {
+    calls,
+    feed: () => {},
+    clearViewport() {
+      calls.push("clearViewport");
+    },
+    selectedText: () => undefined,
+    focus() {
+      calls.push("focus");
+    },
+    viewport: () => undefined,
+  };
+}
+
+export interface RecordingSurfaceHandle extends TerminalSurfaceHandle {
+  readonly calls: string[];
 }
