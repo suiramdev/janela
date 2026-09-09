@@ -351,3 +351,61 @@ bytes, and the emulator sustains ~20–30 MB/s of it — the emulator, not the P
 the flood's bottleneck for that payload, and back-pressure is what absorbs it. Its
 *wire* row is what #32 is about, and that is gated. `line flood` carries the
 throughput budget on the payload the budget was measured with.
+
+**After — the damage encoder (#32).** Dirty rows from the library, bounded by a
+shadow-grid diff; scroll-aware; a full repaint only for a resize, a buffer switch,
+a RIS, a client from the future and a client further behind than the scroll ring.
+Same machine, second of two runs.
+
+| Scenario | Grid | bytes/frame/client | MB/s @120 | encode µs/frame | feed µs/frame | CPU % of 8 ms | shared buffer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| yes flood | 80×24 | 296 | 0.036 | 75.2 | 99 066 | 1 239 | yes |
+| yes flood | 120×40 | 488 | 0.059 | 146.1 | 116 179 | 1 454 | yes |
+| line flood | 80×24 | 2 067 | 0.248 | 83.0 | 6 025 | 76 | yes |
+| line flood | 120×40 | 5 051 | 0.606 | 234.0 | 6 419 | 83 | yes |
+| build log | 80×24 | 393 | 0.047 | 26.2 | 25.3 | 0.6 | yes |
+| build log | 120×40 | 393 | 0.047 | 31.2 | 35.9 | 0.8 | yes |
+| TUI cursor move | 80×24 | 106 | 0.013 | 10.1 | 13.5 | 0.3 | yes |
+| TUI cursor move | 120×40 | 45 | 0.005 | 8.0 | 17.4 | 0.3 | yes |
+| quiet | 80×24 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| quiet | 120×40 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| SGR-heavy redraw | 80×24 | 0 | 0.000 | 0.5 | 91.3 | 1.1 | yes |
+| SGR-heavy redraw | 120×40 | 0 | 0.000 | 0.6 | 121.5 | 1.5 | yes |
+
+Feed rates: `line flood` 138.3 MB/s at 80×24 and 129.8 at 120×40; `yes flood` 8.4
+and 7.2 MB/s.
+
+**What moved, and what got worse.**
+
+- The interactive cases are where the win is, and it is large: a TUI cursor move
+  costs 45 bytes instead of 3 049 at 120×40 (68×), a build log 393 instead of
+  2 516, and a full-screen SGR redraw of *the same content* costs **nothing** —
+  the shadow diff sees no change, where the placeholder re-sent 14 815 bytes a
+  frame. Encode time fell with it: 1 053 µs → 0.6 µs on that row.
+- The two floods cost *more* bytes than the placeholder: 87 → 296 at 80×24, and
+  1 859 → 2 067 for `line flood`. That is real and it is structural — when every
+  row changes, `CUP` + content + `EL` per row is more verbose than the
+  serialiser's `\r\n`-joined dump. It is also immaterial: 296 bytes a frame is
+  0.036 MB/s against a 2 MB/s socket budget, 1.8 % of the 16 666 bytes a frame the
+  budget allows.
+- **Falling back to a full repaint for those frames would be worse, measured.**
+  The placeholder's encode column is 2–8× the encoder's (155 → 75 µs, 1 053 →
+  0.6 µs) because `SerializeAddon.serialize` walks and allocates the whole grid,
+  and every full repaint begins with `RIS`, which wipes the client's scrollback.
+  Trading 200 bytes a frame for a client whose history is erased 120 times a
+  second is not a trade.
+- **The one real cost was in `feed`, and it is fixed.** The first version of the
+  damage tracker diffed every row of a scrolling screen — a comparison that can
+  only ever answer "changed", because the client's own scroll moved something else
+  into that position. Adopting those rows without comparing them (`adoptRow`)
+  restored the rate: in an interleaved A/B on one machine window the encoder now
+  measures 200.1 / 205.9 MB/s where the placeholder measures 85.0 / 141.0, and
+  118.8 / 128.8 against 122.8 / 130.0 in a busier window.
+
+**Reading the feed columns.** They move by a factor of three with machine load,
+for identical code. The interleaved A/B measured the *placeholder* at 121.9 then
+166.8 MB/s at 80×24, and 71.6 then 194.6 at 120×40 — failing the ≥ 100 MB/s gate
+on its own code. The gate stays, because it caught the `adoptRow` regression and
+then pointed at it; but a failure means "re-run on a quiet machine, then A/B
+against the merge base", not "regression". The wire and encode columns are the
+stable ones, and they are the ones #32 owns.
