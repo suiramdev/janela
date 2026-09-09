@@ -23,6 +23,10 @@ Then, as needed:
 - **[`conventions.md`](conventions.md)** — how the code is written.
 - **[`testing.md`](testing.md)** — what we test and what we refuse to fake.
 - **[`performance.md`](performance.md)** — budgets and how to measure them.
+- **[`survival-proof.md`](survival-proof.md)** — the procedure that exercises the
+  central bet (quit the app, the terminals live), its per-step verdict, and the
+  defects that run found. Re-run it when the daemon's lifecycle, the handshake or
+  the frame loop changes.
 - **[`decisions/`](decisions/)** — ADRs. Read the relevant one before changing a
   decision.
 - **[`research/`](research/)** — primary-source research behind the ADRs.
@@ -39,6 +43,7 @@ Then, as needed:
 | Change the wire protocol, or what a client may do | `decisions/0016-daemon-protocol.md` + a version bump |
 | Change a code style rule | `conventions.md` (and `.swift-format` / `.swiftlint.yml`) |
 | Record a performance budget | `performance.md` |
+| Prove the daemon really owns the terminals, or record that it does not | `survival-proof.md` |
 | Explain a build or workflow step | `development.md` + a `make` target |
 
 ## If you have read an older version of these documents
