@@ -12,7 +12,7 @@ import {
   type PseudoTerminalConfiguration,
   type TerminalBytes,
 } from "@janela/pty";
-import type { Logger } from "@janela/support";
+import { begin, type Logger, type Signpost } from "@janela/support";
 
 import { createEmulator } from "./headless-emulator.ts";
 import {
@@ -246,7 +246,13 @@ class PtyLiveTerminal implements LiveTerminal {
    */
   private readonly clients = new Map<
     string,
-    { viewport: GridSize; revision: number; owesSize: boolean }
+    {
+      viewport: GridSize;
+      revision: number;
+      owesSize: boolean;
+      /** Open until this client's first full repaint is encoded. See `attach`. */
+      attachMark?: Signpost;
+    }
   >();
 
   /** Built once: the emulator is replaced on every start, the sink is not. */
@@ -442,6 +448,10 @@ class PtyLiveTerminal implements LiveTerminal {
         viewport,
         revision: this.emulator?.revision ?? 0,
         owesSize: true,
+        // The daemon's half of the attach budget in docs/performance.md: from the
+        // request to the bytes that carry the screen. The client's half — those
+        // bytes to a painted frame — is measured in the client.
+        attachMark: begin("attach", this.id),
       });
     } else {
       existing.viewport = viewport;
@@ -460,6 +470,9 @@ class PtyLiveTerminal implements LiveTerminal {
   }
 
   detach(client: string): GridSize | undefined {
+    // A client that left before its first full repaint still closes the interval,
+    // or the record would never be written at all.
+    this.clients.get(client)?.attachMark?.end();
     this.clients.delete(client);
     if (this.clients.size === 0) {
       // The PTY keeps the size it had. Resizing a running TUI because the last
@@ -482,8 +495,16 @@ class PtyLiveTerminal implements LiveTerminal {
     if (entry.owesSize) {
       return this.fullRepaintFor(client);
     }
+    // Once per frame per attached client, so the fields are built only when a
+    // sink is installed — `begin` allocates nothing otherwise.
+    const mark = begin("repaint", this.id);
     const bytes = emulator.repaintSince(entry.revision);
     entry.revision = emulator.revision;
+    if (mark.observed) {
+      mark.end({ client, bytes: bytes.length, full: false });
+    } else {
+      mark.end();
+    }
     return bytes;
   }
 
@@ -493,19 +514,40 @@ class PtyLiveTerminal implements LiveTerminal {
     if (emulator === undefined) {
       return EMPTY;
     }
+    const mark = begin("repaint", this.id);
     entry.revision = emulator.revision;
     // The whole grid states its own dimensions, so this discharges the debt.
     entry.owesSize = false;
     // Somebody is looking at the whole screen; they have seen whatever asked.
     this.attention = false;
-    return emulator.fullRepaint();
+    const bytes = emulator.fullRepaint();
+    if (mark.observed) {
+      mark.end({ client, bytes: bytes.length, full: true });
+    } else {
+      mark.end();
+    }
+    const attachMark = entry.attachMark;
+    if (attachMark !== undefined) {
+      if (attachMark.observed) {
+        attachMark.end({ client, bytes: bytes.length });
+      } else {
+        attachMark.end();
+      }
+      delete entry.attachMark;
+    }
+    return bytes;
   }
 
   snapshotText(options: { readonly includeScrollback: boolean }): string {
     return this.emulator?.snapshotText(options) ?? "";
   }
 
-  private entryFor(client: string): { viewport: GridSize; revision: number; owesSize: boolean } {
+  private entryFor(client: string): {
+    viewport: GridSize;
+    revision: number;
+    owesSize: boolean;
+    attachMark?: Signpost;
+  } {
     const entry = this.clients.get(client);
     if (entry === undefined) {
       throw new Error(`no client "${client}" is attached to terminal ${this.id}`);
