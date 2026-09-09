@@ -61,8 +61,8 @@ its own "Janela can run in the background" notification. `TeamIdentifier=not set
 throughout. **A local ad-hoc build is enough to exercise the whole daemon
 lifecycle** — no signing identity required.
 
-Two defects were found that no unit test could have found, and both are filed
-rather than fixed: **D1** and **D2**. Two more — **D9** and **D10** — were found
+Two defects were found that no unit test could have found: **D2** is filed rather
+than fixed; **D1** was fixed by #43. Two more — **D9** and **D10** — were found
 in the app shell, and both **are** fixed here, because with either one in place
 the packaged app cannot reach its daemon at all and no verdict above could have
 been observed.
@@ -453,16 +453,18 @@ and retrying with a 250 ms backoff. That retry aims *straight at the window*. It
 the first-launch path and the after-a-crash path — steps 3 and 7 of this very
 document.
 
-**Fix sketch, and why it is not done here.** Two changes in two packages, and the
-second is a design call: register the connection handler before `listen` (which
-means constructing the listener before `bindDaemonSocket` hands back a listening
-server, so the shape of that seam changes), and give the client a handshake
-deadline so a silent peer becomes a retry instead of a hang. `apps/daemon` +
-`packages/daemon` + `packages/client`.
+**The fix.** Two changes in two packages, and the second was a design call:
+register the connection handler before `listen` (which means constructing the
+listener before `bindDaemonSocket` binds, so the shape of that seam changed), and
+give the client a handshake deadline so a silent peer becomes a retry instead of a
+hang. `apps/daemon` + `packages/daemon` + `packages/client`.
 
-**Workaround in the meantime:** readiness means "the daemon answered a hello", not
-"the socket accepted me". That is what `startDaemon` in the automated test does,
-and it is why it retries; `scripts/survival-probe.ts` says so when it gets nothing.
+**Fixed by #43.** The listener is constructed before the bind, `bindDaemonSocket`
+refuses a server with no `connection` handler (and `socketListener` refuses one
+that does not pause what it accepts, or the queued socket's first bytes are read
+off and dropped), and `@janela/client` gives the daemon `HANDSHAKE_DEADLINE_MS`
+(5 s) to answer hello — a miss is a retry under the usual backoff, not a refusal.
+`survival.test.ts`'s readiness is a bare `connect` again.
 
 ### D2 — nothing on the wire carries the negotiated size, so a larger client cannot letterbox
 
