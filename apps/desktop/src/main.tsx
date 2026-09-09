@@ -6,11 +6,21 @@
  */
 
 import { setLogSink, type LogRecord } from "@janela/support";
+import {
+  ClientEnvironmentProvider,
+  MainWindow,
+  createViewState,
+  type ClientEnvironment,
+} from "@janela/ui";
+import { invoke } from "@tauri-apps/api/core";
 import { debug, error, info, trace, warn } from "@tauri-apps/plugin-log";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import { liveEnvironment } from "./environment.ts";
+import { installNativeMenu, tauriCommandSource } from "./menu.ts";
+import { tauriNativeShell } from "./native.ts";
+import { localStorageSettings } from "./settings-storage.ts";
 
 import "./styles.css";
 
@@ -54,12 +64,53 @@ void trace("log sink installed");
 const environment = liveEnvironment();
 
 /**
- * The window.
+ * What this window is looking at, and the ports the views reach the desktop
+ * through.
  *
- * `MainWindow` from `@janela/ui` is deliberately **not** mounted yet: it throws
- * `not implemented`, and #29 is rewriting it. When it lands, this returns
- * `<MainWindow environment={environment} />` and nothing else here changes.
+ * `view` is constructed here rather than inside `liveEnvironment()` so the
+ * composition root stays about the daemon connection — and so it stays
+ * constructible by a headless test that has no React tree.
  */
+const view = createViewState(environment.sessions);
+
+/**
+ * Pane focus, joined to attention delivery (#36).
+ *
+ * `focusTerminal` is `ViewState`'s single focus entry point (#37), so a
+ * notification click lands the same way a menu chord or the jump list does.
+ * Installed for the life of the process; the disposer exists for tests that build
+ * a second graph, and there is only ever one window here.
+ */
+environment.focus.install((terminalID) => {
+  view.focusTerminal(terminalID);
+});
+
+const clientEnvironment: ClientEnvironment = {
+  projects: environment.projects,
+  sessions: environment.sessions,
+  connection: environment.connection,
+  view,
+  // The other direction: which pane has focus is the one fact the attention
+  // policy cannot compute for itself, and only the view knows it.
+  onFocusedTerminalChange: environment.focus.report,
+  commands: tauriCommandSource(),
+  native: tauriNativeShell(),
+  settings: localStorageSettings(),
+  service: {
+    // Both are the *user's* explicit choice, made after the settings surface has
+    // stated what stopping the daemon ends (non-negotiable #7).
+    stop: () => void environment.stopBackgroundService(),
+    stopAndUnregister: () =>
+      void invoke<void>("unregister_launch_agent").then(
+        () => environment.stopBackgroundService(),
+        () => environment.stopBackgroundService(),
+      ),
+  },
+  restartDaemon: () =>
+    void environment.stopBackgroundService().then(() => environment.connection.connect()),
+};
+
+/** The window. */
 function App(): ReactElement {
   useEffect(() => {
     // After first paint, and not awaited: a launch that blocks on a socket has
@@ -68,9 +119,16 @@ function App(): ReactElement {
     // loop is running, and registration reports the existing status rather than
     // registering twice.
     void environment.start();
+    // The menu bar, built from `COMMANDS`. After the connection is asked for, and
+    // not awaited either: a menu is not on the path to a painted window.
+    void installNativeMenu(invoke);
   }, []);
 
-  return <main className="bg-terminal-background h-dvh" />;
+  return (
+    <ClientEnvironmentProvider environment={clientEnvironment}>
+      <MainWindow />
+    </ClientEnvironmentProvider>
+  );
 }
 
 /** The element the app mounts into. Declared here so `index.html` and this agree. */

@@ -9,9 +9,19 @@
  * not carry needs a protocol message, not a shortcut.
  */
 
+export * from "./command-dispatch.ts";
+export * from "./command-palette.tsx";
 export * from "./commands.ts";
 export * from "./connection-banner.tsx";
+export * from "./fuzzy.ts";
+export * from "./jump-list.tsx";
+export * from "./layout-edits.ts";
 export * from "./main-window.tsx";
+export * from "./new-branch-sheet.tsx";
+export * from "./quick-list.tsx";
+export * from "./sheets.tsx";
+export * from "./sidebar-model.ts";
+export * from "./view-state.ts";
 
 // ---- Launch profiles and the settings surface (#38).
 export * from "./argv-editor.tsx";

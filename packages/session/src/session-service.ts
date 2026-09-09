@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 
 import type {
   AbsolutePath,
+  Axis,
   Backing,
   LaunchProfileID,
   Project,
@@ -15,12 +16,14 @@ import type {
 } from "@janela/core";
 import {
   absolutePath,
+  closeTerminal,
   emptyLayout,
   isLive,
   newSessionID,
   newTerminalID,
   now,
   ownsItsDirectory,
+  splitPane,
   supportsWorktrees,
   worktreeOf,
 } from "@janela/core";
@@ -39,6 +42,7 @@ import { createLiveTerminal } from "@janela/terminal";
 
 import type { AutomationRunning } from "./automation-runner.ts";
 import {
+  LayoutTooDeep,
   NotAWorktree,
   PullRequestsNotSupported,
   UnknownLaunchProfile,
@@ -120,6 +124,30 @@ export interface SessionService {
   /** Starts a configured-but-idle terminal. Attaching never starts anything. */
   startTerminal(id: TerminalID): Promise<void>;
   stopTerminal(id: TerminalID): Promise<void>;
+
+  /**
+   * Stop and start again, as one operation.
+   *
+   * The daemon owns the ordering: `stop()` closes the pty but the terminal stays
+   * `running` until its reader thread reaps the child, so a `startTerminal` that
+   * followed a `stopTerminal` over the wire would find a terminal it believes is
+   * already running and do nothing at all.
+   *
+   * @throws {UnknownTerminal}
+   */
+  restartTerminal(id: TerminalID): Promise<void>;
+
+  /**
+   * Closes one terminal — the ⌘W path, and the only path that both stops a
+   * terminal and forgets it.
+   *
+   * The layout collapses around it, promoting the sibling. Closing the last
+   * terminal of a session leaves one fresh idle shell behind: a session never has
+   * zero terminals (docs/decisions/0010-terminal-layout.md).
+   *
+   * @throws {UnknownTerminal}
+   */
+  removeTerminal(id: TerminalID): Promise<void>;
 }
 
 /** What the user chose in the ⌘T picker. Both fields absent is a plain shell. */
@@ -127,6 +155,20 @@ export interface NewTerminalOptions {
   readonly profileID?: LaunchProfileID;
   /** Overrides the tab title, which otherwise follows the profile's name. */
   readonly title?: string;
+  /**
+   * Where the terminal goes. Absent is a new focused tab — ⌘T. `split` is ⌘D:
+   * the pane holding `beside` divides along `axis` and the new terminal takes
+   * the other half.
+   *
+   * Shaped like the wire field of the same name without importing it: the brain
+   * does not depend on the protocol, exactly as `SessionCreationRequest` mirrors
+   * `SessionCreationIntent`.
+   */
+  readonly placement?: {
+    readonly kind: "split";
+    readonly beside: TerminalID;
+    readonly axis: Axis;
+  };
 }
 
 /**
@@ -478,10 +520,26 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       createdAt: now(),
     };
 
-    // A new tab rather than a split, focused: ⌘T is "another terminal", and where
-    // a split goes is a question only the user looking at the panes can answer.
-    // Focused, unlike an automation terminal, because the user just asked for it.
-    this.appendTerminalTab(session, descriptor, { focus: true });
+    const placement = options.placement;
+    if (placement === undefined) {
+      // A new tab rather than a split, focused: ⌘T is "another terminal", and
+      // where a split goes is a question only the user looking at the panes can
+      // answer. Focused, unlike an automation terminal, because the user just
+      // asked for it.
+      this.appendTerminalTab(session, descriptor, { focus: true });
+    } else {
+      // Membership first, so the only refusal `splitPane` has left to express by
+      // returning the same layout is depth.
+      if (!session.terminals.some((terminal) => terminal.id === placement.beside)) {
+        throw new UnknownTerminal(placement.beside);
+      }
+      const layout = splitPane(session.layout, placement.beside, descriptor.id, placement.axis);
+      if (layout === session.layout) throw new LayoutTooDeep(session.id);
+
+      session.terminals = [...session.terminals, descriptor];
+      session.layout = layout;
+    }
+
     await this.deps.repository.save(session);
     await this.publish();
     return descriptor;
@@ -509,6 +567,52 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     // An unknown id is a no-op: the second click on "stop" must not be an error,
     // and a terminal that already exited is not registered.
     await this.deps.terminals.get(id)?.stop();
+  }
+
+  async restartTerminal(id: TerminalID): Promise<void> {
+    const located = this.locate(id);
+    if (located === undefined) throw new UnknownTerminal(id);
+
+    const live = this.deps.terminals.get(id);
+    // Never started, or exited and unregistered: restarting it is starting it,
+    // and `startTerminal` is where the launch is resolved.
+    if (live === undefined) {
+      await this.startTerminal(id);
+      return;
+    }
+
+    // `LiveTerminal.restart` is the one place that knows the old child's status
+    // need not be awaited: its reader thread reaps it, and `start()` clears the
+    // exit that would otherwise be reported.
+    await live.restart();
+    await this.deps.repository.touch(located.session.id);
+    located.session.lastActiveAt = now();
+    await this.publish();
+  }
+
+  async removeTerminal(id: TerminalID): Promise<void> {
+    const located = this.locate(id);
+    if (located === undefined) throw new UnknownTerminal(id);
+    const { session } = located;
+
+    const live = this.deps.terminals.get(id);
+    if (live !== undefined) {
+      await live.stop();
+      this.deps.terminals.remove(id);
+    }
+
+    session.terminals = session.terminals.filter((terminal) => terminal.id !== id);
+    session.layout = closeTerminal(session.layout, id);
+
+    // Never zero: the last close leaves a fresh idle shell, honouring the
+    // project's default profile, saved and announced by `addFirstTerminal`.
+    if (session.layout.tabs.length === 0) {
+      await this.addFirstTerminal(session, this.projectOf(session));
+      return;
+    }
+
+    await this.deps.repository.save(session);
+    await this.publish();
   }
 
   private async publish(): Promise<void> {

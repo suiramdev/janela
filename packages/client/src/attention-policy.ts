@@ -1,5 +1,8 @@
 import type { SessionID, TerminalID } from "@janela/core";
 import type { AttentionSignal } from "@janela/protocol";
+import type { Logger } from "@janela/support";
+
+import type { SessionStore } from "./stores.ts";
 
 /**
  * Decides whether a terminal's signal deserves the user's attention.
@@ -159,3 +162,159 @@ export interface AttentionDelivering {
   /** Withdraws anything still on screen for a session, e.g. when it is deleted. */
   withdraw(sessionID: SessionID): Promise<void>;
 }
+
+/**
+ * Where signals come from.
+ *
+ * `DaemonConnection` satisfies this structurally. Named as one method rather than
+ * taken whole so the routing below can be tested without a transport, a handshake
+ * or a mirror — which is the same reason the policy takes no connection either.
+ */
+export interface AttentionSource {
+  onAttention(handler: (signal: AttentionSignal) => void): () => void;
+}
+
+export interface AttentionRoutingOptions {
+  readonly source: AttentionSource;
+  /** Read for the names a notification carries, and watched for removals. */
+  readonly sessions: SessionStore;
+  readonly policy: AttentionPolicy;
+  readonly delivery: AttentionDelivering;
+  /** Whether this client's window is frontmost. A fact only the app holds. */
+  readonly isApplicationActive: () => boolean;
+  /** The focused pane's terminal, as the view last reported it. */
+  readonly focusedTerminalID: () => TerminalID | undefined;
+  readonly log?: Logger;
+}
+
+export interface AttentionRouting {
+  /** Unsubscribes from both the signals and the mirror. */
+  stop(): void;
+}
+
+/**
+ * Joins the three halves: the daemon's fact, this client's decision, and the app's
+ * delivery.
+ *
+ * ## Why this is here and not in the app
+ *
+ * Every rule it applies is about mirrored state and focus, and none of it needs a
+ * notification API — so putting it beside the policy keeps the app's part an
+ * adapter, and keeps this testable in a browser (ADR 0011, ADR 0023). The app
+ * supplies two facts it alone holds and one object that can post a notification.
+ *
+ * ## What it does *not* do
+ *
+ * It never touches the stores. In-app attention — the pane indicator and the
+ * sidebar badge — is `TerminalState.needsAttention`, which the daemon computes and
+ * pushes; it is already on screen before this runs and it stays there whatever the
+ * policy returns. The sidebar is the primary channel and needs no permission; a
+ * notification is the secondary, best-effort one.
+ *
+ * ## Removals
+ *
+ * A session leaving the mirror withdraws its notifications and clears its policy
+ * entries, in that order. Nothing else notices a removal: the policy cannot see the
+ * mirror, and without this it would hold one entry per terminal that signalled
+ * inside the coalescing window.
+ */
+export function routeAttention(options: AttentionRoutingOptions): AttentionRouting {
+  const log = options.log ?? silentLogger;
+  const { sessions, policy, delivery } = options;
+
+  /**
+   * The session ids last seen in the mirror. Bounded by the mirror itself, and
+   * replaced wholesale on every change rather than accumulated.
+   */
+  let known = new Set<SessionID>(sessions.sessions.map((session) => session.id));
+
+  /**
+   * An adapter's rejection is logged and dropped.
+   *
+   * It reaches us inside the connection's read pump, where an unhandled rejection
+   * would take the pump with it — a notification that failed to post must not cost
+   * the user their terminal output. Only the error's *name*: a notification API
+   * failure can quote the content it failed to post.
+   */
+  const settle = (work: Promise<void>, message: string): void => {
+    void work.catch((error: unknown) => {
+      // The name only. A notification API's failure can quote the content it
+      // failed to post, and that content is the user's (non-negotiable 11).
+      log.warning(message, { error: error instanceof Error ? error.name : "unknown" });
+    });
+  };
+
+  const unsubscribeSignals = options.source.onAttention((signal: AttentionSignal): void => {
+    const active = options.isApplicationActive();
+    const selected = sessions.selection;
+    const focused = options.focusedTerminalID();
+
+    // Composed conditionally: with `exactOptionalPropertyTypes`, an explicit
+    // `selectedSessionID: undefined` is not the same type as an absent key.
+    const context: AttentionContext = {
+      isApplicationActive: active,
+      ...(selected === undefined ? {} : { selectedSessionID: selected }),
+      ...(focused === undefined ? {} : { focusedTerminalID: focused }),
+    };
+
+    if (!policy.shouldDeliver(signal, context)) return;
+
+    const session = sessions.sessions.find((candidate) => candidate.id === signal.sessionID);
+    const terminal = session?.terminals.find((candidate) => candidate.id === signal.terminalID);
+    if (session === undefined || terminal === undefined) {
+      // A signal for something this mirror cannot name is a notification that would
+      // land the user nowhere — worse than none (ADR 0011). The badge is unaffected:
+      // it is the daemon's `TerminalState`, not ours.
+      log.debug("attention for an unmirrored terminal", {
+        sessionID: signal.sessionID,
+        terminalID: signal.terminalID,
+      });
+      return;
+    }
+
+    settle(
+      delivery.deliver({
+        signal,
+        sessionName: session.name,
+        terminalTitle: terminal.title,
+      }),
+      "attention delivery failed",
+    );
+  });
+
+  const unsubscribeMirror = sessions.subscribe((): void => {
+    const current = new Set<SessionID>(sessions.sessions.map((session) => session.id));
+
+    for (const id of known) {
+      if (current.has(id)) continue;
+      // Withdraw first: `forgetSession` is the policy's bookkeeping and cannot
+      // fail, while a notification left on screen for a session that no longer
+      // exists is a bug the user sees.
+      settle(delivery.withdraw(id), "attention withdrawal failed");
+      policy.forgetSession(id);
+    }
+
+    known = current;
+  });
+
+  return {
+    stop(): void {
+      unsubscribeSignals();
+      unsubscribeMirror();
+    },
+  };
+}
+
+/**
+ * The default when a caller injects nothing, for the same reason `nullLogSink` is.
+ *
+ * A local copy of `connection.ts`'s: both are four lines, and exporting one from
+ * the other would make a private default part of this package's surface.
+ */
+const silentLogger: Logger = {
+  debug: () => {},
+  info: () => {},
+  notice: () => {},
+  warning: () => {},
+  error: () => {},
+};

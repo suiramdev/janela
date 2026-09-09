@@ -104,6 +104,50 @@ export const HINT: CSSProperties = {
   opacity: 0.7,
 };
 
+/** A hint pushed to the right of its row: a chord, a status. */
+export const TRAILING_HINT: CSSProperties = {
+  ...HINT,
+  marginLeft: "auto",
+};
+
+/**
+ * The scrim behind a sheet.
+ *
+ * Fixed rather than absolute: the sheet covers the window, including the sidebar,
+ * because while it is open it owns the keyboard.
+ */
+export const SHEET_SCRIM: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "center",
+  paddingTop: GRID_UNIT * 12,
+};
+
+/** The dismiss target behind the sheet: the whole window, and nothing visible. */
+export const SHEET_SCRIM_BUTTON: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  border: "none",
+  padding: 0,
+  background: "rgb(0 0 0 / 0.35)",
+};
+
+export const SHEET_BODY: CSSProperties = {
+  position: "relative",
+  border: "none",
+  padding: 0,
+  color: "inherit",
+  minWidth: 420,
+  maxWidth: "80vw",
+  maxHeight: "80vh",
+  overflowY: "auto",
+  borderRadius: CORNER_RADIUS.medium,
+  background: "Canvas",
+  boxShadow: "0 12px 32px rgb(0 0 0 / 0.35)",
+};
+
 export const VIOLATION: CSSProperties = {
   margin: 0,
   fontSize: 11,

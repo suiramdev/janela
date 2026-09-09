@@ -31,8 +31,8 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("removalPlan and the optional attach viewport are a wire change: version 3", () => {
-    expect(PROTOCOL_VERSION).toBe(3);
+  test("a persisted split and removeTerminal are a wire change: version 4", () => {
+    expect(PROTOCOL_VERSION).toBe(4);
   });
 });
 

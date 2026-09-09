@@ -76,6 +76,23 @@ export class WorktreesUnsupported extends UserFacingError {
 }
 
 /**
+ * A split was asked for in a pane tree that is already `MAXIMUM_PANE_DEPTH` deep.
+ *
+ * The bound is not a style preference — see `MAXIMUM_PANE_DEPTH` — so refusing is
+ * the honest answer rather than silently opening a tab instead.
+ */
+export class LayoutTooDeep extends UserFacingError {
+  override readonly summary =
+    "This pane cannot be split again: the layout is already as deep as it goes.";
+  readonly session: SessionID;
+
+  constructor(session: SessionID) {
+    super(`session ${session} layout is at maximum pane depth`);
+    this.session = session;
+  }
+}
+
+/**
  * `fromPullRequest` before the forge integration exists.
  *
  * Thrown at the top of `createSession` rather than left as a silent no-op, so the

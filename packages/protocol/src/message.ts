@@ -1,5 +1,6 @@
 import type {
   AbsolutePath,
+  Axis,
   GridSize,
   Instant,
   LaunchProfile,
@@ -101,6 +102,15 @@ export type ClientMessage =
    */
   | { readonly type: "startTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
   | { readonly type: "stopTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
+  /**
+   * Stop and start again, as one operation.
+   *
+   * Not `stopTerminal` then `startTerminal`: a stop closes the pty and the state
+   * stays `running` until the reader thread reaps it, so a start that arrives
+   * first finds a terminal it believes is already running and does nothing. The
+   * daemon owns the ordering because only it can see the reaping.
+   */
+  | { readonly type: "restartTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
   | { readonly type: "resize"; readonly terminalID: TerminalID; readonly size: GridSize }
   /** What is on screen, as text. The reason a CLI is useful to an agent. */
   | {
@@ -138,6 +148,11 @@ export type ClientMessage =
    *
    * Configured, not started: the reply is `text` carrying the new `TerminalID`,
    * and the client starts it with `startTerminal` when it wants the process.
+   *
+   * `placement` absent means a new focused tab. `split` means the daemon splits
+   * the pane holding `beside` along `axis` with `splitPane`, and the new terminal
+   * is focused within that tab. The split is part of the session's layout, so it
+   * is persisted by the daemon rather than being a client-local arrangement.
    */
   | {
       readonly type: "createTerminal";
@@ -145,6 +160,25 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly profileID?: LaunchProfileID;
       readonly title?: string;
+      readonly placement?: {
+        readonly kind: "split";
+        readonly beside: TerminalID;
+        readonly axis: Axis;
+      };
+    }
+  /**
+   * Close one terminal — the ⌘W path, and the only path that both stops a
+   * terminal and forgets it.
+   *
+   * Stops the process when it is live, drops the descriptor and collapses the
+   * layout with `closeTerminal`. Closing the last terminal of a session leaves
+   * one fresh idle shell behind: a session never has zero terminals
+   * (docs/decisions/0010-terminal-layout.md). Reply is `acknowledged`.
+   */
+  | {
+      readonly type: "removeTerminal";
+      readonly id: RequestID;
+      readonly terminalID: TerminalID;
     };
 
 /**

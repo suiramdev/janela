@@ -272,6 +272,10 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
         await sessions.stopTerminal(message.terminalID);
         return { type: "acknowledged", id };
 
+      case "restartTerminal":
+        await sessions.restartTerminal(message.terminalID);
+        return { type: "acknowledged", id };
+
       case "saveLaunchProfile": {
         const { profile } = message;
         if (!isLaunchProfile(profile)) throw new TypeError("save with an unusable profile");
@@ -288,14 +292,25 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
         return { type: "acknowledged", id };
 
       case "createTerminal": {
+        const { placement } = message;
+        // The decoder checked the discriminant and stopped, so a placement is
+        // typed and not validated — and it reaches the layout algebra.
+        if (placement !== undefined && !isPlacement(placement)) {
+          throw new TypeError("createTerminal with an impossible placement");
+        }
         const descriptor = await sessions.createTerminal(message.sessionID, {
           ...(message.profileID === undefined ? {} : { profileID: message.profileID }),
           ...(typeof message.title === "string" ? { title: message.title } : {}),
+          ...(placement === undefined ? {} : { placement }),
         });
         // Configured, not started: `startTerminal` is still the only spawn. The
         // id comes back because the client needs it to attach.
         return { type: "text", id, text: descriptor.id };
       }
+
+      case "removeTerminal":
+        await sessions.removeTerminal(message.terminalID);
+        return { type: "acknowledged", id };
 
       case "snapshotText": {
         const terminal = requireTerminal(message.terminalID);
@@ -400,6 +415,26 @@ function isGridSize(size: unknown): size is GridSize {
     Number.isInteger(rows) &&
     columns >= 1 &&
     rows >= 1
+  );
+}
+
+/**
+ * Where a new terminal goes. Same reason as `isGridSize`: the decoder checked the
+ * discriminant and nothing else, and this reaches `splitPane`.
+ */
+function isPlacement(
+  value: unknown,
+): value is NonNullable<Extract<ClientMessage, { readonly type: "createTerminal" }>["placement"]> {
+  if (typeof value !== "object" || value === null) return false;
+  const placement = value as {
+    readonly kind?: unknown;
+    readonly beside?: unknown;
+    readonly axis?: unknown;
+  };
+  return (
+    placement.kind === "split" &&
+    typeof placement.beside === "string" &&
+    (placement.axis === "horizontal" || placement.axis === "vertical")
   );
 }
 

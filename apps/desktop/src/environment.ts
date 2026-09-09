@@ -1,14 +1,18 @@
 import {
+  createAttentionPolicy,
   createConnection,
   createStores,
+  routeAttention,
   type AttentionDelivering,
   type DaemonConnection,
   type ProjectStore,
   type SessionStore,
 } from "@janela/client";
+import type { TerminalID } from "@janela/core";
 import { log } from "@janela/support";
 import { invoke } from "@tauri-apps/api/core";
 
+import { createNotificationDelivery, type NotificationPlugin } from "./notification-delivery.ts";
 import { openTauriTransport, type BridgeInvoke } from "./transport.ts";
 
 /**
@@ -74,12 +78,46 @@ export interface LaunchAgentState {
   openLoginItemsSettings(): Promise<void>;
 }
 
+/**
+ * The two directions pane focus travels.
+ *
+ * Both halves are the view's to call, which is why they are here rather than on
+ * `ClientEnvironment`: the app is the one that needs the answer, and the app is the
+ * one that needs to ask.
+ */
+export interface TerminalFocus {
+  /**
+   * The view reports which pane has focus, or `undefined` when none does.
+   *
+   * This is `AttentionContext.focusedTerminalID` — the fact that decides whether a
+   * signal is "the user is staring at it" or "the user is elsewhere".
+   */
+  report(id: TerminalID | undefined): void;
+
+  /**
+   * The view installs the function that moves focus, and gets a disposer back.
+   *
+   * Called by a notification click, which must land on the terminal that signalled
+   * (ADR 0011). In `main.tsx` this is `ViewState.focusTerminal` (#37) — **the**
+   * pane-focus entry point, shared with the menu chords and the jump list, so a
+   * click is not a second focus mechanism that can disagree with them.
+   *
+   * It stays an installed function rather than an import because `liveEnvironment`
+   * must not depend on `@janela/ui`: the composition root is about the daemon
+   * connection, and a graph that needs a React tree to construct is not one a
+   * headless test can build. Until the view installs one, a click selects the
+   * session and stops there.
+   */
+  install(focus: (id: TerminalID) => void): () => void;
+}
+
 export interface AppEnvironment {
   readonly projects: ProjectStore;
   readonly sessions: SessionStore;
   readonly connection: DaemonConnection;
   readonly attention: AttentionDelivering;
   readonly launchAgent: LaunchAgentState;
+  readonly focus: TerminalFocus;
 
   /** Connects to the daemon. Called after first paint, never before it. */
   start(): Promise<void>;
@@ -94,19 +132,6 @@ export interface AppEnvironment {
 }
 
 /**
- * Notifications, once #36 implements them.
- *
- * A no-op rather than a throw: the policy above it is finished and tested, and an
- * adapter that throws would turn a delivered signal into an unhandled rejection in
- * the pump. It logs nothing either — a log line per signal would be noise about a
- * decision nobody acted on.
- */
-const undeliveredAttention: AttentionDelivering = {
-  deliver: () => Promise.resolve(),
-  withdraw: () => Promise.resolve(),
-};
-
-/**
  * Builds the production graph.
  *
  * Note how little happens here: no database to open, no migration that could fail on
@@ -114,7 +139,13 @@ const undeliveredAttention: AttentionDelivering = {
  * failure surfaces as a connection that does not come up rather than an app that
  * will not launch.
  */
-export function liveEnvironment(deps?: { readonly invoke?: BridgeInvoke }): AppEnvironment {
+export function liveEnvironment(deps?: {
+  readonly invoke?: BridgeInvoke;
+  readonly plugin?: NotificationPlugin;
+  readonly activateWindow?: () => Promise<void>;
+  /** Whether this window is frontmost. Injected because a test has no window. */
+  readonly isApplicationActive?: () => boolean;
+}): AppEnvironment {
   const invokeFn = deps?.invoke ?? invoke;
   const { projects, sessions, mirror } = createStores();
 
@@ -126,6 +157,52 @@ export function liveEnvironment(deps?: { readonly invoke?: BridgeInvoke }): AppE
     clientName: CLIENT_NAME,
     mirror,
     log: log("protocol"),
+  });
+
+  /**
+   * The view's pane focus, as the app sees it: one value it reads and one function
+   * it calls. Both start empty, and a click before the view has mounted simply
+   * selects the session.
+   */
+  let focusedTerminal: TerminalID | undefined;
+  let focuser: ((id: TerminalID) => void) | undefined;
+  const focus: TerminalFocus = {
+    report(id: TerminalID | undefined): void {
+      focusedTerminal = id;
+    },
+    install(next: (id: TerminalID) => void): () => void {
+      focuser = next;
+      return () => {
+        if (focuser === next) focuser = undefined;
+      };
+    },
+  };
+
+  const attention = createNotificationDelivery({
+    ...(deps?.plugin === undefined ? {} : { plugin: deps.plugin }),
+    ...(deps?.activateWindow === undefined ? {} : { activateWindow: deps.activateWindow }),
+    log: log("app"),
+    // The store half of a click. The window half is the adapter's, because raising
+    // it is a shell capability and this root holds no Tauri API of its own.
+    onActivate: (target) => {
+      sessions.selection = target.sessionID;
+      focuser?.(target.terminalID);
+    },
+  });
+
+  // Subscribed at construction, not in `start()`: registering a handler spawns
+  // nothing and reads nothing, and a signal cannot arrive before the connection
+  // does. It lives as long as the process, so nothing calls `stop()`.
+  routeAttention({
+    source: connection,
+    sessions,
+    policy: createAttentionPolicy(),
+    delivery: attention,
+    // `document.hasFocus()` is the browser's answer to "is this window frontmost",
+    // and it is synchronous — the policy is consulted on the signal path.
+    isApplicationActive: deps?.isApplicationActive ?? ((): boolean => document.hasFocus()),
+    focusedTerminalID: () => focusedTerminal,
+    log: log("app"),
   });
 
   const appLog = log("app");
@@ -165,8 +242,9 @@ export function liveEnvironment(deps?: { readonly invoke?: BridgeInvoke }): AppE
     projects,
     sessions,
     connection,
-    attention: undeliveredAttention,
+    attention,
     launchAgent,
+    focus,
 
     start(): Promise<void> {
       // Fired, not awaited. Registration talks to `smd`, which can take a moment

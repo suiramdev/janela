@@ -376,15 +376,30 @@ export function partial(
   sessions: readonly Session[] = [],
   projects: readonly Project[] = [],
   terminalStates: Readonly<Record<TerminalID, TerminalState>> = {},
+  launchProfiles: readonly LaunchProfile[] = [],
 ): StateUpdate {
   return {
     projects,
     sessions,
     terminalStates,
     // Empty is "unchanged", the same rule the other collections follow.
-    launchProfiles: [],
-    launchProfileAvailability: {},
+    launchProfiles,
+    launchProfileAvailability: Object.fromEntries(
+      launchProfiles.map((profile) => [profile.id, true]),
+    ),
     isFullSnapshot: false,
+  };
+}
+
+export function fakeLaunchProfile(id: string, name = id): LaunchProfile {
+  return {
+    id: id as LaunchProfile["id"],
+    name,
+    iconName: "terminal",
+    command: [],
+    environment: {},
+    isAgent: false,
+    isBuiltIn: false,
   };
 }
 

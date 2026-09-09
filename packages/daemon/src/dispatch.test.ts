@@ -24,6 +24,7 @@ import {
 } from "@janela/protocol";
 import type {
   LaunchProfileService,
+  NewTerminalOptions,
   ProjectService,
   SessionRemovalPlan,
   SessionService,
@@ -778,6 +779,105 @@ describe("launch profiles", () => {
       text: created,
     });
     expect(asked).toEqual([{ session: "s1" as SessionID, profileID: "p1" as LaunchProfileID }]);
+  });
+
+  test("a split placement reaches the brain intact", async () => {
+    const asked: NewTerminalOptions[] = [];
+    const beside = terminalID();
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        createTerminal: (_session, options = {}) => {
+          asked.push(options);
+          return Promise.resolve(fakeDescriptor(terminalID()));
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "createTerminal",
+        id: 1 as RequestID,
+        sessionID: "s1" as SessionID,
+        placement: { kind: "split", beside, axis: "vertical" },
+      }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("text");
+    expect(asked).toEqual([{ placement: { kind: "split", beside, axis: "vertical" } }]);
+  });
+
+  test("an impossible placement is refused, and the brain is not called", async () => {
+    const calls: number[] = [];
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        createTerminal: () => {
+          calls.push(1);
+          return Promise.resolve(fakeDescriptor(terminalID()));
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      encodeClientMessage({
+        type: "createTerminal",
+        id: 1 as RequestID,
+        sessionID: "s1" as SessionID,
+        // An axis the layout algebra has never heard of: the wire has no type
+        // system, and this reaches `splitPane` if nobody looks.
+        placement: { kind: "split", beside: terminalID(), axis: "sideways" },
+      } as unknown as ClientMessage),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+    expect(calls).toEqual([]);
+  });
+
+  test("restartTerminal reaches the brain as one operation", async () => {
+    const restarted: TerminalID[] = [];
+    const going = terminalID();
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        // Neither of these may be reached: a stop and a start over the wire is
+        // exactly the ordering this message exists to avoid.
+        stopTerminal: () => Promise.reject(new Error("stopTerminal must not be called")),
+        startTerminal: () => Promise.reject(new Error("startTerminal must not be called")),
+        restartTerminal: (id) => {
+          restarted.push(id);
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "restartTerminal", id: 1 as RequestID, terminalID: going }));
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(restarted).toEqual([going]);
+  });
+
+  test("removeTerminal closes one terminal and is acknowledged", async () => {
+    const removed: TerminalID[] = [];
+    const going = terminalID();
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        removeTerminal: (id) => {
+          removed.push(id);
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "removeTerminal", id: 1 as RequestID, terminalID: going }));
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(removed).toEqual([going]);
   });
 });
 
