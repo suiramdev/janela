@@ -131,7 +131,11 @@ function libraryInternals(terminal: Terminal): {
   readonly cell: LoadedCell;
   readonly rowHints: boolean;
 } {
-  const core = (terminal as unknown as { _core?: InternalCore })._core;
+  // The library's own type says nothing about `_core`, and no runtime check can
+  // establish its shape for the compiler. Every field read off it below is
+  // asserted instead, which is what this whole function is for.
+  const internal = terminal as unknown as { readonly _core?: InternalCore };
+  const core = internal._core;
   if (core === undefined || typeof core !== "object") {
     throw new Error("@xterm/headless internals changed: no _core");
   }
@@ -412,10 +416,7 @@ export class HeadlessEmulator implements TerminalEmulating {
     });
   }
 
-  private trackPrivateModes(
-    parameters: readonly (number | number[])[],
-    set: boolean,
-  ): void {
+  private trackPrivateModes(parameters: readonly (number | number[])[], set: boolean): void {
     this.modesTouched = true;
     for (const parameter of parameters) {
       const mode = typeof parameter === "number" ? parameter : parameter[0];
@@ -463,7 +464,8 @@ export class HeadlessEmulator implements TerminalEmulating {
     this.invalidate = false;
     // Read before the parse: a chunk that both scrolls and *then* sets a region
     // scrolled the whole screen, and one that sets a region first did not.
-    const regionWasFull = this.core.buffer.scrollTop === 0 && this.core.buffer.scrollBottom === rows - 1;
+    const regionWasFull =
+      this.core.buffer.scrollTop === 0 && this.core.buffer.scrollBottom === rows - 1;
 
     this.parsed = false;
     this.terminal.input("", true);

@@ -302,8 +302,18 @@ export class RepaintEncoder {
       this.writeCursorPosition(line, x + 1);
       return;
     }
-    this.writeCursorPosition(line, cols);
     row.loadCell(cols - 1, cell);
+    if (cell.getWidth() === 0) {
+      // The last column is the second half of a wide character. Printing there
+      // would erase it; the character has to be printed whole from the column
+      // before, which lands the cursor past the last column just the same.
+      row.loadCell(cols - 2, cell);
+      this.writeCursorPosition(line, cols - 1);
+      this.writeCellAttributes(cell);
+      this.writeCellCharacters(cell);
+      return;
+    }
+    this.writeCursorPosition(line, cols);
     if (cell.getCode() === 0) {
       const mode = cell.getBgColorMode();
       this.setBackground(mode, mode === COLOR_MODE_DEFAULT ? 0 : cell.getBgColor());
