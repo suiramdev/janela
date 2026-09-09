@@ -92,7 +92,14 @@ function dumpGrid(target: Terminal): string {
       if (cell === undefined) {
         continue;
       }
-      row += `${cell.getChars() || " "}|${cell.getFgColor()}/${cell.getBgColor()}/${cell.isBold()}${cell.isInverse()} `;
+      // Every attribute, not a selection: a dump that omitted `isDim` let a
+      // delta leave the client's cell dim when the source's was not, and the
+      // round trip could not see it.
+      row +=
+        `${cell.getChars() || " "}|${cell.getFgColor()}/${cell.getBgColor()}/` +
+        `${cell.isBold()}${cell.isDim()}${cell.isItalic()}${cell.isUnderline()}` +
+        `${cell.isBlink()}${cell.isInverse()}${cell.isInvisible()}` +
+        `${cell.isStrikethrough()}${cell.isOverline()} `;
     }
     out.push(row.trimEnd());
   }
@@ -491,6 +498,10 @@ describe("damage encoder", () => {
       "\x1b[31mred \x1b[91mbright \x1b[38;5;200mpalette \x1b[38;2;10;200;30mtruecolor\x1b[0m\r\n",
       "\x1b[41mred bg \x1b[101mbright bg \x1b[48;5;99mpalette bg \x1b[48;2;9;9;9mrgb bg\x1b[0m\r\n",
       "\x1b[1mbold\x1b[22;2mdim\x1b[0m still\r\n",
+      // The other direction, and the one a single `22` gets wrong: painting left
+      // to right, the bold cells are reached with dim already tracked, so the
+      // sequence has to be `22` and then `1` rather than `1` alone.
+      "\x1b[2mdim\x1b[22;1mbold\x1b[0m still\r\n",
       "\x1b[7minverse\x1b[27m \x1b[4munderline\x1b[24m \x1b[53moverline\x1b[55m\r\n",
       "\x1b[5mblink\x1b[25m \x1b[8minvisible\x1b[28m \x1b[3mitalic\x1b[23m \x1b[9mstrike\x1b[29m\r\n",
     ]);
@@ -667,6 +678,60 @@ describe("damage encoder", () => {
     await roundTrip(source, target, ["abcd中", "\x1b[2;1Hxx中文"]);
     expect(source.terminal.buffer.active.cursorX).toBe(6);
     expect(target.buffer.active.cursorX).toBe(6);
+  });
+
+  test("a client that missed several scrolling frames catches up in one delta", async () => {
+    // The case the round trip above cannot see, because it catches its client up
+    // every step: `changedAt` has to travel with the rows across a scroll, or a
+    // row whose *content* moved under an older revision number is never sent and
+    // the client keeps a stale line for as long as it stays on screen.
+    const source = emulator(30, 24, 100);
+    const target = receiver(30, 24);
+    for (let row = 1; row <= 24; row += 1) {
+      feed(source, `\x1b[${row};1Horiginal row ${row}`);
+    }
+    await replay(target, source.fullRepaint());
+    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+    const seen = source.revision;
+
+    // Two frames the client never sees. Each scrolls exactly two lines — a line
+    // feed at the bottom row, printing nothing — and then rewrites row 20, so the
+    // first rewrite ends up at row 18: above the four rows that scrolled in and
+    // are repainted anyway. Its revision has to travel up with it; left where it
+    // was, row 18 is never sent and the client keeps the line it scrolled into
+    // that position.
+    for (let step = 0; step < 2; step += 1) {
+      feed(source, "\x1b[24;1H\n\n");
+      feed(source, `\x1b[20;1Hrewritten by step ${step}`);
+    }
+
+    const delta = source.repaintSince(seen);
+
+    expect(decoder.decode(delta).startsWith("\x1bc")).toBe(false);
+    await replay(target, new Uint8Array(delta));
+    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+  });
+
+  test("a full repaint carries the three modes the serialiser omits", async () => {
+    // `SerializeAddon` emits neither cursor visibility, nor mouse encoding, nor
+    // cursor style. A client reattaching to a `vim` session would show a cursor
+    // `vim` hid, and report mouse coordinates in an encoding nothing asked for.
+    const source = emulator(20, 5);
+    feed(source, "\x1b[?25l\x1b[?1006h\x1b[5 qcontent");
+
+    const full = decoder.decode(source.fullRepaint());
+
+    expect(full).toContain("\x1b[?25l");
+    expect(full).toContain("\x1b[?1006h");
+    expect(full).toContain("\x1b[5 q");
+
+    // And they go away again when the program puts them back.
+    feed(source, "\x1b[?25h\x1b[?1006l\x1b[0 q");
+    const plain = decoder.decode(source.fullRepaint());
+
+    expect(plain).not.toContain("\x1b[?25l");
+    expect(plain).not.toContain("\x1b[?1006h");
+    expect(plain).not.toContain(" q");
   });
 
   test("modes travel with the delta, and a mode-only step paints no row", async () => {

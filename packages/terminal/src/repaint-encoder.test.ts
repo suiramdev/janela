@@ -190,6 +190,24 @@ describe("paintRow", () => {
     );
   });
 
+  test("bold after dim emits 22 and then 1", async () => {
+    // The other direction, and the one a condition that only checks bold gets
+    // wrong: the bold cell is reached with dim tracked, so `1` alone would leave
+    // the client's cell both bold and dim.
+    const target = terminal(6, 2);
+    await feed(target, "\x1b[2mD\x1b[22;1mB");
+    const { row, cell } = rowOf(target, 0);
+    const encoder = new RepaintEncoder();
+    encoder.reserve({ columns: 6, rows: 2 });
+
+    encoder.begin(DEFAULT_MODES, false);
+    encoder.paintRow(0, row, 6, cell);
+
+    expect(encoded(encoder)).toBe(
+      ["\x1b[0m", "\x1b[1;1H\x1b[2mD", "\x1b[22;1mB", "\x1b[K"].join(""),
+    );
+  });
+
   test("a row of untouched cells costs a CUP and an EL, and no colour sequence", async () => {
     // A default cell reports background colour −1 while `CSI 49 m` leaves 0. If
     // the two are compared raw, every blank row pays for a colour it already has.
