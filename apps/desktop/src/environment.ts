@@ -98,9 +98,15 @@ export interface TerminalFocus {
    * The view installs the function that moves focus, and gets a disposer back.
    *
    * Called by a notification click, which must land on the terminal that signalled
-   * (ADR 0011). The app cannot do this itself: pane focus is `SessionDetail`'s
-   * local state, and no protocol message expresses it. Until the view installs
-   * one, a click selects the session and stops there.
+   * (ADR 0011). In `main.tsx` this is `ViewState.focusTerminal` (#37) — **the**
+   * pane-focus entry point, shared with the menu chords and the jump list, so a
+   * click is not a second focus mechanism that can disagree with them.
+   *
+   * It stays an installed function rather than an import because `liveEnvironment`
+   * must not depend on `@janela/ui`: the composition root is about the daemon
+   * connection, and a graph that needs a React tree to construct is not one a
+   * headless test can build. Until the view installs one, a click selects the
+   * session and stops there.
    */
   install(focus: (id: TerminalID) => void): () => void;
 }

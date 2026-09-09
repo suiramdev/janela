@@ -68,17 +68,31 @@ const environment = liveEnvironment();
  * through.
  *
  * `view` is constructed here rather than inside `liveEnvironment()` so the
- * composition root stays about the daemon connection; when #36 needs the same
- * `ViewState` to deliver a notification click, this line moves into
- * `liveEnvironment()` and `clientEnvironment.view` reads `environment.view`.
+ * composition root stays about the daemon connection — and so it stays
+ * constructible by a headless test that has no React tree.
  */
 const view = createViewState(environment.sessions);
+
+/**
+ * Pane focus, joined to attention delivery (#36).
+ *
+ * `focusTerminal` is `ViewState`'s single focus entry point (#37), so a
+ * notification click lands the same way a menu chord or the jump list does.
+ * Installed for the life of the process; the disposer exists for tests that build
+ * a second graph, and there is only ever one window here.
+ */
+environment.focus.install((terminalID) => {
+  view.focusTerminal(terminalID);
+});
 
 const clientEnvironment: ClientEnvironment = {
   projects: environment.projects,
   sessions: environment.sessions,
   connection: environment.connection,
   view,
+  // The other direction: which pane has focus is the one fact the attention
+  // policy cannot compute for itself, and only the view knows it.
+  onFocusedTerminalChange: environment.focus.report,
   commands: tauriCommandSource(),
   native: tauriNativeShell(),
   settings: localStorageSettings(),
