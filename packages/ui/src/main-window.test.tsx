@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { createStores } from "@janela/client";
 import type {
   ConnectionStatus,
   DaemonConnection,
@@ -22,6 +23,7 @@ import {
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
+import type { StateUpdate } from "@janela/protocol";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ClientEnvironmentProvider, type ClientEnvironment } from "./client-environment.tsx";
@@ -166,6 +168,45 @@ function fakeEnvironment(options: {
     sessions: sessionStore,
     connection,
     view: createViewState(sessionStore),
+    commands: neverCommands(),
+    native: inertNativeShell(),
+    settings: memorySettingsStore(),
+    service: recordingService(),
+    restartDaemon: () => {},
+  };
+}
+
+/**
+ * A `ClientEnvironment` over a **real mirror**, fed one `StateUpdate`.
+ *
+ * The fake above takes `selection` as an option, so it can only ever prove what a
+ * view does with a selection it was handed. This one proves what the client stack
+ * *decides* when the daemon sends state and the user has chosen nothing — which is
+ * the whole of #46. The update is written out by hand because `@janela/client`'s
+ * fixtures are deliberately not exported.
+ */
+function environmentOver(state: {
+  readonly sessions: readonly Session[];
+  readonly projects?: readonly Project[];
+  readonly terminalStates?: Readonly<Record<TerminalID, TerminalState>>;
+}): ClientEnvironment {
+  const stores = createStores();
+  const update: StateUpdate = {
+    sessions: state.sessions,
+    projects: state.projects ?? [],
+    terminalStates: state.terminalStates ?? NO_STATES,
+    launchProfiles: [],
+    launchProfileAvailability: {},
+    isFullSnapshot: true,
+  };
+  stores.mirror.apply(update);
+
+  return {
+    projects: stores.projects,
+    sessions: stores.sessions,
+    // The same inert connection the fake uses: nothing here requests anything.
+    connection: fakeEnvironment({}).connection,
+    view: createViewState(stores.sessions),
     commands: neverCommands(),
     native: inertNativeShell(),
     settings: memorySettingsStore(),
@@ -589,6 +630,52 @@ describe("MainWindow markup", () => {
 
     expect(markup).toContain('aria-label="Go to Session"');
     expect(markup).toContain("<dialog");
+  });
+
+  /**
+   * The survival moment, at the seam where it is actually experienced.
+   *
+   * Driven through a **real `createStores()` mirror** rather than the structural
+   * fake above, because the thing under test is the client stack answering "what am
+   * I looking at" from a `StateUpdate` the daemon could really send — the fake
+   * hands selection in as a prop and would prove nothing (#46).
+   *
+   * The guarantee is *the first frame that shows the session shows it selected*:
+   * this renders **once**, after the snapshot, with no effect, no second pass and
+   * nothing that could correct itself between paints.
+   */
+  test("the first frame after a relaunch shows the surviving session, not an empty pane", () => {
+    const survivor = session("agent", {
+      terminals: [terminal("t1", "claude")],
+      layout: singleTerminalLayout(terminalID("t1")),
+    });
+    const environment = environmentOver({
+      sessions: [survivor],
+      terminalStates: { [terminalID("t1")]: { kind: "running" } },
+    });
+
+    const markup = renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <MainWindow />
+      </ClientEnvironmentProvider>,
+    );
+
+    expect(markup).not.toContain("No session selected");
+    // The terminal is on screen, and the sidebar row agrees with the pane.
+    expect(markup).toContain('aria-label="Terminal: claude — running"');
+    expect(markup).toContain('aria-current="true"');
+  });
+
+  test("an empty mirror still renders the empty state: there is nothing to select", () => {
+    const environment = environmentOver({ sessions: [] });
+
+    const markup = renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <MainWindow />
+      </ClientEnvironmentProvider>,
+    );
+
+    expect(markup).toContain("No session selected");
   });
 });
 
