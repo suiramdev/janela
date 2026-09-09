@@ -182,9 +182,15 @@ confirm. Then verify — do not assume the call succeeded:
 ```bash
 launchctl print gui/$(id -u)/sh.janela.janelad   # must say: Could not find service
 pgrep -f 'MacOS/janelad' || echo 'no janelad resident'
-sfltool dumpbtm | grep -c janelad                # must be 0
+sfltool dumpbtm | grep -A6 janelad               # Disposition: [disabled, ...], not absent
 rm -rf /Applications/Janela.app
 ```
+
+The BTM record **survives unregistration** — measured: `Disposition: [disabled,
+allowed, notified]`, `Generation: 2`, its URL still pointing at the now-deleted
+bundle. Only `resetbtm` would clear it, and that resets Background Task Management
+for every app on the machine, so do not. Disabled is the correct end state, not
+absent; a run that expects zero matches will think it failed when it succeeded.
 
 `launchctl bootout` is not a substitute: it stops the job but can leave the Login
 Items record behind, and the promise is that System Settings looks as it did.
@@ -552,12 +558,14 @@ indication why, wrapping lines at 127.
 
 ### D3 — the daemon's log is unreachable exactly when you need it
 
-**Severity: medium.** The daemon's sink writes one JSON record per line to
-**stderr**, and the LaunchAgent plist declares no `StandardOutPath` or
-`StandardErrorPath`. `LOG_SUBSYSTEM` is exported by `@janela/support` and read by
+**Severity: medium. FIXED by #45.** The daemon's sink wrote one JSON record per
+line to **stderr**, and the LaunchAgent plist declared no `StandardOutPath` or
+`StandardErrorPath`. `LOG_SUBSYSTEM` was exported by `@janela/support` and read by
 nothing, so `docs/development.md`'s `log stream --predicate 'subsystem == …'`
-finds nothing either. On a real install, steps 3, 6 and 7 cannot be diagnosed at
-all.
+found nothing either. On a real install, steps 3, 6 and 7 could not be diagnosed at
+all. The daemon now writes to a rotated file under
+`~/Library/Logs/sh.janela.Janela/janelad.log` — the same place under launchd and in
+`--foreground`, where it is also mirrored to stderr — and `LOG_SUBSYSTEM` is gone.
 
 It bites in development too: stderr over a pipe is buffered, so records arrive
 late. During this run a failing case showed a daemon log ending at `listening`
@@ -604,13 +612,18 @@ verified by building, deleting the binary, and building again.
 
 ### D7 — `docs/development.md` § The daemon documents commands that do not exist
 
-**Severity: low.** It prints `make daemon-restart` (there is no Makefile;
-it is `bun run daemon:restart`), `.build/debug/janelad --socket /tmp/janela-dev.sock
---foreground` (the Swift-era path, and **`--socket` is not parsed** — it is silently
-ignored, and the daemon binds the real user socket instead, which is a genuinely
-dangerous thing to hand someone mid-procedure), and an `os_log` predicate that
-matches nothing (D3). The file carries a stale-stack banner, but this section is
-worse than stale: following it touches the daemon holding your own work.
+**Severity: low. FIXED by #49.** It printed `make daemon-restart` (there is no
+Makefile; it is `bun run daemon:restart`), `.build/debug/janelad --socket
+/tmp/janela-dev.sock --foreground` (the Swift-era path, and **`--socket` was not
+parsed** — it was silently ignored, and the daemon bound the real user socket
+instead, which is a genuinely dangerous thing to hand someone mid-procedure), and an
+`os_log` predicate that matched nothing (D3).
+
+`janelad` now **refuses any argument it cannot honour**, exit 2, before it opens
+anything, and its usage text names the recipe that works. `--socket` was deliberately
+not implemented: a socket-only override leaves the database shared, so two daemons
+would restore the same sessions — a worse footgun than the one removed. `HOME=` moves
+the socket and the database together, which is what this document uses.
 
 ### D8 — one test's timeout is load-sensitive, and this suite is the load
 

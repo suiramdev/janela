@@ -84,7 +84,7 @@ ADRs handle it.
 
 | Was | Is | Notes |
 | --- | --- | --- |
-| `Log` (OSLog categories) | `log(category)` + `setLogSink` | The sink is injected: the daemon writes to the system log, a client through Tauri's log plugin, a browser to the console |
+| `Log` (OSLog categories) | `log(category)` + `setLogSink` | The sink is injected: the daemon writes JSON lines to a rotated file under `~/Library/Logs/sh.janela.Janela/`, a client through Tauri's log plugin, a browser to the console |
 | `Signpost` (OSSignposter) | `begin(name)` | `performance.mark`/`measure`. Same budgets, different instrument |
 | `UserFacingError` | `UserFacingError` | Protocol → abstract class, so `instanceof` works |
 | `UnexpectedFailure` | `UnexpectedFailure` | |
