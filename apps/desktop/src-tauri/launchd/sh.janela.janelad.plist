@@ -20,6 +20,15 @@
   No `RunAtLoad` either: registering must not start a daemon nobody asked for. A
   client that fails to connect starts it with
   `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries.
+
+  No `StandardOutPath` / `StandardErrorPath` either. launchd takes a literal path with
+  no `~` expansion, and this file is sealed once for every user of the machine, so the
+  only path it could name is a shared one — which is also a symlink trap — and it would
+  do nothing for a daemon a developer runs in the foreground. The daemon writes its own
+  log to `~/Library/Logs/sh.janela.Janela/janelad.log` (`apps/daemon/src/log-file.ts`),
+  the same place in both modes, and mirrors it to stderr in the foreground. #45.
+  (An XML comment may not contain two hyphens in a row, which is why the flag is not
+  spelled here.)
 -->
 <plist version="1.0">
 <dict>

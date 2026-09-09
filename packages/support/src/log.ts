@@ -12,10 +12,12 @@
  *   and its state transition, a file count and a total size.
  * - Prefer `debug` for anything on a hot path.
  *
- * Both processes log through this. The daemon writes to the system log via its
- * own sink; a client writes through the Tauri log plugin, and a future browser
- * client to the console — which is why the sink is injected rather than chosen
- * here. This module stays isomorphic so `@janela/support` can link into a
+ * Both processes log through this. The daemon installs a sink that writes one JSON
+ * record per line to a file it rotates under `~/Library/Logs/sh.janela.Janela/`
+ * (`apps/daemon/src/log-file.ts`), and mirrors the same lines to stderr when it
+ * runs `--foreground`; a client writes through the Tauri log plugin, and a future
+ * browser client to the console — which is why the sink is injected rather than
+ * chosen here. This module stays isomorphic so `@janela/support` can link into a
  * WebView. See docs/decisions/0023-macos-first-portable.md.
  */
 
@@ -74,8 +76,6 @@ export interface Logger {
   warning(message: string, fields?: LogRecord["fields"]): void;
   error(message: string, fields?: LogRecord["fields"]): void;
 }
-
-export const LOG_SUBSYSTEM = "sh.janela.Janela";
 
 /**
  * Installs the process's sink. Called once, by a composition root — the daemon's
