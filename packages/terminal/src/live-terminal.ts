@@ -179,11 +179,12 @@ export function createLiveTerminal(options: {
    * The emulator seam. Production passes nothing.
    *
    * It exists so a test can supply an encoder that sends *only* deltas, which is
-   * what makes the size announcement decidable: today's `repaintSince` answers
-   * any revision mismatch with a whole grid, so a resize would reach a client
-   * even if nothing here tracked who had been told. #32's damage encoder removes
-   * that accident, and the test using this seam is the constraint it must keep
-   * passing.
+   * what makes the size announcement decidable. That used to be a hypothetical:
+   * the placeholder answered any revision mismatch with a whole grid, so a resize
+   * reached a client whether or not anything tracked who had been told. The
+   * damage encoder removed that accident, so the seam now pins behaviour the
+   * production path really has — a delta carries no geometry, and `owesSize` is
+   * the only thing that forces the announcement.
    */
   readonly createEmulator?: (options: {
     readonly size: GridSize;

@@ -536,12 +536,11 @@ describe("the negotiated size on the wire", () => {
   });
 
   test("reaches every attached client even when the encoder only sends deltas", async () => {
-    // The constraint #32's damage encoder has to keep passing, and the reason
-    // `owesSize` exists rather than the resize being left to bump a revision:
-    // today's `repaintSince` answers any mismatch with the whole grid, so this
-    // would pass by accident with nothing tracking who has been told. This
-    // emulator sends nothing at all unless it was fed, which is what a real
-    // damage encoder does for a quiet screen.
+    // The constraint the damage encoder has to keep passing, and the reason
+    // `owesSize` exists rather than the resize being left to bump a revision: a
+    // delta carries no geometry, so nothing but this bookkeeping would ever tell
+    // a client the grid moved. This emulator sends nothing at all unless it was
+    // fed, which is what the real encoder does for a quiet screen.
     const terminal = live("t-announce-delta", shellLaunch("exec cat"), {
       createEmulator: (options) => deltaOnlyEmulator(options.size),
     });
@@ -700,9 +699,9 @@ describe("repaints", () => {
  *
  * It obeys the one thing `TerminalEmulating` requires of a full repaint — the
  * grid announces its own size — and does the bare minimum everywhere else, which
- * is what makes "who has been told" observable. The production encoder answers
- * every revision mismatch with a whole grid, so it hides that question until #32
- * replaces it.
+ * is what makes "who has been told" observable in isolation: the production
+ * encoder answers a *quiet* screen with nothing too, but it also answers a resize
+ * with a whole grid, so a bug in the bookkeeping would hide behind that.
  */
 function deltaOnlyEmulator(initial: GridSize): TerminalEmulating {
   let size = initial;
