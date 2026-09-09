@@ -42,7 +42,12 @@ import {
   type LiveTerminal,
   type TerminalLaunch,
 } from "./live-terminal.ts";
-import type { PromptMark, TerminalEventSink, TerminalNotification } from "./terminal-emulating.ts";
+import type {
+  PromptMark,
+  TerminalEmulating,
+  TerminalEventSink,
+  TerminalNotification,
+} from "./terminal-emulating.ts";
 
 /** Generous on purpose: the failure it guards is a hang, not a slow pass. */
 const DEADLINE_MS = 15_000;
@@ -90,6 +95,10 @@ function live(
   extra: {
     readonly log?: Logger;
     readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+    readonly createEmulator?: (options: {
+      readonly size: GridSize;
+      readonly scrollback: number;
+    }) => TerminalEmulating;
   } = {},
 ): LiveTerminal {
   const terminal = createLiveTerminal({
@@ -525,6 +534,26 @@ describe("the negotiated size on the wire", () => {
     expect(terminal.repaintFor("big").length).toBeGreaterThan(0);
     expect(terminal.repaintFor("big")).toHaveLength(0);
   });
+
+  test("reaches every attached client even when the encoder only sends deltas", async () => {
+    // The constraint #32's damage encoder has to keep passing, and the reason
+    // `owesSize` exists rather than the resize being left to bump a revision:
+    // today's `repaintSince` answers any mismatch with the whole grid, so this
+    // would pass by accident with nothing tracking who has been told. This
+    // emulator sends nothing at all unless it was fed, which is what a real
+    // damage encoder does for a quiet screen.
+    const terminal = live("t-announce-delta", shellLaunch("exec cat"), {
+      createEmulator: (options) => deltaOnlyEmulator(options.size),
+    });
+    terminal.attach("big", { columns: 127, rows: 45 });
+    await terminal.start();
+    terminal.fullRepaintFor("big");
+    expect(terminal.repaintFor("big")).toHaveLength(0);
+
+    terminal.attach("small", { columns: 40, rows: 12 });
+
+    expect(decoder.decode(terminal.repaintFor("big"))).toContain("\x1b[8;12;40t");
+  });
 });
 
 describe("repaints", () => {
@@ -564,6 +593,53 @@ describe("repaints", () => {
     expect(() => terminal.fullRepaintFor("nobody")).toThrow();
   });
 });
+
+/**
+ * An emulator whose repaint really is a delta: nothing at all unless it was fed
+ * since the revision the client claims.
+ *
+ * It obeys the one thing `TerminalEmulating` requires of a full repaint — the
+ * grid announces its own size — and does the bare minimum everywhere else, which
+ * is what makes "who has been told" observable. The production encoder answers
+ * every revision mismatch with a whole grid, so it hides that question until #32
+ * replaces it.
+ */
+function deltaOnlyEmulator(initial: GridSize): TerminalEmulating {
+  let size = initial;
+  let revision = 0;
+  let text = "";
+  return {
+    feed(bytes: TerminalBytes): void {
+      text += decoder.decode(bytes);
+      revision += 1;
+    },
+    get size(): GridSize {
+      return size;
+    },
+    resize(next: GridSize): void {
+      size = next;
+    },
+    get revision(): number {
+      return revision;
+    },
+    repaintSince(seen: number): Uint8Array {
+      return seen === revision ? new Uint8Array(0) : encoder.encode(text);
+    },
+    fullRepaint(): Uint8Array {
+      return encoder.encode(`\x1bc\x1b[8;${size.rows};${size.columns}t${text}`);
+    },
+    snapshotText(): string {
+      return text;
+    },
+    clearScrollback(): void {
+      text = "";
+    },
+    events: undefined,
+    dispose(): void {
+      // Nothing to release: there is no grid, only the string above.
+    },
+  };
+}
 
 /** Returns `undefined` from `drain()` after failing once, as the native side does. */
 function scriptedTerminal(): PseudoTerminal & { closes: number } {

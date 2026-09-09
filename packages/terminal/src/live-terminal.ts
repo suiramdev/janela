@@ -175,6 +175,20 @@ export function createLiveTerminal(options: {
    * `revoke(2)` on the replica both make `read` return 0, which is EOF.
    */
   readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+  /**
+   * The emulator seam. Production passes nothing.
+   *
+   * It exists so a test can supply an encoder that sends *only* deltas, which is
+   * what makes the size announcement decidable: today's `repaintSince` answers
+   * any revision mismatch with a whole grid, so a resize would reach a client
+   * even if nothing here tracked who had been told. #32's damage encoder removes
+   * that accident, and the test using this seam is the constraint it must keep
+   * passing.
+   */
+  readonly createEmulator?: (options: {
+    readonly size: GridSize;
+    readonly scrollback: number;
+  }) => TerminalEmulating;
 }): LiveTerminal {
   return new PtyLiveTerminal(options);
 }
@@ -209,6 +223,10 @@ class PtyLiveTerminal implements LiveTerminal {
   private readonly scrollback: number;
   private readonly log: Logger | undefined;
   private readonly spawn: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+  private readonly makeEmulator: (options: {
+    readonly size: GridSize;
+    readonly scrollback: number;
+  }) => TerminalEmulating;
 
   private pty: PseudoTerminal | undefined;
   private emulator: TerminalEmulating | undefined;
@@ -263,6 +281,10 @@ class PtyLiveTerminal implements LiveTerminal {
     readonly scrollback?: number;
     readonly log?: Logger;
     readonly spawn?: (configuration: PseudoTerminalConfiguration) => PseudoTerminal;
+    readonly createEmulator?: (options: {
+      readonly size: GridSize;
+      readonly scrollback: number;
+    }) => TerminalEmulating;
   }) {
     this.id = options.descriptor.id;
     this.sessionID = options.sessionID;
@@ -271,6 +293,7 @@ class PtyLiveTerminal implements LiveTerminal {
     this.scrollback = options.scrollback ?? DEFAULT_SCROLLBACK;
     this.log = options.log;
     this.spawn = options.spawn ?? spawnPseudoTerminal;
+    this.makeEmulator = options.createEmulator ?? createEmulator;
   }
 
   /**
@@ -326,7 +349,7 @@ class PtyLiveTerminal implements LiveTerminal {
       throw error;
     }
 
-    this.emulator = createEmulator({ size, scrollback: this.scrollback });
+    this.emulator = this.makeEmulator({ size, scrollback: this.scrollback });
     this.emulator.events = this.emulatorSink;
     for (const entry of this.clients.values()) {
       entry.revision = this.emulator.revision;
