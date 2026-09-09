@@ -608,7 +608,7 @@ worse than stale: following it touches the daemon holding your own work.
 
 ### D8 — one test's timeout is load-sensitive, and this suite is the load
 
-**Severity: low, and found by accident.** `packages/git`'s
+**Severity: low, and found by accident. FIXED by #50.** `packages/git`'s
 `"a cross-device copy falls back, says so, and still delivers the bytes"` builds a
 RAM disk through `crossDeviceVolume()` and runs under `bun test`'s default 5 s
 timeout. It passes alone every time. It failed once here at exactly 5000 ms, in a
@@ -618,8 +618,8 @@ times — an `hdiutil` attach does not care whose I/O it is queued behind.
 The survival suite now copies once instead of seven times, and three forced full
 runs afterwards were clean, so the symptom is gone. The fragility is not: a test
 that attaches a volume needs an explicit timeout, the way `packages/pty`'s slow
-tests already carry `45_000`. Left for whoever owns that file — this branch does
-not edit it.
+tests already carry `45_000`. Both tests that attach a volume in that file now
+carry `45_000`.
 
 ### D9 — registration was unreachable, so no install ever armed the daemon
 
