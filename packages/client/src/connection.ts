@@ -166,6 +166,18 @@ export const RECONNECT_INITIAL_DELAY_MS = 250;
 export const RECONNECT_MAXIMUM_DELAY_MS = 10_000;
 
 /**
+ * How long the daemon has to answer our `hello`.
+ *
+ * The daemon's own deadline protects it from a peer that never speaks; this is
+ * the same protection facing the other way. Without it a listener that accepts
+ * and says nothing — a daemon mid-start, or anything else squatting on the path
+ * — is a permanent "Connecting…" (#43). A local socket answers in about a
+ * millisecond, so five seconds is enormous, and a miss is one more failed
+ * attempt under the usual backoff: a silence is never a refusal.
+ */
+export const HANDSHAKE_DEADLINE_MS = 5_000;
+
+/**
  * Delay before retry `attempt` (1-based): 250, 500, 1000, … capped at 10 s.
  *
  * No jitter: there is one client per user per daemon, so there is no thundering
@@ -308,10 +320,13 @@ export function createConnection(options: {
   readonly mirror: MirrorApplying;
   readonly log?: Logger;
   readonly delay?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  /** Test hook. Production uses `HANDSHAKE_DEADLINE_MS`. */
+  readonly handshakeDeadlineMs?: number;
 }): DaemonConnection {
   const { openTransport, mirror } = options;
   const log = options.log ?? silentLogger;
   const delay = options.delay ?? timerDelay;
+  const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
   const hello: Hello = {
     protocolVersion: PROTOCOL_VERSION,
@@ -566,24 +581,38 @@ export function createConnection(options: {
     current = { transport, generation: mine };
     const iterator = transport.incoming()[Symbol.asyncIterator]();
 
-    try {
-      await transport.send(encodeClientMessage({ type: "hello", hello }));
-    } catch (error) {
-      log.warning("hello not sent", { error: errorName(error) });
-      teardown("hello not sent");
-      return "failed";
-    }
+    // Armed before the hello goes out and disarmed the moment anything comes back:
+    // the daemon's silence, not its slowness elsewhere, is what this bounds.
+    let handshakeTimedOut = false;
+    const handshakeDeadline = setTimeout(() => {
+      handshakeTimedOut = true;
+      // Closing is what unblocks the read below, the same way `disconnect()` does it.
+      void closeQuietly(transport);
+    }, handshakeDeadlineMs);
 
     let first: IteratorResult<Frame>;
     try {
+      await transport.send(encodeClientMessage({ type: "hello", hello }));
       first = await iterator.next();
     } catch (error) {
+      clearTimeout(handshakeDeadline);
+      if (handshakeTimedOut) {
+        log.warning("handshake timed out", { attempt });
+        teardown("handshake timed out");
+        return "failed";
+      }
       log.warning("handshake failed", { error: errorName(error) });
       teardown("handshake failed");
       return "failed";
     }
+    clearTimeout(handshakeDeadline);
 
     if (first.done === true) {
+      if (handshakeTimedOut) {
+        log.warning("handshake timed out", { attempt });
+        teardown("handshake timed out");
+        return "failed";
+      }
       log.info("connection closed before hello");
       teardown("closed before hello");
       return "failed";

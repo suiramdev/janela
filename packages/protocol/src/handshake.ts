@@ -57,26 +57,34 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    and `StateUpdate` carries the launch profiles with their availability.
  * 4  `createTerminal.placement` (a split, persisted by the daemon), and
  *    `removeTerminal` and `restartTerminal` join `ClientMessage`.
+ * 5  A repaint carries the negotiated grid: `fullRepaint` emits
+ *    `CSI 8 ; rows ; cols t` between its RIS and the screen, and a client is
+ *    re-sent one whenever the negotiation moves or overrules its viewport. The
+ *    size travels in the raw output frame rather than as a control message
+ *    because it belongs to the same ordered stream as the bytes it describes —
+ *    a size arriving out of band would paint one geometry's screen into
+ *    another's grid (ADR 0016 § Terminal size with multiple clients).
  * ```
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /**
  * Oldest version we still accept.
  *
- * Also 4, because neither v4 change degrades: a v3 daemon meeting a
- * `removeTerminal` falls off the end of its dispatch switch and answers nothing,
- * so the client waits forever for a reply that is never coming, and a v3 daemon
- * meeting `createTerminal.placement` would silently ignore it and open a tab
- * where the user asked for a split.
- * A v3 peer's `hello` is answered with `refused` / `incompatibleVersion` carrying
- * this range, the daemon keeps running and no terminal is touched (ADR 0016 §
- * Handshake, ADR 0017); a v4 client meeting a v3 daemon refuses on its own side
- * and tells the skew story — "the background service is older", whose only
- * button is "Restart the background service" — rather than reporting a handshake
- * failure. Nothing after `hello` is decoded from a refused peer.
+ * Also 5, because the v5 change degrades *silently*, which is the worst way. A
+ * v4 peer parses `CSI 8 ; rows ; cols t` and drops it — measured against
+ * `@xterm/xterm` 6.0.0, whose `windowOptions` switch has no case for parameter
+ * 8 — so it would render a 127-column screen into a 40-column PTY's geometry:
+ * lines wrapping at the wrong width, nothing letterboxed, and no error anywhere
+ * to say so. A refusal a person can read beats a screen that is quietly wrong.
+ * A v4 peer's `hello` is answered with `refused` / `incompatibleVersion`
+ * carrying this range, the daemon keeps running and no terminal is touched (ADR
+ * 0016 § Handshake, ADR 0017); a v5 client meeting a v4 daemon refuses on its
+ * own side and tells the skew story — "the background service is older", whose
+ * only button is "Restart the background service" — rather than reporting a
+ * handshake failure. Nothing after `hello` is decoded from a refused peer.
  */
-export const MINIMUM_SUPPORTED_VERSION = 4;
+export const MINIMUM_SUPPORTED_VERSION = 5;
 
 /**
  * Whether the two version ranges overlap: each side's current version must be at

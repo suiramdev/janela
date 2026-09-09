@@ -15,8 +15,12 @@
  * bun run scripts/survival-probe.ts                       # what is running
  * bun run scripts/survival-probe.ts --attach <id> --columns 40 --rows 12
  * bun run scripts/survival-probe.ts --attach <id> --send 'stty size\n'
- * bun run scripts/survival-probe.ts --attach <id> --protocol-version 5
+ * bun run scripts/survival-probe.ts --attach <id> --protocol-version 6
  * ```
+ *
+ * The last one stages version skew, and the number has to be past
+ * `PROTOCOL_VERSION` to do it — 5 is the shipped version since #44, so it is now
+ * *compatible*. Anything above the daemon's range is refused.
  *
  * It never creates, starts, stops or removes anything. The most it does is
  * attach a viewport, which the daemon undoes when the socket closes.
@@ -174,8 +178,9 @@ await pause(500);
 if (state === undefined) {
   console.log("No state announcement arrived.");
   console.log(
-    "If the daemon also sent no hello, this is the swallowed-connection defect in\n" +
-      "docs/survival-proof.md § Defects: run this again.",
+    "The daemon sent no state. If it also sent no hello, it is not the start-up\n" +
+      "race any more — #43 fixed that, and the daemon answers a connection accepted\n" +
+      "mid-start — so look at whether a daemon is running at all.",
   );
   process.exit(1);
 }

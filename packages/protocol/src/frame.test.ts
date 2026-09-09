@@ -31,8 +31,11 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("a persisted split and removeTerminal are a wire change: version 4", () => {
-    expect(PROTOCOL_VERSION).toBe(4);
+  test("the negotiated grid on the wire is a wire change: version 5", () => {
+    expect(PROTOCOL_VERSION).toBe(5);
+    // Equal, not merely ordered: a v4 peer drops the size announcement and
+    // renders the wrong geometry in silence, so the ranges must not overlap.
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(5);
   });
 });
 

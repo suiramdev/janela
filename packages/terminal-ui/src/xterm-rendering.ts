@@ -81,9 +81,9 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
     scrollback: CLIENT_SCROLLBACK_LINES,
     cursorBlink: options.reducedMotion !== true,
     screenReaderMode: options.screenReaderMode === true,
-    // A future daemon-emitted `CSI 8 ; rows ; cols t` resizes this grid with no
-    // client code at all. Nothing on the wire delivers the negotiated PTY size
-    // today, so this is the seam rather than a feature.
+    // `CSI 8 ; rows ; cols t` — the daemon's negotiated grid (protocol 5) — is
+    // gated on this flag before any handler sees it. The library then implements
+    // no case for parameter 8, so the resize below is ours. See the handler.
     windowOptions: { setWinSizeChars: true },
     allowProposedApi: true,
   });
@@ -151,6 +151,7 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
 
     dispose(): void {
       observer.disconnect();
+      windowSize.dispose();
       for (const subscription of subscriptions) subscription.dispose();
       webgl?.dispose();
       fit.dispose();
@@ -206,6 +207,36 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
     };
   }
 
+  /**
+   * The cell metric from the last container-driven measurement.
+   *
+   * The daemon-driven path letterboxes from this rather than measuring again, so
+   * that the margin is derived from the same metric the grid was, and agrees with
+   * it by construction. A cell is a font metric and does not change on resize.
+   *
+   * Measuring again would also work today — `measureCell()` inside the parse path
+   * returned 8.803 px against this value's 8.800 on a real repaint, because the
+   * render service sizes `.xterm-screen` synchronously inside `resize()`. That is
+   * an ordering inside the library, and the cost of it changing is not one bad
+   * frame: nothing re-measures until the container moves, so a wrong margin here
+   * would simply stay.
+   */
+  let lastCell: PixelSize | undefined;
+
+  /**
+   * Sizes the grid element to whole cells, leaving the rest of the box showing
+   * the container. Never scales: a scaled monospace grid is a blurry one.
+   */
+  function applyLetterbox(cell: PixelSize): void {
+    const box = contentBox();
+    const margins = letterboxMargins(box, cell, {
+      columns: terminal.cols,
+      rows: terminal.rows,
+    });
+    host.style.width = `${Math.max(0, box.width - margins.width)}px`;
+    host.style.height = `${Math.max(0, box.height - margins.height)}px`;
+  }
+
   function remeasure(): void {
     const box = contentBox();
     const cell = measureCell();
@@ -220,17 +251,50 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
     const held: GridSize = { columns: terminal.cols, rows: terminal.rows };
 
     if (cell !== undefined) {
-      const margins = letterboxMargins(box, cell, held);
-      host.style.width = `${Math.max(0, box.width - margins.width)}px`;
-      host.style.height = `${Math.max(0, box.height - margins.height)}px`;
+      lastCell = cell;
+      applyLetterbox(cell);
     }
 
     rendering.onViewportChange?.(held);
   }
 
+  /**
+   * The daemon's negotiated grid, applied without voting it back.
+   *
+   * The size arrives in the output stream because it belongs to the same ordered
+   * bytes it describes (ADR 0016, protocol 5). Acting on it is this module's job
+   * and not the library's: `@xterm/xterm` 6.0.0 gates parameter 8 on
+   * `windowOptions.setWinSizeChars` and then falls off the end of its own switch,
+   * so without this the sequence is parsed and dropped — the whole of defect D2.
+   *
+   * Every other parameter is handed back to the library: 18 answers a program's
+   * size query, 22 and 23 push and pop its title, and none of them are ours.
+   *
+   * It deliberately does not call `onViewportChange`. This client's vote is what
+   * it measured; voting the daemon's answer back would make the minimum sticky,
+   * because a minimum echoed as a proposal can never grow again. `terminal.onResize`
+   * stays unwired for the same reason.
+   */
+  const windowSize = terminal.parser.registerCsiHandler({ final: "t" }, (parameters) => {
+    if (parameters[0] !== 8) return false;
+    const rows = parameters[1];
+    const columns = parameters[2];
+    if (typeof rows !== "number" || typeof columns !== "number") return true;
+    if (!Number.isInteger(rows) || !Number.isInteger(columns) || rows <= 0 || columns <= 0) {
+      return true;
+    }
+    if (columns !== terminal.cols || rows !== terminal.rows) {
+      terminal.resize(columns, rows);
+    }
+    // Before the first container measurement there is no cell metric to letterbox
+    // with; the observer tick that produces one applies it.
+    if (lastCell !== undefined) applyLetterbox(lastCell);
+    return true;
+  });
+
   // Only container-driven measurements vote. `terminal.onResize` is deliberately
-  // not wired: it also fires for a daemon-driven `CSI 8 t`, and voting that back
-  // would turn the daemon's command into this client's proposal.
+  // not wired: it also fires for the daemon-driven `CSI 8 t` above, and voting
+  // that back would turn the daemon's command into this client's proposal.
   const observer = new ResizeObserver(() => {
     remeasure();
   });

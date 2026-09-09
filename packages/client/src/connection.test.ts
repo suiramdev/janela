@@ -59,7 +59,7 @@ interface Harness {
 
 let live: DaemonConnection | undefined;
 
-function harness(): Harness {
+function harness(options: { readonly handshakeDeadlineMs?: number } = {}): Harness {
   const daemon = fakeDaemon();
   const stores = createStores();
   const delays = fakeDelay();
@@ -70,6 +70,7 @@ function harness(): Harness {
     mirror: stores.mirror,
     log: logger.log,
     delay: delays.delay,
+    ...options,
   });
   live = connection;
 
@@ -229,6 +230,19 @@ describe("the handshake", () => {
 
     expect(logger.with("unexpected first message")[0]?.fields).toEqual({ type: "acknowledged" });
   });
+
+  test("the deadline is disarmed once the daemon answers", async () => {
+    const { connection, handshake, logger } = harness({ handshakeDeadlineMs: 30 });
+    const peer = await handshake();
+
+    // A real wait, deliberately: the thing under test is a real `setTimeout` that
+    // must not fire, and "did not happen" is only observable by outliving it.
+    await Bun.sleep(80);
+
+    expect(connection.status.kind).toBe("connected");
+    expect(peer.closed).toBe(false);
+    expect(logger.with("handshake timed out")).toEqual([]);
+  });
 });
 
 describe("reconnecting", () => {
@@ -259,6 +273,30 @@ describe("reconnecting", () => {
     peer.end();
     await until(() => connection.status.kind === "reconnecting", "the reconnect");
     expect(connection.status).toEqual({ kind: "reconnecting", attempt: 1 });
+  });
+
+  test("a daemon that accepts and says nothing is a failed attempt, retried under backoff — never a refusal", async () => {
+    const { daemon, connection, delays, logger } = harness({ handshakeDeadlineMs: 50 });
+    const seen: string[] = [];
+    connection.subscribe(() => seen.push(connection.status.kind));
+
+    void connection.connect();
+    await until(() => daemon.connections.length === 2, "a second attempt");
+
+    // One failed attempt under #28's schedule, not a refusal: a silence says
+    // nothing about whether the next attempt will be answered.
+    expect(delays.calls).toEqual([250]);
+    expect(daemon.connections[0]?.closed).toBe(true);
+    expect(logger.with("handshake timed out")[0]?.fields).toEqual({ attempt: 0 });
+    expect(seen).toContain("reconnecting");
+    expect(seen).not.toContain("refused");
+
+    // And the silence does not poison what follows.
+    const second = daemon.connections[1];
+    if (second === undefined) throw new Error("no second connection");
+    await until(() => second.controls().length > 0, "the second hello");
+    second.say(daemonHello());
+    await until(() => connection.status.kind === "connected", "connected");
   });
 
   test("the backoff is capped", () => {

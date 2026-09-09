@@ -1,4 +1,4 @@
-import type { Socket } from "node:net";
+import { createServer, type Socket } from "node:net";
 
 import { absolutePath } from "@janela/core";
 import {
@@ -200,11 +200,14 @@ export async function daemonEnvironment(
       }
 
       const path = options.socketPath ?? defaultSocketPath();
-      const bound = await bindDaemonSocket({ path, ownUid, log: log("protocol") });
-      if (bound.kind === "already-serving") return;
-
+      // The listener before the bind: `socketListener` is what puts the
+      // `connection` handler on the server, and a connection accepted before one
+      // exists is dropped by the runtime with the peer none the wiser (#43).
+      // Sockets accepted before the accept loop runs wait in the listener's
+      // bounded `pending` queue.
+      const server = createServer({ pauseOnConnect: true });
       const listener = socketListener({
-        server: bound.server,
+        server,
         credentials: (socket: Socket): RawPeerCredential => {
           const fd = descriptorOf(socket);
           if (fd === undefined) return { xucred: undefined, pid: undefined };
@@ -213,6 +216,10 @@ export async function daemonEnvironment(
         ownUid,
         log: log("protocol"),
       });
+
+      const bound = await bindDaemonSocket({ server, path, ownUid, log: log("protocol") });
+      // Never listened, so there is no descriptor and nothing to release.
+      if (bound.kind === "already-serving") return;
 
       try {
         await daemonServer.serve(listener, signal);

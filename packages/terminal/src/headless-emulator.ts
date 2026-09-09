@@ -195,7 +195,20 @@ export class HeadlessEmulator implements TerminalEmulating {
   }
 
   /**
-   * The visible screen, and only the visible screen.
+   * The visible screen, its dimensions, and only those.
+   *
+   * **`CSI 8 ; rows ; cols t` sits between the reset and the screen** (protocol
+   * 5): the grid the daemon negotiated is the geometry this serialisation is
+   * correct at, and a client painting it into a wider grid wraps every line at
+   * the wrong column. It goes after RIS because RIS does not resize — verified
+   * against `@xterm/xterm` 6.0.0 — and before the content for the obvious
+   * reason. It reports `currentSize`, which is what xterm holds after its own
+   * clamp, so the report and the PTY can never disagree.
+   *
+   * A receiver acts on it only with `windowOptions.setWinSizeChars` enabled: the
+   * library gates parameter 8 on that flag and then implements no case for it,
+   * so the client supplies the resize itself. `packages/terminal-ui`'s
+   * `xtermRendering` is that client; the round-trip test's receiver mirrors it.
    *
    * Scrollback is not part of attaching: serialising 10 000 lines costs 24 ms and
    * 662 KB against a 50 ms attach budget, for history a client can neither scroll
@@ -203,7 +216,8 @@ export class HeadlessEmulator implements TerminalEmulating {
    * tmux's does.
    */
   fullRepaint(): Uint8Array {
-    return encoder.encode(FULL_RESET + this.serializer.serialize({ scrollback: 0 }));
+    const size = `\x1b[8;${this.currentSize.rows};${this.currentSize.columns}t`;
+    return encoder.encode(FULL_RESET + size + this.serializer.serialize({ scrollback: 0 }));
   }
 
   /**

@@ -36,9 +36,32 @@ function feed(target: HeadlessEmulator, data: string): void {
   target.feed(encoder.encode(data));
 }
 
-/** A stock receiver, as a client would run one. */
+/**
+ * A stock receiver, as a client would run one — including the one thing a client
+ * has to supply itself.
+ *
+ * `windowOptions.setWinSizeChars` is the gate the library checks before any
+ * handler sees `CSI 8 t`, and it implements no case for parameter 8 behind it, so
+ * the resize is the client's. This mirrors `xtermRendering` in
+ * `packages/terminal-ui`, which is the real thing; keep the two in step.
+ */
 function receiver(columns: number, rows: number): Terminal {
-  return new Terminal({ cols: columns, rows, allowProposedApi: true, logLevel: "off" });
+  const target = new Terminal({
+    cols: columns,
+    rows,
+    allowProposedApi: true,
+    logLevel: "off",
+    windowOptions: { setWinSizeChars: true },
+  });
+  target.parser.registerCsiHandler({ final: "t" }, (parameters) => {
+    if (parameters[0] !== 8) return false;
+    const announcedRows = parameters[1];
+    const announcedColumns = parameters[2];
+    if (typeof announcedRows !== "number" || typeof announcedColumns !== "number") return true;
+    target.resize(announcedColumns, announcedRows);
+    return true;
+  });
+  return target;
 }
 
 function replay(target: Terminal, bytes: Uint8Array): Promise<void> {
@@ -308,6 +331,21 @@ describe("round trip", () => {
 
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
     expect(target.buffer.active.type).toBe("normal");
+  });
+
+  test("a receiver at the wrong size learns the negotiated grid from the repaint", async () => {
+    // The letterbox case, end to end at the byte level: the daemon has resolved
+    // the minimum of two viewports to 40×12 and the larger client is still 127×45.
+    // Nothing else in the stream says so, so the repaint has to.
+    const source = emulator(127, 45);
+    source.resize({ columns: 40, rows: 12 });
+    feed(source, "\x1b[H\x1b[2Jthis line is forty columns wide, and it wraps at forty");
+
+    const target = receiver(127, 45);
+    await replay(target, source.fullRepaint());
+
+    expect({ columns: target.cols, rows: target.rows }).toEqual({ columns: 40, rows: 12 });
+    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
   });
 });
 
