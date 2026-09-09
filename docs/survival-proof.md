@@ -586,12 +586,15 @@ then.
 
 ### D6 — turbo does not know where the sidecar is written
 
-**Severity: low, but it fails confusingly.** `turbo.json` declares `build` outputs
-as `dist/**`; `@janela/janelad`'s build writes `apps/daemon/janelad`. Every build
-prints `WARNING no output files found for task @janela/janelad#build`, and on a
-cache *hit* turbo replays the logs and restores nothing — so `bun run daemon:build`
-can report success while leaving no binary on disk, and `sidecar.ts` then fails at
-`copyFileSync` with `ENOENT`. Escape hatch: `bun run --cwd apps/daemon build`.
+**Severity: low, but it fails confusingly. FIXED by #48.** `turbo.json` declares
+`build` outputs as `dist/**`; `@janela/janelad`'s build writes
+`apps/daemon/janelad`. Every build prints `WARNING no output files found for task
+@janela/janelad#build`, and on a cache *hit* turbo replays the logs and restores
+nothing — so `bun run daemon:build` can report success while leaving no binary on
+disk, and `sidecar.ts` then fails at `copyFileSync` with `ENOENT`.
+`apps/daemon/turbo.json` now declares `janelad` (and the `--sourcemap` sibling
+`main.js.map`) as the build's output, so a cache hit restores the binary;
+verified by building, deleting the binary, and building again.
 
 ### D7 — `docs/development.md` § The daemon documents commands that do not exist
 

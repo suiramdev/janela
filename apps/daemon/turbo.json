@@ -1,0 +1,15 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      // `bun build --compile` writes the sidecar beside package.json, not under
+      // dist/. Without this, turbo caches nothing and a cache hit "succeeds"
+      // with no binary — apps/desktop/scripts/sidecar.ts then fails ENOENT (#48).
+      // Only `outputs` is replaced; `dependsOn` is inherited from the root task,
+      // which a root-level `@janela/janelad#build` entry would silently drop.
+      // `--sourcemap` writes `main.js.map` beside it, from the entrypoint's name.
+      "outputs": ["janelad", "main.js.map"]
+    }
+  }
+}
