@@ -34,7 +34,7 @@ launchd at all:
 | 1 | Start a session, run a long-lived process that emits output | **Pass** — through the app's own UI, on the installed bundle |
 | 2 | Quit the app entirely | **Pass** — app gone from the process table, daemon pid and child pid unchanged |
 | 3 | `janelad` is still alive and the child is still running | **Pass, including the launchd half.** The daemon was launchd's own (`launchctl print` → `state = running`, `runs = 2`), the app was gone, the child was still `Rs`, and the screen advanced from ~`0036` to `0170` with nothing attached |
-| 4 | Relaunch, attach, grid is correct and output continued while detached | **Pass** — 44 unbroken lines, `survival-tick-0768` → `0811`, live cursor. One wart: which session was selected is not restored (**D4**) |
+| 4 | Relaunch, attach, grid is correct and output continued while detached | **Pass** — 44 unbroken lines, `survival-tick-0768` → `0811`, live cursor. The wart that the selected session was not restored was filed as **D4** and is fixed since #46: the relaunched window opens on the most recently active session |
 | 5 | A second client at a different viewport: the daemon resolves to the minimum, the larger client letterboxes rather than scales | **Pass, all four halves** since #44. Minimum: **pass** (`12 40`, wrapping at 40 columns). Grows back on detach: **pass** (`45 127`). Does not scale: **pass**. Letterboxes: **pass** — the negotiated grid rides the repaint as `CSI 8 ; rows ; cols t` (protocol 5) and the grid element shrinks to whole cells. It failed on the run below and was filed as **D2** |
 | 6 | Restart the daemon under version skew: the connection is refused and no terminal dies | **Pass, both halves.** The launchd daemon refused a version-5 client with `incompatibleVersion`, kept serving, and its child kept producing (`0050` → `0067`). A real second build — a client at protocol 5 against the compiled daemon at 4 — showed the banner and did **not** retry |
 | 7 | `SIGKILL` `janelad`: launchd restarts it and every affected session reappears as idle | **Pass, including launchd.** With **no app running**, so nothing could `kickstart` it, `kill -9` was answered by launchd in **1 second**: new pid, `runs` 2 → 3. Every session came back, every terminal `idle`, nothing respawned |
@@ -256,8 +256,9 @@ story — it *is* idle, and a daemon holding only those exits after five minutes
 
 Start the app again the same way. Then:
 
-1. The sidebar shows the session with a green dot. **It is not selected** — press
-   **⌘⇧O** and Return to select it (defect **D4**).
+1. The sidebar shows the session with a green dot, **and it is already selected**
+   — the most recently active session, chosen by the client from `lastActiveAt`
+   in the mirror (#46, defect **D4**). Nothing to press.
 2. Read the pane.
 
 **Observed:** the pane showed `survival-tick-0216` … `0259`, continuing from the
@@ -565,15 +566,20 @@ shell — the records only appeared once the process died and the pipe flushed. 
 assertion of the form "the log does not contain X" is weak for this reason; assert
 on process and child state instead.
 
-### D4 — after the survival moment, the app opens on "No session selected"
+### D4 — after the survival moment, the app opens on "No session selected" — fixed (#46)
 
 **Severity: low, and a product call.** Selection is local view state by design —
-no protocol message carries it, and none should — so a relaunch selects nothing.
+no protocol message carries it, and none should — so a relaunch selected nothing.
 With exactly one session, the one whose agent you came back to check on, the first
-frame is an empty pane and a green dot, and the user has to press ⌘⇧O or click.
-The moment the whole product is built for deserves a better first frame; "select
-the only session" and "select the most recently active" are each one line, and
-neither invents a new noun.
+frame was an empty pane and a green dot, and the user had to press ⌘⇧O or click.
+
+**Fixed in #46**, and still local: `createStores().mirror.apply` seeds
+`SessionStore.selection` with the most recently active session whenever nothing is
+selected, read from the `lastActiveAt` the mirror already carries. No new field, no
+protocol message, no persistence — the answer is recomputed from the daemon's state
+on every launch. The guarantee is *the first frame that **shows** the session shows
+it selected*: an empty mirror still renders "No session selected", because no client
+can select a session it has not been told about.
 
 ### D5 — `nextRequestID()` is a shipped export that throws
 

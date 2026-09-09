@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import type { LaunchProfileID, ProjectID, SessionID, TerminalState } from "@janela/core";
+import {
+  instant,
+  type LaunchProfileID,
+  type ProjectID,
+  type Session,
+  type SessionID,
+  type TerminalState,
+} from "@janela/core";
 
 import { createStores } from "./stores.ts";
 import {
@@ -168,6 +175,82 @@ describe("selection", () => {
   });
 });
 
+/** The same session, aged. `fakeSession` gives every session one timestamp. */
+const activeAt = (name: string, at: string): Session => ({
+  ...fakeSession(name),
+  lastActiveAt: instant(at),
+});
+
+/**
+ * The survival moment: you quit Janela, your agent kept running, you came back.
+ *
+ * The guarantee is *the first frame that shows the session shows it selected* — not
+ * the first frame, because no client can select a session it has not been told
+ * about. Selection stays local and unsent; this is a rule for answering "what am I
+ * looking at" when the user has not said, exactly as `neighbourOf` answers it when
+ * the session they chose is gone.
+ */
+describe("selection when the user has not chosen", () => {
+  test("the first snapshot selects the most recently active session", () => {
+    const stores = createStores();
+
+    stores.mirror.apply(
+      snapshot([
+        activeAt("a", "2026-03-01T09:00:00.000Z"),
+        activeAt("b", "2026-03-01T11:00:00.000Z"),
+        activeAt("c", "2026-03-01T10:00:00.000Z"),
+      ]),
+    );
+
+    expect(stores.sessions.selection).toBe(id("b"));
+  });
+
+  test("with one session, that is the one: no empty pane after a relaunch", () => {
+    const stores = createStores();
+
+    stores.mirror.apply(snapshot([fakeSession("only")]));
+
+    expect(stores.sessions.selection).toBe(id("only"));
+  });
+
+  test("sessions of the same age keep the daemon's order", () => {
+    const stores = createStores();
+
+    stores.mirror.apply(snapshot([fakeSession("a"), fakeSession("b"), fakeSession("c")]));
+
+    expect(stores.sessions.selection).toBe(id("a"));
+  });
+
+  test("a session the user chose is never overruled by a later snapshot", () => {
+    const stores = createStores();
+    stores.mirror.apply(
+      snapshot([
+        activeAt("a", "2026-03-01T09:00:00.000Z"),
+        activeAt("b", "2026-03-01T11:00:00.000Z"),
+      ]),
+    );
+    stores.sessions.selection = id("a");
+
+    // `b` is still the most recently active, and a fresher `b` arrives.
+    stores.mirror.apply(
+      snapshot([
+        activeAt("a", "2026-03-01T09:00:00.000Z"),
+        activeAt("b", "2026-03-01T12:00:00.000Z"),
+      ]),
+    );
+
+    expect(stores.sessions.selection).toBe(id("a"));
+  });
+
+  test("a partial update that brings the first session selects it too", () => {
+    const stores = createStores();
+
+    stores.mirror.apply(partial([fakeSession("a")]));
+
+    expect(stores.sessions.selection).toBe(id("a"));
+  });
+});
+
 describe("derived views", () => {
   test("group sessions by project", () => {
     const stores = createStores();
@@ -260,16 +343,18 @@ describe("staleness and notification", () => {
       projects += 1;
     });
 
-    stores.mirror.apply(snapshot([fakeSession("a")]));
+    // Two sessions, because the first is seeded as the selection: the assignment
+    // below has to be a genuine change for "a change notifies" to mean anything.
+    stores.mirror.apply(snapshot([fakeSession("a"), fakeSession("b")]));
     expect(sessions).toBe(1);
     // One apply is one notification for both views: a listener must never see a
     // half-applied update.
     expect(projects).toBe(1);
 
-    stores.sessions.selection = id("a");
+    stores.sessions.selection = id("b");
     expect(sessions).toBe(2);
     // Setting the same value again changes nothing and says nothing.
-    stores.sessions.selection = id("a");
+    stores.sessions.selection = id("b");
     expect(sessions).toBe(2);
 
     stores.mirror.markStale();

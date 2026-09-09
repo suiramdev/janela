@@ -36,6 +36,11 @@ export interface SessionStore {
    * Selection is per-client state: two clients attached to the same daemon look at
    * different sessions, which is the entire point of being able to open Janela on a
    * phone while a Mac window is open.
+   *
+   * The user is not the only one who sets it. When they have not chosen — a fresh
+   * window, or the session they chose has been removed — `apply` answers instead,
+   * from what the mirror already carries. That is still local: nothing is sent,
+   * nothing is persisted, and the answer is recomputed from scratch next launch.
    */
   selection: SessionID | undefined;
 
@@ -170,6 +175,32 @@ function neighbourOf(
 }
 
 /**
+ * The session to look at when the user has not chosen one.
+ *
+ * The moment this exists for: you quit Janela, your agent kept running, you came
+ * back. Selection is local view state, so a relaunch starts with none — and the
+ * first frame that shows the surviving session must show it *selected*, not an
+ * empty pane beside a green dot (#46). "The only session there is" is the case
+ * that matters and it falls out of this rule for free.
+ *
+ * `lastActiveAt` is the daemon's, moved when a terminal starts, and it survives a
+ * daemon restart in the database — so this is read from the mirror rather than
+ * remembered, and needs no new field, no wire message and no persistence.
+ *
+ * Compared as strings because `instant()` canonicalises every `Instant` to
+ * `YYYY-MM-DDTHH:MM:SS.mmmZ`, which makes lexical order chronological order. The
+ * comparison is strict, so sessions of equal age resolve to the first in the
+ * daemon's own order rather than the last.
+ */
+function mostRecentlyActive(candidates: readonly Session[]): SessionID | undefined {
+  let best: Session | undefined;
+  for (const candidate of candidates) {
+    if (best === undefined || candidate.lastActiveAt > best.lastActiveAt) best = candidate;
+  }
+  return best?.id;
+}
+
+/**
  * Mirrors `isLiveState` in `@janela/terminal`, which is daemon-side and therefore
  * unreachable from here. Both exist because `isLive` in `@janela/core` is still a
  * seam; when it lands, both call it.
@@ -290,6 +321,15 @@ export function createStores(): {
           // Selection survives: the selected session may simply not have changed.
           // Only a full snapshot proves it is gone.
         }
+
+        // Seeded, never remembered. A mirror holding sessions must not render with
+        // nothing selected: on the first snapshot after a relaunch that is the
+        // session whose agent the user came back for (#46). Outside the branches
+        // above because the rule is about the mirror having sessions at all, not
+        // about how it learned of them — and inside `apply`, before the single
+        // notification, so the first render that knows the session exists already
+        // has it selected rather than flashing an empty pane and correcting itself.
+        if (selection === undefined) selection = mostRecentlyActive(sessions);
 
         if (sessions !== previous) {
           standalone = sessions.filter((session) => session.projectID === undefined);
