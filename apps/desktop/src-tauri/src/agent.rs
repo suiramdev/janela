@@ -108,8 +108,15 @@ pub fn register_launch_agent() -> Result<String, String> {
         Ok(service) => service,
     };
 
+    // Only these two mean "nothing to do". macOS reports an agent that has never
+    // been registered as `NotFound` — not `NotRegistered`, which is what the
+    // name suggests and what this used to test for — so treating anything but
+    // `NotRegistered` as terminal made registration unreachable on every real
+    // install: `registerAndReturnError` was never called, no Login Item was
+    // ever created, and `launchctl kickstart` then had no service to start.
+    // Found by #31, which could not otherwise arm the daemon's lifecycle at all.
     let status = unsafe { service.status() };
-    if status != SMAppServiceStatus::NotRegistered {
+    if status == SMAppServiceStatus::Enabled || status == SMAppServiceStatus::RequiresApproval {
         return Ok(describe(status).to_string());
     }
 
