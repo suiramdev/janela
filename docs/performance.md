@@ -311,5 +311,43 @@ while the client was frozen.
 ## Regressions
 
 Performance work is only durable if it is defended. Before optimising, capture a
-baseline; after, record the numbers in the PR. When a benchmark harness lands, the
-throughput and launch budgets are the first two things it should assert.
+baseline; after, record the numbers in the PR. The throughput side of that now has
+a harness; the launch budget is still the next one to grow one.
+
+### Repaint encoding
+
+`bun run --cwd packages/terminal bench` — five scenarios × two grids, three
+attached clients each, 600 frames after a 60-frame warm-up. Run it twice on a quiet
+machine and report the second run; the harness itself gates two rows (the `line
+flood` feed rate against ≥ 100 MB/s, and every gated scenario's bytes/frame against
+the 2 MB/s socket budget) and exits non-zero when either fails.
+
+**Baseline — full-grid placeholder (#21).** Every mismatched revision answered with
+RIS + `CSI 8 t` + `SerializeAddon.serialize`. Measured on an Apple M4, `bun`
+1.3.14, `@xterm/headless` 6.0.0.
+
+| Scenario | Grid | bytes/frame/client | MB/s @120 | encode µs/frame | feed µs/frame | CPU % of 8 ms | shared buffer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| yes flood | 80×24 | 87 | 0.010 | 155.3 | 38 413 | 482 | no |
+| yes flood | 120×40 | 136 | 0.016 | 301.9 | 40 171 | 506 | no |
+| line flood | 80×24 | 1 859 | 0.223 | 144.3 | 4 303 | 56 | no |
+| line flood | 120×40 | 4 701 | 0.564 | 337.3 | 3 944 | 54 | no |
+| build log | 80×24 | 1 491 | 0.179 | 121.3 | 6.9 | 1.6 | no |
+| build log | 120×40 | 2 516 | 0.302 | 270.6 | 7.1 | 3.5 | no |
+| TUI cursor move | 80×24 | 2 394 | 0.287 | 222.5 | 2.7 | 2.8 | no |
+| TUI cursor move | 120×40 | 3 049 | 0.366 | 572.3 | 3.2 | 7.2 | no |
+| quiet | 80×24 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| quiet | 120×40 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| SGR-heavy redraw | 80×24 | 6 014 | 0.722 | 426.2 | 46.1 | 5.9 | no |
+| SGR-heavy redraw | 120×40 | 14 815 | 1.778 | 1 053.1 | 70.1 | 14.0 | no |
+
+Feed rates: `line flood` 193.7 MB/s at 80×24 and 211.3 MB/s at 120×40; `yes flood`
+21.7 and 20.7 MB/s. The first run of the pair read 202.1 / 219.4 and 30.1 / 27.7,
+which is the honest spread on a machine that is not idle.
+
+**Why `yes flood` is reported and not gated.** The ≥ 100 MB/s row above was
+measured off the *PTY*, with 78-column lines. `y\r\n` is a screen scroll every three
+bytes, and the emulator sustains ~20–30 MB/s of it — the emulator, not the PTY, is
+the flood's bottleneck for that payload, and back-pressure is what absorbs it. Its
+*wire* row is what #32 is about, and that is gated. `line flood` carries the
+throughput budget on the payload the budget was measured with.
