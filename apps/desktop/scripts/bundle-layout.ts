@@ -65,12 +65,19 @@ export const FORBIDDEN_ENTITLEMENTS = ["com.apple.security.app-sandbox"] as cons
  * - `Program`, `ProgramArguments`: an absolute path to a binary inside the bundle,
  *   which is user-specific. `BundleProgram` is the relative form SMAppService wants.
  * - `RunAtLoad`: registering the agent must not start a daemon nobody asked for.
+ * - `StandardOutPath`, `StandardErrorPath`: launchd takes a literal path with no
+ *   `~` expansion, and this plist is sealed once for every user of the machine, so
+ *   the only path either could name is a shared one — also a symlink trap — and
+ *   neither would do anything for a daemon run in the foreground. The daemon owns
+ *   its log instead (`apps/daemon/src/log-file.ts`, #45).
  */
 export const FORBIDDEN_LAUNCH_AGENT_KEYS = [
   "Sockets",
   "Program",
   "ProgramArguments",
   "RunAtLoad",
+  "StandardOutPath",
+  "StandardErrorPath",
 ] as const;
 
 /** Relative to `apps/desktop`. Where `tauri build` leaves the bundle. */

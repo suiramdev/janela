@@ -198,6 +198,23 @@ describe("verifyBundle", () => {
     ]);
   });
 
+  test("rejects a LaunchAgent that points the daemon's stdio at a path", async () => {
+    await using temporary = await temporaryDirectory("bundle-stdio");
+    // What someone reaches for when they want the daemon's log back on launchd's
+    // side. launchd expands no `~`, and this plist is sealed once for every user
+    // of the machine, so the path is either shared or somebody else's. The daemon
+    // owns its log instead (#45).
+    const app = buildApp(temporary.path, {
+      launchAgent: plistWith(`  <key>StandardErrorPath</key><string>/tmp/janelad.log</string>
+`),
+    });
+    signInsideOut(app);
+
+    expect(verifyBundle(app, ADHOC)).toEqual([
+      "Contents/Library/LaunchAgents/sh.janela.janelad.plist: StandardErrorPath must not be present",
+    ]);
+  });
+
   test("rejects a LaunchAgent written into the bundle after signing", async () => {
     await using temporary = await temporaryDirectory("bundle-unsealed");
     const app = buildApp(temporary.path, { withoutLaunchAgent: true });
