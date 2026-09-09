@@ -128,7 +128,7 @@ describe("the mode line", () => {
     encoder.cursor(2, 0, 4, row, cell);
 
     expect(encoded(encoder)).toBe(
-      "\x1b[0m\x1b[4l\x1b[?6l" + "\x1b[1;1Hab\x1b[K" + "\x1b[4h\x1b[?6h" + "\x1b[1;3H",
+      ["\x1b[0m\x1b[4l\x1b[?6l", "\x1b[1;1Hab\x1b[K", "\x1b[4h\x1b[?6h", "\x1b[1;3H"].join(""),
     );
   });
 });
@@ -149,7 +149,7 @@ describe("paintRow", () => {
     encoder.paintRow(0, row, 12, cell);
 
     expect(encoded(encoder)).toBe(
-      "\x1b[0m" + "\x1b[1;1Hab" + "\x1b[41m\x1b[3X\x1b[3C" + "\x1b[0mc" + "\x1b[K",
+      ["\x1b[0m", "\x1b[1;1Hab", "\x1b[41m\x1b[3X\x1b[3C", "\x1b[0mc", "\x1b[K"].join(""),
     );
   });
 
@@ -185,7 +185,9 @@ describe("paintRow", () => {
     encoder.begin(DEFAULT_MODES, false);
     encoder.paintRow(0, row, 6, cell);
 
-    expect(encoded(encoder)).toBe("\x1b[0m" + "\x1b[1;1H\x1b[1mB" + "\x1b[22;2mD" + "\x1b[K");
+    expect(encoded(encoder)).toBe(
+      ["\x1b[0m", "\x1b[1;1H\x1b[1mB", "\x1b[22;2mD", "\x1b[K"].join(""),
+    );
   });
 
   test("a row of untouched cells costs a CUP and an EL, and no colour sequence", async () => {
@@ -274,7 +276,7 @@ describe("cursor", () => {
     encoder.begin({ ...DEFAULT_MODES, origin: true }, false);
     encoder.cursor(2, 6, 6, row, cell, 4);
 
-    expect(encoded(encoder)).toBe("\x1b[0m\x1b[?6l" + "\x1b[?6h" + "\x1b[3;3H");
+    expect(encoded(encoder)).toBe(["\x1b[0m\x1b[?6l", "\x1b[?6h", "\x1b[3;3H"].join(""));
   });
 });
 

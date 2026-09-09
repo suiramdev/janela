@@ -18,6 +18,10 @@
  * version bump that moves one of them fails loudly instead of encoding nonsense.
  */
 
+// oxlint-disable no-underscore-dangle -- `_core`, `_inputHandler` and `_data` are
+// the library's own names. `libraryInternals` is where they are validated, and
+// renaming them here would only hide which library member is meant.
+
 import { hostname } from "node:os";
 
 import type { GridSize } from "@janela/core";

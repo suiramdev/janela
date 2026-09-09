@@ -379,6 +379,26 @@ describe("resize", () => {
   });
 });
 
+/** The modes a client has to mirror, as the library reports them. */
+function dumpModes(target: Terminal): string {
+  return JSON.stringify(target.modes);
+}
+
+/** Scrollback only: the lines that have left the screen, oldest first. */
+function history(target: Terminal): string[] {
+  const buffer = target.buffer.active;
+  const lines: string[] = [];
+  for (let y = 0; y < buffer.baseY; y += 1) {
+    lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+  }
+  return lines;
+}
+
+/** Readable in a failure message: which step of a corpus disagreed. */
+function escape(text: string): string {
+  return text.replaceAll("\x1b", "\\e").replaceAll("\r", "\\r").replaceAll("\n", "\\n");
+}
+
 /**
  * The damage encoder, tested the way the placeholder was: two emulators, and the
  * assertion is that they agree.
@@ -392,19 +412,6 @@ describe("resize", () => {
 describe("damage encoder", () => {
   /** A step, and whether a full repaint is the correct answer to it. */
   type Step = string | { readonly feed: string; readonly full: true };
-
-  function dumpModes(target: Terminal): string {
-    return JSON.stringify(target.modes);
-  }
-  /** Scrollback only: the lines that have left the screen, oldest first. */
-  function history(target: Terminal): string[] {
-    const buffer = target.buffer.active;
-    const lines: string[] = [];
-    for (let y = 0; y < buffer.baseY; y += 1) {
-      lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
-    }
-    return lines;
-  }
 
   async function roundTrip(
     source: HeadlessEmulator,
@@ -427,8 +434,9 @@ describe("damage encoder", () => {
           full: false,
         });
       }
-      // Copied: the delta is a view into a buffer the emulator reuses, and
-      // `write` is asynchronous.
+      // Copied: the delta is a view into a buffer the emulator reuses, and `write`
+      // is asynchronous. The steps are a sequence, so each replay finishes first.
+      // oxlint-disable-next-line no-await-in-loop -- sequential by nature.
       await replay(target, new Uint8Array(delta));
       expect({ step: escape(bytes), grid: dumpGrid(target) }).toEqual({
         step: escape(bytes),
@@ -442,10 +450,6 @@ describe("damage encoder", () => {
       deltas.push({ text, length: delta.length });
     }
     return deltas;
-  }
-
-  function escape(text: string): string {
-    return text.replaceAll("\x1b", "\\e").replaceAll("\r", "\\r").replaceAll("\n", "\\n");
   }
 
   test("typing at a prompt sends one row, not a screen", async () => {
@@ -475,7 +479,7 @@ describe("damage encoder", () => {
       expect(delta.length).toBeLessThan(full / 4);
       // One `CUP` to a row's first column is one row painted. More would mean the
       // library's conservative dirty range went out unfiltered.
-      expect(delta.text.match(/\x1b\[\d+;1H/g) ?? []).toHaveLength(1);
+      expect(delta.text.split("\x1b[").filter((part) => /^\d+;1H/.test(part))).toHaveLength(1);
     }
   });
 
@@ -774,6 +778,7 @@ describe("damage encoder", () => {
       expect(delta.length).toBeLessThanOrEqual(budget);
       lengths.push(delta.length);
       buffers.push(delta.buffer);
+      // oxlint-disable-next-line no-await-in-loop -- one frame after another is the point.
       await replay(target, new Uint8Array(delta));
       seen = source.revision;
     }
@@ -851,6 +856,7 @@ describe("damage encoder", () => {
       const bytes = typeof step === "string" ? step : step.feed;
       feed(source, bytes);
       const delta = source.repaintSince(seen);
+      // oxlint-disable-next-line no-await-in-loop -- one frame after another is the point.
       await replay(target, new Uint8Array(delta));
       expect({ index, step: escape(bytes), grid: dumpGrid(target) }).toEqual({
         index,
