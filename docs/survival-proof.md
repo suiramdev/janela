@@ -35,7 +35,7 @@ launchd at all:
 | 2 | Quit the app entirely | **Pass** — app gone from the process table, daemon pid and child pid unchanged |
 | 3 | `janelad` is still alive and the child is still running | **Pass, including the launchd half.** The daemon was launchd's own (`launchctl print` → `state = running`, `runs = 2`), the app was gone, the child was still `Rs`, and the screen advanced from ~`0036` to `0170` with nothing attached |
 | 4 | Relaunch, attach, grid is correct and output continued while detached | **Pass** — 44 unbroken lines, `survival-tick-0768` → `0811`, live cursor. One wart: which session was selected is not restored (**D4**) |
-| 5 | A second client at a different viewport: the daemon resolves to the minimum, the larger client letterboxes rather than scales | **Split.** Minimum: **pass** (`12 40`, wrapping at 40 columns). Grows back on detach: **pass** (`45 127`). Does not scale: **pass**. **Letterboxes: fail** — no mechanism exists (**D2**) |
+| 5 | A second client at a different viewport: the daemon resolves to the minimum, the larger client letterboxes rather than scales | **Pass, all four halves** since #44. Minimum: **pass** (`12 40`, wrapping at 40 columns). Grows back on detach: **pass** (`45 127`). Does not scale: **pass**. Letterboxes: **pass** — the negotiated grid rides the repaint as `CSI 8 ; rows ; cols t` (protocol 5) and the grid element shrinks to whole cells. It failed on the run below and was filed as **D2** |
 | 6 | Restart the daemon under version skew: the connection is refused and no terminal dies | **Pass, both halves.** The launchd daemon refused a version-5 client with `incompatibleVersion`, kept serving, and its child kept producing (`0050` → `0067`). A real second build — a client at protocol 5 against the compiled daemon at 4 — showed the banner and did **not** retry |
 | 7 | `SIGKILL` `janelad`: launchd restarts it and every affected session reappears as idle | **Pass, including launchd.** With **no app running**, so nothing could `kickstart` it, `kill -9` was answered by launchd in **1 second**: new pid, `runs` 2 → 3. Every session came back, every terminal `idle`, nothing respawned |
 
@@ -61,11 +61,13 @@ its own "Janela can run in the background" notification. `TeamIdentifier=not set
 throughout. **A local ad-hoc build is enough to exercise the whole daemon
 lifecycle** — no signing identity required.
 
-Two defects were found that no unit test could have found, and both are filed
-rather than fixed: **D1** and **D2**. Two more — **D9** and **D10** — were found
-in the app shell, and both **are** fixed here, because with either one in place
-the packaged app cannot reach its daemon at all and no verdict above could have
-been observed.
+Two defects were found that no unit test could have found, and both were filed
+rather than fixed on that run: **D1** and **D2**. **D2 has since been fixed by
+#44** — protocol 5, the negotiated grid inside the repaint — and step 5's verdict
+above is the re-run, not the original. **D1 is still open.** Two more — **D9** and
+**D10** — were found in the app shell, and both **are** fixed here, because with
+either one in place the packaged app cannot reach its daemon at all and no verdict
+above could have been observed.
 
 ---
 
@@ -291,16 +293,33 @@ stty size
 daemon resolved to the per-axis minimum. After the probe detached, `stty size`
 reported `45 127` again: the size grows back. **Pass**, twice.
 
-**And the part that fails.** The app's window, while the PTY was 40×12:
+**And the part that used to fail, re-run for #44.** The app's window, while the
+PTY was 40×12:
 
-- did **not** scale — the font was unchanged, and there is no `transform`, `scale`
+- does **not** scale — the font is unchanged, and there is no `transform`, `scale`
   or `zoom` anywhere on the terminal surface;
-- did **not** letterbox either. The 40-column screen was rendered into the app's
-  still-127-column grid, anchored top-left, with the rest of the pane blank and
-  nothing marking the live area. Lines wrapped at 127, not at 40.
+- **does** letterbox now. The daemon announces the negotiated grid inside the
+  repaint as `CSI 8 ; rows ; cols t` (protocol 5), the client resizes to it, and
+  the grid element shrinks to whole cells so the rest of the pane shows the
+  container through. Lines wrap at 40.
 
-That is defect **D2**, and it is not a rendering bug: nothing on the wire tells a
-client what the negotiated size is, so the client has nothing to letterbox *to*.
+What to expect when re-running it, and how to tell a pass from a near-miss:
+
+- **The grid is anchored top-left, not centred.** The letterbox is the remainder,
+  visible; centring it is a product decision nobody has taken. What matters for
+  this step is that the live area is *marked* — the terminal's own background ends
+  where the grid ends — and that the text is not scaled.
+- **The client must not vote the announcement back.** Read its viewport votes: a
+  client that echoes the daemon's number as its own proposal can never grow again,
+  because the minimum would then be its own. `xtermRendering` resizes without
+  calling `onViewportChange`, and `terminal.onResize` is deliberately unwired.
+- Measured with the real renderer against bytes captured from the real daemon: a
+  1040×744 pane at an 8.8×18.4 px cell held 118×40 of its own, was announced
+  12×40, resized to it, and its grid element went from 1038×737 px to 352×221 —
+  a 688×523 px letterbox — with one recorded vote throughout, its own. Reverting
+  the resize handler leaves the client at 118×40; reverting the letterbox leaves
+  the element at 1038×737, which is what a 40-column screen filling a 127-column
+  pane looked like.
 
 ### Step 6 — version skew
 
@@ -308,13 +327,13 @@ The honest way to stage this at the protocol level needs no source edit at all,
 because a newer client is just a client that says so:
 
 ```bash
-HOME=$ISO bun run scripts/survival-probe.ts --attach <id> --protocol-version 5
+HOME=$ISO bun run scripts/survival-probe.ts --attach <id> --protocol-version 6
 ```
 
 **Observed:**
 
 ```
-REFUSED: {"kind":"incompatibleVersion","daemonMinimum":4,"daemonCurrent":4}
+REFUSED: {"kind":"incompatibleVersion","daemonMinimum":5,"daemonCurrent":5}
 ```
 
 that connection closed, and nothing else moved: the daemon kept serving, the child
@@ -324,8 +343,9 @@ mutation-checking it is what proves the assertion is load-bearing.
 
 For the app's side of the story you need two builds, because the version lives in
 one file both binaries read (`packages/protocol/src/handshake.ts`). Set
-`PROTOCOL_VERSION` **and** `MINIMUM_SUPPORTED_VERSION` to 5 — bumping only the
-first still overlaps and is compatible — then run a client built from *that* tree
+`PROTOCOL_VERSION` **and** `MINIMUM_SUPPORTED_VERSION` to one past the shipped
+version — bumping only the first still overlaps and is compatible — then run a
+client built from *that* tree
 against the compiled daemon built from the unedited one. A dev client is enough:
 it reads the frontend from Vite, so the edit needs no rebuild of the daemon.
 
@@ -423,6 +443,30 @@ exactly the named test went red.
 | the range overlap in `isCompatible` (`packages/protocol/src/handshake.ts`) | refuses a newer client |
 | the stale-socket `unlink` (`apps/daemon/src/socket.ts`) | after SIGKILL |
 
+Step 5's client half is not in that file, because it is not the daemon's: the
+announcement is asserted byte for byte in `packages/terminal`, against a real PTY
+and a real emulator, and the render is a browser check rather than a test — this
+repository has no DOM under `bun test` and deliberately adds none.
+
+| Test | What it defends |
+| --- | --- |
+| `a receiver at the wrong size learns the negotiated grid from the repaint` (`headless-emulator.test.ts`) | the sequence is in `fullRepaint`, and a stock `@xterm/headless` acts on it |
+| `a smaller client joining is announced to the client already attached` | the client that has to letterbox is told |
+| `an overruled viewport is answered with the negotiated size, not silence` | the case where the negotiation does **not** move |
+| `growing back when the smaller client detaches is announced too` | the other direction |
+| `a client told its size is owed nothing on the next frame` | it is a debt, not a per-frame prefix |
+| `reaches every attached client even when the encoder only sends deltas` | the constraint #32's damage encoder must keep passing |
+
+| Guard reverted | Test that goes red |
+| --- | --- |
+| `CSI 8 ; rows ; cols t` in `fullRepaint` (`packages/terminal/src/headless-emulator.ts`) | a receiver at the wrong size learns the negotiated grid |
+| the per-client debt in `applySize` (`packages/terminal/src/live-terminal.ts`) | reaches every attached client even when the encoder only sends deltas |
+| the overruled-viewport debt in `attach` (same file) | an overruled viewport is answered with the negotiated size |
+| the full path in `repaintFor` (same file) | an overruled viewport is answered with the negotiated size |
+| `PROTOCOL_VERSION` / `MINIMUM_SUPPORTED_VERSION` (`packages/protocol/src/handshake.ts`) | the negotiated grid on the wire is a wire change: version 5 |
+| the `CSI 8` handler in `xtermRendering` (`packages/terminal-ui`) | *browser check*: the client stays at its own grid, which is D2 |
+| the letterbox call on the daemon-driven path (same file) | *browser check*: the grid resizes and the element does not |
+
 ---
 
 ## Defects
@@ -464,36 +508,41 @@ deadline so a silent peer becomes a retry instead of a hang. `apps/daemon` +
 "the socket accepted me". That is what `startDaemon` in the automated test does,
 and it is why it retries; `scripts/survival-probe.ts` says so when it gets nothing.
 
-### D2 — nothing on the wire carries the negotiated size, so a larger client cannot letterbox
+### D2 — nothing on the wire carried the negotiated size, so a larger client could not letterbox
 
-**Severity: high for this document's step 5, medium for a user.** The daemon
-resolves the minimum correctly and the PTY gets it. No client is ever told.
+**Severity: high for this document's step 5, medium for a user. FIXED by #44 —
+protocol 5.** The daemon resolved the minimum correctly and the PTY got it; no
+client was ever told. What was missing, and what closed it:
 
-- `DaemonMessage` has no size, and neither does `StateUpdate`.
-- `ClientConnection.attach` *returns* the negotiated `GridSize` and the dispatcher
-  throws it away: `connection.attach(terminal, viewport); return { type: "acknowledged", id }`.
-- `fullRepaint()` is `ESC c` plus `SerializeAddon.serialize(...)`, which never
-  emits `CSI 8 ; rows ; cols t`.
-- `letterboxMargins(box, cell, grid)` in `packages/terminal-ui` is only ever
-  passed xterm's own measured grid, so it can absorb sub-cell rounding and nothing
-  else. The seam comment at `xterm-rendering.ts` says as much: *"Nothing on the
-  wire delivers the negotiated PTY size today, so this is the seam rather than a
-  feature."*
-- `grid-fit.test.ts`'s `"a grid smaller than the box letterboxes the difference"`
-  hand-feeds `{ columns: 60, rows: 10 }` with a comment describing a second
-  attached client — a value no call site can produce. **The helper is tested; the
-  feature does not exist.** That is what made this look shipped.
+- `DaemonMessage` has no size, and neither does `StateUpdate`. It still does not:
+  the grid now rides the repaint as `CSI 8 ; rows ; cols t`, emitted by
+  `fullRepaint()` between its RIS and the screen, because it describes the very
+  bytes it travels with. `ClientConnection.attach` still returns a `GridSize` the
+  dispatcher ignores, and that is now correct rather than a leak: the announcement
+  is the terminal's own bookkeeping, not the request handler's.
+- `PtyLiveTerminal` owes each client the news, and re-owes it on two events, not
+  one: the negotiation moving, **and** an attach whose viewport is overruled. The
+  second is the case an "on change" design misses — resize the window while a
+  smaller client holds the minimum and the negotiated size does not move, so
+  nothing would ever correct that client again.
+- `letterboxMargins(box, cell, grid)` in `packages/terminal-ui` is now handed a
+  grid the daemon chose. `grid-fit.test.ts`'s fixture is derived from
+  `gridThatFits` instead of hand-fed, so it cannot again describe a value no call
+  site can produce.
+- **The client needed code after all, and this is the finding worth keeping.**
+  `@xterm/xterm` 6.0.0 gates `CSI 8 t` on `windowOptions.setWinSizeChars` and then
+  implements **no case for parameter 8** — `InputHandler.windowOptions()` handles
+  14, 16, 18, 22 and 23 and falls off the end. Measured: a terminal with the flag
+  set, fed `\x1b[8;12;40t`, stays at its old size. The flag is still required,
+  because `InputHandler.registerCsiHandler` wraps any custom `{final:"t"}` handler
+  in the same gate and swallows the sequence when it is off. So `xtermRendering`
+  registers the handler and performs the resize itself, hands every other
+  parameter back to the library, and casts **no vote** doing so — echoing the
+  minimum back as a proposal is how a minimum would become permanent.
 
-**Observed cost:** with the PTY at 40×12 and the app's grid at 127×45, the app
-paints the small screen top-left with the surplus blank and no indication why.
-A user with a phone attached would see a large mostly-empty pane and no
-explanation.
-
-**Fix sketch:** the client side needs no code — a daemon-emitted
-`CSI 8 ; rows ; cols t` resizes xterm's grid, and `letterboxMargins` then receives
-a grid genuinely smaller than the box. So the change is in the daemon's repaint
-path, or a size on `DaemonMessage`. Either is a wire change, and
-[ADR 0016](decisions/0016-daemon-protocol.md) has no minor versions: protocol 5.
+**What it cost before the fix:** with the PTY at 40×12 and the app's grid at
+127×45, the app painted the small screen top-left with the surplus blank and no
+indication why, wrapping lines at 127.
 
 ### D3 — the daemon's log is unreachable exactly when you need it
 

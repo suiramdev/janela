@@ -210,12 +210,16 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
   /**
    * The cell metric from the last container-driven measurement.
    *
-   * The letterbox must be computed from this and never from a fresh
-   * `measureCell()` on the daemon-driven path: that path runs inside the parser,
-   * before the renderer's next frame, so `.xterm-screen` is still sized for the
-   * grid we just left while `terminal.cols` already holds the new one. Dividing
-   * those gives a cell several times too wide and a margin of zero — the letterbox
-   * silently disappearing. A cell is a font metric; it does not change on resize.
+   * The daemon-driven path letterboxes from this rather than measuring again, so
+   * that the margin is derived from the same metric the grid was, and agrees with
+   * it by construction. A cell is a font metric and does not change on resize.
+   *
+   * Measuring again would also work today — `measureCell()` inside the parse path
+   * returned 8.803 px against this value's 8.800 on a real repaint, because the
+   * render service sizes `.xterm-screen` synchronously inside `resize()`. That is
+   * an ordering inside the library, and the cost of it changing is not one bad
+   * frame: nothing re-measures until the container moves, so a wrong margin here
+   * would simply stay.
    */
   let lastCell: PixelSize | undefined;
 
