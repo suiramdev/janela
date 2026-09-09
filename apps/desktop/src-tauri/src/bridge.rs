@@ -52,7 +52,7 @@ const KIND_INPUT: u8 = 2;
 /// Mirrors `FrameKind.Output`. Repaint bytes, daemon → client.
 const KIND_OUTPUT: u8 = 3;
 
-/// Coalesced repaints a stalled WebView may owe before its oldest is dropped.
+/// Coalesced repaints a stalled WebView may owe before the connection is severed.
 /// Mirrors `OUTPUT_QUEUE_CAPACITY` in `@janela/daemon`, deliberately: the daemon
 /// applies the same bound to the same stream one hop upstream.
 const BRIDGE_OUTPUT_QUEUE_CAPACITY: usize = 32;
@@ -153,33 +153,28 @@ impl FrameSplitter {
 
 // ---------------------------------------------------------------- back-pressure
 
-/// What one connection owes the WebView, bounded, with a policy per kind.
+/// What one connection owes the WebView, bounded, with one policy for both kinds.
 ///
-/// ## The two policies, and why they differ
+/// **Nothing is ever dropped. Overflow severs the connection.**
 ///
-/// **Control frames and input are never dropped.** A dropped reply is a request
-/// that never answers, and a dropped state update is a mirror that is silently
-/// wrong. Overflow severs the connection instead, which is lossless: the client
-/// reconnects and receives a full snapshot. That is the daemon's own stalled-peer
-/// policy, one hop upstream.
+/// A dropped reply is a request that never answers and a dropped state update is
+/// a mirror that is silently wrong, so control frames always had this policy.
+/// Output frames now share it, because repaints are *deltas*: a lost delta leaves
+/// the client's grid permanently and quietly wrong, and the daemon cannot know —
+/// the frame left it successfully, so its owed-full-repaint bookkeeping never
+/// fires. Coalescing does not save us either; a delta only makes sense applied to
+/// the grid the delta before it produced.
 ///
-/// **Output frames drop their oldest.** Repaints are coalesced, so the newest is
-/// the one worth having.
-///
-/// ## What #32 must fix before it ships deltas
-///
-/// Drop-oldest is safe *today* only because every repaint frame is a full repaint
-/// beginning `ESC c` (#21's `repaintSince` placeholder): losing one loses nothing
-/// the next one does not carry. The moment repaints become deltas, a drop here is
-/// a silent corruption the daemon's owed-full-repaint bookkeeping cannot see,
-/// because the frame left the daemon successfully. #32 needs a recovery before
-/// then — re-attach on drop, or sequence numbers the client can notice a gap in.
+/// Severing is lossless and already implemented one layer up: `bridge_receive`
+/// fails the poll with `bridge-stalled`, `@janela/client` reconnects,
+/// re-subscribes and re-attaches, and the daemon answers with full repaints. It
+/// costs a connection, never a terminal (AGENTS.md non-negotiable 7).
 #[derive(Debug, Default)]
 pub struct Queues {
     control: VecDeque<Frame>,
     output: VecDeque<Frame>,
-    dropped: u64,
-    severed: bool,
+    /// Which queue overflowed, for the one log line the sever is worth.
+    severed_by: Option<&'static str>,
     ended: bool,
 }
 
@@ -191,14 +186,14 @@ impl Queues {
     pub fn push(&mut self, frame: Frame) {
         if frame.kind == KIND_OUTPUT {
             if self.output.len() >= BRIDGE_OUTPUT_QUEUE_CAPACITY {
-                self.output.pop_front();
-                self.dropped += 1;
+                self.severed_by = Some("output");
+                return;
             }
             self.output.push_back(frame);
             return;
         }
         if self.control.len() >= BRIDGE_CONTROL_QUEUE_CAPACITY {
-            self.severed = true;
+            self.severed_by = Some("control");
             return;
         }
         self.control.push_back(frame);
@@ -227,17 +222,18 @@ impl Queues {
         self.control.is_empty() && self.output.is_empty()
     }
 
-    /// Repaints dropped since this was last asked, and resets the count.
-    ///
-    /// Read on every poll and logged when it is non-zero: a drop is a shape worth
-    /// a record — never a payload — and it is the only evidence #32 will have that
-    /// a delta went missing here rather than in the daemon.
-    pub fn take_dropped(&mut self) -> u64 {
-        std::mem::replace(&mut self.dropped, 0)
+    /// Which queue overflowed, or `None` while the connection is healthy. A
+    /// shape, never a payload — it is both the sever predicate and the log line.
+    pub fn severed_by(&self) -> Option<&'static str> {
+        self.severed_by
     }
 
-    pub fn is_severed(&self) -> bool {
-        self.severed
+    /// Severs the connection because of `queue`. The first reason wins: it is the
+    /// one that happened.
+    pub fn sever(&mut self, queue: &'static str) {
+        if self.severed_by.is_none() {
+            self.severed_by = Some(queue);
+        }
     }
 }
 
@@ -373,7 +369,7 @@ pub async fn bridge_connect(state: State<'_, BridgeState>) -> Result<u32, String
                 Err(_) => {
                     // A frame we refuse to relay. Severing is lossless: the client
                     // reconnects and receives a full snapshot.
-                    queues(&pump).severed = true;
+                    queues(&pump).sever("frame");
                     pump.notify.notify_waiters();
                     return;
                 }
@@ -402,29 +398,35 @@ pub async fn bridge_receive(state: State<'_, BridgeState>, id: u32) -> Result<Re
         // window between the check and the await would otherwise be a wakeup lost
         // until the next one, which for an idle terminal is forever.
         let notified = connection.notify.notified();
-        {
+        // The lock is never held across an await: the guard's scope would land in
+        // the future's state and stop it being `Send`, which Tauri requires.
+        let severed = {
             let mut owed = queues(&connection);
-            if owed.is_severed() {
-                drop(owed);
-                connections(&state).remove(&id);
-                return Err("bridge-stalled".to_string());
-            }
-            if !owed.is_empty() {
+            if let Some(queue) = owed.severed_by() {
+                Some(queue)
+            } else if !owed.is_empty() {
                 let bytes = owed.drain();
-                let dropped = owed.take_dropped();
-                drop(owed);
-                if dropped > 0 {
-                    // A shape, not a payload. Safe today because every repaint is
-                    // a full repaint; see `Queues`' note on what #32 owes.
-                    log::warn!(target: "protocol", "bridge dropped {dropped} coalesced repaints");
-                }
                 return Ok(Response::new(bytes));
-            }
-            if owed.ended {
+            } else if owed.ended {
                 drop(owed);
                 connections(&state).remove(&id);
                 return Ok(Response::new(Vec::new()));
+            } else {
+                None
             }
+        };
+        if let Some(queue) = severed {
+            // The writer half is shut down for the same reason `bridge_close` does
+            // it: without an EOF the daemon keeps a peer that will never read
+            // again, encoding repaints for a client that is gone until it exits.
+            let removed = connections(&state).remove(&id);
+            if let Some(removed) = removed {
+                let mut writer = removed.writer.lock().await;
+                let _ = writer.shutdown().await;
+            }
+            // A shape, not a payload: which queue overflowed, and nothing else.
+            log::warn!(target: "protocol", "bridge severed a stalled connection: {queue}");
+            return Err("bridge-stalled".to_string());
         }
         notified.await;
     }
@@ -573,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn output_overflow_drops_its_oldest_and_counts_it() {
+    fn output_overflow_severs_rather_than_dropping_a_repaint() {
         let mut queues = Queues::new();
         for index in 0..BRIDGE_OUTPUT_QUEUE_CAPACITY + 1 {
             queues.push(Frame {
@@ -582,17 +584,16 @@ mod tests {
             });
         }
 
-        assert_eq!(queues.take_dropped(), 1);
-        assert!(!queues.is_severed());
-
+        assert_eq!(queues.severed_by(), Some("output"));
+        // Nothing was dropped: repaints are deltas, and a delta lost here is a
+        // client grid that is permanently wrong with nothing to notice it. The
+        // oldest is still first, and the frame that did not fit was refused.
         let drained = queues.drain();
         assert_eq!(drained.len(), BRIDGE_OUTPUT_QUEUE_CAPACITY * 6);
-        // The oldest went, so the first payload byte is 1 rather than 0, and the
-        // newest repaint — the one worth having — is still there.
-        assert_eq!(drained[FRAME_HEADER_LENGTH], 1);
+        assert_eq!(drained[FRAME_HEADER_LENGTH], 0);
         assert_eq!(
             drained[drained.len() - 1],
-            BRIDGE_OUTPUT_QUEUE_CAPACITY as u8
+            BRIDGE_OUTPUT_QUEUE_CAPACITY as u8 - 1
         );
     }
 
@@ -606,10 +607,9 @@ mod tests {
             });
         }
 
-        assert!(queues.is_severed());
+        assert_eq!(queues.severed_by(), Some("control"));
         // Nothing was dropped: a dropped reply is a request that never answers,
         // and severing is lossless because the client reconnects into a snapshot.
-        assert_eq!(queues.take_dropped(), 0);
         let drained = queues.drain();
         assert_eq!(drained[FRAME_HEADER_LENGTH], 0);
     }
@@ -624,8 +624,7 @@ mod tests {
             });
         }
 
-        assert_eq!(queues.take_dropped(), 0);
-        assert!(!queues.is_severed());
+        assert_eq!(queues.severed_by(), None);
     }
 
     #[test]

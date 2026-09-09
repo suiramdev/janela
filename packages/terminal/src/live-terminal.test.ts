@@ -33,7 +33,7 @@ import {
   type PseudoTerminalConfiguration,
   type TerminalBytes,
 } from "@janela/pty";
-import type { Logger, LogRecord } from "@janela/support";
+import { setSignpostSink, type Logger, type LogRecord, type SignpostRecord } from "@janela/support";
 import { temporaryDirectory } from "@janela/test-support";
 
 import {
@@ -536,12 +536,11 @@ describe("the negotiated size on the wire", () => {
   });
 
   test("reaches every attached client even when the encoder only sends deltas", async () => {
-    // The constraint #32's damage encoder has to keep passing, and the reason
-    // `owesSize` exists rather than the resize being left to bump a revision:
-    // today's `repaintSince` answers any mismatch with the whole grid, so this
-    // would pass by accident with nothing tracking who has been told. This
-    // emulator sends nothing at all unless it was fed, which is what a real
-    // damage encoder does for a quiet screen.
+    // The constraint the damage encoder has to keep passing, and the reason
+    // `owesSize` exists rather than the resize being left to bump a revision: a
+    // delta carries no geometry, so nothing but this bookkeeping would ever tell
+    // a client the grid moved. This emulator sends nothing at all unless it was
+    // fed, which is what the real encoder does for a quiet screen.
     const terminal = live("t-announce-delta", shellLaunch("exec cat"), {
       createEmulator: (options) => deltaOnlyEmulator(options.size),
     });
@@ -582,7 +581,16 @@ describe("repaints", () => {
       "the echoed input",
     );
 
-    expect(terminal.repaintFor("a").length).toBeGreaterThan(0);
+    // A delta, not a screen: no RIS, no geometry announcement, and shorter than
+    // the whole grid would be. A second client attached at the same viewport
+    // gives the full repaint's length without disturbing this one's revision.
+    const delta = terminal.repaintFor("a");
+    terminal.attach("b", { columns: 80, rows: 24 });
+    const wholeGrid = terminal.fullRepaintFor("b");
+    expect(delta.length).toBeGreaterThan(0);
+    expect(decoder.decode(delta).startsWith("\x1bc")).toBe(false);
+    expect(decoder.decode(delta)).not.toContain("\x1b[8;");
+    expect(delta.length).toBeLessThan(wholeGrid.length);
     expect(terminal.repaintFor("a")).toHaveLength(0);
   });
 
@@ -592,6 +600,97 @@ describe("repaints", () => {
     expect(() => terminal.repaintFor("nobody")).toThrow();
     expect(() => terminal.fullRepaintFor("nobody")).toThrow();
   });
+
+  test("a quiet terminal still hands a new client the whole screen", async () => {
+    // #31's first constraint, at the terminal layer: reattaching to a terminal
+    // that has printed nothing since is the case a byte replay gets wrong, and a
+    // damage encoder must not make it worse — the *other* client's frame in the
+    // same tick stays empty.
+    const terminal = live("t-quiet", shellLaunch("stty raw -echo; printf READY; exec cat"));
+    await terminal.start();
+    terminal.attach("a", { columns: 80, rows: 24 });
+    await drainUntil(
+      terminal,
+      () => terminal.snapshotText({ includeScrollback: false }).includes("READY"),
+      "the shell to be ready",
+    );
+    terminal.fullRepaintFor("a");
+    expect(terminal.repaintFor("a")).toHaveLength(0);
+
+    terminal.attach("b", { columns: 80, rows: 24 });
+    const arriving = terminal.fullRepaintFor("b");
+
+    expect(arriving.slice(0, 2)).toEqual(new Uint8Array([0x1b, 0x63]));
+    expect(decoder.decode(arriving)).toContain("READY");
+    expect(terminal.repaintFor("a")).toHaveLength(0);
+  });
+
+  test("attaching carries the screen, not the scrollback", async () => {
+    // #31's second constraint: 60 lines through 24 rows. The daemon keeps the
+    // history, the arriving client gets the screen, and the next frame is empty.
+    const terminal = live(
+      "t-history",
+      shellLaunch(
+        "stty raw -echo; for i in $(seq -w 1 60); do printf 'line-%s\\n' $i; done; exec cat",
+      ),
+    );
+    await terminal.start();
+    terminal.attach("a", { columns: 80, rows: 24 });
+    await drainUntil(
+      terminal,
+      () => terminal.snapshotText({ includeScrollback: false }).includes("line-60"),
+      "sixty lines",
+    );
+
+    const arriving = decoder.decode(terminal.fullRepaintFor("a"));
+
+    expect(arriving).toContain("line-60");
+    expect(arriving).not.toContain("line-01");
+    expect(terminal.snapshotText({ includeScrollback: true })).toContain("line-01");
+    expect(terminal.repaintFor("a")).toHaveLength(0);
+  });
+
+  test("signposts record one attach and one repaint per encode", async () => {
+    const records: SignpostRecord[] = [];
+    setSignpostSink({ record: (record) => records.push(record) });
+    try {
+      const terminal = live("t-signpost", shellLaunch("stty raw -echo; printf READY; exec cat"));
+      await terminal.start();
+      terminal.attach("a", { columns: 40, rows: 6 });
+      await drainUntil(
+        terminal,
+        () => terminal.snapshotText({ includeScrollback: false }).includes("READY"),
+        "the shell to be ready",
+      );
+
+      terminal.fullRepaintFor("a");
+      terminal.repaintFor("a");
+
+      const attaches = records.filter((record) => record.name === "attach");
+      const repaints = records.filter((record) => record.name === "repaint");
+      expect(attaches).toHaveLength(1);
+      expect(attaches[0]?.id).toBe("t-signpost");
+      expect(attaches[0]?.fields?.["client"]).toBe("a");
+      expect(repaints).toHaveLength(2);
+      expect(repaints[0]?.fields?.["full"]).toBe(true);
+      expect(repaints[1]?.fields?.["full"]).toBe(false);
+    } finally {
+      setSignpostSink(undefined);
+    }
+  });
+
+  test("with no sink installed, nothing is recorded", async () => {
+    // The production default. `begin` hands back one shared frozen object, so an
+    // unmeasured repaint allocates nothing at all.
+    const records: SignpostRecord[] = [];
+    const terminal = live("t-unmeasured", shellLaunch("exec cat"));
+    await terminal.start();
+    terminal.attach("a", { columns: 40, rows: 6 });
+    terminal.fullRepaintFor("a");
+    terminal.repaintFor("a");
+
+    expect(records).toEqual([]);
+  });
 });
 
 /**
@@ -600,9 +699,9 @@ describe("repaints", () => {
  *
  * It obeys the one thing `TerminalEmulating` requires of a full repaint — the
  * grid announces its own size — and does the bare minimum everywhere else, which
- * is what makes "who has been told" observable. The production encoder answers
- * every revision mismatch with a whole grid, so it hides that question until #32
- * replaces it.
+ * is what makes "who has been told" observable in isolation: the production
+ * encoder answers a *quiet* screen with nothing too, but it also answers a resize
+ * with a whole grid, so a bug in the bookkeeping would hide behind that.
  */
 function deltaOnlyEmulator(initial: GridSize): TerminalEmulating {
   let size = initial;

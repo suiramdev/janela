@@ -76,4 +76,118 @@ function dump(t: Terminal, includeAlt = false) {
   const s = a.s.serialize();
   console.log("C3 full-grid serialize:", (performance.now() - t1).toFixed(2), "ms for", s.length, "bytes");
 }
+
+
+// ---- Case 4 & 5: the damage encoder's corpus, against both receivers
+//
+// Case 4's receiver is `@xterm/headless`, which is what the package's own test
+// uses. Case 5's is `@xterm/xterm` — the library the *client* actually renders
+// with (ADR 0018 knowingly accepted that the two ends of the round trip are
+// different libraries). Case 5 is the only thing in the repository that measures
+// that accepted divergence, which is why it lives in a spike: `check:layers`
+// gates `@xterm/xterm` to `@janela/terminal-ui`, correctly.
+{
+  const { HeadlessEmulator } = await import("../../packages/terminal/src/headless-emulator.ts");
+  const { CORPUS } = await import("./corpus.ts");
+  const { Terminal: DomTerminal } = await import("@xterm/xterm");
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  type AnyTerminal = { rows: number; cols: number; buffer: any; modes: any; parser: any; write(data: Uint8Array | string, callback?: () => void): void; resize(cols: number, rows: number): void; unicode?: any };
+
+  function dumpCells(t: AnyTerminal) {
+    const buffer = t.buffer.active;
+    const out: string[] = [];
+    for (let y = 0; y < t.rows; y++) {
+      const line = buffer.getLine(buffer.viewportY + y);
+      if (!line) { out.push(""); continue; }
+      let row = "";
+      for (let x = 0; x < t.cols; x++) {
+        const c = line.getCell(x);
+        if (!c) continue;
+        row += `${c.getChars() || " "}|${c.getFgColor()}/${c.getBgColor()}/${c.isBold()}${c.isInverse()}${c.isUnderline()}${c.isDim()} `;
+      }
+      out.push(row.trimEnd());
+    }
+    return `${out.join("\n")}\n@cursor ${buffer.cursorX},${buffer.cursorY} @buffer ${buffer.type}`;
+  }
+
+  const dumpModes = (t: AnyTerminal) => JSON.stringify(t.modes);
+  const escape = (s: string) => s.replaceAll("\x1b", "\\e").replaceAll("\r", "\\r").replaceAll("\n", "\\n");
+
+  function makeReceiver(kind: "headless" | "dom", cols: number, rows: number): AnyTerminal {
+    const options = { cols, rows, allowProposedApi: true, windowOptions: { setWinSizeChars: true } } as const;
+    const t: AnyTerminal = kind === "headless"
+      ? (new Terminal({ ...options, logLevel: "off" }) as unknown as AnyTerminal)
+      : (new DomTerminal(options as any) as unknown as AnyTerminal);
+    t.parser.registerCsiHandler({ final: "t" }, (p: (number | number[])[]) => {
+      if (p[0] !== 8) return false;
+      const r = p[1], c = p[2];
+      if (typeof r === "number" && typeof c === "number") t.resize(c, r);
+      return true;
+    });
+    return t;
+  }
+
+  const write = (t: AnyTerminal, bytes: Uint8Array) => new Promise<void>((r) => t.write(bytes, r));
+
+  let failures = 0;
+  for (const kind of ["headless", "dom"] as const) {
+    const label = kind === "headless" ? "C4 @xterm/headless" : "C5 @xterm/xterm  ";
+    for (const testCase of CORPUS) {
+      const source = new HeadlessEmulator({ columns: testCase.columns, rows: testCase.rows }, 200);
+      const target = makeReceiver(kind, testCase.columns, testCase.rows);
+      if (testCase.setup) source.feed(encoder.encode(testCase.setup));
+      await write(target, source.fullRepaint());
+      let seen = source.revision;
+      let deltaBytes = 0;
+      let fullBytes = 0;
+      let identical = true;
+      const problems: string[] = [];
+      for (const step of testCase.steps) {
+        source.feed(encoder.encode(step.feed));
+        const delta = source.repaintSince(seen);
+        deltaBytes += delta.length;
+        fullBytes += source.fullRepaint().length;
+        if (!step.full && decoder.decode(delta).startsWith("\x1bc")) {
+          problems.push(`step "${escape(step.feed)}" was answered with a full repaint`);
+        }
+        await write(target, new Uint8Array(delta));
+        seen = source.revision;
+        const wanted = dumpCells(source.terminal as unknown as AnyTerminal);
+        const got = dumpCells(target);
+        if (wanted !== got) {
+          identical = false;
+          const wantedRows = wanted.split("\n");
+          const gotRows = got.split("\n");
+          for (let i = 0; i < Math.max(wantedRows.length, gotRows.length); i++) {
+            if (wantedRows[i] !== gotRows[i]) {
+              problems.push(`step "${escape(step.feed)}" row ${i}:\n      source: ${wantedRows[i]}\n      target: ${gotRows[i]}`);
+              break;
+            }
+          }
+        }
+        const wantedModes = dumpModes(source.terminal as unknown as AnyTerminal);
+        const gotModes = dumpModes(target);
+        if (wantedModes !== gotModes) {
+          identical = false;
+          problems.push(`step "${escape(step.feed)}" modes:\n      source: ${wantedModes}\n      target: ${gotModes}`);
+        }
+      }
+      const unicode = target.unicode?.activeVersion ?? "n/a";
+      console.log(`${label} ${testCase.name.padEnd(34)} identical: ${identical} delta: ${String(deltaBytes).padStart(6)}B full: ${String(fullBytes).padStart(6)}B unicode: ${unicode}`);
+      for (const problem of problems) {
+        failures += 1;
+        console.log(`    ${problem}`);
+      }
+      source.dispose();
+    }
+  }
+  if (failures > 0) {
+    console.log(`\n${failures} divergence(s) — see above`);
+    process.exit(1);
+  }
+  console.log("\nC4/C5: every corpus case round-tripped identically on both libraries");
+}
+
 process.exit(0);

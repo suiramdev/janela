@@ -46,6 +46,16 @@ export interface TerminalEmulating {
    *
    * Returns an empty view when nothing changed, which is the common case and must
    * be cheap. Called once per frame per attached client.
+   *
+   * **The returned view may be into a buffer the implementation reuses**, valid
+   * only until the next call on the same emulator — `feed`, `repaintSince`,
+   * `fullRepaint` or `resize`. The frame loop copies it synchronously when it
+   * encodes the frame; anything holding it longer must copy first.
+   *
+   * A full repaint is still the correct answer to a resize, an alternate-screen
+   * switch, a `RIS`, a client claiming a revision from the future, and a client
+   * so far behind that the implementation no longer remembers how to catch it up.
+   * Answering one of those with a delta would be a guess.
    */
   repaintSince(revision: number): Uint8Array;
 

@@ -152,9 +152,17 @@ the whole flood test.
 **A stalled client.** A phone on a bad connection, or a suspended app, must not slow
 the daemon or any other client. Each attached client has its own output queue with
 its own bound; past that bound the daemon drops the queued *diffs* and marks the
-client for a full repaint on recovery. Dropping a coalesced repaint is safe in a way
-dropping PTY bytes never is — the grid remains authoritative, so the next frame is
-correct regardless.
+client for a full repaint on recovery. Dropping a coalesced repaint is safe there
+in a way dropping PTY bytes never is — the daemon knows it dropped one, so it owes
+that client a full repaint and the next frame is correct regardless.
+
+**The app's bridge does not have that option, so it severs instead.** A frame that
+has already left the daemon is one the daemon believes was delivered; dropping it
+in the Tauri shell would leave the client's grid quietly wrong with nothing to
+notice. So overflow of either bridge queue — 32 output frames, 64 control frames —
+severs the connection, `@janela/client` reconnects, and the daemon answers with a
+full snapshot and full repaints. A connection is cheap; a terminal is never touched
+(AGENTS.md non-negotiable 7).
 
 Panes in the same session still get their own `DispatchIO` channel and parse queue,
 so a flooding pane cannot starve the pane beside it. Test it by splitting once and
@@ -214,28 +222,31 @@ Janela should stay comfortable at:
 
 ### Signposts
 
-Defined in `JanelaSupport/Log.swift`:
+Defined in `packages/support/src/signpost.ts`. `begin(name, id)` returns an
+interval; a composition root installs a sink with `setSignpostSink`, and until it
+does, `begin` hands back one shared no-op object and reads no clock — which is
+what makes it callable once per frame per attached client. A browser composition
+root's sink is where `performance.measure` belongs; the module deliberately does
+not call it, because a timeline entry per repaint is an unbounded buffer.
 
-| Signposter | Covers | Process |
+| Name | Covers | Wired |
 | --- | --- | --- |
-| `Signpost.launch` | Process start → first interactive frame | app |
-| `Signpost.connect` | Socket connect → handshake → first state | app |
-| `Signpost.attach` | Attach request → first painted frame | app |
-| `Signpost.render` | Renderer feed and redraw | app |
-| `Signpost.daemonStart` | Socket activation → database open → ready | daemon |
-| `Signpost.terminal` | Spawn, first byte, exit | daemon |
-| `Signpost.encode` | Damage → repaint bytes, per frame per client | daemon |
-| `Signpost.git` | Each git invocation | daemon |
-| `Signpost.sessionCreate` | Worktree add → include copy → automation started | daemon |
-| `Signpost.forge` | Each `gh`/`glab` invocation | daemon |
+| `repaint` | One encode — `repaintFor`/`fullRepaintFor`, per frame per client. Records `client`, `bytes`, `full`. | yes, `@janela/terminal` |
+| `attach` | Daemon side: attach → the first full repaint encoded. Client side: those bytes → a painted frame. | daemon half only |
+| `launch` | Process start → interactive window | not yet — `apps/desktop/src/main.tsx` still logs its own `requestAnimationFrame` line |
+| `connect` | Connect + handshake + first full state | not yet |
+| `terminal` | PTY spawn → first byte | not yet |
+| `git` | One git invocation | not yet |
+| `sessionCreate` | Worktree add → include copy → automation started | not yet |
+| `forge` | One `gh`/`glab` invocation | not yet |
 
-Signposts from two processes interleave correctly in Instruments as long as both use
-the same subsystem, which is why `janelad` logs under `sh.janela.Janela` rather than
-a subsystem of its own. A trace showing only one process will mislead you about
-where the time went.
+Records from both processes carry the same names, so a daemon log and a client log
+can be read side by side — which is why `janelad` logs under `sh.janela.Janela`
+rather than a subsystem of its own.
 
-Use `.debug` for anything per-frame or per-chunk; it costs almost nothing when the
-subsystem is not being collected.
+Fields are *shapes*: an id, a count, a byte total. Never terminal traffic,
+command output or environment values (AGENTS.md non-negotiable 11) — a sink writes
+to the same log everything else does.
 
 ### Instruments
 
@@ -311,5 +322,101 @@ while the client was frozen.
 ## Regressions
 
 Performance work is only durable if it is defended. Before optimising, capture a
-baseline; after, record the numbers in the PR. When a benchmark harness lands, the
-throughput and launch budgets are the first two things it should assert.
+baseline; after, record the numbers in the PR. The throughput side of that now has
+a harness; the launch budget is still the next one to grow one.
+
+### Repaint encoding
+
+`bun run --cwd packages/terminal bench` — five scenarios × two grids, three
+attached clients each, 600 frames after a 60-frame warm-up. Run it twice on a quiet
+machine and report the second run; the harness itself gates two rows (the `line
+flood` feed rate against ≥ 100 MB/s, and every gated scenario's bytes/frame against
+the 2 MB/s socket budget) and exits non-zero when either fails.
+
+**Baseline — full-grid placeholder (#21).** Every mismatched revision answered with
+RIS + `CSI 8 t` + `SerializeAddon.serialize`. Measured on an Apple M4, `bun`
+1.3.14, `@xterm/headless` 6.0.0.
+
+| Scenario | Grid | bytes/frame/client | MB/s @120 | encode µs/frame | feed µs/frame | CPU % of 8 ms | shared buffer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| yes flood | 80×24 | 87 | 0.010 | 155.3 | 38 413 | 482 | no |
+| yes flood | 120×40 | 136 | 0.016 | 301.9 | 40 171 | 506 | no |
+| line flood | 80×24 | 1 859 | 0.223 | 144.3 | 4 303 | 56 | no |
+| line flood | 120×40 | 4 701 | 0.564 | 337.3 | 3 944 | 54 | no |
+| build log | 80×24 | 1 491 | 0.179 | 121.3 | 6.9 | 1.6 | no |
+| build log | 120×40 | 2 516 | 0.302 | 270.6 | 7.1 | 3.5 | no |
+| TUI cursor move | 80×24 | 2 394 | 0.287 | 222.5 | 2.7 | 2.8 | no |
+| TUI cursor move | 120×40 | 3 049 | 0.366 | 572.3 | 3.2 | 7.2 | no |
+| quiet | 80×24 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| quiet | 120×40 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| SGR-heavy redraw | 80×24 | 6 014 | 0.722 | 426.2 | 46.1 | 5.9 | no |
+| SGR-heavy redraw | 120×40 | 14 815 | 1.778 | 1 053.1 | 70.1 | 14.0 | no |
+
+Feed rates: `line flood` 193.7 MB/s at 80×24 and 211.3 MB/s at 120×40; `yes flood`
+21.7 and 20.7 MB/s. The first run of the pair read 202.1 / 219.4 and 30.1 / 27.7,
+which is the honest spread on a machine that is not idle.
+
+**Why `yes flood` is reported and not gated.** The ≥ 100 MB/s row above was
+measured off the *PTY*, with 78-column lines. `y\r\n` is a screen scroll every three
+bytes, and the emulator sustains ~20–30 MB/s of it — the emulator, not the PTY, is
+the flood's bottleneck for that payload, and back-pressure is what absorbs it. Its
+*wire* row is what #32 is about, and that is gated. `line flood` carries the
+throughput budget on the payload the budget was measured with.
+
+**After — the damage encoder (#32).** Dirty rows from the library, bounded by a
+shadow-grid diff; scroll-aware; a full repaint only for a resize, a buffer switch,
+a RIS, a client from the future and a client further behind than the scroll ring.
+Same machine, second of two runs.
+
+| Scenario | Grid | bytes/frame/client | MB/s @120 | encode µs/frame | feed µs/frame | CPU % of 8 ms | shared buffer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| yes flood | 80×24 | 296 | 0.036 | 75.2 | 99 066 | 1 239 | yes |
+| yes flood | 120×40 | 488 | 0.059 | 146.1 | 116 179 | 1 454 | yes |
+| line flood | 80×24 | 2 067 | 0.248 | 83.0 | 6 025 | 76 | yes |
+| line flood | 120×40 | 5 051 | 0.606 | 234.0 | 6 419 | 83 | yes |
+| build log | 80×24 | 393 | 0.047 | 26.2 | 25.3 | 0.6 | yes |
+| build log | 120×40 | 393 | 0.047 | 31.2 | 35.9 | 0.8 | yes |
+| TUI cursor move | 80×24 | 106 | 0.013 | 10.1 | 13.5 | 0.3 | yes |
+| TUI cursor move | 120×40 | 45 | 0.005 | 8.0 | 17.4 | 0.3 | yes |
+| quiet | 80×24 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| quiet | 120×40 | 0 | 0.000 | 0.1 | 0.0 | 0.0 | yes |
+| SGR-heavy redraw | 80×24 | 0 | 0.000 | 0.5 | 91.3 | 1.1 | yes |
+| SGR-heavy redraw | 120×40 | 0 | 0.000 | 0.6 | 121.5 | 1.5 | yes |
+
+Feed rates: `line flood` 138.3 MB/s at 80×24 and 129.8 at 120×40; `yes flood` 8.4
+and 7.2 MB/s.
+
+**What moved, and what got worse.**
+
+- The interactive cases are where the win is, and it is large: a TUI cursor move
+  costs 45 bytes instead of 3 049 at 120×40 (68×), a build log 393 instead of
+  2 516, and a full-screen SGR redraw of *the same content* costs **nothing** —
+  the shadow diff sees no change, where the placeholder re-sent 14 815 bytes a
+  frame. Encode time fell with it: 1 053 µs → 0.6 µs on that row.
+- The two floods cost *more* bytes than the placeholder: 87 → 296 at 80×24, and
+  1 859 → 2 067 for `line flood`. That is real and it is structural — when every
+  row changes, `CUP` + content + `EL` per row is more verbose than the
+  serialiser's `\r\n`-joined dump. It is also immaterial: 296 bytes a frame is
+  0.036 MB/s against a 2 MB/s socket budget, 1.8 % of the 16 666 bytes a frame the
+  budget allows.
+- **Falling back to a full repaint for those frames would be worse, measured.**
+  The placeholder's encode column is 2–8× the encoder's (155 → 75 µs, 1 053 →
+  0.6 µs) because `SerializeAddon.serialize` walks and allocates the whole grid,
+  and every full repaint begins with `RIS`, which wipes the client's scrollback.
+  Trading 200 bytes a frame for a client whose history is erased 120 times a
+  second is not a trade.
+- **The one real cost was in `feed`, and it is fixed.** The first version of the
+  damage tracker diffed every row of a scrolling screen — a comparison that can
+  only ever answer "changed", because the client's own scroll moved something else
+  into that position. Adopting those rows without comparing them (`adoptRow`)
+  restored the rate: in an interleaved A/B on one machine window the encoder now
+  measures 200.1 / 205.9 MB/s where the placeholder measures 85.0 / 141.0, and
+  118.8 / 128.8 against 122.8 / 130.0 in a busier window.
+
+**Reading the feed columns.** They move by a factor of three with machine load,
+for identical code. The interleaved A/B measured the *placeholder* at 121.9 then
+166.8 MB/s at 80×24, and 71.6 then 194.6 at 120×40 — failing the ≥ 100 MB/s gate
+on its own code. The gate stays, because it caught the `adoptRow` regression and
+then pointed at it; but a failure means "re-run on a quiet machine, then A/B
+against the merge base", not "regression". The wire and encode columns are the
+stable ones, and they are the ones #32 owns.

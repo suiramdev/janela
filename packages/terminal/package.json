@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "bench": "bun run src/throughput.bench.ts",
     "clean": "rm -rf dist *.tsbuildinfo",
     "test": "bun test",
     "typecheck": "tsc --build"
