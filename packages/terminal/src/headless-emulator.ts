@@ -527,15 +527,22 @@ export class HeadlessEmulator implements TerminalEmulating {
     const to = this.dirtyAll ? rows - 1 : Math.min(rows - 1, this.dirtyEnd);
     for (let y = from; y <= to; y += 1) {
       const line = buffer.lines.get(buffer.ybase + y);
-      // A row that scrolled in is new to the client whatever its cells say: the
-      // client's own scroll moved something else into that position.
-      const scrolledIn = y >= rows - scrolled;
       if (line === undefined) {
         this.blankRow(y);
         this.changedAt[y] = revision;
         continue;
       }
-      if (this.syncRow(y, line) || scrolledIn) {
+      if (y >= rows - scrolled) {
+        // A row that scrolled in is new to the client whatever its cells say: the
+        // client's own scroll moved something else into that position. Diffing it
+        // could only ever answer "changed", so the shadow is copied and the
+        // comparison skipped — which is the whole screen, every frame, under a
+        // flood.
+        this.adoptRow(y, line);
+        this.changedAt[y] = revision;
+        continue;
+      }
+      if (this.syncRow(y, line)) {
         this.changedAt[y] = revision;
       }
     }
@@ -582,6 +589,17 @@ export class HeadlessEmulator implements TerminalEmulating {
     return differs;
   }
 
+  /** Takes the row as-is, without asking whether it differs. */
+  private adoptRow(y: number, line: InternalLine): void {
+    const stride = this.currentSize.columns * WORDS_PER_CELL;
+    const data = line._data;
+    const words = Math.min(data.length, stride);
+    this.shadow.set(words === data.length ? data : data.subarray(0, words), y * stride);
+    if (words < stride) {
+      this.shadow.fill(0, y * stride + words, y * stride + stride);
+    }
+  }
+
   private blankRow(y: number): void {
     const stride = this.currentSize.columns * WORDS_PER_CELL;
     this.shadow.fill(0, y * stride, y * stride + stride);
@@ -597,8 +615,7 @@ export class HeadlessEmulator implements TerminalEmulating {
       if (line === undefined) {
         this.blankRow(y);
       } else {
-        this.blankRow(y);
-        this.syncRow(y, line);
+        this.adoptRow(y, line);
       }
       this.changedAt[y] = revision;
     }

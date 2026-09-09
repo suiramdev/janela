@@ -21,15 +21,19 @@
  *   that costs more CPU than it saves bytes is not a win.
  * - **feed µs/frame** and **CPU %** of the 8 ms frame. Damage tracking is work
  *   done inside `feed`; this is where its cost shows.
- * - **feed MB/s** under a flood. The ≥ 100 MB/s row in docs/performance.md
- *   § Terminal throughput was measured off the *PTY* with 78-column lines, and
- *   `line flood` is the emulator's half of it, offered the same shape. `yes flood`
- *   is the literal worst case — `y\r\n` is a scroll every three bytes — and its
- *   rate is reported rather than gated, because holding the emulator to a PTY
- *   budget on a payload that is 33 % newlines would be gating the wrong thing.
- *   What matters for #32 is that its *wire* row stays flat, and that is gated.
+ * - **feed MB/s** under a flood, and `line flood` is **gated** at ≥ 100 MB/s
+ *   (docs/performance.md § Terminal throughput). That gate earned its place: it
+ *   caught the first version of the damage tracker diffing every row of a
+ *   scrolling screen, which is a comparison that can only ever answer "changed".
+ *   Read it as a *relative* number, though. An interleaved A/B — placeholder,
+ *   encoder, placeholder, encoder, one machine window — measured the same
+ *   *placeholder* code at 121.9 and then 166.8 MB/s at 80×24, and 71.6 then
+ *   194.6 at 120×40: under load this row moves by a factor of three and can fail
+ *   on code that is not at fault. A failure means "re-run on a quiet machine,
+ *   then A/B against the merge base", not "regression".
  *
- * Run it twice on a quiet machine and report the second run.
+ * Run it twice on a quiet machine and report the second run. The wire and encode
+ * columns are stable across runs; the two feed columns are not.
  */
 
 import type { GridSize } from "@janela/core";
@@ -75,9 +79,9 @@ interface Scenario {
    */
   frames(size: GridSize): readonly string[];
   /**
-   * `gate` holds the feed rate to the 100 MB/s budget; `report` prints it and
-   * gates only the wire row. Absent means the scenario feeds too little to say
-   * anything about a rate.
+   * `gate` holds the feed rate to the 100 MB/s budget as well as the wire row;
+   * `report` prints the rate and gates only the wire row. Absent means the
+   * scenario feeds too little to say anything about a rate.
    */
   readonly feedRate?: "gate" | "report";
 }
@@ -175,7 +179,9 @@ interface Measurement {
 const textEncoder = new TextEncoder();
 
 function report(line: string): void {
-  void Bun.write(Bun.stdout, `${line}\n`);
+  // `Bun.write(Bun.stdout, …)` returns a promise, and unawaited writes interleave:
+  // a table printed that way arrives with its rows shuffled and some rows missing.
+  process.stdout.write(`${line}\n`);
 }
 
 function measure(scenario: Scenario, size: GridSize): Measurement {
@@ -300,7 +306,7 @@ for (const result of measurements) {
     result.feedMegabytesPerSecond < 100
   ) {
     failures.push(
-      `feed rate ${result.feedMegabytesPerSecond.toFixed(1)} MB/s is below the 100 MB/s budget (${result.scenario}, ${result.size.columns}×${result.size.rows})`,
+      `feed rate ${result.feedMegabytesPerSecond.toFixed(1)} MB/s is below the 100 MB/s budget (${result.scenario}, ${result.size.columns}×${result.size.rows}) — re-run on a quiet machine before believing it`,
     );
   }
   if (
