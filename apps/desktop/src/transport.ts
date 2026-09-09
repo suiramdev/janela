@@ -13,18 +13,17 @@ import { invoke } from "@tauri-apps/api/core";
  *
  * This file is the concrete cost of the Tauri decision and the concrete proof the
  * seam is real: a browser client replaces exactly this file with a WebSocket
- * implementation and changes nothing above it. See
- * docs/decisions/0023-macos-first-portable.md.
+ * implementation and changes nothing above it.
  *
  * ## The one performance rule
  *
  * Terminal frames are the hot path and they now cross an extra boundary. Tauri's
  * IPC can carry raw bytes without a JSON round-trip, and it must: base64 through
  * IPC would inflate every repaint by a third and add two passes per frame, which is
- * exactly the mistake ADR 0016 refused to make on the socket. So a frame goes out
- * as the invoke's *whole body* and comes back as an `ArrayBuffer`, and the
- * connection id travels in a header — the moment it joined the body, every repaint
- * would be inside a JSON object. The budget is in docs/performance.md § Terminal
+ * exactly the mistake the socket refused to make. So a frame goes out as the
+ * invoke's *whole body* and comes back as an `ArrayBuffer`, and the connection id
+ * travels in a header — the moment it joined the body, every repaint would be
+ * inside a JSON object. The budget is in docs/performance.md § Terminal
  * throughput.
  *
  * ## Back-pressure and reconnection are not here

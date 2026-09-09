@@ -1,4 +1,4 @@
-// A real slice of Janela's schema, to prove the cascade rules ADR 0005 requires.
+// A real slice of Janela's schema, to prove the cascade rules the domain model requires.
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"

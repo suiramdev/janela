@@ -21,9 +21,9 @@ mean. This is the shared vocabulary; use these words in code, in UI copy, and in
 issues.
 
 All types live in `JanelaCore` and are `Sendable` value types with no I/O. Since
-[ADR 0015](decisions/0015-daemon-owned-sessions.md) that carries a second meaning:
-`JanelaCore` is the vocabulary **both processes share**, so these types cross a
-socket and must stay cheap to encode and free of anything process-specific.
+the daemon owns the sessions, that carries a second meaning: `JanelaCore` is the
+vocabulary **both processes share**, so these types cross a socket and must stay
+cheap to encode and free of anything process-specific.
 
 ---
 
@@ -98,7 +98,8 @@ public struct ProjectSettings: Hashable, Sendable, Codable {
 
 Per-*project* settings earn their place because a project is where the differences
 actually live: one repo needs `pnpm install`, another needs a Python venv, a third
-needs neither. Per-*session* settings do not, and adding them needs an ADR.
+needs neither. Per-*session* settings do not, and adding them would mean
+revisiting that split here first.
 
 ---
 
@@ -184,7 +185,7 @@ before us, and we do not get to destroy it on a hunch.
 `includedPaths` is what `.worktreeinclude` actually copied, recorded at creation
 time rather than recomputed at deletion time. It is how the removal dialog can say
 "this will also delete a 400 MB `node_modules` that was copied in, and an `.env`
-that exists nowhere else" — see [ADR 0013](decisions/0013-worktreeinclude.md).
+that exists nowhere else".
 
 ### Creating one
 
@@ -239,8 +240,7 @@ public enum TerminalRole: Hashable, Sendable, Codable {
 ```
 
 Automation terminals are ordinary terminals with a label. They are not a hidden
-process with a bespoke output view — see
-[ADR 0014](decisions/0014-project-automation.md).
+process with a bespoke output view.
 
 ### `TerminalState`
 
@@ -257,9 +257,9 @@ public enum TerminalState: Hashable, Sendable {
 `.idle` is a first-class state, not an absence. It is what makes 40 open terminals
 cheap, and it is why allocation happens in `start()` rather than `init`.
 
-**There is no `.waitingForUser` or `.agentThinking`**, and adding one requires
-superseding [ADR 0006](decisions/0006-agent-activity-signals.md). Janela reports
-what the *terminal* told it — BEL, OSC 9/777, OSC 133 — and never infers agent
+**There is no `.waitingForUser` or `.agentThinking`**, and adding one would mean
+reversing a deliberate decision rather than filling a gap. Janela reports what
+the *terminal* told it — BEL, OSC 9/777, OSC 133 — and never infers agent
 semantics from a byte stream.
 
 A session's status is **derived** from its terminals, never stored: a session is
@@ -311,8 +311,8 @@ Design constraints, all of them enforceable and tested:
   with one idle terminal, not zero.
 
 Why this is modelled at all, when the old model refused to model layout: splits and
-tabs are v1 scope ([ADR 0010](decisions/0010-terminal-layout.md)), and "wherever
-you left it" only works if "where you left it" is written down.
+tabs are v1 scope, and "wherever you left it" only works if "where you left it"
+is written down.
 
 ---
 
@@ -377,8 +377,7 @@ directory, with the session's environment. Failure is visible and non-fatal:
 the terminal stays open showing a non-zero exit, and the session is still usable.
 Teardown is the one exception — deletion waits for it, bounded by `timeout`.
 
-See [ADR 0014](decisions/0014-project-automation.md) for why these live in Janela's
-database rather than in a committed repo file.
+These live in Janela's database rather than in a committed repo file.
 
 ### `ForgeState`
 
@@ -396,7 +395,7 @@ public struct ForgeState: Hashable, Sendable, Codable {
 It is a cache with a timestamp, never a source of truth, and every field is
 optional because `gh` may be missing, logged out, rate-limited, or pointed at an
 enterprise host we cannot reach. Absence renders as absence, never as an error
-banner. See [ADR 0012](decisions/0012-forge-integration.md).
+banner.
 
 ### `AttentionSignal`
 
@@ -414,14 +413,14 @@ public struct AttentionSignal: Hashable, Sendable {
 The signal is a fact, produced by the daemon's emulator and pushed to every
 subscribed client. Whether it becomes a badge, a Notification Centre delivery, or
 nothing at all is policy — and policy lives in `JanelaClient`, because only a client
-knows what is focused and whether anyone is looking. See
-[ADR 0011](decisions/0011-notifications.md).
+knows what is focused and whether anyone is looking.
 
 ---
 
 ## Deliberately absent
 
-Each of these was considered and rejected. Adding one needs an ADR.
+Each of these was considered and rejected. Adding one is a change to this model,
+and belongs here before it belongs in code.
 
 | Not modelled | Why |
 | --- | --- |

@@ -14,8 +14,7 @@
  * adapted to light/dark and Increase Contrast without code branching, and they are
  * now CSS custom properties that do the same through `prefers-color-scheme` and
  * `prefers-contrast`. The rule that no view branches on appearance is unchanged, and
- * is the reason this is a token file rather than two palettes. See
- * docs/decisions/0023-macos-first-portable.md.
+ * is the reason this is a token file rather than two palettes.
  */
 
 /** The 4-point grid everything snaps to. */

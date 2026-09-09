@@ -12,7 +12,7 @@
  * no injection.** A caller who genuinely wants a shell writes
  * `["zsh", "-lc", "…"]` and has chosen that explicitly. This is the same rule
  * `LaunchProfile.command` and `AutomationCommand.command` follow, for the same
- * reason. See docs/decisions/0007-git-integration.md.
+ * reason.
  */
 
 import { spawn } from "node:child_process";

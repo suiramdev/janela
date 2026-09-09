@@ -36,8 +36,7 @@ const EMPTY = new Uint8Array(0);
  * ## Where this runs
  *
  * **In the daemon, never in a client.** It owns the child process, so it outlives
- * every window; clients receive repaint sequences and render them. See
- * docs/decisions/0015-daemon-owned-sessions.md.
+ * every window; clients receive repaint sequences and render them.
  *
  * ## Lazy by default
  *
@@ -127,8 +126,7 @@ export interface LiveTerminal {
  *
  * **The minimum of all attached viewports**, which is tmux's rule and the only one
  * that guarantees no attached client is shown a screen it cannot fit. A client
- * attaching with no viewport — the CLI, reading text — does not participate. See
- * docs/decisions/0016-daemon-protocol.md.
+ * attaching with no viewport — the CLI, reading text — does not participate.
  *
  * Throws on an empty list rather than inventing an 80×24: "nobody is attached" is
  * `detach()` returning `undefined`, and a fabricated size here would resize a
@@ -272,7 +270,7 @@ class PtyLiveTerminal implements LiveTerminal {
     },
     // Forwarded and nothing more. Whether a finished command deserves attention
     // depends on how long it ran and what is focused, and only a client knows
-    // the second one — see docs/decisions/0006-agent-activity-signals.md.
+    // the second one.
     onPromptMark: (mark) => {
       this.events?.onPromptMark(mark);
     },

@@ -12,17 +12,15 @@ import type { TerminalRegistry } from "@janela/terminal";
  *    (non-negotiable #7).
  * 2. **Hang up before exiting.** A child whose parent dies without SIGHUP is
  *    reparented onto launchd and keeps running with nobody to talk to.
- *
- * See docs/decisions/0017-daemon-lifecycle.md.
  */
 
 /**
  * How long the daemon stays up with nothing to do.
  *
- * ADR 0017's five minutes, and this is the first place it exists as code. Long
- * enough that quitting and reopening the app does not tear down and rebuild the
- * world — the database, the shell-environment capture, the session restore — and
- * short enough that a user who is done for the day is not left with a process.
+ * The five-minute grace period, and this is the first place it exists as code.
+ * Long enough that quitting and reopening the app does not tear down and rebuild
+ * the world — the database, the shell-environment capture, the session restore —
+ * and short enough that a user who is done for the day is not left with a process.
  */
 export const IDLE_GRACE_PERIOD_MS = 5 * 60_000;
 
@@ -124,10 +122,10 @@ export interface IdlenessFacts {
  *
  * **Both conjuncts, and the second is the whole feature.** No clients is not
  * enough: a daemon holding live terminals stays, however long it has been alone,
- * because it exists to outlive clients rather than to serve them
- * (non-negotiable #7, ADR 0017). `canExitWhenIdle()` is what asks the terminal
- * registry, and dropping it would make the daemon exit five minutes after the
- * user closed the window on a running build.
+ * because it exists to outlive clients rather than to serve them (non-negotiable
+ * #7). `canExitWhenIdle()` is what asks the terminal registry, and dropping it
+ * would make the daemon exit five minutes after the user closed the window on a
+ * running build.
  */
 export function isDaemonIdle(facts: IdlenessFacts): boolean {
   return facts.connectionCount === 0 && facts.canExitWhenIdle();

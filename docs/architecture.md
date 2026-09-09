@@ -40,12 +40,11 @@ Everything both sides share — `@janela/core` (domain types) and `@janela/proto
 The extra hop on the left is the one structural cost of a WebView client: **a WebView
 cannot open a Unix socket**, so the Rust shell opens it and relays frames. That is
 the whole of what the shell does with the protocol — it moves bytes and never reads
-them ([0024](decisions/0024-tauri-client-shell.md)).
+them.
 
-The daemon/client split itself is
-[`decisions/0015-daemon-owned-sessions.md`](decisions/0015-daemon-owned-sessions.md).
-The short version: sessions have to outlive the window, and a CLI and a remote client
-both need something that is not a window to talk to.
+The daemon/client split itself comes down to this: sessions have to outlive the
+window, and a CLI and a remote client both need something that is not a window to
+talk to.
 
 ### What the split buys, concretely
 
@@ -59,9 +58,8 @@ both need something that is not a window to talk to.
 ### What it costs
 
 - A repaint encoder we own, which is the hard part.
-- Version skew between app and daemon, with a user-facing story
-  ([0016](decisions/0016-daemon-protocol.md), [0017](decisions/0017-daemon-lifecycle.md)).
-- Two signed binaries in one bundle ([0008](decisions/0008-sandboxing-and-distribution.md)).
+- Version skew between app and daemon, with a user-facing story.
+- Two signed binaries in one bundle.
 - State that can be *stale* as well as wrong, which no type system can check.
 - One more boundary on the keystroke path, budgeted in
   [`performance.md`](performance.md).
@@ -73,7 +71,7 @@ both need something that is not a window to talk to.
 The graph lives in `scripts/layers.ts` **as data**, and `bun run check:layers`
 enforces it. Dependencies point downward only, and an illegal import fails a command
 rather than depending on a reviewer noticing — which it did not, for free, once the
-compiler stopped doing it ([0022](decisions/0022-layering-enforcement.md)).
+compiler stopped doing it.
 
 ```text
                 @janela/support     logging, errors, timing, bounded buffers
@@ -163,7 +161,6 @@ An interface over "deliver these frames, give me those frames". Two implementati
 today, both local: the daemon's socket listener, and the app's bridge through the
 Tauri shell. A WebSocket implementation later makes a browser client a transport
 rather than a rewrite. Nothing above it knows which.
-See [0016](decisions/0016-daemon-protocol.md), [0023](decisions/0023-macos-first-portable.md).
 
 ### 2. `TerminalEmulating` — the VT parser and the grid (daemon)
 
@@ -175,7 +172,7 @@ One property changed and it is worth stating plainly: the daemon and the client 
 longer run the *same* library, only the same family. The protocol ships escape
 sequences, so they need agree on VT semantics rather than on an internal format —
 but "they cannot disagree because they are the same code" has become "they should not
-disagree". [0018](decisions/0018-terminal-engine.md) is honest about that cost.
+disagree", which is a real cost and not a theoretical one.
 
 ### 3. `TerminalRendering` — the surface (client)
 
@@ -187,13 +184,13 @@ Feed bytes, resize, focus, selection. Backed by `@xterm/xterm`, in
 Everything git goes through a process runner taking an argument array. No shell, so
 no quoting bug class. Also owns `.worktreeinclude` resolution, because the honest
 implementation of "which ignored files match these patterns" is `git ls-files`, not a
-matcher we wrote. See [0013](decisions/0013-worktreeinclude.md).
+matcher we wrote.
 
 ### 5. `AttentionDelivering` — notification policy vs. delivery
 
 The daemon detects and emits a fact. `@janela/client` applies policy, because only a
 client knows what is focused. `apps/desktop` delivers, because notifications are an
-app-level capability. See [0011](decisions/0011-notifications.md).
+app-level capability.
 
 ---
 
@@ -286,13 +283,13 @@ LiveTerminal.start()                      in the daemon
 
 `fork` rather than `posix_spawn` is not a preference: only the child, after
 `setsid()`, can claim a controlling terminal, and without one Ctrl-C delivers no
-signal and every TUI misbehaves ([0021](decisions/0021-pty-native-layer.md)).
+signal and every TUI misbehaves.
 
 ### Attaching and reattaching
 
 ```text
 client: attach(terminalID, viewport: 120×40)
-daemon: resize the PTY to min(all attached viewports)      ← 0016
+daemon: resize the PTY to min(all attached viewports)
         serialise the grid → repaint bytes → this client only
         thereafter: damage-encoded frames to all attached clients
 ```
@@ -312,8 +309,8 @@ daemon, and they kept running.
 
 - **No shared mutable state to race over.** The session registry and the connection
   table are ordinary objects on one event loop. This is a weaker guarantee than a
-  compiler checking isolation, and [0020](decisions/0020-bun-daemon-runtime.md) says
-  so plainly rather than claiming an equivalent.
+  compiler checking isolation, and it is stated plainly rather than claimed as an
+  equivalent.
 - **The hazard that replaces data races is blocking the event loop.** Every blocking
   read lives on a thread inside the PTY's native library and reaches JavaScript as a
   buffer to drain. A blocking call in daemon code stalls *every* terminal at once.
@@ -341,12 +338,11 @@ that imports `@janela/db` is a layering bug, and the gate refuses it.
 
 The Prisma client is generated, `bun:sqlite` is the driver behind an adapter we own,
 and the whole thing survives `bun build --compile` — which is not a detail, it is the
-constraint that decided the driver ([0019](decisions/0019-prisma-sql-layer.md)).
+constraint that decided the driver.
 
 The socket lives at `~/.janela/run/janelad.sock` instead, for an unglamorous reason:
 `sockaddr_un.sun_path` is 104 bytes on macOS and the Application Support path does
-not comfortably fit. Measured and explained in
-[0016](decisions/0016-daemon-protocol.md).
+not comfortably fit. Measured, not assumed.
 
 ---
 
@@ -378,12 +374,12 @@ which is a different and much larger promise. It is explicitly not made.
   terminal.
 - **No forge API client.** We shell out to the user's `gh`/`glab`.
 - **No network listener in v1.** The protocol is transport-agnostic; only the local
-  transports are built. See [0016](decisions/0016-daemon-protocol.md).
+  transports are built.
 - **No second FFI surface.** `@janela/pty` owns the only one, and a future need —
   `launch_activate_socket` is the known candidate — should go through it rather than
-  opening another ([0021](decisions/0021-pty-native-layer.md)).
+  opening another.
 - **No daemon self-update, and no PTY hand-off across exec.** Upgrades are a user
   decision with a visible cost.
 - **No Linux or Windows build.** The architecture does not foreclose one; we do not
-  test, ship or support it. See [0023](decisions/0023-macos-first-portable.md).
+  test, ship or support it.
 - **No plugin API.** See [`product.md`](product.md) § Non-goals.

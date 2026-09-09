@@ -22,7 +22,7 @@ export type BannerModel =
  *
  * It names what happened, what is still true, and what restarting costs — in that
  * order, because a user deciding whether to kill their own terminals needs the cost
- * before the button. See docs/decisions/0017 § Version skew.
+ * before the button.
  */
 export const VERSION_SKEW_COPY =
   "Janela was updated. The background service is still running your terminals on the previous version. Restart it when you are ready — this will close your terminals.";

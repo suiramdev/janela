@@ -29,9 +29,7 @@ exist — not the point of the app.
 
 Terminals run inside `janelad`, a per-user daemon, so they survive the window
 closing. The app renders; the daemon runs things. A future CLI and a future browser
-client are more clients of the same protocol — see
-[`docs/decisions/0015-daemon-owned-sessions.md`](docs/decisions/0015-daemon-owned-sessions.md)
-and [`docs/decisions/0023-macos-first-portable.md`](docs/decisions/0023-macos-first-portable.md).
+client are more clients of the same protocol.
 
 If you are about to write code that contradicts that, stop and read
 [`docs/product.md`](docs/product.md) first.
@@ -52,17 +50,24 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run format` | Fix formatting in place | When `lint` complains |
 | `bun run check:layers` | The layering gate alone | When you touched a dependency edge |
 | `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
-| `bun run app` | Build and run the app | When you need to see it |
+| `bun run dev` | A `janelad` **and** the app, in one terminal | When you need to see it |
+| `bun run app` | The app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
 | `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
 
 **Prefer `bun run check` over building the app.** It covers everything except the
-Tauri shell and finishes in seconds; `bun run app` drives cargo and takes minutes.
+Tauri shell and finishes in seconds; `bun run dev` drives cargo and takes minutes.
 
-Two things that will bite you once each:
+Three things that will bite you once each:
 
+- **Nothing in the app starts the daemon.** An installed build does not need it to:
+  launchd owns `janelad`, and a client that cannot connect runs `launchctl
+  kickstart`. A development build has no bundle, so it registers nothing and there
+  is no service to start — `bun run dev` starts one for you, and `bun run app`
+  leaves you looking at a window that reconnects forever.
 - **A resident `janelad` from another checkout will serve your app.** That is by
   design — it holds the user's terminals — but during development it means you are
-  testing code you did not build. `bun run daemon:status` says who is running.
+  testing code you did not build. `bun run daemon:status` says who is running, and
+  `bun run dev` reuses whatever is listening rather than fighting it.
 - **Prisma's CLI needs Node, not Bun**, and rejects unsupported versions. The pinned
   one is in `.node-version`. Nothing we ship uses it.
 
@@ -75,8 +80,7 @@ apps/desktop/          The Tauri app. src-tauri/ is a THIN Rust shell; src/ is R
 apps/daemon/           janelad. Process plumbing only — nothing testable.
 packages/              All logic, as layered packages. Your work goes here.
 scripts/layers.ts      The module graph, as data. The architecture, enforced.
-docs/                  Architecture, decisions, conventions. Read before designing.
-docs/decisions/        ADRs. Read the relevant one before changing a decision.
+docs/                  Architecture, conventions, domain model. Read before designing.
 docs/MIGRATION_MAP.md  Where everything went when the stack changed.
 ```
 
@@ -87,8 +91,7 @@ docs/MIGRATION_MAP.md  Where everything went when the stack changed.
 Packages depend **downward only**. This used to be enforced by a compiler. It is now
 enforced by `bun run check:layers`, which reads `scripts/layers.ts` — because
 TypeScript does not check a module graph, and Bun's hoisting means an *undeclared*
-import resolves and runs. See
-[`docs/decisions/0022-layering-enforcement.md`](docs/decisions/0022-layering-enforcement.md).
+import resolves and runs.
 
 ```text
                 @janela/support     logging, errors, timing, bounded buffers
@@ -111,7 +114,8 @@ import resolves and runs. See
 
 **If you need an upward reference, you need an interface in the lower package
 instead.** Adding a dependency edge that points sideways or upward is a design
-change: write it down in `docs/decisions/` first, then change `scripts/layers.ts`.
+change: write it down in [`docs/architecture.md`](docs/architecture.md) first,
+then change `scripts/layers.ts`.
 
 Four rules that catch most mistakes:
 
@@ -128,14 +132,15 @@ Four rules that catch most mistakes:
 The gate also holds a table of **gated modules** — `bun:ffi` only in `@janela/pty`,
 `bun:sqlite` and `@prisma/client` only in `@janela/db`, `node:child_process` only in
 `@janela/support`, `@tauri-apps/*` only in `apps/desktop`. Each entry carries its
-reason and its ADR.
+reason.
 
 ---
 
 ## Non-negotiables
 
 These come from the product thesis. Violating one is not a style disagreement, it
-is a change of direction that needs an ADR.
+is a change of direction, and belongs in [`docs/product.md`](docs/product.md)
+before it belongs in code.
 
 1. **Worktree-aware, not worktree-centric.** There is one `Session` type and one
    creation entry point. Do not add a parallel "worktree" list, screen, or type.
@@ -254,8 +259,8 @@ Run `bun run check`. It must pass. Then confirm:
 - [ ] Did you add a concept a user has to learn? Justify it against
       [`docs/product.md`](docs/product.md) § Non-goals — the budget is four nouns.
 - [ ] Did you use the word "workspace"? Replace it with project or session.
-- [ ] Did you change an architectural decision? Add or amend an ADR in
-      `docs/decisions/`.
+- [ ] Did you change an architectural decision? Write the reason down in
+      [`docs/architecture.md`](docs/architecture.md).
 - [ ] Does anything you added allocate per-byte or per-frame on the terminal path?
       Check the budgets in [`docs/performance.md`](docs/performance.md).
 
@@ -269,8 +274,8 @@ installed, signed bundle where the app was quit and its terminals kept running. 
 that document before you change the daemon, the transport or the app lifecycle — it
 also lists what could *not* be tested, and why.
 
-What is not built is the **CLI**. ADR 0015 justifies daemon ownership partly on it,
-and `@janela/protocol` was shaped to serve it, but `apps/` holds only `daemon` and
+What is not built is the **CLI**. Daemon ownership is justified partly on it, and
+`@janela/protocol` was shaped to serve it, but `apps/` holds only `daemon` and
 `desktop`. If you add it, it must go through the protocol like any other client.
 
 The stack changed from Swift to Tauri and TypeScript. If you know the previous
@@ -288,5 +293,5 @@ GitHub Issues for `suiramdev/janela`. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-ADRs under `docs/decisions/`, the domain model and its vocabulary in
+The domain model and its vocabulary live in
 [`docs/domain-model.md`](docs/domain-model.md). See `docs/agents/domain.md`.

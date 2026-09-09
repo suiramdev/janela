@@ -12,8 +12,8 @@ import type { LaunchProfileID } from "@janela/core";
  * Every field here is about *rendering* or *interrupting*, and both are facts only
  * a client holds. The font is a WebView's; the bell switch feeds the attention
  * policy, which lives in the client precisely because the daemon cannot know what
- * is on screen (ADR 0011). A CLI has no use for any of it, which is the test for
- * whether something belongs on the wire.
+ * is on screen. A CLI has no use for any of it, which is the test for whether
+ * something belongs on the wire.
  *
  * `defaultProfileID` is the one that looks like it should be shared, and is not:
  * it is the fallback for a project that has expressed no preference, and the
@@ -34,7 +34,7 @@ export interface GlobalSettings {
    * Off by default: programs ring the bell for reasons the user has not agreed are
    * important, so a bell badges the sidebar and stops there. An explicit OSC 9 or
    * OSC 777 always delivers regardless of this, because the program asked for a
-   * notification by name and that is consent (ADR 0011).
+   * notification by name and that is consent.
    */
   readonly notifiesOnBell: boolean;
 

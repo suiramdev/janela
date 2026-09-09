@@ -8,17 +8,14 @@
 //!   * native file dialogs — **the app performs file selection; the daemon is handed
 //!     paths.** That is a rule, not a convenience: it is what keeps macOS permission
 //!     prompts attributed to the app the user just clicked rather than to a
-//!     background binary they have never heard of
-//!     (docs/decisions/0017-daemon-lifecycle.md § TCC attribution).
+//!     background binary they have never heard of.
 //!   * the daemon sidecar's lifecycle and launch-agent registration
 //!   * **the Unix-socket bridge**, because a WebView cannot open a socket
 //!
 //! What does not belong here: anything about projects, sessions, terminals or the
 //! protocol's meaning. This shell relays frames; it does not read them. If Rust code
 //! here starts needing to know what a `StateUpdate` is, the boundary has moved and
-//! the reason should be an ADR.
-//!
-//! See docs/decisions/0023-macos-first-portable.md.
+//! the reason belongs in `docs/architecture.md`.
 
 // The native menu is built at runtime from `@janela/ui`'s `COMMANDS`, which the
 // frontend sends once at startup (`install_menu` below). The shell reads ids,
@@ -34,11 +31,10 @@
 //
 // Launch-agent registration is `agent.rs`: `SMAppService.agent(plistName:)` over
 // the plist sealed into `Contents/Library/LaunchAgents`, with
-// `launchctl kickstart` standing in for socket activation (ADR 0017, amended
-// 2026-09-08). The sidecar is a single compiled Bun binary at
-// `Contents/MacOS/janelad`, which is what keeps ADR 0008's signing story at two
-// binaries rather than three. Neither module reads a frame's meaning, and neither
-// writes a plist.
+// `launchctl kickstart` standing in for socket activation. The sidecar is a single
+// compiled Bun binary at `Contents/MacOS/janelad`, which is what keeps the signing
+// story at two binaries rather than three. Neither module reads a frame's meaning,
+// and neither writes a plist.
 
 mod agent;
 mod bridge;
@@ -159,8 +155,8 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     let terminal = submenu_of_rows(&app, "Terminal", &rows("terminal"))?;
 
     // No Close Window: ⌘W closes a *pane*, and a window holding a running agent is
-    // not something to close by reflex (ADR 0010, amended). No Enter Full Screen
-    // either — its default chord is ⌃⌘F, and `Ctrl` belongs to the terminal.
+    // not something to close by reflex. No Enter Full Screen either — its default
+    // chord is ⌃⌘F, and `Ctrl` belongs to the terminal.
     let window_items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = vec![
         Box::new(PredefinedMenuItem::minimize(&app, None).map_err(to_message)?),
         Box::new(PredefinedMenuItem::maximize(&app, None).map_err(to_message)?),

@@ -1,11 +1,11 @@
 # Janela Implementation Specification
 
 What must be built, in dependency order, with the constraints each piece
-carries. Derived from the accepted ADRs in [`decisions/`](decisions/), from
-[`product.md`](product.md) and [`domain-model.md`](domain-model.md), and from
-the interfaces and `TODO:` seams the packages already export. **Where this
-document and the code disagree, the code is authoritative and this document is
-the one to fix.**
+carries. Derived from the shipped interfaces and the `TODO:` seams the
+packages already export, and from [`product.md`](product.md),
+[`architecture.md`](architecture.md), [`domain-model.md`](domain-model.md) and
+[`performance.md`](performance.md). **Where this document and the code
+disagree, the code is authoritative and this document is the one to fix.**
 
 ---
 
@@ -43,8 +43,8 @@ The sources of truth are each package's `src/index.ts` contract and the `TODO:`
 seams inside it, which are placed deliberately and carry a doc comment naming
 what belongs there. The packages are mid-implementation: several sections below
 describe a seam whose body is being written in the current wave of issues. This
-document describes each seam as the ADRs and the current interfaces define it,
-not as any half-written body defines it.
+document describes each seam as the current interfaces define it, not as any
+half-written body defines it.
 
 ---
 
@@ -58,26 +58,26 @@ app. The terminal owns the keyboard.
 a project is where sessions come from.
 
 Two processes. `janelad` is a Bun process shipped as a single `bun build
---compile` binary (ADR 0020); it owns the PTYs — a Rust cdylib behind `bun:ffi`
-(ADR 0021) — the headless emulator (`@xterm/headless`, ADR 0018), git, the
-database (Prisma over `bun:sqlite` through a driver adapter we own, ADR 0019)
-and the socket. `Janela.app` is a Tauri 2 shell (ADR 0024) whose Rust side opens
-`~/.janela/run/janelad.sock` and relays frames as raw bytes to a React WebView
-that renders with `@xterm/xterm`. The daemon is the source of truth; a client
-renders a mirror and has no privileged path (ADR 0015).
+--compile` binary; it owns the PTYs — a Rust cdylib behind `bun:ffi` — the
+headless emulator (`@xterm/headless`), git, the database (Prisma over
+`bun:sqlite` through a driver adapter we own) and the socket. `Janela.app` is a
+Tauri 2 shell whose Rust side opens `~/.janela/run/janelad.sock` and relays
+frames as raw bytes to a React WebView that renders with `@xterm/xterm`. The
+daemon is the source of truth; a client renders a mirror and has no privileged
+path.
 
 Two consequences of the stack are worth stating once, here, because they change
 what the rest of this document may assume.
 
-- **The daemon and the client no longer share a terminal library.** ADR 0018 §
-  Consequences: they run different packages from one family, so an emulator bug
-  no longer reproduces identically on both sides. The protocol makes this
-  survivable because it ships escape sequences rather than grids — the two sides
-  need only agree on VT semantics.
-- **Compile-time data-race checking is gone.** ADR 0020 replaced a language that
-  checked isolation with a single-threaded event loop that does not. The
-  isolation *rules* survive as ownership rules; the checker is gone, and the
-  rule that replaces it is **never block the event loop**.
+- **The daemon and the client no longer share a terminal library.** They run
+  different packages from one family, so an emulator bug no longer reproduces
+  identically on both sides. The protocol makes this survivable because it
+  ships escape sequences rather than grids — the two sides need only agree on
+  VT semantics.
+- **Compile-time data-race checking is gone.** A single-threaded event loop
+  replaced a language that checked isolation for us. The isolation *rules*
+  survive as ownership rules; the checker is gone, and the rule that replaces
+  it is **never block the event loop**.
 
 **Critical path to a minimum viable product**: `@janela/pty` → `@janela/git` →
 `@janela/db` → `@janela/core` layout algebra → `@janela/terminal` →
@@ -100,9 +100,8 @@ drain against them — `@janela/support`'s `boundedQueue` is still
 unimplemented and the frame loop that calls `drain()` lives in
 `@janela/daemon` (§ 3.3).
 
-**Requirements**: ADR 0021 (`docs/decisions/0021-pty-native-layer.md`),
-ADR 0020 (rules; reasoning in 0003), `docs/performance.md` § Terminal
-throughput, non-negotiables #8 and #9 in `AGENTS.md`.
+**Requirements**: `docs/performance.md` § Terminal throughput, non-negotiables
+#8 and #9 in `AGENTS.md`.
 
 #### PseudoTerminal
 
@@ -234,8 +233,8 @@ pub extern "C" fn jpty_drop_all() -> i32 { /* … */ }
 #### NativePtyLibrary
 
 Verbatim from `packages/pty/src/bindings.ts` — the only file in Janela
-permitted to name `bun:ffi` (ADR 0021, gated by ADR 0022). `isize` and
-`usize` cross the boundary as `bigint`.
+permitted to name `bun:ffi`, gated to this package by `scripts/layers.ts`.
+`isize` and `usize` cross the boundary as `bigint`.
 
 ```ts
 export interface NativePtyLibrary {
@@ -324,7 +323,7 @@ export function cStringArray(values: readonly string[]): CStringArray;
    occupy the JavaScript event loop, which is why the channel is an OS
    thread rather than anything on the runtime's own. Measured: with the
    consumer stopped entirely, resident memory grew by about 4 MB and then
-   stayed flat (ADR 0020, ADR 0021 § Verified behaviour).
+   stayed flat.
 
 3. **Drain once per frame, in one large call**: `drain()` returns up to
    `DRAIN_BUFFER_SIZE` (`1024 * 1024`) as a view into a per-terminal
@@ -370,11 +369,11 @@ export function cStringArray(values: readonly string[]): CStringArray;
    closing a descriptor out from under a reader. So `close()` sends
    `SIGHUP` to the group and lets the reader thread wind itself down and
    close; it never blocks, never joins, is idempotent, and returns in well
-   under a millisecond (0.4 ms measured, ADR 0021). The slot goes from
-   occupied to retired at a rendezvous between the hang-up and the reader
-   thread finishing, whichever arrives second: retiring on the reader alone
-   loses `drain()`'s end-of-stream signal, retiring on the caller alone
-   loses the exit code.
+   under a millisecond (0.4 ms measured). The slot goes from occupied to
+   retired at a rendezvous between the hang-up and the reader thread
+   finishing, whichever arrives second: retiring on the reader alone loses
+   `drain()`'s end-of-stream signal, retiring on the caller alone loses the
+   exit code.
 
 7. **Ctrl-C is a byte, not a signal**: write `CTRL_C` (`0x03`) and let the
    line discipline deliver `SIGINT` to whatever process group is in the
@@ -431,8 +430,8 @@ export function cStringArray(values: readonly string[]): CStringArray;
   are unchanged". That sentence is about the *rule* — stop reading, never
   shed — not about the numbers the old spec printed; the numbers above are
   authoritative.
-- ADR 0021's reference implementation was the spike; the shipped library
-  supersedes it (see **Seams**).
+- The spike was the reference implementation; the shipped library supersedes
+  it (see **Seams**).
 
 **Test strategy**:
 
@@ -445,7 +444,7 @@ Real children, real PTYs, no fakes — `bun test` for the boundary,
   `128 + SIGNAL.SIGTERM`).
 - Arbitrary bytes survive a round trip through the tty in raw mode
   (`stty raw -echo; exec cat`) — the byte fidelity that disqualified a
-  string-only PTY package in ADR 0021.
+  string-only PTY package.
 - Hanging up reaches the child, which reports `128 + SIGHUP`, and reaches
   a **grandchild** (`set +m; sleep 300 &`), which is `killpg` and not
   `kill`.
@@ -509,13 +508,13 @@ runs both. Throughput is measured by `bun run bench`, which is
   (issue #23); the PTY's own bound is in Rust and does not depend on it.
 - Provenance: `spikes/pty-bun-ffi/native/src/lib.rs` proved the design —
   133 MB/s sustained under `yes` with bounded memory, and 1.7 ms worst
-  event-loop lag — and ADR 0021's verification table is its output. The
-  shipped `packages/pty/native/src/lib.rs` supersedes it: the spike's 8 MB
-  drain buffer, its computed dylib specifier and its missing
-  `jpty_drop_all` are **not** the contract. Read the shipped library.
-- ADR 0021 § Revisit when names the one export a second FFI need should
-  become rather than a second surface: `launch_activate_socket` for the
-  daemon's socket activation (§ 3.3, ADR 0017).
+  event-loop lag. The shipped `packages/pty/native/src/lib.rs` supersedes
+  it: the spike's 8 MB drain buffer, its computed dylib specifier and its
+  missing `jpty_drop_all` are **not** the contract. Read the shipped
+  library.
+- A second FFI need becomes one more export on this library rather than a
+  second surface: `launch_activate_socket` for the daemon's socket activation
+  (§ 3.3).
 
 ---
 
@@ -526,8 +525,7 @@ body is a seam — `gitRunner`, `worktreeService`, `isTriviallySafe` and
 `worktreeIncluding` all throw `not implemented`. Issue #18 owns them, together
 with the `ProcessRunning` body they all stand on.
 
-**Requirements**: ADR 0007 (`docs/decisions/0007-git-integration.md`), ADR 0013
-(`docs/decisions/0013-worktreeinclude.md`), `docs/testing.md` § Git.
+**Requirements**: `docs/testing.md` § Git.
 
 #### GitRunning
 
@@ -656,8 +654,7 @@ export function worktreeIncluding(git: GitRunning): WorktreeIncluding;
 8. **The subprocess runner is `ProcessRunning`** from
    `@janela/support/process`, whose body is also owned by issue #18. That
    subpath is gated to the daemon side, and `node:child_process` is gated to
-   that package. ADR 0007 names the previous stack's process API for this job;
-   the code says `ProcessRunning`; the code wins.
+   that package.
 9. **`@janela/git` and `@janela/forge` are peers and never import each other**:
    both sit at layer 3 and share only the subprocess plumbing beneath them.
    Peers cannot depend on peers, which `scripts/layers.ts` enforces now that no
@@ -712,7 +709,7 @@ export function worktreeIncluding(git: GitRunning): WorktreeIncluding;
 - `.worktreeinclude` asserts what landed **and what did not**: an
   ignored-but-unlisted directory, an untracked-but-unlisted file, and `.git`
   itself must all be absent from the new worktree. Verified against git 2.49,
-  the command returns exactly the listed entries (ADR 0013).
+  the command returns exactly the listed entries.
 - `CopyReport` is asserted, not just the filesystem: `copied`, `totalBytes`,
   and `usedFallbackCopy === false` on APFS.
 
@@ -730,7 +727,7 @@ export function worktreeIncluding(git: GitRunning): WorktreeIncluding;
   `hasRunningSessions` comes from `@janela/session`.
 - `removeWorktree()` — `git worktree remove [--force] <path>`, plus deleting
   the directory when git leaves it behind.
-- `resolve()` — git does the matching, per ADR 0013:
+- `resolve()` — git does the matching:
   `ls-files -o -i --exclude-from=.worktreeinclude -z --directory`, run with
   `-C <repository>`. `-o -i` lists untracked files matching the given patterns,
   which is exactly the set we want because anything tracked is already in the
@@ -749,15 +746,14 @@ export function worktreeIncluding(git: GitRunning): WorktreeIncluding;
   the repository; `.git` is excluded regardless of patterns; per-path failures
   are logged by path shape, skipped and non-fatal. Runs after the
   `git worktree add` and before any `worktreeCreated` automation command,
-  because scripts depend on their `.env` already being present (ADR 0013,
-  ADR 0014).
-- **The 2 GB cap is stated by ADR 0013 and is not carried by this interface.**
-  The ADR says total size is measured first, capped at 2 GB by default, and
-  that past the cap the user is asked once with the actual number and the
-  offending path — the session being created either way. `WorktreeIncluding`
-  has no size argument, no cap constant and no prompt hook, so where the cap
-  and its one-time prompt land is issue #26's decision. Do not read a number
-  into this interface that it does not have.
+  because scripts depend on their `.env` already being present.
+- **The 2 GB cap is not carried by this interface.** Total size is measured
+  first and capped at 2 GB by default, and past the cap the user is asked
+  once with the actual number and the offending path — the session being
+  created either way. `WorktreeIncluding` has no size argument, no cap
+  constant and no prompt hook, so where the cap and its one-time prompt land
+  is issue #26's decision. Do not read a number into this interface that it
+  does not have.
 
 ---
 
@@ -769,8 +765,7 @@ interfaces with no binding behind them; the driver adapter is a `TODO:` and a
 type alias. Issue #19 owns the schema, the first migration and the
 repositories; issue #40 owns the driver adapter over `bun:sqlite`.
 
-**Requirements**: ADR 0019 (rules; reasoning in 0005), ADR 0015, ADR 0017
-(migration failure and exit code), `docs/domain-model.md`.
+**Requirements**: `docs/domain-model.md`.
 
 #### JanelaDatabase
 
@@ -998,24 +993,23 @@ derivable from git or a forge are deliberately absent.
    Getting it wrong does not throw — it hands Prisma a number where a string
    was expected, and surfaces much later as a decode error on a field nobody
    touched.
-2. **Location and pragmas are unchanged** from what ADR 0019 inherited:
+2. **Location and pragmas**:
    `~/Library/Application Support/sh.janela.Janela/janela.sqlite`, not in a
-   container because Janela is not sandboxed (ADR 0008). The four pragmas
+   container because Janela is not sandboxed. The four pragmas
    `OpenOptions.pragmas` documents, each a decision: WAL, so a read never
    blocks a write; `synchronous = NORMAL`, because losing the last few
    milliseconds of a session list to a power cut is not worth an fsync per
    commit; `foreign_keys = ON`, because the cascade rules *are* the product
    rules; and a 2 s busy timeout, so nothing blocks indefinitely on a lock
-   that should not exist given there is one writer. The socket lives elsewhere
-   (`~/.janela/run/janelad.sock`, ADR 0016); only the socket moved.
-3. **`janelad` opens it and nothing else ever does** (ADR 0015, ADR 0019). WAL
-   would tolerate multi-process access, so this is restraint rather than a
-   limitation: two writers means two sources of truth and a class of bug where
-   the client's view of a session disagrees with the process running it. A
-   client package importing `@janela/db` is a layering bug — `@janela/ui` and
-   `apps/desktop` do not link it at all — and `bun:sqlite` and
-   `@prisma/client` are gated to `@janela/db` in `scripts/layers.ts`
-   `GATED_MODULES` (ADR 0022).
+   that should not exist given there is one writer. The socket lives
+   elsewhere, at `~/.janela/run/janelad.sock`.
+3. **`janelad` opens it and nothing else ever does**. WAL would tolerate
+   multi-process access, so this is restraint rather than a limitation: two
+   writers means two sources of truth and a class of bug where the client's
+   view of a session disagrees with the process running it. A client package
+   importing `@janela/db` is a layering bug — `@janela/ui` and `apps/desktop`
+   do not link it at all — and `bun:sqlite` and `@prisma/client` are gated to
+   `@janela/db` in `scripts/layers.ts` `GATED_MODULES`.
 4. **Migrations are `prisma migrate` output** under
    `packages/db/prisma/migrations/`: ordered SQL a human can read. Append-only
    — never edit a shipped migration, because a user's database is already at
@@ -1026,8 +1020,7 @@ derivable from git or a forge are deliberately absent.
    exist yet**; the first migration is generated by issue #19. Migration
    failure is the interesting error — the daemon cannot start, and the only
    way a user learns about it is a client that cannot connect — so it is
-   logged clearly and exits non-zero, so launchd's `KeepAlive` does not spin
-   (ADR 0017).
+   logged clearly and exits non-zero, so launchd's `KeepAlive` does not spin.
 5. **Repositories take and return `@janela/core` values only.** A generated
    model appearing in a `@janela/session` signature would turn the schema into
    part of the brain's API; the layering gate enforces the import half, keeping
@@ -1108,8 +1101,7 @@ shared side (`scripts/layers.ts`): depends on `@janela/support` only, and is
 the vocabulary both processes share, so it holds no I/O and nothing
 process-specific.
 
-**Requirements**: ADR 0009, ADR 0010, `docs/domain-model.md`, ADR 0015
-(why these values cross a socket), ADR 0016 (why timestamps are strings).
+**Requirements**: `docs/domain-model.md`.
 
 #### Identifiers, paths and instants
 
@@ -1189,16 +1181,16 @@ export function backingViolations(session: Session): readonly string[];
 ```
 
 `projectID` is optional and that is load-bearing: "just give me a terminal
-in this folder" is a first-class case, not a degenerate one (ADR 0009).
-`backing` records **how the directory came to exist** — provenance, not a
-category of session. There is no `isWorktree` flag, no separate worktree
-list and no second creation flow.
+in this folder" is a first-class case, not a degenerate one. `backing`
+records **how the directory came to exist** — provenance, not a category
+of session. There is no `isWorktree` flag, no separate worktree list and
+no second creation flow.
 
 `WorktreeBinding` is a small value rather than an entity on purpose: a
 worktree has no independent life cycle here, it is created with a session
 and dies with it. `includedPaths` is recorded at creation time rather than
 recomputed at deletion time, which is what lets the removal dialog name what
-will be lost (ADR 0013).
+will be lost.
 
 #### Terminal
 
@@ -1241,7 +1233,7 @@ descriptors".
 in cells, the daemon negotiates one, and both sides plus the database need the
 type — putting it in the domain keeps the protocol from owning a value the
 domain uses. Cells, not pixels: pixel metrics are a client fact and do not
-survive two clients on different displays (ADR 0018).
+survive two clients on different displays.
 
 #### Project, settings and automation
 
@@ -1301,10 +1293,11 @@ export const AUTOMATION_EVENTS: readonly AutomationEvent[] = [
 project must do no work: expanding may never trigger git, disk or forge reads
 (`docs/performance.md` § Interaction). `AutomationCommand.command` is
 executable plus arguments, never handed to `sh -c`, so the quoting bug class
-does not exist. Three automation events, and a fourth needs an ADR — this is
-not a task runner: no scheduling, no retry, no dependency graph, no
-conditional execution. `timeoutSeconds` bounds `sessionTeardown` only; the
-other two events block nothing.
+does not exist. Three automation events, and a fourth needs an argument that
+survives `docs/product.md` § Non-goals — this is not a task runner: no
+scheduling, no retry, no dependency graph, no conditional execution.
+`timeoutSeconds` bounds `sessionTeardown` only; the other two events block
+nothing.
 
 #### Launch profiles and accents
 
@@ -1344,9 +1337,9 @@ export type Accent = (typeof ACCENTS)[number];
 
 `iconName` names a Lucide icon resolved by `@janela/design`; the field is
 presentational, and a name the client does not recognise falls back to the
-terminal glyph rather than rendering nothing (ADR 0023). An empty `command`
-means the user's login shell, resolved at launch by `@janela/session`. Ids
-for the built-ins are assigned at seed time rather than baked in, because a
+terminal glyph rather than rendering nothing. An empty `command` means the
+user's login shell, resolved at launch by `@janela/session`. Ids for the
+built-ins are assigned at seed time rather than baked in, because a
 hardcoded id would collide with a user's own copy of a built-in. Built-ins
 are *suggestions, not integrations*: a profile whose binary is absent from
 `PATH` is hidden rather than shown broken, and adding an entry must never
@@ -1425,20 +1418,20 @@ bare terminal as 1.
 
 1. **Values are plain, JSON-shaped and immutable**: timestamps are ISO-8601
    strings in UTC and paths are branded strings, because every value in this
-   package crosses a socket as JSON (ADR 0015, ADR 0016). No `Date` and no
-   `URL` in a domain value: a `Date` needs a revival pass on the far side
-   that one forgotten call site turns into a string masquerading as a date,
-   and a `URL` round-trip through percent-encoding is a bug waiting for the
-   first directory with a space in it. `toDate()` exists for formatting at
-   the edge, never for storage.
+   package crosses a socket as JSON. No `Date` and no `URL` in a domain
+   value: a `Date` needs a revival pass on the far side that one forgotten
+   call site turns into a string masquerading as a date, and a `URL`
+   round-trip through percent-encoding is a bug waiting for the first
+   directory with a space in it. `toDate()` exists for formatting at the
+   edge, never for storage.
 2. **Nothing here does I/O, and nothing here is `async`**: if something in
    this package needs an `await`, it belongs in a higher package. Layer 1
    with `@janela/support` as its only dependency makes that mechanical
    (`scripts/layers.ts`).
 3. **Four nouns is the concept budget**: project, session, terminal, launch
-   profile (ADR 0009, `docs/product.md` § 1). Two levels of containment,
-   never three. Standalone sessions are a first-class case, not a fake
-   "Ungrouped" project.
+   profile (`docs/product.md` § 1). Two levels of containment, never three.
+   Standalone sessions are a first-class case, not a fake "Ungrouped"
+   project.
 4. **Every layout function is pure and returns a new layout.** `splitPane`
    returns the layout unchanged when `terminal` is not in the tree.
    `resizeSplit` clamps. Nothing mutates its argument, which is what makes
@@ -1447,11 +1440,10 @@ bare terminal as 1.
    seam in `session-layout.ts` states it: "Depth is bounded at
    MAXIMUM_PANE_DEPTH; a split that would exceed it is refused rather than
    truncated", and `splitPane`'s contract is to return the layout unchanged
-   in that case. ADR 0010 says decoding truncates and logs; the code says a
-   deeper tree is refused and the split simply does not happen; the code
-   wins. Refusing is the better answer for the same reason the bound exists:
-   `Pane` is recursive and read back from a persisted blob, and silently
-   reshaping a user's arrangement is worse than declining to deepen it.
+   in that case. Refusing is the better answer for the same reason the bound
+   exists: `Pane` is recursive and read back from a persisted blob, and
+   silently reshaping a user's arrangement is worse than declining to deepen
+   it.
 6. **A fraction is clamped to `FRACTION_RANGE = { minimum: 0.05, maximum:
    0.95 }` on construction and on decode.** A pane you cannot see is a pane
    you cannot close.
@@ -1471,8 +1463,8 @@ bare terminal as 1.
 9. **Focus traversal is spatial**: `focusNeighbour(layout, direction)` with
    `"left" | "right" | "up" | "down"`, returning the layout unchanged at an
    edge. This replaces the earlier `focusNext` / `focusPrevious` pair — the
-   binding is `⌘⌥←→↑↓` (ADR 0010), and a linear next/previous over a split
-   tree does not answer the question the arrow key asks.
+   binding is `⌘⌥←→↑↓`, and a linear next/previous over a split tree does
+   not answer the question the arrow key asks.
 10. **`backingViolations` is checked on decode, never trusted.** A session
     that violates one of these arrived from somewhere that should not have
     produced it; `@janela/db` runs it on load and the protocol layer runs it
@@ -1543,8 +1535,7 @@ for a resize, a buffer switch, a RIS, a client claiming a revision from the futu
 and a client further behind than the scroll ring remembers. The bytes half is
 `repaint-encoder.ts`. The gated-module rules are in `scripts/layers.ts`.
 
-**Requirements**: ADR 0018 (rules; reasoning in 0004), ADR 0015, ADR 0006
-(no inferred agent state), `docs/performance.md` § Terminal throughput.
+**Requirements**: `docs/performance.md` § Terminal throughput.
 
 #### TerminalEmulating
 
@@ -1722,8 +1713,8 @@ export function createTerminalRegistry(): TerminalRegistry {
    family but they are *different* libraries, so an emulator bug no longer
    reproduces identically on both sides and a divergence between what the
    daemon believes is on screen and what the client draws is newly possible.
-   ADR 0018's "they cannot disagree because they are the same code" has become
-   "they should not disagree" — a weaker guarantee, held by convention. It is
+   "They cannot disagree because they are the same code" has become "they
+   should not disagree" — a weaker guarantee, held by convention. It is
    survivable because the protocol ships escape sequences, not grids: the two
    sides need only agree on VT semantics, never on an internal grid format.
    Mitigation is the two-emulator round-trip test below, plus a variant with
@@ -1747,17 +1738,16 @@ export function createTerminalRegistry(): TerminalRegistry {
    repaint, not announced — the first move is a native VT parser behind the
    PTY's existing cdylib and `bun:ffi` boundary, so it costs one more export
    rather than a second native artifact. For the record of what this seam used
-   to hold: ADR 0018 replaced the engine chosen before it (ADR 0018 carries the
-   decision; reasoning in 0004) behind these same two seams, which is the best
-   evidence available that the boundary was real rather than an artefact of the
-   old stack.
+   to hold: the terminal engine was replaced wholesale behind these same two
+   seams, which is the best evidence available that the boundary was real
+   rather than an artefact of the old stack.
 
 3. **`feed` is called at most once per frame, with the whole coalesced chunk.**
    This is a correctness-adjacent rule, not a tuning knob, and the measured
-   curve is the reason (ADR 0018, `@xterm/headless` 6.0 on an M-series Mac,
-   plain-text flood): 8 KiB chunks sustain ~6 MB/s, 64 KiB chunks ~32 MB/s,
-   1 MB chunks ~140 MB/s. Per-read feeding misses the ≥ 100 MB/s budget by a
-   factor of fifteen; the once-per-frame coalescing passes it comfortably. An
+   curve is the reason (`@xterm/headless` 6.0 on an M-series Mac, plain-text
+   flood): 8 KiB chunks sustain ~6 MB/s, 64 KiB chunks ~32 MB/s, 1 MB chunks
+   ~140 MB/s. Per-read feeding misses the ≥ 100 MB/s budget by a factor of
+   fifteen; the once-per-frame coalescing passes it comfortably. An
    escape-sequence-heavy payload — a full-screen TUI recolouring every cell —
    sustains ~10 MB/s, which is ~776 complete 120×40 repaints per second, far
    past what any client renders. The rule is recorded next to the code that
@@ -1771,29 +1761,28 @@ export function createTerminalRegistry(): TerminalRegistry {
    full-screen redraw.
 
 5. **`fullRepaint()` is serialise-for-attach**, via `@xterm/addon-serialize`.
-   ADR 0015 called this the hard part; ADR 0018 verified it round-trips
-   byte-identical by writing coloured, cursor-positioned content into a
-   headless terminal, serialising, replaying into a second and comparing
-   buffers cell by cell: identical, in 143 bytes for content spanning five
-   rows; and identical again for a 100×30 alternate-screen TUI with the cursor
-   left mid-screen, in 1802 bytes, with cursor position and buffer type
-   preserved. A correct-but-dumb full repaint every frame is always a valid
-   fallback for `repaintSince` — which is why the encoder could be deferred to
-   issue #32, and why the encoder that landed answers a resize, a buffer switch,
-   a RIS and a client it cannot catch up with this way: the hard optimisation
-   risks slowness, never wrongness.
+   Attaching is the hard part, and this was verified byte-identical by writing
+   coloured, cursor-positioned content into a headless terminal, serialising,
+   replaying into a second and comparing buffers cell by cell: identical, in 143
+   bytes for content spanning five rows; and identical again for a 100×30
+   alternate-screen TUI with the cursor left mid-screen, in 1802 bytes, with
+   cursor position and buffer type preserved. A correct-but-dumb full repaint
+   every frame is always a valid fallback for `repaintSince` — which is why the
+   encoder could be deferred to issue #32, and why the encoder that landed
+   answers a resize, a buffer switch, a RIS and a client it cannot catch up with
+   this way: the hard optimisation risks slowness, never wrongness.
 
 6. **Events are parsed in the feed path**, and the list is deliberately short
    and mechanical — every entry corresponds to a real escape sequence or a real
    process event: OSC 0 / OSC 2 title, OSC 7 working directory, BEL / OSC 9 /
    OSC 777 attention, OSC 133 prompt marks (`A` prompt start, `C` command
    start, `D;<code>` command finished), and process exit. There is no
-   `agentIsThinking`, because no terminal sequence means that: ADR 0006
-   rejected inferring an agent's state from its output. OSC 7 requires shell
-   integration the user may not have, so absence is normal and no feature may
-   block on it. This layer *reports* attention; whether a signal becomes a
-   notification is policy, and policy lives in `@janela/client`, because only
-   a client knows what is focused.
+   `agentIsThinking`, because no terminal sequence means that, and we never
+   infer an agent's state from its output. OSC 7 requires shell integration the
+   user may not have, so absence is normal and no feature may block on it. This
+   layer *reports* attention; whether a signal becomes a notification is
+   policy, and policy lives in `@janela/client`, because only a client knows
+   what is focused.
 
 7. **`LiveTerminal` lifecycle.** `state` is derived, not stored, and is one of
    `idle` (configured, no process yet), `running`, `needsAttention` (an
@@ -1820,8 +1809,8 @@ export function createTerminalRegistry(): TerminalRegistry {
    one that turns two windows into two half-screens.
 
 9. **This package runs in the daemon, never in a client.** It owns the child
-   process, so it outlives every window (ADR 0015). The client's half of the
-   seam is `TerminalRendering` in `@janela/terminal-ui`, which draws.
+   process, so it outlives every window. The client's half of the seam is
+   `TerminalRendering` in `@janela/terminal-ui`, which draws.
    `@janela/terminal` also does not resolve a launch profile or build an
    environment — it receives a fully resolved `TerminalLaunch` from
    `@janela/session`, the only place that knows about projects, profiles and
@@ -1832,7 +1821,7 @@ export function createTerminalRegistry(): TerminalRegistry {
     screen it cannot fit. A client attaching with no viewport — one reading
     text — does not participate. `attach()` returns the resulting PTY size and
     `detach()` returns the new negotiated size, or `undefined` when nobody is
-    left attached (ADR 0016).
+    left attached.
 
 **Test strategy**:
 
@@ -1881,9 +1870,8 @@ skipped when absent: the `.worktreeinclude` copy — `WorktreeIncluding` in
 `@janela/git`, and all issue #26 owns — and the automation runner —
 `AutomationRunning`, and all issue #27 owns.
 
-**Requirements**: ADR 0009, ADR 0013, ADR 0014 (as amended by ADR 0015), ADR
-0015, `docs/domain-model.md` § AutomationCommand, `AGENTS.md` non-negotiable 12.
-Layer 5, daemon side (`scripts/layers.ts`).
+**Requirements**: `docs/domain-model.md` § AutomationCommand, `AGENTS.md`
+non-negotiable 12. Layer 5, daemon side (`scripts/layers.ts`).
 
 `@janela/session` is the brain: it composes git, the terminal layer, the
 database and the forge into the project and session lifecycle. Its declared
@@ -1947,7 +1935,7 @@ export interface SessionService {
 `createSession` is the single entry point for creation. Worktree creation is
 one case of this function, not a separate feature with its own screen; a
 second public creation method is the signal that something has gone wrong
-(ADR 0009, `docs/product.md` § The thesis).
+(`docs/product.md` § The thesis).
 
 #### SessionCreationRequest
 
@@ -2042,8 +2030,7 @@ export interface AutomationReport {
 `exitCode` is absent while a command is still running, which is normal for
 everything but teardown. `AutomationEvent` is the three-case union in
 `@janela/core` (`"worktreeCreated" | "sessionStart" | "sessionTeardown"`); a
-fourth event needs an ADR. ADR 0014 writes the events with a leading dot
-(`.sessionStart`); the code's strings have none — the code wins.
+fourth event needs an argument that survives `docs/product.md` § Non-goals.
 
 #### StateObserving
 
@@ -2123,8 +2110,7 @@ export const DECLARED_TERM = "xterm-256color";
 3. **The client chooses directories; the daemon is handed paths.** `janelad`
    never discovers directories on its own and never scans the home directory.
    That rule is what keeps macOS permission prompts attributed to the app the
-   user clicked rather than to a background binary they have never heard of
-   (ADR 0017 § TCC attribution).
+   user clicked rather than to a background binary they have never heard of.
 
 4. **`load()` is database work only.** No git, no `PATH` probing, no forge
    detection, no process. Those refresh in the background once the daemon is
@@ -2133,8 +2119,8 @@ export const DECLARED_TERM = "xterm-256color";
    started costs nothing (`AGENTS.md` non-negotiable 5), and attaching never
    starts anything — `startTerminal` does.
 
-5. **Automation is visible** (`AGENTS.md` non-negotiable 12, ADR 0014). Each
-   command for an event runs in order, in its own real terminal with
+5. **Automation is visible** (`AGENTS.md` non-negotiable 12). Each command for
+   an event runs in order, in its own real terminal with
    `role: { kind: "automation", event }`, in the session's directory, with the
    session's resolved environment — a terminal the user can watch, scroll back
    through and Ctrl-C. Nothing run on the user's behalf happens in a hidden
@@ -2147,8 +2133,7 @@ export const DECLARED_TERM = "xterm-256color";
    open showing why, the tab marked failed, and the session usable. The only
    thing never done is swallowing it silently. `sessionStart` runs once per
    session — not per app launch, not per client attach — because the daemon
-   owns the terminal and `pnpm dev` is very likely still running (ADR 0014 as
-   amended by ADR 0015).
+   owns the terminal and `pnpm dev` is very likely still running.
 
 7. **`sessionTeardown` is the one blocking case.** `run()` returns once the
    terminals have been *created*, not once the commands have finished, except
@@ -2162,17 +2147,16 @@ export const DECLARED_TERM = "xterm-256color";
    halfway because a window closed would leave exactly the containers and
    databases it exists to clean up.
 
-8. **`.worktreeinclude` is git's matcher and a `clonefile` copy** (ADR 0013);
-   this package only sequences it, through `WorktreeIncluding` from
-   `@janela/git` (§ 1.2), and records `CopyReport.copied` on
-   `WorktreeBinding.includedPaths` so removal can name the files. The ADR's
-   2 GB default cap — measure the total first, ask the user once with the real
-   number and the offending path, create the session either way — is stated by
-   the ADR and **is not carried by the `WorktreeIncluding` interface**, which
-   exposes only `resolve`, `copy` and `CopyReport`. Where the cap lands, and
-   how the one-time prompt reaches a client that has no request of its own
-   outstanding, is issue #26's decision; the number above is the ADR's and is
-   not fixed in code.
+8. **`.worktreeinclude` is git's matcher and a `clonefile` copy**; this
+   package only sequences it, through `WorktreeIncluding` from `@janela/git`
+   (§ 1.2), and records `CopyReport.copied` on `WorktreeBinding.includedPaths`
+   so removal can name the files. The 2 GB default cap — measure the total
+   first, ask the user once with the real number and the offending path,
+   create the session either way — **is not carried by the `WorktreeIncluding`
+   interface**, which exposes only `resolve`, `copy` and `CopyReport`. Where
+   the cap lands, and how the one-time prompt reaches a client that has no
+   request of its own outstanding, is issue #26's decision; the number above
+   is not fixed in code.
 
 9. **The login shell is requested with an `argv[0]` `-` prefix.** A daemon
    started by launchd inherits `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, so every
@@ -2190,23 +2174,24 @@ export const DECLARED_TERM = "xterm-256color";
 
 10. **`DECLARED_TERM = "xterm-256color"`** on every terminal, rather than a
     bespoke terminfo entry, so every existing tool works on day one. Revisit
-    only alongside a shipped terminfo file and ADR 0018 first: the daemon
-    emulator and the client renderer must agree on what they claim to be, and
-    they are two different libraries now. `janelaVariables` is the whole of
-    the `JANELA_*` namespace — the session, its directory, its branch and the
-    automation event, so one script can serve several projects. Keep the list
-    short: every variable there is one the user cannot control.
+    only alongside a shipped terminfo file, and write the decision down in
+    `docs/architecture.md` first: the daemon emulator and the client renderer
+    must agree on what they claim to be, and they are two different libraries
+    now. `janelaVariables` is the whole of the `JANELA_*` namespace — the
+    session, its directory, its branch and the automation event, so one
+    script can serve several projects. Keep the list short: every variable
+    there is one the user cannot control.
 
 11. **`fromPullRequest` resolves the head branch through the forge CLI**, then
     creates a worktree like any other. It never runs `gh pr checkout`, which
-    would mutate the user's own checkout (ADR 0012). Forge state is
-    opportunistic and never awaited: a missing, logged-out or rate-limited
-    `gh` is silence, not an error banner.
+    would mutate the user's own checkout. Forge state is opportunistic and
+    never awaited: a missing, logged-out or rate-limited `gh` is silence, not
+    an error banner.
 
 12. **The brain announces; it does not deliver.** `StateObserving` is the only
     outbound edge. Nothing in this package or below may import a view layer —
     the daemon detects attention, the client decides what it means, and the
-    app delivers it (ADR 0011, enforced by `scripts/layers.ts`).
+    app delivers it (enforced by `scripts/layers.ts`).
 
 **Test strategy**:
 
@@ -2270,9 +2255,7 @@ loop issue #23, `apps/daemon` and the launchd lifecycle issue #24, the
 subscription fan-out issue #35, and the LaunchAgent registration and degraded
 mode issue #39.
 
-**Requirements**: ADR 0016 (`docs/decisions/0016-daemon-protocol.md`), ADR 0017
-(`docs/decisions/0017-daemon-lifecycle.md`), ADR 0020 (rules; reasoning in
-0003), `docs/performance.md` § Terminal throughput.
+**Requirements**: `docs/performance.md` § Terminal throughput.
 
 #### Framing
 
@@ -2455,8 +2438,8 @@ export type ClientMessage =
 Note what is *not* in that union: nothing lets a client read or write the
 database, and nothing lets it start a process directly. Every capability is an
 intent the daemon validates. If the CLI cannot do it through `ClientMessage`,
-neither can the app (ADR 0015 § Rules). `startTerminal` exists because
-attaching starts nothing — otherwise opening a session would spawn processes.
+neither can the app. `startTerminal` exists because attaching starts nothing —
+otherwise opening a session would spawn processes.
 
 `DaemonMessage` has 8 variants.
 
@@ -2563,9 +2546,9 @@ the wire format is how a refactor becomes a breaking change for someone's
 script. The mirroring is not identity — the wire `newWorktree` has no
 `directory?` field, because where a new worktree lands is the daemon's
 decision from `ProjectSettings.worktreeRoot`, not the client's.
-`AttentionSignal` is a fact, not a decision: policy lives in the client (ADR
-0011), and `id` is set by the daemon so two clients can suppress a signal they
-have both already delivered.
+`AttentionSignal` is a fact, not a decision: policy lives in the client, and
+`id` is set by the daemon so two clients can suppress a signal they have both
+already delivered.
 
 #### Message coder
 
@@ -2586,12 +2569,12 @@ export function decodeOutput(frame: Frame): TerminalOutput;
 Free functions rather than methods, because the encoding is a property of the
 *protocol version*, not of the message: when version 2 encodes control frames
 differently, this file is the only place that changes. Control frames are
-JSON, for ADR 0016's reason — control traffic is rare and small, and a frame
-you can read in a log is worth more than the bytes it costs. A malformed
-control frame throws, which closes that connection and nothing else.
-`decodeInput` and `decodeOutput` return a **view** into the frame's payload
-rather than a copy: they run once per frame per attached client, and a copy
-here is a copy on the hot path.
+JSON for one reason — control traffic is rare and small, and a frame you can
+read in a log is worth more than the bytes it costs. A malformed control
+frame throws, which closes that connection and nothing else. `decodeInput`
+and `decodeOutput` return a **view** into the frame's payload rather than a
+copy: they run once per frame per attached client, and a copy here is a copy
+on the hot path.
 
 **Raw-frame header seam** (`packages/protocol/src/message-coder.ts`): `Input`
 and `Output` frames bypass the JSON path entirely. The header is **16 bytes —
@@ -2723,8 +2706,8 @@ export function createFrameLoop(dependencies: {
 `COALESCING_WINDOW_MS = 8` in `packages/pty/src/byte-stream.ts`, tuned against
 a benchmark rather than argued about. The loop is the daemon's heartbeat: once
 per frame, drain every live terminal and send each attached client the repaint
-it is owed. It is the shape ADR 0020 requires (rules; reasoning in 0003) —
-socket writes coalesced once per frame, per attached client — and the reason a
+it is owed. It is the shape a single-threaded runtime requires — socket
+writes coalesced once per frame, per attached client — and the reason a
 `yes` flood never reaches a client.
 
 #### Daemon executable
@@ -2740,7 +2723,7 @@ export function daemonEnvironment(options: {
 one place, no service locator, nothing global — which is also what makes the
 whole graph substitutable in `@janela/daemon`'s tests. It ships as one
 compiled binary; `bun build --compile` embeds the runtime, the Prisma client,
-the emulator and the PTY cdylib (ADR 0020).
+the emulator and the PTY cdylib.
 
 **Implementation decisions**:
 
@@ -2782,12 +2765,12 @@ the emulator and the PTY cdylib (ADR 0020).
 5. **Attach**: `fullRepaintFor(client)` once — which is what makes reattaching
    correct rather than lucky — then one `Output` frame per frame per client
    from `repaintFor(client)`. The PTY is sized to the **minimum of all
-   attached viewports** (ADR 0016): two clients may have different window
-   sizes and the PTY has exactly one `TIOCSWINSZ`, and the minimum is tmux's
-   rule and the only one that guarantees no attached client is shown a screen
-   it cannot fit. A client attaching with no viewport — the CLI, reading text
-   — does not participate. `detach` stops that client's output only, and
-   nothing else about the terminal changes.
+   attached viewports**: two clients may have different window sizes and the
+   PTY has exactly one `TIOCSWINSZ`, and the minimum is tmux's rule and the
+   only one that guarantees no attached client is shown a screen it cannot
+   fit. A client attaching with no viewport — the CLI, reading text — does not
+   participate. `detach` stops that client's output only, and nothing else
+   about the terminal changes.
 6. **Fan-out is per subscriber, with two policies**: each subscriber has its
    own `BoundedQueue` from `@janela/support` (`packages/support/src/bounded.ts`)
    and a stalled client must not slow the others. The policies are a
@@ -2801,7 +2784,7 @@ the emulator and the PTY cdylib (ADR 0020).
    takes down the daemon or another connection.
 7. **The frame loop touches nothing per byte**: one drain per terminal per
    frame, N encodes, and counters and buffer views for the rest. Draining per
-   attached client would multiply the work by the number of windows. ADR 0020's
+   attached client would multiply the work by the number of windows. The
    measurements are the evidence this shape works: **133 MB/s** sustained off
    the PTY under a `yes` flood against a ≥ 100 MB/s budget, memory growth
    with the consumer stalled bounded at **~4 MB** then flat, and — the figure
@@ -2809,33 +2792,33 @@ the emulator and the PTY cdylib (ADR 0020).
    puts at risk — an 8 ms timer firing within **1.7 ms** of its deadline
    throughout, with a second terminal staying interactive. A 133 MB/s flood
    therefore becomes a bounded number of frames per second on the socket.
-8. **Lifecycle** (ADR 0017): the daemon is socket-activated by launchd, which
-   declares the socket in the plist. **Obtain the listening descriptor from
-   launchd; never bind a path in production** — launchd created the socket,
-   owns its lifetime, and starting us was its decision, so binding our own
-   would race with it. `--foreground` is the one case where no launchd job
-   exists and falls back to `defaultSocketPath()`. `launch_activate_socket` is
-   the one seam the migration made harder: it is a C function and `bun:ffi` is
-   gated to `@janela/pty`. The expected route is one more export on the PTY
-   cdylib, `janela_launch_socket()`, handing Bun the descriptor as a plain
-   integer — one native artifact, already built and signed. The alternative —
-   bind the path ourselves and drop socket activation, so the daemon is
-   started by the app rather than by launchd — trades away the "a user who
-   never opens Janela never has a process" property that ADR 0017 chose
-   deliberately, and **must not be taken silently**; whichever route is taken
-   is written down. SIGTERM (launchd at logout) and SIGINT (a foreground
-   developer run) both run `TerminalRegistry.hangUpAll()` **before** exiting,
-   so children get SIGHUP rather than being reparented onto launchd; SIGPIPE
-   is ignored, because a client vanishing mid-write is routine. Idle exit
-   happens only after the last client disconnects with no live terminal, and
-   only after a grace period of **5 minutes** per ADR 0017's table, so
-   quitting and reopening the app does not tear down and rebuild the world —
-   no constant for it exists in code yet, and when one lands it wins. A
-   daemon holding live terminals never exits on its own. Startup is: build the
-   object graph (`daemonEnvironment()`) → open the database → run migrations →
-   restore sessions **idle** → serve until cancelled. Migration failure is
-   the interesting error, because the only way a user learns about it is a
-   client that cannot connect: log it clearly and exit non-zero so launchd's
+8. **Lifecycle**: the daemon is socket-activated by launchd, which declares
+   the socket in the plist. **Obtain the listening descriptor from launchd;
+   never bind a path in production** — launchd created the socket, owns its
+   lifetime, and starting us was its decision, so binding our own would race
+   with it. `--foreground` is the one case where no launchd job exists and
+   falls back to `defaultSocketPath()`. `launch_activate_socket` is the one
+   seam the migration made harder: it is a C function and `bun:ffi` is gated
+   to `@janela/pty`. The expected route is one more export on the PTY cdylib,
+   `janela_launch_socket()`, handing Bun the descriptor as a plain integer —
+   one native artifact, already built and signed. The alternative — bind the
+   path ourselves and drop socket activation, so the daemon is started by the
+   app rather than by launchd — trades away the "a user who never opens Janela
+   never has a process" property, chosen deliberately, and **must not be taken
+   silently**; whichever route is taken is written down in
+   `docs/architecture.md`. SIGTERM (launchd at logout) and SIGINT (a
+   foreground developer run) both run `TerminalRegistry.hangUpAll()`
+   **before** exiting, so children get SIGHUP rather than being reparented
+   onto launchd; SIGPIPE is ignored, because a client vanishing mid-write is
+   routine. Idle exit happens only after the last client disconnects with no
+   live terminal, and only after a grace period of **5 minutes**, so quitting
+   and reopening the app does not tear down and rebuild the world — no
+   constant for it exists in code yet, and when one lands it wins. A daemon
+   holding live terminals never exits on its own. Startup is: build the object
+   graph (`daemonEnvironment()`) → open the database → run migrations →
+   restore sessions **idle** → serve until cancelled. Migration failure is the
+   interesting error, because the only way a user learns about it is a client
+   that cannot connect: log it clearly and exit non-zero so launchd's
    `KeepAlive` does not spin.
 
 **Test strategy**:
@@ -2898,10 +2881,7 @@ as interfaces with `TODO:` bodies (`createConnection`, `createStores` and
 `createAttentionPolicy` all throw `not implemented`). Issue #28 owns the
 connection and the stores; issue #36 owns delivery in the app.
 
-**Requirements**: ADR 0015 (the daemon is the truth, this is a mirror), ADR 0011
-(policy in the client, delivery in the app), ADR 0023 (transport-agnostic so a
-browser client is a transport), ADR 0020 (rules; reasoning in 0003), ADR 0006
-(where a signal may come from). `docs/performance.md` § Launch.
+**Requirements**: `docs/performance.md` § Launch.
 
 #### DaemonConnection
 
@@ -3017,7 +2997,7 @@ export interface AttentionDelivering {
    daemon confirms it.
 2. **Transport-agnostic**: the package takes a `MessageTransport` and imports no
    Tauri, no DOM and no React. A browser client is a new transport, not a new
-   client (ADR 0023).
+   client.
 3. **Connect sequence**: `Hello` → the daemon's `hello` or `refused` →
    `isCompatible` → `subscribe {scope: "state"}` → pump incoming frames into the
    stores. `connect()` is never called on the launch path in a way that blocks
@@ -3058,13 +3038,8 @@ export interface AttentionDelivering {
    permission. Signals coalesce per terminal over `COALESCING_WINDOW_SECONDS`,
    delivered entries expire past that window, and `forgetSession` clears a
    session's entries when it is removed. `AttentionSignal.id` is stamped by the
-   daemon so two attached clients suppress a duplicate.
-   ADR 0011 says notify "only when Janela is not frontmost, or the signalling
-   terminal is in a session that is not selected", and makes a bare BEL deliver
-   when the user opted into "notify on bell"; the code's rule is narrower (all
-   three of active, selected and focused must hold to suppress) and has no
-   opt-in switch. The code wins; ADR 0011 needs an amendment, which is not in
-   this issue's scope.
+   daemon so two attached clients suppress a duplicate. There is no opt-in
+   switch for any of this: the rules above are the whole policy.
 8. **Delivery is the `AttentionDelivering` seam**, implemented in `apps/desktop`
    over `@tauri-apps/plugin-notification`, because that is an app-level
    capability and this package must stay testable — and browser-reachable —
@@ -3115,7 +3090,7 @@ the control set are a new seam with no tracking issue — the previous design
 package held tokens and a colour catalog, and its controls were never written.
 Layer 7, client side (`scripts/layers.ts`).
 
-**Requirements**: `docs/product.md` § Principles 4, ADR 0023, ADR 0024.
+**Requirements**: `docs/product.md` § Principles 4.
 
 #### Tokens
 
@@ -3152,7 +3127,7 @@ export const MOTION = { fast: 120, medium: 200 } as const;
    increased contrast, and resolved by `prefers-color-scheme` and
    `prefers-contrast`. **No component branches on appearance** — that rule is
    why this is one token file rather than two palettes, and it is unchanged from
-   the asset catalog it replaces (ADR 0023).
+   the asset catalog it replaces.
 2. **Colours are semantic, never literal**: there is no `janela.blue`, because
    such a name says nothing about when to use it and guarantees drift. The bar
    for a new token: used in at least two places, or it encodes a decision
@@ -3211,8 +3186,6 @@ Layer 8, client side (`scripts/layers.ts`; the package's own header comment says
 layer 7 — `scripts/layers.ts` declares itself the single source of truth for the
 graph, so 8 is the number).
 
-**Requirements**: ADR 0018, ADR 0016.
-
 #### TerminalRendering
 
 ```ts
@@ -3244,10 +3217,10 @@ hands down.
 1. **Backed by `@xterm/xterm`**: the second and last package allowed to name a
    terminal library. `@janela/terminal` owns the daemon-side grid; this owns
    fonts, painting, selection and keyboard. The two-seams rule survives a total
-   change of language (ADR 0018; reasoning in 0004); what changed is that it is
-   now *enforced* rather than reviewed — `GATED_MODULES` in `scripts/layers.ts`
-   allows `@xterm/xterm` to `@janela/terminal-ui` alone, and `@xterm/addon-*` to
-   the two seam packages only.
+   change of language; what changed is that it is now *enforced* rather than
+   reviewed — `GATED_MODULES` in `scripts/layers.ts` allows `@xterm/xterm` to
+   `@janela/terminal-ui` alone, and `@xterm/addon-*` to the two seam packages
+   only.
 2. **A renderer can stay this simple because it is fed escape sequences**,
    exactly as a real terminal is fed them from a PTY. The daemon holds the grid,
    tracks damage and emits the shortest sequence that repaints what changed, so
@@ -3257,15 +3230,15 @@ hands down.
    component that puts output in state re-renders React 60 times a second and
    turns the cheapest path in the client into the most expensive one.
 4. **It must not own a PTY.** The library will happily start a process; that is
-   the daemon's job (ADR 0015). The layering gate stops the import of
-   `@janela/pty`, but nothing stops a `spawn` option — so do not pass one.
+   the daemon's job. The layering gate stops the import of `@janela/pty`, but
+   nothing stops a `spawn` option — so do not pass one.
 5. **It must not interpret input.** Bytes, not a string: a surface that hands up
    decoded text has already lost the distinction between a paste of invalid
    UTF-8 and a paste of replacement characters. Janela binds no key the terminal
    should own, which is why splits and tabs use `⌘` chords (§ 4.4).
 6. **The viewport is a vote, not a command.** It is reported in *cells*, derived
    from measured cell metrics, and sent to the daemon on attach and on resize;
-   the daemon sizes the PTY to the *smallest* attached viewport (ADR 0016).
+   the daemon sizes the PTY to the *smallest* attached viewport.
 7. **Resizes are coalesced to one per frame during a divider drag.** Each one is
    a `TIOCSWINSZ` plus a `SIGWINCH` plus a full reflow, on the dragged terminal
    and on its neighbour, across two process boundaries; an uncoalesced drag
@@ -3286,11 +3259,11 @@ WebView.
 - Manual against a real daemon, which is where a renderer is actually judged:
   feed known sequences and look, then type into `cat` and confirm the bytes come
   back.
-- The ADR 0018 variant round-trip — daemon emulator → repaint encode → *client*
-  renderer, asserting the client's grid matches the daemon's — is the test worth
-  writing before v1. ADR 0018 § Consequences is explicit that "they cannot
-  disagree because they are the same code" has become "they should not
-  disagree", and this test is the whole mitigation.
+- The variant round-trip — daemon emulator → repaint encode → *client* renderer,
+  asserting the client's grid matches the daemon's — is the test worth writing
+  before v1. Two libraries from one family mean "they cannot disagree because
+  they are the same code" has become "they should not disagree", and this test
+  is the whole mitigation.
 - No snapshot tests (`docs/testing.md` § UI).
 
 **Seams**:
@@ -3307,8 +3280,7 @@ command surface) and #38. Every view in the package currently throws
 `not implemented`. Layer 9, client side (`scripts/layers.ts`; the package's own
 header comment says layer 8 — the graph file wins).
 
-**Requirements**: ADR 0009, ADR 0010, ADR 0024, `docs/product.md` § Principles
-1 and 3.
+**Requirements**: `docs/product.md` § Principles 1 and 3.
 
 #### View hierarchy
 
@@ -3327,10 +3299,10 @@ MainWindow                        the entire application
 
 There is no inspector, no bottom panel and no activity bar; adding one requires
 an argument that survives `docs/product.md` § Non-goals. The sidebar is
-deliberately **a flat list of buttons, not a recursive tree component**: ADR
-0009 fixes the shape at two levels, and a recursive view would quietly permit
-the third. What the window is looking at is a *mirror* — the sessions live in
-`janelad` and the stores hold the last state it sent (ADR 0015).
+deliberately **a flat list of buttons, not a recursive tree component**: the
+shape is fixed at two levels, and a recursive view would quietly permit the
+third. What the window is looking at is a *mirror* — the sessions live in
+`janelad` and the stores hold the last state it sent.
 
 #### Exports
 
@@ -3376,7 +3348,7 @@ export const COMMANDS: readonly Command[];
 
 `COMMANDS`, in file order, from `packages/ui/src/commands.ts`. Eighteen
 commands; sixteen accelerators, written in Tauri's notation because the native
-menu bar in `apps/desktop/src-tauri` is built from this table (ADR 0024).
+menu bar in `apps/desktop/src-tauri` is built from this table.
 
 | Command id          | Title                | Accelerator            |
 | ------------------- | -------------------- | ---------------------- |
@@ -3406,16 +3378,12 @@ not have to think about which layer ate their keystroke. That is why splits,
 tabs and pane focus are `⌘`-based, and why pane focus is `⌘⌥`-arrow rather than
 a plain arrow. `⌘⇧O` is the one shortcut worth spending: it is how you get
 anywhere without touching the sidebar. There is no configurable binding surface.
-On macOS — the only platform v1 ships (ADR 0023) — `CmdOrCtrl` resolves to `⌘`;
-a non-macOS build would resolve it to `Ctrl`, which the rule above forbids, so
-that build needs a per-platform accelerator table. Issue #37 owns it.
+On macOS — the only platform v1 ships — `CmdOrCtrl` resolves to `⌘`; a non-macOS
+build would resolve it to `Ctrl`, which the rule above forbids, so that build
+needs a per-platform accelerator table. Issue #37 owns it.
 
-*Code versus ADR*: ADR 0010 § Keyboard lists `⌘W` to close a pane, `⌘T` for a
-new tab and `⌘⇧[` / `⌘⇧]` for tabs. The `COMMANDS` table has no close-pane
-command and no tab commands at all, `⌘T` is New Terminal, and `⌘⇧[` / `⌘⇧]`
-switch sessions. The table is authoritative and ADR 0010's chord list is stale;
-issue #37 owns the command surface, and the amendment is not in this document's
-scope.
+The `COMMANDS` table is authoritative: it has no close-pane command and no tab
+commands at all, `⌘T` is New Terminal, and `⌘⇧[` / `⌘⇧]` switch sessions.
 
 **Implementation decisions**:
 
@@ -3454,8 +3422,8 @@ scope.
    ```
 
 8. **The daemon is never restarted automatically.** It is holding live work, and
-   an app update killing an agent mid-task is the exact failure ADR 0017 §
-   Version skew exists to prevent.
+   an app update killing an agent mid-task is the exact failure the version-skew
+   story exists to prevent.
 9. **The client cannot spawn a process.** Absent from this package's
    dependencies: git, the PTY package, the database and the daemon-side
    services. The capability is not discouraged, it is not present, and
@@ -3492,11 +3460,7 @@ bridge, the window and the native menu; issue #36 owns attention delivery inside
 the app; issue #39 owns launch-agent registration and the degraded mode; issue
 #41 owns the build deliverables listed below.
 
-**Requirements**: ADR 0024, ADR 0017 (amended by ADR 0020 — registration happens
-from the Tauri shell), ADR 0011 (amended by ADR 0015 — the daemon detects, the
-client decides, the app delivers), ADR 0008 (amended by ADR 0024 and ADR 0015 —
-two signed executables), ADR 0023 § keystroke path, and `docs/performance.md`
-§ Launch.
+**Requirements**: `docs/performance.md` § Launch.
 
 #### AppEnvironment
 
@@ -3540,14 +3504,14 @@ export function setLogSink(sink: LogSink): void;
 
 1. **The composition root opens no database.** The previous specification gave
    `AppEnvironment` a `database` field and opened the database on the launch
-   path; both are deleted. `janelad` is the exclusive owner of the database
-   (ADR 0015, ADR 0019), and the app could not open one if it tried:
-   its declared dependencies are `@janela/support`, `@janela/core`,
-   `@janela/protocol`, `@janela/client`, `@janela/design`, `@janela/terminal-ui`
-   and `@janela/ui` (`scripts/layers.ts`, layer 10, client side). Neither
-   `@janela/db`, `@janela/git` nor `@janela/pty` is linked. A failure that used
-   to break launch — a migration that will not apply — now surfaces as a
-   connection that does not come up.
+   path; both are deleted. `janelad` is the exclusive owner of the database,
+   and the app could not open one if it tried: its declared dependencies are
+   `@janela/support`, `@janela/core`, `@janela/protocol`, `@janela/client`,
+   `@janela/design`, `@janela/terminal-ui` and `@janela/ui`
+   (`scripts/layers.ts`, layer 10, client side). Neither `@janela/db`,
+   `@janela/git` nor `@janela/pty` is linked. A failure that used to break
+   launch — a migration that will not apply — now surfaces as a connection that
+   does not come up.
 2. **`start()` runs after first paint, in an effect, and is never awaited.** The
    window paints before the daemon answers. Awaiting the socket on the launch
    path hands the daemon a veto over the launch budget, which is the coupling
@@ -3556,8 +3520,8 @@ export function setLogSink(sink: LogSink): void;
    client → daemon frames; Tauri events carry daemon → client frames. **Raw
    bytes in both directions — never base64, never JSON-wrapped.** Base64 through
    the bridge inflates every repaint by a third and adds two passes per frame,
-   which is the mistake ADR 0016 refused on the socket and is no less a mistake
-   here (ADR 0023 § added budgets).
+   which is the mistake the socket protocol refuses and is no less a mistake
+   here.
 4. **Back-pressure lives on the daemon → WebView direction, with two policies.**
    A coalesced repaint may drop its oldest entry, because a newer frame
    supersedes it; control frames and terminal input may not drop, ever.
@@ -3566,7 +3530,7 @@ export function setLogSink(sink: LogSink): void;
 5. **The shell relays frames and never reads them.** Nothing about projects,
    sessions, terminals or a message's meaning belongs in Rust. If the Rust side
    ever needs to know what a `StateUpdate` is, the boundary has moved and that
-   is an ADR rather than a commit.
+   is a change to `docs/architecture.md` rather than a commit.
 6. **The Tauri command and event names are not chosen anywhere in the tree.**
    Naming them is issue #30's first decision; this document does not invent
    them, and neither should an implementation before the issue records the
@@ -3581,47 +3545,43 @@ export function setLogSink(sink: LogSink): void;
    when the shell reports the connection ended, and `@janela/client` asks for a
    new transport (§ 4.1). Two retry loops in two languages is one too many.
 9. **The shell's responsibilities are a closed list**, from
-   `apps/desktop/src-tauri/src/main.rs` and ADR 0024: the window and its native
-   chrome; the native menu bar and its accelerators, built from `@janela/ui`'s
-   `COMMANDS` table so the menu and the in-app command surface cannot drift
-   apart; native notifications; native file dialogs; the daemon sidecar's
-   lifecycle and launch-agent registration; the Unix-socket bridge. Keeping the
-   list closed is the point — logic in a shell is logic that cannot be tested
-   without the shell.
+   `apps/desktop/src-tauri/src/main.rs`: the window and its native chrome; the
+   native menu bar and its accelerators, built from `@janela/ui`'s `COMMANDS`
+   table so the menu and the in-app command surface cannot drift apart; native
+   notifications; native file dialogs; the daemon sidecar's lifecycle and
+   launch-agent registration; the Unix-socket bridge. Keeping the list closed
+   is the point — logic in a shell is logic that cannot be tested without the
+   shell.
 10. **File dialogs are a rule, not a convenience: the app selects, the daemon is
     handed paths.** TCC attributes access to the process that asked, so a
     directory the user picked in the app carries the user's intent and the
     grant. The daemon never discovers directories, never scans the home
-    directory, and never touches a path no client gave it (ADR 0017 § TCC
-    attribution).
+    directory, and never touches a path no client gave it.
 11. **Registration happens from the shell**, and reports its outcome honestly.
     `requiresApproval` is a supported state, not an error: the app explains it
     plainly and links to the right settings pane. **Degraded mode** is the open
-    constraint — ADR 0017 promises in-app terminals until approval, but the
-    client cannot spawn a process and the layering gate makes that structural,
-    not an omission (`@janela/pty` is not linked and could not be). The
-    constraint is recorded here; the mechanism belongs to issue #39, and this
-    document does not prescribe one. ADR 0017 says the app runs a degraded
-    in-app mode; the code says the client has no way to run a process; the code
-    wins, and the reconciliation is #39's.
+    constraint — in-app terminals until approval were promised, but the client
+    cannot spawn a process and the layering gate makes that structural, not an
+    omission (`@janela/pty` is not linked and could not be). The constraint is
+    recorded here; the mechanism belongs to issue #39, which owns the
+    reconciliation, and this document does not prescribe one.
 12. **A running daemon is never terminated for our convenience.** launchd owns
     the lifecycle: socket activation starts the sidecar on first connection, and
-    it outlives clients (ADR 0017). "Stop Background Service" is a deliberate
-    user action, not something the app does on quit.
+    it outlives clients. "Stop Background Service" is a deliberate user action,
+    not something the app does on quit.
 13. **The sidecar is one file.** `bun build --compile` embeds the runtime, the
     generated database client, the emulator and the PTY library, which keeps the
     bundle at two signed executables — `Contents/MacOS/Janela` and
-    `Contents/Resources/janelad`, both hardened, Developer ID signed and
-    notarized as one bundle (ADR 0008 as amended). The LaunchAgent plist ships
-    inside the bundle at `Contents/Library/LaunchAgents/`.
+    `Contents/Resources/janelad`, both unsandboxed, hardened, Developer ID
+    signed and notarized as one bundle. The LaunchAgent plist ships inside the
+    bundle at `Contents/Library/LaunchAgents/`.
 14. **Notification delivery is the app's, policy is the client's.** The app
     implements `AttentionDelivering` (§ 4.1) over
     `@tauri-apps/plugin-notification`, owns authorization — requested lazily on
     the first delivery that would otherwise occur, never at launch — and owns
     click routing: activate, select the session, focus the terminal, withdraw.
     The body is never logged, never included in an error report and never
-    persisted. ADR 0011 names the pre-migration delivery API; the plugin
-    replaces it and the policy/delivery split it decided is unchanged.
+    persisted.
 15. **One log format for both processes.** `main.tsx` installs `setLogSink` over
     `@tauri-apps/plugin-log`, so a client record and a daemon record carry the
     same shape and the same categories and can be read side by side. Until a
@@ -3665,9 +3625,9 @@ is wrong; issue #30 lands the composition root and settles it.
 **Test strategy**:
 
 - **Bytes across the bridge**: push invalid UTF-8 through it and compare the
-  bytes on the far side. This is the assertion ADR 0024 asks for by name,
-  because the failure is silent otherwise — a string round-trip corrupts exactly
-  the escape sequences that matter and nothing throws.
+  bytes on the far side. This is the assertion that must exist by name, because
+  the failure is silent otherwise — a string round-trip corrupts exactly the
+  escape sequences that matter and nothing throws.
 - Launch: the sidebar shows mirrored state, and it paints before the connection
   is up.
 - Create a session: it appears in the sidebar and in the daemon's database.
@@ -3693,8 +3653,7 @@ is wrong; issue #30 lands the composition root and settles it.
 `@janela/session` (§ 3.2) for the ordering. The interface exists; the body is a
 seam owned by issue #18, and where the size cap lives is issue #26's call.
 
-**Requirements**: ADR 0013, ADR 0007, ADR 0014 (ordering),
-`docs/domain-model.md` § AutomationCommand.
+**Requirements**: `docs/domain-model.md` § AutomationCommand.
 
 **Specification**: the interface is `WorktreeIncluding` in § 1.2
 (`packages/git/src/worktree-include.ts`) — `resolve(repository)` and
@@ -3711,33 +3670,31 @@ already being on disk.
    untracked-and-ignored set, because anything tracked is already in the new
    worktree; `--directory` collapses a wholly-untracked directory so
    `node_modules/` arrives as one path rather than 40,000; `-z` because paths
-   may contain newlines (ADR 0007). We never write a gitignore matcher — ours
-   would disagree with git's the first time someone used a negation. Verified
-   against git 2.49 in ADR 0013.
+   may contain newlines. We never write a gitignore matcher — ours would
+   disagree with git's the first time someone used a negation. Verified
+   against git 2.49.
 
 2. **`clonefile(2)` moves the bytes**: on APFS a clone is metadata-only, which
    is what makes a 500 MB `node_modules` cost milliseconds. A cross-volume or
    non-APFS filesystem falls back to a byte-for-byte copy; the fallback is
    allowed to be slow and is not allowed to be silent, so it is reported as
-   `CopyReport.usedFallbackCopy` and logged. ADR 0013 names the old client's
-   file-manager API as the fallback; that framework is gone — the fallback is a
-   plain filesystem copy inside the daemon; the code wins.
+   `CopyReport.usedFallbackCopy` and logged. The fallback is a plain filesystem
+   copy inside the daemon.
 
-3. **The bounds are the ADR's, all non-negotiable**: never follow a symlink out
-   of the repository (a symlink is copied as a symlink, never dereferenced);
-   measure total size first and cap it at **2 GB by default**, past which the
-   user is asked **once**, with the actual number and the offending path, and
-   the session is created either way — an oversized include never blocks
-   getting a terminal; never copy `.git`, regardless of patterns; per-path
-   failures are logged by path shape, skipped, non-fatal.
+3. **The bounds are all non-negotiable**: never follow a symlink out of the
+   repository (a symlink is copied as a symlink, never dereferenced); measure
+   total size first and cap it at **2 GB by default**, past which the user is
+   asked **once**, with the actual number and the offending path, and the
+   session is created either way — an oversized include never blocks getting a
+   terminal; never copy `.git`, regardless of patterns; per-path failures are
+   logged by path shape, skipped, non-fatal.
 
-4. **The cap is stated by ADR 0013 and not carried by the interface**:
-   `WorktreeIncluding.copy` takes no budget and `CopyReport` has no
-   "skipped because too large" field, so neither the measurement nor the
-   one-time prompt has a home in the current contract. Where they land — a
-   `copy` option, a separate measuring call, or a `@janela/session` concern
-   above it — is issue #26's decision. Do not infer one from the interface as
-   it stands.
+4. **The cap is not carried by the interface**: `WorktreeIncluding.copy`
+   takes no budget and `CopyReport` has no "skipped because too large" field,
+   so neither the measurement nor the one-time prompt has a home in the
+   current contract. Where they land — a `copy` option, a separate measuring
+   call, or a `@janela/session` concern above it — is issue #26's decision.
+   Do not infer one from the interface as it stands.
 
 5. **What was copied is recorded** on `WorktreeBinding.includedPaths` (§ 2.1)
    from `CopyReport.copied`, so the removal dialog in § 3.2 can name the 400 MB
@@ -3768,8 +3725,7 @@ already being on disk.
 owns `AutomationRunning`; the creation and removal flows that call it are
 issues #25 and #26.
 
-**Requirements**: ADR 0014 (amended by ADR 0015), ADR 0013 (ordering),
-`docs/domain-model.md` § AutomationCommand.
+**Requirements**: `docs/domain-model.md` § AutomationCommand.
 
 **Specification**: the interface is `AutomationRunning` in § 3.2
 (`packages/session/src/automation-runner.ts`) — `run({event, project,
@@ -3848,7 +3804,7 @@ Planned, not implemented: the whole package is one `TODO:` under issue #33. It
 is a **new** seam, not one the migration carried across — the package was
 designed and empty, so there was nothing to carry.
 
-**Requirements**: ADR 0012, ADR 0007, `docs/product.md` § Non-goals.
+**Requirements**: `docs/product.md` § Non-goals.
 
 #### ForgeServing
 
@@ -3958,8 +3914,6 @@ shape is in `@janela/protocol` (§ 3.3) and the decision to interrupt is in
 `@janela/client` (§ 4.1). No section of its own to implement — issues #21
 (parsing), #22 (wire) and #28 (policy).
 
-**Requirements**: ADR 0011, ADR 0006, ADR 0015.
-
 **Specification**: the emulator reports through `TerminalEventSink.onAttention`
 (a `TerminalNotification` with optional `title` and `body`) and
 `TerminalEventSink.onPromptMark` (`PromptMark`: `promptStart`, `commandStart`,
@@ -3980,7 +3934,7 @@ normalises those into `AttentionSignal` with an `AttentionKind` of `bell`,
 
 2. **The list is mechanical**: every entry corresponds to a real escape
    sequence or a real process event. There is no `agentIsThinking`, because no
-   terminal sequence means that (ADR 0006).
+   terminal sequence means that.
 
 3. **The signal arrives per terminal, not per session.** A session's badge is
    derived from its panes (§ 4.4). In-app state — the pane indicator and the
@@ -4028,8 +3982,6 @@ normalises those into `AttentionSignal` with an `AttentionKind` of `bell`,
 `docs/performance.md` § Regressions › Repaint encoding. It was built last, as
 planned: the placeholder made every section above it shippable.
 
-**Requirements**: ADR 0018, ADR 0016.
-
 **Goal**: turn "these cells changed" into the smallest correct escape sequence
 that reproduces the changed grid on a client which has already seen everything
 up to a given revision.
@@ -4066,9 +4018,9 @@ fullRepaint(): Uint8Array;
 
 3. **The encoder emits escape sequences, not a grid format**. That is what
    makes the daemon's `@xterm/headless` and the client's `@xterm/xterm` survive
-   being different libraries (ADR 0018 § Consequences): the two sides need only
-   agree on VT semantics, never on an internal representation. It is also why a
-   client that already knows how to be a terminal needs to learn nothing new.
+   being different libraries: the two sides need only agree on VT semantics,
+   never on an internal representation. It is also why a client that already
+   knows how to be a terminal needs to learn nothing new.
 
 4. **The dumb path stays available forever**: `fullRepaint()` every frame is
    always a valid fallback for `repaintSince`, so the hard optimisation is only
@@ -4128,13 +4080,12 @@ past the scroll ring, a flood bounded against the socket budget, the
 diff-every-row fallback, and 300 seeded random steps.
 `spikes/emulator-xterm/round-trip.ts` runs the same corpus against
 **`@xterm/xterm`** — the library the client really renders with — which is the
-only measurement of the divergence ADR 0018 accepted; it is identical on every
-case, both libraries on Unicode version 6.
-Two items on the list above are *not* covered: recorded output from real
-full-screen programs (`vim`, `htop`, an agent TUI), and a wide character split by
-a resize — a resize is answered with a full repaint, so the second is a property
-of `fullRepaint`, but the first is a real gap and the seeded fuzz is a weaker
-substitute for it.
+only measurement of the accepted divergence between the two libraries; it is
+identical on every case, both libraries on Unicode version 6. Two items on the
+list above are *not* covered: recorded output from real full-screen programs
+(`vim`, `htop`, an agent TUI), and a wide character split by a resize — a resize
+is answered with a full repaint, so the second is a property of `fullRepaint`,
+but the first is a real gap and the seeded fuzz is a weaker substitute for it.
 
 ---
 
@@ -4225,8 +4176,8 @@ Notes on the fixtures, each of which is a constraint rather than a convenience:
 - `RecordingLogSink` exists so a test can assert that we log *shapes* and not
   content — the case that matters is attention delivery, whose body must never
   reach a log.
-- **There is no socket-path helper.** `sun_path` is 104 bytes (ADR 0016,
-  `MAXIMUM_SOCKET_PATH_LENGTH` in `packages/daemon/src/endpoint.ts`), and a
+- **There is no socket-path helper.** `sun_path` is 104 bytes
+  (`MAXIMUM_SOCKET_PATH_LENGTH` in `packages/daemon/src/endpoint.ts`), and a
   temporary directory plus a test name gets close, but nothing in
   `@janela/test-support` shortens it today. Until a helper lands, a daemon test
   must pass a short `label` to `temporaryDirectory()`, build the socket path
@@ -4310,37 +4261,36 @@ directly.
 
 ## VIII. Out of Scope for V1
 
-Per [`product.md`](product.md) § Non-goals and individual ADR decisions:
+Per [`product.md`](product.md) § Non-goals:
 
 - **Remote client** (phone, browser): the protocol is transport-agnostic and
-  ready; the listener is deferred (ADR 0016, ADR 0023).
+  ready; the listener is deferred.
 - **Cloud sessions or sync**: the daemon is a local process. No accounts, no
   server we operate.
 - **A Linux or Windows build**: Tauri would mostly permit it; the testing and
-  support commitment is the cost, and the answer is no until its own ADR says
-  otherwise (ADR 0023).
+  support commitment is the cost, and the answer is no until
+  [`architecture.md`](architecture.md) says otherwise.
 - **A second FFI surface**: `bun:ffi` is gated to `@janela/pty`, and the one
   native library we ship is the PTY's. Anything else that wants native code
-  argues for it in an ADR first (ADR 0021, ADR 0022).
+  argues for it in [`architecture.md`](architecture.md) first.
 - **Per-session settings**: settings are global or per-project.
 - **Saved or named layouts**: the layout is wherever you left it, stored on the
   session.
 - **Nested projects, folders or tags**: two levels, flat within each.
 - **Agent-specific integrations**: terminal signals only; never infer an agent's
-  semantics (ADR 0006).
-- **Forge write actions** (merge, approve, comment): open the browser (ADR
-  0012).
+  semantics.
+- **Forge write actions** (merge, approve, comment): open the browser.
 - **Sessions surviving a reboot**: they survive the app quitting, not the
-  machine restarting (ADR 0017).
-- **A `janela notify` CLI**: documented as the v2 option in ADR 0006.
+  machine restarting.
+- **A `janela notify` CLI**: the v2 answer to attention signals, not a v1 one.
 - **Per-pattern symlinks in `.worktreeinclude`**: deferred, and additive when it
-  lands (ADR 0013).
+  lands.
 
 ---
 
 ## IX. Performance Budgets
 
-From [`performance.md`](performance.md) and ADR 0023.
+From [`performance.md`](performance.md).
 
 | Path | Budget | Why |
 | --- | --- | --- |
@@ -4352,13 +4302,13 @@ From [`performance.md`](performance.md) and ADR 0023.
 | Split drag → reflowed panes | 1 frame, resizes coalesced | Each resize is a `TIOCSWINSZ`, a `SIGWINCH` and a reflow, on two terminals |
 | Flood handling | Frame rate bounded | A 100 MB/s `yes` must not allocate unbounded memory |
 | Reconnect after a daemon restart | < 2 s | Back-off is acceptable here |
-| Terminal bytes crossing Tauri's IPC | Raw payloads: no JSON, no base64 | 33% inflation plus two passes per frame (ADR 0023) |
-| Memory per idle session | Flat | A JavaScript heap makes "an unstarted terminal costs a value" less automatic (ADR 0023) |
-| Sustained PTY throughput, no stall | ≥ 100 MB/s budget, **133 MB/s measured** | daemon (ADR 0020) |
+| Terminal bytes crossing Tauri's IPC | Raw payloads: no JSON, no base64 | 33% inflation plus two passes per frame |
+| Memory per idle session | Flat | A JavaScript heap makes "an unstarted terminal costs a value" less automatic |
+| Sustained PTY throughput, no stall | ≥ 100 MB/s budget, **133 MB/s measured** | daemon |
 | Bytes on the socket during a flood | ≤ 2 MB/s | The single most valuable assertion in the flood test |
 | Client frame rate during a flood | ≥ 60 fps | client |
 
-Cold and warm launch are revised from 250 ms / 120 ms in ADR 0023 because the
+Cold and warm launch are revised upward from 250 ms / 120 ms because the
 client renders in a WebView; every other budget above is unchanged.
 
 The client's 60 fps and the daemon's drain interval are different numbers on
@@ -4380,7 +4330,7 @@ a coalescing window.
 - Bound every buffer, and write the bound down next to it — per-client output
   queues included, not just the read path.
 - **Never block the event loop.** This is the rule that replaces the isolation
-  rules a compiler used to check for us (ADR 0020).
+  rules a compiler used to check for us.
 
 ---
 
@@ -4389,8 +4339,7 @@ a coalescing window.
 ### Daily Loop
 
 Every command is a `bun run` script; the toolchain is Bun workspaces and
-Turborepo, with Oxc for lint and format (ADR 0025). Do not invent new
-invocations.
+Turborepo, with Oxc for lint and format. Do not invent new invocations.
 
 ```bash
 bun run typecheck    # seconds; tsc --build across every package
@@ -4406,7 +4355,8 @@ bun run bootstrap        # install, generate the database client, build the nati
 bun run generate         # after touching packages/db/prisma/schema.prisma
 bun run build:native     # after touching packages/pty/native/src/lib.rs
 bun run check:layers     # the layering gate alone, after touching a dependency edge
-bun run app              # build and run the app; drives cargo, takes minutes
+bun run dev              # a daemon and the app together; the loop when you need the window
+bun run app              # the app alone; drives cargo, takes minutes, and starts no daemon
 bun run daemon:restart   # stop janelad so the next connection starts your build
 bun run daemon:status    # which janelad is resident, and from where
 ```
@@ -4436,7 +4386,8 @@ Per [`AGENTS.md`](../AGENTS.md) § Before you finish:
 - [ ] No new user-facing concept without justification against
       [`product.md`](product.md) § Non-goals — the budget is four nouns.
 - [ ] No use of the word "workspace"; it is a project or a session.
-- [ ] No architectural decision changed without an ADR in `docs/decisions/`.
+- [ ] No architectural decision changed without the change written down in
+      [`architecture.md`](architecture.md).
 - [ ] Nothing added that allocates per byte or per frame on the terminal path
       without a budget in [`performance.md`](performance.md).
 
@@ -4509,7 +4460,8 @@ Before any component is marked "done":
 ## Appendix A: Key Non-Negotiables
 
 From [`AGENTS.md`](../AGENTS.md) § Non-negotiables. Violating one is a change of
-direction that needs an ADR, not a style disagreement.
+direction that belongs in [`product.md`](product.md) or
+[`architecture.md`](architecture.md), not a style disagreement.
 
 1. Worktree-aware, not worktree-centric: one `Session` type, one creation entry
    point.
@@ -4554,53 +4506,7 @@ same words.
 
 ---
 
-## Appendix C: ADR Traceability
-
-| Spec section | ADRs |
-| --- | --- |
-| § 1.1 `@janela/pty` | 0021; 0020 (rules; reasoning in 0003) |
-| § 1.2 `@janela/git` | 0007, 0013 |
-| § 1.3 `@janela/db` | 0019 (rules; reasoning in 0005), 0015 |
-| § 2.1 `@janela/core` | 0009, 0010 |
-| § 3.1 `@janela/terminal` | 0018 (rules; reasoning in 0004), 0015, 0006 |
-| § 3.2 `@janela/session` | 0009, 0013, 0014, 0015 |
-| § 3.3 protocol and daemon | 0016, 0017, 0020 |
-| § 4.1 `@janela/client` | 0011, 0015, 0023; 0020 (rules; reasoning in 0003) |
-| § 4.2 `@janela/design` | 0023, 0024 |
-| § 4.3 `@janela/terminal-ui` | 0016, 0018 |
-| § 4.4 `@janela/ui` | 0009, 0010, 0024 |
-| § 4.5 `apps/desktop` | 0024, 0017, 0011, 0008 (as amended) |
-| § 5.1 `.worktreeinclude` | 0013 |
-| § 5.2 Automation | 0014 |
-| § 5.3 `@janela/forge` | 0012 |
-| § 5.4 Attention signals | 0006, 0011 |
-| § 6.1 Repaint encoder | 0016, 0018 |
-| § VII Testing | 0018 (the round-trip test), 0019 (forward migration tests) |
-| § IX Budgets | 0023, 0020 |
-| § X, § XII Workflow | 0022, 0025 |
-
-The migration of 2026-08-21 reversed six technology choices, carried by five
-superseding ADRs plus one edit to [`product.md`](product.md):
-
-| Superseded | Superseded by | What changed |
-| --- | --- | --- |
-| 0001 | 0024 and 0025 | Project generation, and the monorepo tooling that replaced it |
-| 0002 | 0023 | The deployment target |
-| 0003 | 0020 | The concurrency model, and with it the daemon's runtime |
-| 0004 | 0018 | The terminal engine, behind the same two seams |
-| 0005 | 0019 | The SQL layer |
-| `product.md` § Non-goals, "Not cross-platform" | 0023 | The cross-platform stance |
-
-ADR 0008 was **amended**, not superseded: unsandboxed, hardened and notarized
-survived the change of toolchain with only its bundler different.
-
-The rule this document follows: **the superseding ADR carries the decision, the
-superseded one carries the reasoning**, and a citation here names the
-superseding number, with the superseded one named only as "reasoning in 00NN". A
-note on the index: `docs/decisions/README.md` calls these "six ADRs" in one
-sentence and "six technology choices" in another; the second is right, and the
-table above is what the index itself lists.
-
-Every requirement above cites an accepted ADR, [`product.md`](product.md),
-[`domain-model.md`](domain-model.md), or a source file. Where the code and any
-of those disagree, the code is authoritative.
+Every requirement above is grounded in a shipped interface, a source file,
+[`product.md`](product.md), [`architecture.md`](architecture.md),
+[`domain-model.md`](domain-model.md) or [`performance.md`](performance.md).
+Where the code and any of those disagree, the code is authoritative.

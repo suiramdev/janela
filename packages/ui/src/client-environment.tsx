@@ -43,7 +43,7 @@ export interface CommandSource {
  *
  * Everything here is something only the shell can do, and each one is a *request
  * with a person in it*: a directory the user picked, a confirmation they gave.
- * The daemon is handed the result, never the dialog (ADR 0024).
+ * The daemon is handed the result, never the dialog.
  */
 export interface NativeShell {
   /** Native directory dialog; `undefined` when the user cancelled. */

@@ -176,9 +176,8 @@ export function janelaVariables(input: {
  * `TERM`, and why it is what it is.
  *
  * Declaring `xterm-256color` rather than a bespoke terminfo entry means every
- * existing tool works on day one. Revisit only if we ship a terminfo file, and read
- * docs/decisions/0018-terminal-engine.md first — the client renderer and the daemon
- * emulator must agree on what they claim to be, and they are two different
+ * existing tool works on day one. Revisit only if we ship a terminfo file: the client renderer
+ * and the daemon emulator must agree on what they claim to be, and they are two different
  * libraries now.
  */
 export const DECLARED_TERM = "xterm-256color";

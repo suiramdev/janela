@@ -104,7 +104,7 @@ jobs:
   # The slow gate: proves the daemon still compiles to a single self-contained
   # binary, which is the property the whole sidecar story rests on. If this breaks,
   # a dependency has pulled in a native addon that `bun build --compile` cannot
-  # embed — see docs/decisions/0020-bun-daemon-runtime.md.
+  # embed.
   sidecar:
     name: Compile the daemon sidecar
     runs-on: macos-15

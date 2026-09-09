@@ -40,8 +40,6 @@
 //! release profile sets `panic = "abort"`. Every handle lookup here returns an
 //! `Option`, no `unwrap` appears, and a poisoned mutex is recovered rather than
 //! propagated, so the abort is a backstop and not a mechanism.
-//!
-//! See docs/decisions/0021-pty-native-layer.md.
 
 // An `unsafe fn` does not get a free pass on its own body. Three of the exports
 // below take raw pointers the caller has to keep valid, so their signatures say
@@ -1129,9 +1127,9 @@ const LOCAL_PEERPID: c_int = 0x002;
 /// Read the peer credential of a connected Unix socket.
 ///
 /// This lives here rather than in the daemon because `bun:ffi` is gated to this
-/// package (ADR 0021) and Bun exposes no peer-credential accessor: without this
-/// export `verifyPeer` refuses every peer as `credential-unavailable` and no
-/// client can connect. It is the only export here that has nothing to do with a
+/// package and Bun exposes no peer-credential accessor: without this export
+/// `verifyPeer` refuses every peer as `credential-unavailable` and no client can
+/// connect. It is the only export here that has nothing to do with a
 /// pseudo-terminal, and it earns the exception by being the alternative to a
 /// second FFI surface.
 ///

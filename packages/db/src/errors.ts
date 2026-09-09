@@ -2,7 +2,7 @@
  * What this package throws, and the line between the three.
  *
  * `MigrationFailed` is fatal: the daemon cannot start, and the only way a user
- * learns about it is a client that cannot connect (ADR 0017).
+ * learns about it is a client that cannot connect.
  *
  * The other two are the same defect seen from opposite sides of the store, and
  * keeping them apart is what makes a log readable: `CorruptRecord` means the file

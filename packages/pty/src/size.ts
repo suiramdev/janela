@@ -8,8 +8,7 @@
  * The honest edge, unchanged by the migration: pixel metrics are a *client*
  * fact and the daemon is what sets the window size. Two clients on displays with
  * different backing scales make this genuinely ambiguous, and the protocol's
- * minimum-viewport rule sizes the grid in cells, not pixels. See
- * docs/decisions/0018-terminal-engine.md.
+ * minimum-viewport rule sizes the grid in cells, not pixels.
  */
 export interface TerminalSize {
   readonly columns: number;

@@ -8,7 +8,7 @@ import { isLive } from "@janela/core";
  * Stopping the daemon terminates the user's terminals. That is never something
  * Janela does to make its own life easier — not on version skew, not on quit — so
  * both controls are explicit user choices, and an explicit choice made without
- * knowing the cost is not a choice. See ADR 0017 § When the daemon exits.
+ * knowing the cost is not a choice.
  */
 export type ServiceRequest = "stop" | "stopAndUnregister";
 
@@ -19,7 +19,7 @@ export interface ServiceStopCost {
   readonly liveSessionCount: number;
   readonly liveTerminalCount: number;
   /**
-   * ADR 0017's sentence, e.g. `3 sessions, 2 with live terminals`.
+   * The stated cost, e.g. `3 sessions, 2 with live terminals`.
    *
    * A fragment rather than a sentence so the two controls — and #29's version-skew
    * banner, which owes the user the same fact — can embed it in their own copy
@@ -72,8 +72,8 @@ function costSentence(sessionCount: number, liveSessionCount: number): string {
 /**
  * The title of the control that starts each request.
  *
- * Verbatim from ADR 0017, which names both actions; the settings surface is where
- * "Stop and unregister" was promised to exist.
+ * The wording is fixed: both actions are named, and the settings surface is where
+ * "Stop and unregister" lives.
  */
 export const SERVICE_REQUEST_TITLE: Record<ServiceRequest, string> = {
   stop: "Stop Background Service",
@@ -152,9 +152,8 @@ export function serviceControlReducer(
 /**
  * How the app stops the daemon.
  *
- * A port. Registration and lifecycle are the Tauri shell's (ADR 0017, ADR 0024);
- * this package's job is to make sure neither is reached without the cost on
- * screen first.
+ * A port. Registration and lifecycle are the Tauri shell's; this package's job is
+ * to make sure neither is reached without the cost on screen first.
  */
 export interface BackgroundServiceControlling {
   stop(): void;

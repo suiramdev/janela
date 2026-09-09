@@ -141,8 +141,7 @@ export interface WorktreeBinding {
    * recomputed at deletion time.
    *
    * This is what lets the removal dialog say "and a 400 MB `node_modules`, and an
-   * `.env` that exists nowhere else" instead of "are you sure?". See
-   * docs/decisions/0013-worktreeinclude.md.
+   * `.env` that exists nowhere else" instead of "are you sure?".
    */
   includedPaths: readonly string[];
 }

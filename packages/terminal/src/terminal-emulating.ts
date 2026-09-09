@@ -10,8 +10,6 @@ import type { TerminalBytes } from "@janela/pty";
  * **Nothing above `@janela/terminal` may import an emulator library.** If you find
  * yourself wanting to, the missing capability belongs here instead. That rule is
  * enforced by `scripts/layers.ts`, not by review.
- *
- * See docs/decisions/0018-terminal-engine.md.
  */
 export interface TerminalEmulating {
   /**
@@ -107,8 +105,7 @@ export interface TerminalEmulating {
  *
  * This list is deliberately short and deliberately *mechanical*. Every entry
  * corresponds to a real escape sequence or a real process event. There is no
- * `agentIsThinking`, because no terminal sequence means that. See
- * docs/decisions/0006-agent-activity-signals.md.
+ * `agentIsThinking`, because no terminal sequence means that.
  */
 export interface TerminalEventSink {
   /** OSC 0 / OSC 2 — the process set the window or icon title. */

@@ -66,8 +66,6 @@ import { resolveTerminalLaunch } from "./terminal-launch.ts";
  * changes over the protocol. Nothing here knows a socket exists, and that is the
  * test of whether the layering is right — `@janela/session` must stay usable with
  * no networking at all, which is exactly how its tests use it.
- *
- * See docs/decisions/0015-daemon-owned-sessions.md.
  */
 export interface SessionService {
   /** Every session, both grouped and standalone. */
@@ -143,7 +141,7 @@ export interface SessionService {
    *
    * The layout collapses around it, promoting the sibling. Closing the last
    * terminal of a session leaves one fresh idle shell behind: a session never has
-   * zero terminals (docs/decisions/0010-terminal-layout.md).
+   * zero terminals.
    *
    * @throws {UnknownTerminal}
    */
@@ -204,7 +202,7 @@ export type SessionCreationRequest =
   /**
    * "Work on this pull request." Resolves the head branch through the forge CLI,
    * then creates a worktree — never `gh pr checkout`, which would mutate the user's
-   * own checkout. See docs/decisions/0012-forge-integration.md.
+   * own checkout.
    */
   | { readonly kind: "fromPullRequest"; readonly projectID: ProjectID; readonly number: number };
 
@@ -379,7 +377,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     }
 
     // Before automation, always: a `worktreeCreated` command that runs before the
-    // copy finds no `.env` (ADR 0013).
+    // copy finds no `.env`.
     if (worktreeOf(session) !== undefined && resolved.project !== undefined) {
       await this.copyIncludedPaths(session, resolved.project);
     }
@@ -725,8 +723,8 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
         if (this.deps.forge === undefined) throw new PullRequestsNotSupported();
 
         // Read-only, and never `gh pr checkout`: that would move the user's own
-        // checkout onto the pull request's branch (ADR 0012). The branch feeds
-        // the ordinary worktree path instead.
+        // checkout onto the pull request's branch. The branch feeds the ordinary
+        // worktree path instead.
         const branch = await this.deps.forge.pullRequestBranch({
           project,
           number: request.number,
@@ -803,7 +801,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
    *
    * A copy failure is logged and creation continues: an `.env` that did not arrive
    * costs the user a copy they can make themselves, and refusing the session over
-   * it costs them the terminal (ADR 0013).
+   * it costs them the terminal.
    */
   private async copyIncludedPaths(session: Session, project: Project): Promise<void> {
     const include = this.deps.include;

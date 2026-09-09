@@ -6,7 +6,7 @@ import { AUTOMATION_EVENTS } from "./project.ts";
 import { isLive } from "./terminal.ts";
 
 describe("the concept budget", () => {
-  test("three automation events, and a fourth needs an ADR", () => {
+  test("three automation events, and a fourth is a non-goal", () => {
     expect(AUTOMATION_EVENTS).toEqual(["worktreeCreated", "sessionStart", "sessionTeardown"]);
   });
 

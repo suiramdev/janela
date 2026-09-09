@@ -52,7 +52,7 @@ export interface DaemonServer extends StateObserving {
    *
    * @param listener An already-bound listener. In production this wraps the
    *   descriptor launchd handed us, because launchd owns the socket and we never
-   *   bind a path ourselves (docs/decisions/0017-daemon-lifecycle.md).
+   *   bind a path ourselves.
    * @throws Only when the *listener itself* fails — the socket vanishing, or a
    *   descriptor we cannot accept on. A failure on any single connection is handled
    *   and logged rather than thrown, because one client sending nonsense must never
@@ -402,7 +402,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         if (viewport === undefined) {
           // Input and scope, no rendering: the terminal never learns about this
           // client, so it takes no part in size negotiation and the frame loop has
-          // nothing to send it (ADR 0016).
+          // nothing to send it.
           return undefined;
         }
         const size = terminal.attach(id, viewport);
@@ -431,7 +431,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
    * Tells the peer why it is not welcome, then closes.
    *
    * Refusal is never fatal to the daemon and never touches a terminal: the app
-   * being too new is not a reason to kill an agent mid-task (ADR 0017).
+   * being too new is not a reason to kill an agent mid-task.
    */
   async function refuse(
     connection: Connection,

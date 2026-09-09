@@ -3,7 +3,7 @@
  *
  * Frames, messages, handshake, and the transport seam. Pure and JSON-encodable,
  * with no idea how either side is implemented. Changing anything here is a
- * wire-compatibility decision — see docs/decisions/0016-daemon-protocol.md.
+ * wire-compatibility decision.
  *
  * Note what this package deliberately does not know: that a Unix socket exists,
  * that one of its peers is a WebView, or that the daemon holds a database. It is

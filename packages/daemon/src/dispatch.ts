@@ -60,7 +60,7 @@ export interface ClientConnection {
    *
    * With no viewport the attachment is input and scope only: the terminal never
    * learns about the client, the frame loop never gets a registration, and the
-   * negotiated size is whatever the rendering clients agreed (ADR 0016).
+   * negotiated size is whatever the rendering clients agreed.
    */
   attach(terminal: LiveTerminal, viewport?: GridSize): GridSize | undefined;
   detach(terminalID: TerminalID): GridSize | undefined;
@@ -123,7 +123,7 @@ export function errorName(error: unknown): string {
  * Composed per announcement rather than per frame, so its cost is human-rate. It
  * exists because a client merges by id and therefore cannot express a removal:
  * the only way to say "that session is gone" is to send a complete list without
- * it (docs/decisions/0015-daemon-owned-sessions.md).
+ * it.
  */
 export function fullStateSnapshot(world: {
   readonly projects: readonly Project[];
@@ -315,7 +315,7 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
       case "snapshotText": {
         const terminal = requireTerminal(message.terminalID);
         // No attachment required: reading what is on screen is the CLI's whole
-        // job, and it never renders (ADR 0016).
+        // job, and it never renders.
         return {
           type: "text",
           id,

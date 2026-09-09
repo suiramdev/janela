@@ -25,8 +25,7 @@
  *   until the next full repaint, which is not a recovery, it is a corruption
  *   with a delay.
  *
- * See docs/performance.md § Terminal throughput and
- * docs/decisions/0016-daemon-protocol.md.
+ * See docs/performance.md § Terminal throughput.
  */
 export type OverflowPolicy = "block" | "dropOldest";
 

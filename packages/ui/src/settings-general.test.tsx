@@ -91,7 +91,7 @@ describe("the background service controls", () => {
     expect(paneMarkup()).toContain("2 sessions, 1 with a live terminal");
   });
 
-  test("offer both actions ADR 0017 promised", () => {
+  test("offer both actions", () => {
     const markup = paneMarkup();
     expect(markup).toContain(SERVICE_REQUEST_TITLE.stop);
     expect(markup).toContain(SERVICE_REQUEST_TITLE.stopAndUnregister);

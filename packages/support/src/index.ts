@@ -8,8 +8,7 @@
  * `@janela/support/process` instead, and the layering gate treats that subpath as
  * daemon-only.
  *
- * See docs/decisions/0023-macos-first-portable.md for why the split exists, and
- * scripts/layers.ts for what enforces it.
+ * See scripts/layers.ts for what enforces the split.
  */
 
 export * from "./bounded.ts";

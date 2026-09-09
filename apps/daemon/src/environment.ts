@@ -168,7 +168,7 @@ export async function daemonEnvironment(
   // `launchProfiles` is a *required* dependency now that #35 put profiles on the
   // wire: the server reads them for every announcement and the dispatcher writes
   // them, and it takes the same `database.launchProfiles` repository the session
-  // service already reads — one handle to one SQLite file (ADR 0019).
+  // service already reads — one handle to one SQLite file.
   //
   // No `dispatch`: `createDaemonServer` builds `createRequestDispatch` itself and
   // binds `announce` to the server it is constructing, which is the one cycle this

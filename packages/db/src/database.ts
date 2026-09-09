@@ -46,9 +46,6 @@ const silentLogger: Logger = {
  * The corollary is a rule the layering gate enforces rather than a reviewer:
  * **a client package that imports `@janela/db` is a layering bug.** `@janela/ui`
  * and `apps/desktop` do not link it at all.
- *
- * See docs/decisions/0005-persistence.md and
- * docs/decisions/0019-prisma-sql-layer.md.
  */
 export interface JanelaDatabase {
   /**
@@ -57,7 +54,7 @@ export interface JanelaDatabase {
    * Migration failure is the interesting error: it means the daemon cannot start,
    * and the only way a user learns about it is a client that cannot connect. It
    * must be logged clearly and exit non-zero so launchd's `KeepAlive` does not
-   * spin. See docs/decisions/0017-daemon-lifecycle.md.
+   * spin.
    */
   migrate(): Promise<void>;
 
@@ -73,12 +70,11 @@ export interface JanelaDatabase {
  * `~/Library/Application Support/sh.janela.Janela/janela.sqlite`
  *
  * Not in a container: Janela is not sandboxed, because it must spawn arbitrary
- * user processes in arbitrary directories. See
- * docs/decisions/0008-sandboxing-and-distribution.md.
+ * user processes in arbitrary directories.
  *
- * Note the socket lives somewhere else — `~/.janela/run/janelad.sock` — for an
- * unglamorous reason measured in docs/decisions/0016-daemon-protocol.md. Only the
- * socket moved.
+ * Note the socket lives somewhere else — `~/.janela/run/janelad.sock` — because
+ * `sockaddr_un.sun_path` is 104 bytes on macOS and this directory does not fit in
+ * it. Only the socket moved.
  */
 export function defaultDatabasePath(): AbsolutePath {
   return absolutePath(

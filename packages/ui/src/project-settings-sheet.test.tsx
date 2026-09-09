@@ -107,7 +107,7 @@ describe("automation authoring", () => {
   });
 
   test("records the security property in the copy the user reads", () => {
-    // ADR 0014's one irreversible property: these never come from the repository.
+    // The one irreversible property: these never come from the repository.
     expect(sheetMarkup(NO_COMMANDS)).toContain("never read from the repository");
   });
 

@@ -21,9 +21,9 @@ Getting set up, working day to day, and what to build first.
 
 | Thing | Version | Why |
 | --- | --- | --- |
-| macOS | 15.0+ | Deployment target ([ADR 0002](decisions/0002-macos-deployment-target.md)) |
+| macOS | 15.0+ | Deployment target |
 | Xcode | 26.0+ | Swift 6.2 tools, bundled `swift-format` |
-| XcodeGen | any recent | Generates `Janela.xcodeproj` ([ADR 0001](decisions/0001-project-generation.md)) |
+| XcodeGen | any recent | Generates `Janela.xcodeproj` |
 | SwiftLint | any recent | Optional locally, required in CI |
 
 ## Setup
@@ -86,8 +86,7 @@ make open     # regenerates the project first, then opens it
 App/Janela/JanelaAppMain.swift        The @main shim. One file. Keep it that way.
 Packages/JanelaKit/Sources/           Every module. Your work is here.
 Packages/JanelaKit/Tests/             Tests, one target per module.
-docs/decisions/                       ADRs — read before changing a decision.
-docs/research/                        Primary-source research behind the ADRs.
+docs/research/                        Primary-source research behind the design.
 ```
 
 The modules divide into three groups, and which group a file belongs to decides
@@ -121,8 +120,8 @@ What exists and works:
 What is a stub: the PTY, the live terminal, git operations, project and session
 persistence, and essentially all UI. Not yet present at all: `JanelaForge`,
 automation, `.worktreeinclude`, notifications and the layout algebra — all of them
-designed in [`domain-model.md`](domain-model.md) and their ADRs, none of them
-written. Every stub has a doc comment describing what belongs there.
+designed in [`domain-model.md`](domain-model.md), none of them written. Every
+stub has a doc comment describing what belongs there.
 `grep -rn "TODO:" Packages/` is a work queue.
 
 ---
@@ -166,15 +165,13 @@ tests that encode product rules ([`testing.md`](testing.md) § Migrations).
 Pure logic, no I/O, and the one piece of real complexity in the domain layer:
 split, close-and-promote, focus traversal, depth and fraction validation, and
 `Codable` round-tripping. Worth doing before the UI that consumes it, because every
-rule in [ADR 0010](decisions/0010-terminal-layout.md) is testable in milliseconds
-with no window server.
+layout rule is testable in milliseconds with no window server.
 
 ### 5. `JanelaTerminal` — the emulator seam
 
 Implement `TerminalEmulating` over SwiftTerm. Expect to need
-`@preconcurrency import SwiftTerm` — it is Swift 5 language mode
-([ADR 0003](decisions/0003-concurrency-model.md)). Wire `LiveTerminal.start()`
-to the PTY and feed the emulator.
+`@preconcurrency import SwiftTerm` — it is Swift 5 language mode. Wire
+`LiveTerminal.start()` to the PTY and feed the emulator.
 
 ### 6. `JanelaSession` — lifecycle
 
@@ -191,7 +188,7 @@ expensive to find later: length-prefixed frames, bounded, with a `Hello` handsha
 Then a listener that accepts a connection, checks `LOCAL_PEERCRED`, and answers.
 
 Tests bind a real socket in a `TemporaryDirectory` — keep the path short, `sun_path`
-is 104 bytes ([ADR 0016](decisions/0016-daemon-protocol.md)).
+is 104 bytes.
 
 ### 8. `JanelaClient` — the mirror
 
@@ -217,18 +214,16 @@ and assert the grids match ([`testing.md`](testing.md)).
 These are independent of each other and each is a reasonable PR on its own:
 
 - **`.worktreeinclude`** in `JanelaGit` — one `git ls-files` call plus a
-  `clonefile` copy with the bounds from
-  [ADR 0013](decisions/0013-worktreeinclude.md). Test against a real repository.
+  `clonefile` copy within the bounds in [`performance.md`](performance.md). Test
+  against a real repository.
 - **Automation** in `JanelaSession` — an `AutomationRunner` that creates terminals
   with `role: .automation`. Most of the work is ordering and the teardown timeout,
   not process handling, because the terminal already does that.
 - **Attention policy** in `JanelaSession` plus a nine-line
-  `AttentionDelivering` adapter in `JanelaApp`
-  ([ADR 0011](decisions/0011-notifications.md)). The policy is pure and should be
+  `AttentionDelivering` adapter in `JanelaApp`. The policy is pure and should be
   exhaustively tested; the adapter is not worth testing.
 - **`JanelaForge`** — a new target beside `JanelaGit`, `gh`/`glab` behind
-  `ForgeServing`. Start with the failure paths; they are the common ones
-  ([ADR 0012](decisions/0012-forge-integration.md)).
+  `ForgeServing`. Start with the failure paths; they are the common ones.
 
 ---
 
@@ -294,12 +289,22 @@ lsof -U | grep janelad    # who is connected to the socket
 
 An installed build registers a LaunchAgent, and a daemon that exits deliberately
 stays down: the next client that fails to connect starts it again with
-`launchctl kickstart gui/<uid>/sh.janela.janelad`. A dev build registers nothing,
-so in development **you** run the daemon:
+`launchctl kickstart gui/<uid>/sh.janela.janelad`. A dev build has no bundle, so
+`SMAppService` reports `unsupported`, nothing is registered and the kickstart has
+no service to start — in development the daemon is **yours** to run:
 
 ```bash
-bun run --cwd apps/daemon dev   # source, --foreground, your real HOME; serves `bun run app`
+bun run dev                     # a daemon and the app together, in one terminal
+bun run --cwd apps/daemon dev   # the daemon alone: source, --foreground, your real HOME
 ```
+
+`bun run dev` is the two commands above in one place, and it is held to the same
+rule you are: it **reuses** a `janelad` that is already listening rather than
+killing it, because that daemon holds terminals and stopping them is the user's
+call. The one it started itself is stopped on the way out, and it says so — an
+orphan foreground daemon serving a checkout you have moved on from is the footgun
+at the top of this section. Liveness is a connect, not a `stat`: the socket file
+outlives a killed daemon, and the daemon's own bind takes that address over.
 
 To run one that cannot touch your own sessions, move `HOME`: the socket, the
 database and the log all derive from it.
@@ -318,8 +323,9 @@ sessions into two sets of terminals. `janelad` refuses any argument it does not
 parse — exit 2, before it opens the database, binds the socket or creates the log
 file — so nothing can be silently ignored again (#49).
 
-The socket lives at `~/.janela/run/janelad.sock`, not in Application Support — see
-[ADR 0016](decisions/0016-daemon-protocol.md) for the `sun_path` reason.
+The socket lives at `~/.janela/run/janelad.sock`, not in Application Support,
+because `sockaddr_un.sun_path` is 104 bytes on macOS and the Application Support
+path does not comfortably fit.
 
 A daemon holding live terminals will not exit on its own, which is correct and
 occasionally inconvenient. `bun run daemon:restart` terminates them deliberately;
@@ -334,8 +340,8 @@ Profiling: see [`performance.md`](performance.md) § How to measure.
 `bun run check` must pass. Beyond that:
 
 - Write commit messages that explain **why**. The diff shows what.
-- Changing an architectural decision means adding or superseding an ADR, in the
-  same PR.
+- Changing an architectural decision means writing it down in
+  [`architecture.md`](architecture.md), in the same PR.
 - Adding a user-visible concept means justifying it against
   [`product.md`](product.md) § Non-goals. The budget is four nouns: project,
   session, terminal, launch profile.

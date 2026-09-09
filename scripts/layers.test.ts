@@ -96,7 +96,7 @@ describe("gated modules", () => {
     }
   });
 
-  test("every gate names its reason, with the ADR that decided it", () => {
+  test("every gate names its reason, in a sentence that stands on its own", () => {
     for (const gate of GATED_MODULES) {
       expect(gate.reason.length, gate.pattern).toBeGreaterThan(40);
       expect(gate.allowed.length, gate.pattern).toBeGreaterThan(0);

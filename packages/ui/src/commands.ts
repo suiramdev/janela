@@ -20,8 +20,7 @@
  * The *definitions* live here, in the client, because the UI is what acts on them.
  * The native menu bar that surfaces them is built in `apps/desktop/src-tauri` — a
  * real menu, not an HTML imitation, because a developer tool that fakes the menu bar
- * costs its users a tax on every interaction. See
- * docs/decisions/0023-macos-first-portable.md.
+ * costs its users a tax on every interaction.
  *
  * The shell is handed this table at startup and knows nothing else about it: it
  * reads ids, titles, accelerators and where each row goes, and emits the id back

@@ -16,7 +16,7 @@ import * as style from "./styles.ts";
  * bug in a program the user cares about. A user who wants a shell types `zsh`,
  * `-lc` and the script into three fields, and has chosen that.
  *
- * See AGENTS.md § Conventions and docs/decisions/0014-project-automation.md.
+ * See AGENTS.md § Conventions.
  */
 export interface ArgumentsEditorProps {
   readonly drafts: readonly ArgumentDraft[];

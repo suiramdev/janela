@@ -10,12 +10,12 @@ import type { Logger } from "@janela/support";
  *
  * ## Why the daemon binds it and launchd does not
  *
- * ADR 0017 originally offered socket activation, and #39 gave it up: the only
- * *static* form launchd offers — `SecureSocketWithKey` — publishes the socket path
- * solely into the GUI login session's launchd environment, which a CLI over ssh
- * cannot read, and ADR 0023 requires an address that survives launchd. So the
- * plist declares no `Sockets` block, there is no descriptor to inherit, and no
- * second FFI surface: `bun:ffi` stays gated to `@janela/pty`.
+ * Socket activation was originally on offer, and #39 gave it up: the only *static*
+ * form launchd offers — `SecureSocketWithKey` — publishes the socket path solely
+ * into the GUI login session's launchd environment, which a CLI over ssh cannot
+ * read, and the daemon needs an address that survives launchd. So the plist
+ * declares no `Sockets` block, there is no descriptor to inherit, and no second
+ * FFI surface: `bun:ffi` stays gated to `@janela/pty`.
  *
  * The property socket activation was chosen for is kept on the client side
  * instead. The agent has no `RunAtLoad`, so nothing runs until a client fails to

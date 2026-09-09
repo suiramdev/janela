@@ -77,7 +77,7 @@ export * from "./client-environment.tsx";
  * A **mirror**. The sessions below live in `janelad`; these stores hold the last
  * state it sent. When the connection drops, the mirror is still rendered — marked
  * stale — because the terminals themselves are unaffected and the user's work is
- * still running. See docs/decisions/0015-daemon-owned-sessions.md.
+ * still running.
  *
  * ## What is local, and why
  *

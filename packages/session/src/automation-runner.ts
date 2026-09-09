@@ -25,7 +25,7 @@ import { resolveTerminalLaunch } from "./terminal-launch.ts";
  * watch, scroll back through, and Ctrl-C — with `role: automation(event)`, in the
  * session's directory, with the session's environment. Nothing run on the user's
  * behalf happens in a hidden process, which is why this type creates terminals
- * rather than capturing output. See docs/decisions/0014-project-automation.md.
+ * rather than capturing output.
  *
  * What this is not: a task runner. There is no scheduling, no retry, no dependency
  * graph, and no conditional execution. Three events, a command each, in order.
@@ -111,8 +111,7 @@ export function automationRunner(deps: AutomationRunnerDependencies): Automation
  * Note what this class cannot do: it reads `project.settings.automation` and
  * nothing else. There is no filesystem import here, deliberately — commands come
  * from Janela's own database, never from a file in the repository, because a
- * checkout that can add commands makes cloning a repo a code-execution vector
- * (ADR 0014).
+ * checkout that can add commands makes cloning a repo a code-execution vector.
  */
 class VisibleAutomationRunner implements AutomationRunning {
   private readonly deps: AutomationRunnerDependencies;

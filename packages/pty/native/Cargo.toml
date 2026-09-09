@@ -1,4 +1,4 @@
-# The PTY's native half. See docs/decisions/0021-pty-native-layer.md.
+# The PTY's native half.
 #
 # Deliberately tiny and deliberately dependency-free apart from `libc`: this is
 # the one place in Janela where a fault takes every terminal the user has running,

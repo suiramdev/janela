@@ -4,8 +4,6 @@
  * Nothing else is accepted until this is exchanged. The daemon may be older or
  * newer than the client — after an app update it is routinely older, and it is
  * holding the user's live terminals while being so.
- *
- * See docs/decisions/0016-daemon-protocol.md.
  */
 export interface Hello {
   /** Incremented on any breaking change to messages or framing. */
@@ -63,7 +61,7 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    size travels in the raw output frame rather than as a control message
  *    because it belongs to the same ordered stream as the bytes it describes —
  *    a size arriving out of band would paint one geometry's screen into
- *    another's grid (ADR 0016 § Terminal size with multiple clients).
+ *    another's grid.
  * ```
  */
 export const PROTOCOL_VERSION = 5;
@@ -78,11 +76,11 @@ export const PROTOCOL_VERSION = 5;
  * lines wrapping at the wrong width, nothing letterboxed, and no error anywhere
  * to say so. A refusal a person can read beats a screen that is quietly wrong.
  * A v4 peer's `hello` is answered with `refused` / `incompatibleVersion`
- * carrying this range, the daemon keeps running and no terminal is touched (ADR
- * 0016 § Handshake, ADR 0017); a v5 client meeting a v4 daemon refuses on its
- * own side and tells the skew story — "the background service is older", whose
- * only button is "Restart the background service" — rather than reporting a
- * handshake failure. Nothing after `hello` is decoded from a refused peer.
+ * carrying this range, the daemon keeps running and no terminal is touched; a v5
+ * client meeting a v4 daemon refuses on its own side and tells the skew story —
+ * "the background service is older", whose only button is "Restart the background
+ * service" — rather than reporting a handshake failure. Nothing after `hello` is
+ * decoded from a refused peer.
  */
 export const MINIMUM_SUPPORTED_VERSION = 5;
 
@@ -92,7 +90,7 @@ export const MINIMUM_SUPPORTED_VERSION = 5;
  *
  * Symmetric, and deliberately not "the versions are equal": after an app update
  * the daemon is routinely the older peer and must keep serving the terminals it
- * is holding while it says so (ADR 0016 § Handshake).
+ * is holding while it says so.
  */
 export function isCompatible(mine: Hello, other: Hello): boolean {
   return (
@@ -104,7 +102,7 @@ export function isCompatible(mine: Hello, other: Hello): boolean {
  * Why a connection was refused.
  *
  * Refusal never terminates the daemon or its terminals. The client explains the
- * situation and offers a restart; see docs/decisions/0017-daemon-lifecycle.md.
+ * situation and offers a restart.
  */
 export type HandshakeRefusal =
   /**

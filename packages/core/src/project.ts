@@ -19,8 +19,6 @@ import type {
  * - A separate `Repository` type. A project either has a `git` descriptor or it
  *   does not; a plain folder is a perfectly good project that simply cannot offer
  *   worktree-backed sessions.
- *
- * See docs/decisions/0009-projects-sessions-terminals.md.
  */
 export interface Project {
   readonly id: ProjectID;
@@ -90,8 +88,7 @@ export interface GitDescriptor {
    *
    * Detection is a string match on the host, not a network call. Whether the
    * integration actually *works* additionally depends on the user having `gh` or
-   * `glab` installed and logged in — see
-   * docs/decisions/0012-forge-integration.md.
+   * `glab` installed and logged in.
    */
   forge?: Forge;
 }
@@ -119,7 +116,7 @@ export function forgeExecutable(forge: Forge): string {
  * These earn their place because a project is where the differences actually
  * live: one repository needs `pnpm install`, another needs a Python venv, a third
  * needs neither. Per-*session* settings do not earn their place, and adding them
- * needs an ADR.
+ * means changing docs/product.md first.
  */
 export interface ProjectSettings {
   /** Where worktrees Janela creates are placed. */
@@ -127,7 +124,7 @@ export interface ProjectSettings {
 
   /**
    * Commands run on project lifecycle events, in order, each in its own visible
-   * terminal. See docs/decisions/0014-project-automation.md.
+   * terminal.
    */
   automation: readonly AutomationCommand[];
 
@@ -160,8 +157,6 @@ export type WorktreeRoot =
  * 2. `command` is an **argv array**, not a shell string — same rule as
  *    `LaunchProfile`, same reason. A user who wants a shell writes
  *    `["zsh", "-lc", "…"]` and has chosen that explicitly.
- *
- * See docs/decisions/0014-project-automation.md.
  */
 export interface AutomationCommand {
   readonly id: AutomationID;
@@ -183,8 +178,9 @@ export interface AutomationCommand {
 /**
  * The lifecycle events a project can attach commands to.
  *
- * Three, and adding a fourth needs an ADR. This is not a task runner: there is no
- * scheduling, no retry, no dependency graph, and no conditional execution.
+ * Three, and adding a fourth means changing docs/product.md § Non-goals first. This
+ * is not a task runner: there is no scheduling, no retry, no dependency graph, and
+ * no conditional execution.
  */
 export type AutomationEvent =
   /**

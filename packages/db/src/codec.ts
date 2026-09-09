@@ -22,7 +22,7 @@
  * different value from "absent" on the wire.
  *
  * Not exported from the package: these signatures name Prisma row types, and a
- * generated type above `@janela/db` is a leaked schema (ADR 0019).
+ * generated type above `@janela/db` is a leaked schema.
  */
 
 import type {

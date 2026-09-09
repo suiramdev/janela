@@ -8,8 +8,8 @@
  * It is also the only package in the system permitted to import `bun:ffi`, because
  * giving a child a controlling terminal requires `fork` and `login_tty`, which
  * cannot be expressed in JavaScript. The native half is `native/`, a small Rust
- * cdylib; docs/decisions/0021-pty-native-layer.md records why it exists, how it is
- * built, and how it is located at runtime inside a compiled sidecar.
+ * cdylib; `bindings.ts` records how it is built and how it is located at runtime
+ * inside a compiled sidecar.
  */
 
 export * from "./byte-stream.ts";

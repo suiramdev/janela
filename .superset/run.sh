@@ -20,6 +20,8 @@ if [[ -n "$resident" ]]; then
     echo "(that closes the terminals it holds)."
 fi
 
-# `tauri dev` builds the Rust shell, starts Vite, and opens the window. It stays in
-# the foreground and reloads the frontend on change.
-exec bun run app
+# `bun run dev` starts a daemon if nothing is listening — a dev build registers no
+# LaunchAgent, so nothing else will — then `tauri dev`: the Rust shell, Vite, and
+# the window. It stays in the foreground, reloads the frontend on change, and stops
+# the daemon it started when you stop it.
+exec bun run dev

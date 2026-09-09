@@ -321,7 +321,7 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
             rel,
             line,
             "import/illegal-edge",
-            `${pkg.name} imports ${specifier}. ${why} Adding a dependency edge is a design change: write it down in docs/decisions/ first.`,
+            `${pkg.name} imports ${specifier}. ${why} Adding a dependency edge is a design change: write it down in docs/architecture.md first.`,
           );
         }
       }
@@ -377,7 +377,7 @@ if (violations.length > 0) {
     dim(
       "The module graph lives in scripts/layers.ts and is described in\n" +
         "docs/architecture.md § Packages. If the edge you want is genuinely right,\n" +
-        "change the manifest and say why in docs/decisions/ — that is a design\n" +
+        "change the manifest and say why in docs/architecture.md — that is a design\n" +
         "change, which is the point of this gate.\n",
     ),
   );

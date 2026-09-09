@@ -13,8 +13,7 @@ import type { GridSize } from "@janela/core";
  * What changed: they are no longer the same library on both sides. The daemon runs a
  * headless emulator, the client runs a renderer, and they are separate packages from
  * the same family. That is possible only because the protocol ships escape sequences
- * rather than grids — see docs/decisions/0018-terminal-engine.md, which is honest
- * about what that costs.
+ * rather than grids.
  *
  * ## Why a renderer can stay this simple
  *
@@ -35,8 +34,7 @@ export interface TerminalRendering {
    * The size this surface can display, in cells.
    *
    * Reported to the daemon on attach and on resize. The daemon sizes the PTY to the
-   * *smallest* attached viewport, so this is a vote rather than a command — see
-   * docs/decisions/0016-daemon-protocol.md.
+   * *smallest* attached viewport, so this is a vote rather than a command.
    */
   readonly viewport: GridSize;
 

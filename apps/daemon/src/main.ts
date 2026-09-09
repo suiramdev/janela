@@ -1,8 +1,7 @@
 /**
  * `janelad` — the process that owns the user's terminals.
  *
- * One per user and outliving every client. See
- * docs/decisions/0017-daemon-lifecycle.md.
+ * One per user and outliving every client.
  *
  * This file is deliberately thin: process plumbing only, nothing worth testing.
  * Everything with behaviour lives in `environment.ts`, `socket.ts` and
@@ -11,8 +10,7 @@
  *
  * Shipped as a single compiled binary — `bun build --compile` embeds the runtime,
  * the Prisma client, the emulator and the PTY cdylib, and the result runs from a
- * directory containing nothing else. Verified in the migration spikes; see
- * docs/decisions/0020-bun-daemon-runtime.md.
+ * directory containing nothing else. Verified in the migration spikes.
  */
 
 import { defaultDatabasePath } from "@janela/db";

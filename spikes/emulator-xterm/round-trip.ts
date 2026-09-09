@@ -82,10 +82,10 @@ function dump(t: Terminal, includeAlt = false) {
 //
 // Case 4's receiver is `@xterm/headless`, which is what the package's own test
 // uses. Case 5's is `@xterm/xterm` — the library the *client* actually renders
-// with (ADR 0018 knowingly accepted that the two ends of the round trip are
-// different libraries). Case 5 is the only thing in the repository that measures
-// that accepted divergence, which is why it lives in a spike: `check:layers`
-// gates `@xterm/xterm` to `@janela/terminal-ui`, correctly.
+// with. The two ends of the round trip are knowingly different libraries, and
+// Case 5 is the only thing in the repository that measures that accepted
+// divergence, which is why it lives in a spike: `check:layers` gates
+// `@xterm/xterm` to `@janela/terminal-ui`, correctly.
 {
   const { HeadlessEmulator } = await import("../../packages/terminal/src/headless-emulator.ts");
   const { CORPUS } = await import("./corpus.ts");

@@ -58,8 +58,7 @@
       // This is the coarse, always-on half of the layering gate: it runs in the
       // editor and catches the mistake as it is typed. The precise graph —
       // downward-only edges, declared-dependency agreement — is checked by
-      // `bun run check:layers`, which is the authority. See
-      // docs/decisions/0022-layering-enforcement.md for why there are two.
+      // `bun run check:layers`, which is the authority.
       "files": [
         "packages/client/**",
         "packages/design/**",
@@ -89,7 +88,7 @@
                   "@janela/daemon",
                   "@janela/daemon/*"
                 ],
-                "message": "A client package may not import a daemon package. They meet only at @janela/core and @janela/protocol. This is what makes a CLI possible without a refactor, and why the UI cannot spawn a process even by accident. See docs/decisions/0015-daemon-owned-sessions.md."
+                "message": "A client package may not import a daemon package. They meet only at @janela/core and @janela/protocol. This is what makes a CLI possible without a refactor, and why the UI cannot spawn a process even by accident."
               },
               {
                 "group": [
@@ -112,7 +111,7 @@
     {
       // ---- The mirror image: nothing daemon-side may reach for a view, a
       // window, or a DOM. The daemon detects, the client decides, the app
-      // delivers (docs/decisions/0011-notifications.md).
+      // delivers.
       "files": [
         "packages/git/**",
         "packages/pty/**",
@@ -196,7 +195,7 @@
     {
       // ---- The one exception, and the reason `@janela/support/process` is a
       // separate subpath: `node:child_process` is gated *to* this package, not
-      // away from it (scripts/layers.ts, ADR 0007). One subprocess runner, so
+      // away from it (scripts/layers.ts). One subprocess runner, so
       // @janela/git and @janela/forge do not each spawn their own. Everything
       // else the shared layer may not reach for still applies.
       "files": ["packages/support/src/process.ts", "packages/support/src/process.test.ts"],

@@ -12,8 +12,7 @@ import { processRunner, type ProcessRunning } from "@janela/support/process";
  * libgit2 was, and the CLI is the thing users' repositories are actually
  * configured for — hooks, credential helpers, `includeIf` config, LFS,
  * sparse-checkout and `core.fsmonitor` all work because git itself is running.
- * Shelling out costs a few milliseconds per call and buys correctness. See
- * docs/decisions/0007-git-integration.md.
+ * Shelling out costs a few milliseconds per call and buys correctness.
  *
  * ## Rules
  *

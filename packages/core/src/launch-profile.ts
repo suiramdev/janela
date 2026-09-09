@@ -20,7 +20,7 @@ export interface LaunchProfile {
    * Was an SF Symbol name; the client is now a WebView, so it names a Lucide icon
    * from `@janela/design` instead. The field is presentational either way, and a
    * name the client does not recognise falls back to the terminal glyph rather
-   * than rendering nothing. See docs/decisions/0023-macos-first-portable.md.
+   * than rendering nothing.
    */
   iconName: string;
 

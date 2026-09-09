@@ -33,17 +33,17 @@ import * as style from "./styles.ts";
 /**
  * A project's own settings, edited from its row in the sidebar.
  *
- * This is the surface ADR 0014 promised, and where automation commands come from.
- * It is also the reason there is no Projects tab in the settings window: these
- * settings belong to a project, and the place you edit a project is the project.
+ * This is where automation commands come from. It is also the reason there is no
+ * Projects tab in the settings window: these settings belong to a project, and the
+ * place you edit a project is the project.
  *
  * ## The security property this preserves
  *
  * Automation commands exist **only** because a human typed them here. They are
  * never read from the repository, because a committed file that runs commands
  * makes cloning a repo from a stranger a code-execution vector — the one property
- * in ADR 0014 that cannot be added later. So this editor is not a convenience over
- * a config file; it is the whole mechanism.
+ * that cannot be added later. So this editor is not a convenience over a config
+ * file; it is the whole mechanism.
  *
  * ## What it emits
  *

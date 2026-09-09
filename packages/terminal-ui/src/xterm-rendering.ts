@@ -3,7 +3,7 @@
  *
  * **The only module in the repository's client half that names a renderer
  * library** — the other side of the same rule `@janela/terminal` obeys for the
- * emulator, enforced by `scripts/layers.ts` rather than by review (ADR 0018).
+ * emulator, enforced by `scripts/layers.ts` rather than by review.
  *
  * ## What this does not do
  *
@@ -262,7 +262,7 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
    * The daemon's negotiated grid, applied without voting it back.
    *
    * The size arrives in the output stream because it belongs to the same ordered
-   * bytes it describes (ADR 0016, protocol 5). Acting on it is this module's job
+   * bytes it describes (protocol 5). Acting on it is this module's job
    * and not the library's: `@xterm/xterm` 6.0.0 gates parameter 8 on
    * `windowOptions.setWinSizeChars` and then falls off the end of its own switch,
    * so without this the sequence is parsed and dropped — the whole of defect D2.

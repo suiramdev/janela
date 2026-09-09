@@ -15,7 +15,7 @@ import { FALLBACK_ICON_NAME } from "./profile-icons.tsx";
  * different wrong one. A user who wants a shell types `zsh`, `-lc` and the script
  * into three fields, or writes one argument containing spaces and has chosen that.
  *
- * See AGENTS.md § Conventions and docs/decisions/0014-project-automation.md.
+ * See AGENTS.md § Conventions.
  *
  * ## Why the editor does not edit the domain value directly
  *

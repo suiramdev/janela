@@ -42,7 +42,7 @@ import type { TerminalSize } from "./size.ts";
  * may call only async-signal-safe functions, and a JavaScript runtime returning
  * from a foreign-function call into its own scheduler is the opposite of that.
  * This is why `@janela/pty` owns a small Rust cdylib and is the only package
- * permitted to import `bun:ffi`. See docs/decisions/0021-pty-native-layer.md.
+ * permitted to import `bun:ffi`.
  *
  * ## Ctrl-C is a byte, not a signal
  *

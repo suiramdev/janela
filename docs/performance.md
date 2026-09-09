@@ -10,9 +10,7 @@
 > cold launch is now **400 ms** (was 250) and warm launch **200 ms** (was 120),
 > because the client renders in a WebView. *Every other budget on this page is
 > unchanged*, including the terminal-throughput ones, which measured 133 MB/s off
-> the PTY against a 100 MB/s budget. The before-and-after table and the reasoning
-> for each row are in
-> [`decisions/0023-macos-first-portable.md`](decisions/0023-macos-first-portable.md).
+> the PTY against a 100 MB/s budget.
 >
 > Current: [`AGENTS.md`](../AGENTS.md) for commands and layering,
 > [`architecture.md`](architecture.md) for the system,
@@ -67,9 +65,9 @@ Rules that protect this:
 - **Socket activation is on the cold path only.** The 200 ms figure is a fork/exec
   plus a database open plus migrations, paid once per daemon lifetime rather than
   once per launch.
-- **Avoid adding dynamic library dependencies**, in both binaries. This is one of
-  the reasons for [ADR 0005](decisions/0005-persistence.md): SwiftData would pull
-  Core Data onto the launch path — now the *daemon's* launch path, which the first
+- **Avoid adding dynamic library dependencies**, in both binaries. It is one of
+  the reasons the persistence layer is not SwiftData: that would pull Core Data
+  onto the launch path — now the *daemon's* launch path, which the first
   connecting window waits on.
 
 ### Interaction
@@ -119,9 +117,9 @@ changing any of these numbers.
 | `.worktreeinclude` copy, 500 MB `node_modules` | **200 ms** | `clonefile` on APFS is metadata-only; a non-APFS fallback is allowed to be slow |
 | Session visible and selectable | **before automation starts** | The terminal must exist while `pnpm install` is still running |
 
-The copy number is the one that justifies `clonefile` over a recursive copy — see
-[ADR 0013](decisions/0013-worktreeinclude.md). If it ever approaches the seconds a
-byte-for-byte copy would take, the clone path has silently stopped working.
+The copy number is the one that justifies `clonefile` over a recursive copy. If
+it ever approaches the seconds a byte-for-byte copy would take, the clone path
+has silently stopped working.
 
 ### Terminal throughput
 
@@ -168,8 +166,7 @@ Panes in the same session still get their own `DispatchIO` channel and parse que
 so a flooding pane cannot starve the pane beside it. Test it by splitting once and
 running `yes` on the left.
 
-The mechanism, specified in `ByteStream.swift` and
-[ADR 0003](decisions/0003-concurrency-model.md):
+The mechanism, specified in `ByteStream.swift`:
 
 - High-water mark **4 MB**, low-water **1 MB**. Past the high mark we stop
   re-arming the read; the kernel PTY buffer fills and the child blocks in

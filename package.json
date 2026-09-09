@@ -17,6 +17,7 @@
     "format": "oxfmt . && oxlint --fix",
     "check": "bun run lint && bun run typecheck && bun run test",
     "check:layers": "bun run scripts/check-layers.ts",
+    "dev": "bun run scripts/dev.ts",
     "app": "turbo run dev --filter=@janela/desktop",
     "app:build": "turbo run bundle --filter=@janela/desktop",
     "daemon:build": "turbo run build --filter=@janela/janelad",

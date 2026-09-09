@@ -15,7 +15,7 @@ import { byteAt, readUint32BE, writeUint32BE } from "./bytes.ts";
  * └────────────┴─────────┴──────────────────────┘
  * ```
  *
- * `length` counts the payload only. See docs/decisions/0016-daemon-protocol.md.
+ * `length` counts the payload only.
  */
 export interface Frame {
   readonly kind: FrameKind;

@@ -9,7 +9,7 @@
  * whether the bytes travel over a Unix socket via Tauri's IPC or over a WebSocket
  * from a browser. That is the single seam that makes a web client reachable, and it
  * is why this package imports nothing platform-specific — no Tauri, no DOM, no
- * React. See docs/decisions/0023-macos-first-portable.md.
+ * React.
  */
 
 export * from "./attention-policy.ts";

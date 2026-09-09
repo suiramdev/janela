@@ -11,8 +11,6 @@
  * describes it in prose, and `.oxlintrc.json` restates the coarse side-level half
  * of it for editor feedback, but if they disagree, this file is right and the
  * others are stale.
- *
- * See docs/decisions/0022-layering-enforcement.md.
  */
 
 /** Which process a package belongs to. */
@@ -241,18 +239,18 @@ export const PACKAGES: readonly PackageSpec[] = [
 /**
  * External modules that exactly one place is allowed to import.
  *
- * Each of these is a decision with an ADR behind it, and each is a boundary that
- * erodes the moment a second importer appears. There used to be one such rule —
- * only two modules could link the terminal library — and it was enforced by
- * declaring that dependency on exactly two of them. Here every dependency resolves
- * everywhere, so each rule needs teeth of its own.
+ * Each of these is a deliberate decision, and each is a boundary that erodes the
+ * moment a second importer appears. There used to be one such rule — only two
+ * modules could link the terminal library — and it was enforced by declaring that
+ * dependency on exactly two of them. Here every dependency resolves everywhere,
+ * so each rule needs teeth of its own.
  */
 export interface GatedModule {
   /** Import specifier, or a prefix ending in `*`. */
   readonly pattern: string;
   /** Packages permitted to import it, by name. */
   readonly allowed: readonly string[];
-  /** Why, in one sentence, with the ADR that decided it. */
+  /** Why, in one sentence. */
   readonly reason: string;
 }
 
@@ -261,66 +259,66 @@ export const GATED_MODULES: readonly GatedModule[] = [
     pattern: "@xterm/headless",
     allowed: ["@janela/terminal"],
     reason:
-      "The daemon-side emulator seam. Nothing above @janela/terminal may know which library holds the grid — that is the whole cost of swapping engines later (ADR 0018).",
+      "The daemon-side emulator seam. Nothing above @janela/terminal may know which library holds the grid — that is the whole cost of swapping engines later.",
   },
   {
     pattern: "@xterm/addon-serialize",
     allowed: ["@janela/terminal"],
     reason:
-      "Serialise-for-attach is part of the TerminalEmulating seam, not a utility anyone may reach for (ADR 0018).",
+      "Serialise-for-attach is part of the TerminalEmulating seam, not a utility anyone may reach for.",
   },
   {
     pattern: "@xterm/xterm",
     allowed: ["@janela/terminal-ui"],
     reason:
-      "The client-side rendering seam. Two seams, one library family, one rule — the rule did not change when the daemon arrived, there are simply two places it applies (ADR 0018).",
+      "The client-side rendering seam. Two seams, one library family, one rule — the rule did not change when the daemon arrived, there are simply two places it applies.",
   },
   {
     pattern: "@xterm/addon-*",
     allowed: ["@janela/terminal-ui", "@janela/terminal"],
-    reason: "Terminal addons belong to whichever of the two seams owns that side (ADR 0018).",
+    reason: "Terminal addons belong to whichever of the two seams owns that side.",
   },
   {
     pattern: "bun:ffi",
     allowed: ["@janela/pty"],
     reason:
-      "The only FFI surface in the system. A second one is a second native artifact to build, sign and locate (ADR 0021).",
+      "The only FFI surface in the system. A second one is a second native artifact to build, sign and locate.",
   },
   {
     pattern: "bun:sqlite",
     allowed: ["@janela/db"],
     reason:
-      "The database is daemon-private and @janela/db is its only door. A second opener means two sources of truth (ADR 0019).",
+      "The database is daemon-private and @janela/db is its only door. A second opener means two sources of truth.",
   },
   {
     pattern: "@prisma/client",
     allowed: ["@janela/db"],
     reason:
-      "Prisma is an implementation detail of @janela/db. A generated client type in a service signature is a leaked schema (ADR 0019).",
+      "Prisma is an implementation detail of @janela/db. A generated client type in a service signature is a leaked schema.",
   },
   {
     pattern: "@prisma/driver-adapter-utils",
     allowed: ["@janela/db"],
     reason:
-      "The driver adapter's types and constants. Same door as @prisma/client: a Prisma column type or adapter error in a signature above @janela/db is a leaked schema (ADR 0019).",
+      "The driver adapter's types and constants. Same door as @prisma/client: a Prisma column type or adapter error in a signature above @janela/db is a leaked schema.",
   },
   {
     pattern: "node:child_process",
     allowed: ["@janela/support"],
     reason:
-      "One subprocess runner, taking an argument array, with no shell — so the quoting bug class does not exist. @janela/git and @janela/forge share it rather than each spawning their own (ADR 0007).",
+      "One subprocess runner, taking an argument array, with no shell — so the quoting bug class does not exist. @janela/git and @janela/forge share it rather than each spawning their own.",
   },
   {
     pattern: "node:net",
     allowed: ["@janela/daemon", "@janela/janelad"],
     reason:
-      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket (ADR 0016). `apps/daemon` binds the path and hands the bound server down, because socket activation was given up and there is no descriptor to inherit (ADR 0017, amended 2026-09-08 by #39) — `@janela/daemon` still never binds and never chooses a path.",
+      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket. `apps/daemon` binds the path and hands the bound server down, because socket activation was given up and there is no descriptor to inherit (#39, 2026-09-08) — `@janela/daemon` still never binds and never chooses a path.",
   },
   {
     pattern: "react",
     allowed: ["@janela/design", "@janela/terminal-ui", "@janela/ui", "@janela/desktop"],
     reason:
-      "Nothing in @janela/session or below may import a view layer. The daemon detects, the client decides, the app delivers (ADR 0011).",
+      "Nothing in @janela/session or below may import a view layer. The daemon detects, the client decides, the app delivers.",
   },
   {
     pattern: "react-dom",
@@ -332,13 +330,13 @@ export const GATED_MODULES: readonly GatedModule[] = [
     pattern: "@tauri-apps/*",
     allowed: ["@janela/desktop"],
     reason:
-      "Tauri is the shell, not the architecture. @janela/client stays transport-agnostic so a browser client is a new transport rather than a rewrite (ADR 0023).",
+      "Tauri is the shell, not the architecture. @janela/client stays transport-agnostic so a browser client is a new transport rather than a rewrite.",
   },
   {
     pattern: "@janela/support/process",
     allowed: ["@janela/git", "@janela/forge", "@janela/pty", "@janela/session", "@janela/janelad"],
     reason:
-      "@janela/support is isomorphic so a browser client can link it; its subprocess half is daemon-only and lives behind this subpath (ADR 0023).",
+      "@janela/support is isomorphic so a browser client can link it; its subprocess half is daemon-only and lives behind this subpath.",
   },
 ];
 

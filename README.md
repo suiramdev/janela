@@ -138,8 +138,7 @@ strictly downward, and no client module may import a daemon module — enforced 
 compiler, not by review. The app target is one Swift file; `Janela.xcodeproj` is
 generated from `project.yml` and never committed.
 
-Why a daemon, and what it costs:
-[`docs/decisions/0015-daemon-owned-sessions.md`](docs/decisions/0015-daemon-owned-sessions.md).
+Why a daemon, and what it costs: [`docs/architecture.md`](docs/architecture.md).
 
 ## Documentation
 
@@ -149,7 +148,6 @@ Why a daemon, and what it costs:
 | [`docs/product.md`](docs/product.md) | What we are building and what we refuse to build |
 | [`docs/architecture.md`](docs/architecture.md) | How it fits together and where the seams are |
 | [`docs/domain-model.md`](docs/domain-model.md) | The four nouns and the shared vocabulary |
-| [`docs/decisions/`](docs/decisions/) | ADRs — why the stack and the model are what they are |
 | [`docs/conventions.md`](docs/conventions.md) | How the code is written |
 | [`docs/testing.md`](docs/testing.md) | What we test, and what we refuse to fake |
 | [`docs/performance.md`](docs/performance.md) | Budgets and how to measure them |

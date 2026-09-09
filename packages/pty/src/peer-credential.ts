@@ -6,8 +6,8 @@ import { native, ptr, type NativePtyLibrary } from "./bindings.ts";
  * ## Why this is in the PTY package
  *
  * It has nothing to do with a pseudo-terminal, and it is here anyway: `bun:ffi` is
- * gated to this package (ADR 0021) and Bun exposes no peer-credential accessor, so
- * the alternative is a second native artifact to build, sign and locate. Without
+ * gated to this package and Bun exposes no peer-credential accessor, so the
+ * alternative is a second native artifact to build, sign and locate. Without
  * this reader `verifyPeer` refuses every peer as `credential-unavailable` and no
  * client can connect at all.
  *

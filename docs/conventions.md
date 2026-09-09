@@ -27,8 +27,7 @@ Set in `Packages/JanelaKit/Package.swift` and applied to every target.
 
 ### `swiftLanguageMode(.v6)`
 
-Strict concurrency, checked. See
-[`decisions/0003-concurrency-model.md`](decisions/0003-concurrency-model.md).
+Strict concurrency, checked.
 
 `@preconcurrency import` is permitted **only** for third-party modules that have
 not adopted Swift 6 — in practice SwiftTerm, which compiles in Swift 5 mode. Each
@@ -122,7 +121,6 @@ disclosure triangle or the log.
 missing `gh`, a logged-out `gh`, or a forge request that timed out means the app
 shows no pull-request information and says nothing at all. Rendering an optional
 feature's unavailability as an error is how a nice-to-have becomes an irritation.
-See [`decisions/0012-forge-integration.md`](decisions/0012-forge-integration.md).
 
 **A failing automation command is shown in its own terminal, not in a dialog.**
 The user gets the real output, scrollback included, which is strictly better than
@@ -185,8 +183,8 @@ documents parameters must document *all* of them, and must use plural
 `- Parameters:` when there is more than one. It also requires `- Returns:` and
 `- Throws:` where applicable. This is checked by `make lint`.
 
-Where a decision is non-obvious, link the ADR from the doc comment. That is how a
-reader gets from code to reasoning.
+Where a decision is non-obvious, say why in the doc comment, or link the document
+that owns it. That is how a reader gets from code to reasoning.
 
 ---
 

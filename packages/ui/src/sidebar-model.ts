@@ -15,8 +15,8 @@ export type SessionStatus = "attention" | "running" | "failed" | "idle";
  * One row of the sidebar, flat.
  *
  * A flat array rather than a tree, and that is the point: the shape is fixed at two
- * levels by docs/decisions/0009-projects-sessions-terminals.md, and a recursive row
- * type would quietly permit the third level that ADR forbids.
+ * levels — projects and sessions — and a recursive row type would quietly permit a
+ * third.
  */
 export type SidebarRow =
   | {

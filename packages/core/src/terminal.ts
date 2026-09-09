@@ -46,8 +46,7 @@ export interface TerminalDescriptor {
  *
  * Automation terminals are ordinary terminals with a label. They are not a hidden
  * process with a bespoke output view: everything Janela runs on the user's behalf
- * runs somewhere they can watch it, scroll it, and Ctrl-C it. See
- * docs/decisions/0014-project-automation.md.
+ * runs somewhere they can watch it, scroll it, and Ctrl-C it.
  */
 export type TerminalRole =
   /** The user asked for it. */
@@ -61,14 +60,14 @@ export type TerminalRole =
  * Note what is absent: there is no `waitingForUser` or `agentThinking`. Janela
  * does not attempt to parse agent semantics out of a byte stream. It reports what
  * the *terminal* told it (OSC 9 / OSC 777 notifications, OSC 133 prompt marks,
- * BEL) and nothing more. See docs/decisions/0006-agent-activity-signals.md.
+ * BEL) and nothing more.
  *
  * A *session's* status is derived from its terminals rather than stored. Two
  * sources of truth for the thing the sidebar is judged on would be one too many.
  *
  * This crosses the socket: the daemon computes it and pushes it, and clients
  * render what they were told rather than inferring it from what they themselves
- * did. See docs/decisions/0015-daemon-owned-sessions.md.
+ * did.
  */
 export type TerminalState =
   /**
@@ -96,7 +95,7 @@ export function isLive(state: TerminalState): boolean {
  * A terminal's size in cells.
  *
  * Cells, not pixels. Pixel metrics are a client fact and do not survive multiple
- * clients on different displays — see docs/decisions/0018-terminal-engine.md.
+ * clients on different displays.
  */
 export interface GridSize {
   readonly columns: number;

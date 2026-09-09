@@ -1,18 +1,12 @@
 # The survival proof
 
 The one thing this repository is betting on: **a daemon owns the terminals, and the
-app is only a renderer.** Everything in [ADR 0015](decisions/0015-daemon-owned-sessions.md)
-follows from it, and until it is exercised end to end it is an assumption.
+app is only a renderer.** Everything else follows from it, and until it is
+exercised end to end it is an assumption.
 
 This is the procedure that exercises it, the verdict of the last run, and the
 defects that run found. Re-run it whenever the daemon's lifecycle, the handshake,
 the frame loop or the transport changes — and when it fails, believe it.
-
-Related: [ADR 0015](decisions/0015-daemon-owned-sessions.md) (the daemon owns
-sessions), [ADR 0016](decisions/0016-daemon-protocol.md) (the protocol and the
-minimum-viewport rule), [ADR 0017](decisions/0017-daemon-lifecycle.md) (launchd,
-idle exit, version skew), [ADR 0020](decisions/0020-bun-daemon-runtime.md) (the
-compiled sidecar).
 
 ---
 
@@ -52,8 +46,8 @@ through `0811` live.
 ### The largest unknown, now answered
 
 **`SMAppService` accepts an ad-hoc-signed bundle.** The previous handoff called
-this "the single largest unknown", because a refusal would have made ADR 0017's
-lifecycle unprovable outside a Developer ID build. It does not refuse:
+this "the single largest unknown", because a refusal would have made the daemon's
+launchd lifecycle unprovable outside a Developer ID build. It does not refuse:
 `register_launch_agent` returned `registered` (not `requires-approval`, so no
 approval prompt), `sfltool dumpbtm` shows the agent as
 `[enabled, allowed, notified]` under parent `sh.janela.Janela`, and macOS raised
@@ -655,11 +649,11 @@ if status != SMAppServiceStatus::NotRegistered {
 
 macOS reports an agent that has **never been registered** as `NotFound`, not
 `NotRegistered`. So on every real install the guard fired, `registerAndReturnError`
-was never called, no Login Item was ever created — and because ADR 0017 has no
-`RunAtLoad` and starts the daemon only via `launchctl kickstart`, there was no
-service to kickstart. The app logged `launch agent {"status":"not-found"}` and then
-`daemon-unavailable` forever. **A shipped Janela could not start its daemon at
-all**, from `/Applications` or from the build directory.
+was never called, no Login Item was ever created — and because the bundled plist
+has no `RunAtLoad` and the daemon starts only via `launchctl kickstart`, there was
+no service to kickstart. The app logged `launch agent {"status":"not-found"}` and
+then `daemon-unavailable` forever. **A shipped Janela could not start its daemon
+at all**, from `/Applications` or from the build directory.
 
 Independent confirmation, before any code was changed —
 `backgroundtaskmanagementd`:
@@ -748,8 +742,8 @@ surface's **Stop and Unregister** (which asks for confirmation first — observe
 Items entry behind. Anyone re-running this procedure must budget for pressing that
 button by hand.
 
-**Reboot.** ADR 0015 is explicit that sessions surviving a *reboot* is a larger
-promise than it makes, and nothing here tests one.
+**Reboot.** Sessions surviving a *reboot* is a larger promise than Janela makes,
+and nothing here tests one.
 
 **Deltas.** `repaintSince` is still a placeholder that answers any revision
 mismatch with a whole grid, so every repaint observed here was a full one. Nothing

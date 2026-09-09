@@ -11,14 +11,13 @@
 //! payload. The constants below are mirrored from `packages/protocol/src/frame.ts`
 //! by hand; they are *framing* constants and carry no protocol version, so the
 //! handshake — and every version number in it — stays in `@janela/client`.
-//! (docs/decisions/0024, ADR 0016.)
 //!
 //! ## Reconnection lives in `@janela/client`, not here
 //!
 //! `bridge_connect` makes exactly one attempt and never retries: #28 landed the
 //! retry loop on the client, which counts the attempt, applies the backoff and
 //! re-subscribes. Two retry loops in two languages is one too many. What survives
-//! of ADR 0024's bridge rule is the other half: a connection that dies ends its
+//! of the bridge rule is the other half: a connection that dies ends its
 //! `bridge_receive` stream, which is how `incoming()` finishes and how the client
 //! notices.
 
@@ -303,7 +302,7 @@ pub async fn bridge_connect(state: State<'_, BridgeState>) -> Result<u32, String
         Ok(stream) => stream,
         Err(_) => {
             // No `RunAtLoad`, so nothing runs until a client asks: a user who
-            // never opens Janela never has a process (ADR 0017, amended).
+            // never opens Janela never has a process.
             crate::agent::kickstart(&state.last_kickstart);
             return Err("daemon-unavailable".to_string());
         }

@@ -271,7 +271,7 @@ describe("spawning and reading", () => {
 
   test("arbitrary bytes survive a round trip through the tty", async () => {
     // Raw mode is the point: no echo and no ONLCR, so this asserts the byte
-    // fidelity that disqualified a string-only PTY package (ADR 0021).
+    // fidelity that disqualified a string-only PTY package.
     const terminal = shell('stty raw -echo; printf "JANELA_RAW_READY\\n"; exec cat');
     await drainUntil(terminal, /JANELA_RAW_READY/);
 

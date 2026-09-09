@@ -73,8 +73,8 @@ Every concept a user must learn is a tax. Janela's concept budget:
 | **Terminal** | A running program. Unavoidable. |
 | **Launch profile** | Makes "start Claude Code here" a keystroke. |
 
-That is four. Adding a fifth requires deleting one or writing an ADR that argues
-why the tax is worth it.
+That is four. Adding a fifth requires deleting one, or an argument written down
+here for why the tax is worth it.
 
 Note what the hierarchy is *not*: arbitrary nesting. It is exactly two levels deep,
 always, and the second level is flat. Sessions do not contain sessions, projects do
@@ -102,14 +102,12 @@ almost certainly no. The value is in *arrangement*, not in *interpretation*.
 
 The sharp edge of this principle: Janela reports what the **terminal** told it —
 OSC 9 notifications, OSC 133 prompt marks, the bell — and never guesses agent
-semantics from a byte stream. See
-[`decisions/0006-agent-activity-signals.md`](decisions/0006-agent-activity-signals.md).
+semantics from a byte stream.
 
 The same principle decides the integrations. Forge support shells out to the user's
-own `gh` and `glab`, already authenticated, rather than asking for a token
-([ADR 0012](decisions/0012-forge-integration.md)). Automation commands run in a real
-terminal you can watch, rather than in a hidden process whose output we invent a UI
-for ([ADR 0014](decisions/0014-project-automation.md)).
+own `gh` and `glab`, already authenticated, rather than asking for a token.
+Automation commands run in a real terminal you can watch, rather than in a
+hidden process whose output we invent a UI for.
 
 ### 3. Switching is the feature
 
@@ -129,8 +127,8 @@ That means:
   wants attention, which branch a session is on — visible without opening it.
 
 This is also why splits and tabs exist inside a session rather than at the top
-level ([ADR 0010](decisions/0010-terminal-layout.md)): an agent, its dev server and
-a scratch shell are one *place*, and they should switch as one.
+level: an agent, its dev server and a scratch shell are one *place*, and they
+should switch as one.
 
 ### 4. Native, and it should feel like it
 
@@ -139,13 +137,12 @@ users a small tax on every interaction. Sheets, the standard sidebar, real menu
 commands, proper keyboard navigation, Notification Centre, Increase Contrast,
 Reduce Motion, dark mode via semantic colours.
 
-**What this costs now, stated honestly.** The client renders in a WebView
-([ADR 0023](decisions/0023-macos-first-portable.md),
-[ADR 0024](decisions/0024-tauri-client-shell.md)), so this principle is a
-requirement we meet by effort rather than one the framework meets for us. The chrome
-macOS owns is still genuinely native — the menu bar, notifications, file dialogs, the
-window — and `prefers-color-scheme`, `prefers-contrast` and `prefers-reduced-motion`
-are the same three settings under different names.
+**What this costs now, stated honestly.** The client renders in a WebView, so
+this principle is a requirement we meet by effort rather than one the framework
+meets for us. The chrome macOS owns is still genuinely native — the menu bar,
+notifications, file dialogs, the window — and `prefers-color-scheme`,
+`prefers-contrast` and `prefers-reduced-motion` are the same three settings
+under different names.
 
 What is genuinely lost is AppKit's controls, and with them the last few percent:
 scrollbar behaviour, text-field affordances, sheet physics, and the accumulated
@@ -171,8 +168,7 @@ would miss on every run would make the whole document decorative. Everything els
 unchanged, which is not luck: the daemon already took the expensive work off the
 launch path and already absorbs the floods, so what renders does not affect them.
 Measured, the terminal path has headroom — 133 MB/s off the PTY against a 100 MB/s
-budget. [ADR 0023](decisions/0023-macos-first-portable.md) has the full before-and-
-after table and the reasoning for each row.
+budget.
 
 ### 6. Laziness is a feature, and so is leaving
 
@@ -186,8 +182,7 @@ This is what makes the sidebar allowed to be long, and it is why
 The same property applies at the other end. **Closing the window costs nothing
 either.** Your agent keeps working, your dev server keeps serving, and reopening
 puts you back where you were, scrollback intact. A background daemon owns the
-processes, so quitting Janela is not a decision about your work — see
-[ADR 0015](decisions/0015-daemon-owned-sessions.md).
+processes, so quitting Janela is not a decision about your work.
 
 The honest limit: this survives the app, not the machine. Logging out or rebooting
 ends your terminals, and sessions come back idle.
@@ -207,32 +202,31 @@ Deleting a project is the same question asked once per session it owns.
 ## What v1 includes
 
 Committed scope. Each has a design section in
-[`domain-model.md`](domain-model.md) and, where there was a real technology choice,
-an ADR.
+[`domain-model.md`](domain-model.md).
 
-| Capability | Shape | Detail |
-| --- | --- | --- |
-| **Projects and sessions** | Sidebar with collapsible projects, sessions as buttons, standalone sessions above them | [ADR 0009](decisions/0009-projects-sessions-terminals.md) |
-| **Worktree-backed sessions** | "New branch" creates the worktree; removal explains what it destroys | [ADR 0007](decisions/0007-git-integration.md) |
-| **Splits and tabs** | Terminals arranged in a per-session layout tree, persisted | [ADR 0010](decisions/0010-terminal-layout.md) |
-| **Notifications** | Terminal-signalled attention, badged in the sidebar and delivered to Notification Centre when you are elsewhere | [ADR 0011](decisions/0011-notifications.md) |
-| **GitHub / GitLab** | Branch and PR/MR state on a session, "new session from PR", via the user's `gh`/`glab` | [ADR 0012](decisions/0012-forge-integration.md) |
-| **`.worktreeinclude`** | Repo-declared list of ignored files to carry into a new worktree — `.env`, `node_modules`, build caches | [ADR 0013](decisions/0013-worktreeinclude.md) |
-| **Project automation** | Commands on session start, session teardown, and worktree creation | [ADR 0014](decisions/0014-project-automation.md) |
-| **Durable sessions** | A daemon owns the processes, so quitting the app does not stop them | [ADR 0015](decisions/0015-daemon-owned-sessions.md) |
+| Capability | Shape |
+| --- | --- |
+| **Projects and sessions** | Sidebar with collapsible projects, sessions as buttons, standalone sessions above them |
+| **Worktree-backed sessions** | "New branch" creates the worktree; removal explains what it destroys |
+| **Splits and tabs** | Terminals arranged in a per-session layout tree, persisted |
+| **Notifications** | Terminal-signalled attention, badged in the sidebar and delivered to Notification Centre when you are elsewhere |
+| **GitHub / GitLab** | Branch and PR/MR state on a session, "new session from PR", via the user's `gh`/`glab` |
+| **`.worktreeinclude`** | Repo-declared list of ignored files to carry into a new worktree — `.env`, `node_modules`, build caches |
+| **Project automation** | Commands on session start, session teardown, and worktree creation |
+| **Durable sessions** | A daemon owns the processes, so quitting the app does not stop them |
 
 The last one is also the foundation for two things that are **not** v1 scope, listed
 here so their absence reads as a plan rather than an oversight: a `janela` CLI — so
 an agent can list sessions, read what is on a terminal's screen, or start work — and
 connecting to your own Mac from a phone. Both are clients of the same protocol, and
 neither needs an architecture change to add, which is precisely why the daemon
-arrived now rather than later. See [ADR 0016](decisions/0016-daemon-protocol.md).
+arrived now rather than later.
 
 Since the client became a WebView, the second one is closer than it was: the phone
 client is a browser page that supplies a different transport, sharing the mirror, the
 attention policy and the terminal surface with the desktop app rather than
-reimplementing them. Still not v1, and still nothing built for it beyond not closing
-the door — [ADR 0023](decisions/0023-macos-first-portable.md).
+reimplementing them. Still not v1, and still nothing built for it beyond not
+closing the door.
 
 ---
 
@@ -244,8 +238,7 @@ Listed so they can be pointed at, not re-litigated.
 - **Not a git client.** Worktree plumbing and read-only status. No staging UI, no
   commit UI, no rebase assistant, no history browser.
 - **Not a forge client.** We show the state of the branch a session is on and can
-  start a session from a PR. No review UI, no comment threads, no merge button. See
-  [ADR 0012](decisions/0012-forge-integration.md).
+  start a session from a PR. No review UI, no comment threads, no merge button.
 - **Not an agent runtime.** Janela does not schedule agents, retry them, chain
   them, or read their output for meaning.
 - **Not a multiplexer replacement.** We took exactly one thing from tmux — sessions
@@ -265,8 +258,8 @@ Listed so they can be pointed at, not re-litigated.
   that door open and refuse changes that would close it. Shipping Linux or Windows
   would be a testing and support commitment nobody has asked for, and it is the
   fastest route to "runs everywhere, feels like nowhere"; that answer is still no,
-  and changing it needs its own ADR. See
-  [ADR 0023](decisions/0023-macos-first-portable.md).
+  and reversing it is an architecture decision to write down in
+  [`architecture.md`](architecture.md) first, not a feature request.
 - **Not collaborative.** No accounts, no sync, no sharing. A future remote client
   connects *you* to *your own Mac*; it does not connect you to anyone else, and
   nothing about it implies a server we operate.
@@ -274,8 +267,7 @@ Listed so they can be pointed at, not re-litigated.
   process, and remote access — when it exists — is a connection to your hardware,
   not an upload to ours.
 - **Not a service you leave running for its own sake.** The daemon starts when a
-  client first connects and exits when it has nothing left to hold
-  ([ADR 0017](decisions/0017-daemon-lifecycle.md)).
+  client first connects and exits when it has nothing left to hold.
 - **Not a plugin platform.** Extensibility is the fastest route to the complexity
   this app exists to avoid.
 - **No telemetry.** The app does not phone home.

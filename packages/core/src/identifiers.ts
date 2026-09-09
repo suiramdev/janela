@@ -78,10 +78,10 @@ export type AbsolutePath = string & { readonly [brand]: "AbsolutePath" };
  * Throws when `raw` is not absolute.
  *
  * A leading `/` is the whole rule, and no `node:path`: this module is shared with
- * the client bundle, where that import does not belong, and Janela is macOS-first
- * (docs/decisions/0023-macos-first-portable.md). Nothing is normalised — a path
- * that came from git or from `execve` is already the path the user's tools see,
- * and rewriting it would break the equality comparisons the sidebar depends on.
+ * the client bundle, where that import does not belong, and Janela is macOS-first.
+ * Nothing is normalised — a path that came from git or from `execve` is already the
+ * path the user's tools see, and rewriting it would break the equality comparisons
+ * the sidebar depends on.
  */
 export function absolutePath(raw: string): AbsolutePath {
   if (!raw.startsWith("/")) throw new Error(`not an absolute path: ${raw}`);
@@ -94,7 +94,7 @@ export function absolutePath(raw: string): AbsolutePath {
  * Not a `Date`. Every value in this package crosses a socket as JSON, and a
  * `Date` requires a revival pass on the far side that one forgotten call site
  * turns into a string masquerading as a Date. A string is what the wire carries
- * anyway, so it is what the domain holds. See docs/decisions/0016-daemon-protocol.md.
+ * anyway, so it is what the domain holds.
  */
 export type Instant = string & { readonly [brand]: "Instant" };
 

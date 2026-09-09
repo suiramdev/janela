@@ -251,7 +251,7 @@ describe("migrate", () => {
     });
   });
 
-  test("the default path is the one ADR 0005 chose", () => {
+  test("the default path is the daemon-private store in Application Support", () => {
     expect(defaultDatabasePath()).toEndWith(
       "/Library/Application Support/sh.janela.Janela/janela.sqlite",
     );

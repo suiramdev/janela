@@ -31,9 +31,6 @@
  *    large coalesced writes is what makes ≥100 MB/s reachable at all. Measured:
  *    8 KB writes sustain ~6 MB/s into the emulator, 1 MB writes sustain ~140 MB/s.
  *    See docs/performance.md § Terminal throughput.
- *
- * @see docs/decisions/0021-pty-native-layer.md
- * @see docs/decisions/0003-concurrency-model.md
  */
 
 /**

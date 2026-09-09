@@ -3,7 +3,7 @@
  *
  * Thin on purpose: what a message *means* belongs in `@janela/session`. This is the
  * only package that knows a socket exists: it never binds and never chooses a path,
- * so `apps/daemon` names `node:net` too, for the bind alone (ADR 0017, amended).
+ * so `apps/daemon` names `node:net` too, for the bind alone.
  */
 
 export * from "./dispatch.ts";

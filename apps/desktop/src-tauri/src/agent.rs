@@ -4,7 +4,7 @@
 //!
 //! Registering makes launchd own the daemon's lifecycle, so terminals survive the
 //! app quitting. It starts nothing: the plist has no `RunAtLoad`, and the app
-//! never starts the daemon on the launch path (ADR 0017, amended 2026-09-08).
+//! never starts the daemon on the launch path.
 //!
 //! `"requires-approval"` is a **supported state, not an error**: the app runs in a
 //! degraded mode — terminals that die when it quits — and says so plainly with a

@@ -14,8 +14,8 @@
   `~/.janela/run/janelad.sock` itself in a 0700 directory it owns
   (`packages/daemon/src/endpoint.ts`). A launchd-created socket would publish its path
   only into the GUI login session's launchd environment, which a CLI over ssh cannot
-  read, and would tie the address to launchd — both of which ADR 0023 forbids.
-  ADR 0017, amended 2026-09-08 by #39.
+  read, and would tie the address to launchd — both of which a portable client rules
+  out. Socket activation was given up in #39, 2026-09-08.
 
   No `RunAtLoad` either: registering must not start a daemon nobody asked for. A
   client that fails to connect starts it with
@@ -39,7 +39,7 @@
   <key>BundleProgram</key>
   <string>Contents/MacOS/janelad</string>
   <!-- Crash -> launchd restarts it. Deliberate exit (idle, or the user stopping the
-       background service) -> it stays down. ADR 0017. -->
+       background service) -> it stays down. -->
   <key>KeepAlive</key>
   <dict>
     <key>SuccessfulExit</key>

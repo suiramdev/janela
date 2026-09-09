@@ -10,10 +10,10 @@ import type { Frame } from "./frame.ts";
  * A WebSocket implementation later makes a browser client a transport rather than
  * a rewrite.
  *
- * This is deliberately the *only* speculative generality in the protocol layer —
- * see docs/decisions/0016-daemon-protocol.md, which is honest about that being a
- * cost rather than pretending it is free, and
- * docs/decisions/0023-macos-first-portable.md for what it buys.
+ * This is deliberately the *only* speculative generality in the protocol layer. It
+ * is a cost rather than a free option — every implementation pays for the
+ * indirection — and what it buys is a client that is not on this machine, reached
+ * without redesigning the protocol.
  */
 export interface MessageTransport {
   /**

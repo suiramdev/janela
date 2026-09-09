@@ -1,4 +1,4 @@
-# Janela's Tauri shell. See docs/decisions/0023-macos-first-portable.md.
+# Janela's Tauri shell.
 #
 # Thin by rule: the window, the native menu, notifications, file dialogs, the
 # sidecar lifecycle and the socket bridge. Nothing here reads a protocol frame,

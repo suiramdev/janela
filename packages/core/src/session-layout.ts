@@ -5,7 +5,7 @@ import type { TerminalID } from "./identifiers.ts";
  *
  * This is per-session *state*, persisted with the session — not a saved object
  * the user names and manages. "The layout is wherever you left it" only works if
- * where you left it is written down. See docs/decisions/0010-terminal-layout.md.
+ * where you left it is written down.
  */
 export interface SessionLayout {
   /**
@@ -117,8 +117,8 @@ export function paneDepth(pane: Pane): number {
   return 1 + Math.max(paneDepth(pane.first), paneDepth(pane.second));
 }
 
-// The invariants this algebra maintains are the four rules in
-// docs/decisions/0010-terminal-layout.md, quoted in the type doc comments above.
+// The invariants this algebra maintains are the four layout rules quoted in the
+// type doc comments above.
 
 /** One rule for construction, resize and repair. A non-finite fraction is a half. */
 function clampFraction(fraction: number): number {
@@ -227,7 +227,7 @@ function exceedsDepth(pane: Pane): boolean {
  *
  * Recursion here is bounded by MAXIMUM_PANE_DEPTH frames by construction, which is
  * why every other repair step may be recursive: they all run on the result. The
- * terminals lost from the tree still exist in `session.terminals`; the ADR says
+ * terminals lost from the tree still exist in `session.terminals`, because
  * decoding truncates rather than fails.
  */
 function truncateDepth(pane: Pane, level: number): Pane {

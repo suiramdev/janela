@@ -347,8 +347,8 @@ describe("createSession", () => {
         // The whole contract in one assertion. `t=` is how many terminals the
         // announcement carried, which is what proves the terminal came last — and
         // `publish[t=0]` first is what proves the session was selectable before any
-        // of it. ADR 0013 and docs/domain-model.md § AutomationCommand fix this
-        // order because scripts depend on their `.env` already being present.
+        // of it. docs/domain-model.md § AutomationCommand fixes this order because
+        // scripts depend on their `.env` already being present.
         expect(fixture.events.entries).toEqual([
           "publish[t=0]",
           "worktree.create",

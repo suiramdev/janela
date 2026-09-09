@@ -6,14 +6,13 @@
  * The policy that decides whether a signal interrupts anybody is
  * `@janela/client`'s, and it is unit-tested with no notification centre in sight.
  * This is the other half: an app-level capability, behind an injected seam so it
- * is still testable without a Tauri runtime. See ADR 0011 and ADR 0023.
+ * is still testable without a Tauri runtime.
  *
  * ## A real notification, not a toast
  *
  * Delivery goes through `@tauri-apps/plugin-notification`, which posts a genuine
  * system notification. An in-page imitation would live inside a window the user is
- * by definition not looking at, which is the one situation this feature exists for
- * (ADR 0023 § what stays native).
+ * by definition not looking at, which is the one situation this feature exists for.
  *
  * ## What the plugin can and cannot do on macOS today
  *
@@ -117,8 +116,7 @@ export interface NotificationDeliveryOptions {
  *
  * Nothing happens until the first delivery: no permission is asked for, no
  * listener is registered, no invoke is made. A user who never leaves the app never
- * sees a prompt, and launch stays off the critical path (ADR 0011, non-negotiable
- * 5).
+ * sees a prompt, and launch stays off the critical path (non-negotiable 5).
  */
 export function createNotificationDelivery(
   options: NotificationDeliveryOptions,
@@ -276,7 +274,7 @@ export function createNotificationDelivery(
 /**
  * What the user reads.
  *
- * ADR 0011 puts the session name in the title and the terminal title in the
+ * The design puts the session name in the title and the terminal title in the
  * subtitle. The plugin's desktop backend has no subtitle, so both routing facts
  * share the title and the body stays exactly what the program supplied — which is
  * also the cleaner privacy line: the body is user content and nothing else.

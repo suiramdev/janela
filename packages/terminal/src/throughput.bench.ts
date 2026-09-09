@@ -303,7 +303,7 @@ for (const result of measurements) {
 // asserted: an interleaved A/B — placeholder, encoder, placeholder, encoder, in one
 // machine window — measured the *same* placeholder code at 121.9 then 166.8 MB/s at
 // 80×24 and 71.6 then 194.6 at 120×40, so it failed its own gate on one pass with no
-// code change at all. That budget was measured off the PTY (ADR 0023); asserting it
+// code change at all. That budget was measured off the PTY; asserting it
 // against the emulator's parse loop measures whatever else the machine is doing. The
 // wire row is deterministic — byte-identical across runs — and it is the number #32
 // exists to move.

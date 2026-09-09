@@ -23,7 +23,7 @@ export const MAIN_EXECUTABLE_NAME = "janela";
 /** The sidecar's name once Tauri strips the target triple from `binaries/janelad-<triple>`. */
 export const SIDECAR_NAME = "janelad";
 
-/** The LaunchAgent's label, and therefore its `launchctl` service name (ADR 0017). */
+/** The LaunchAgent's label, and therefore its `launchctl` service name. */
 export const LAUNCH_AGENT_LABEL = "sh.janela.janelad";
 
 export const MAIN_EXECUTABLE = `Contents/MacOS/${MAIN_EXECUTABLE_NAME}`;
@@ -37,7 +37,7 @@ export const MAIN_EXECUTABLE = `Contents/MacOS/${MAIN_EXECUTABLE_NAME}`;
 export const SIDECAR_BUNDLE_PROGRAM = `Contents/MacOS/${SIDECAR_NAME}`;
 
 /**
- * Where a sidecar would land if someone "fixed" the layout to match the older ADRs.
+ * Where a sidecar would land if someone "fixed" the layout to put it under `Resources`.
  * A Mach-O there is not signed by the bundler, so it must never exist.
  */
 export const MISPLACED_SIDECAR = `Contents/Resources/${SIDECAR_NAME}`;
@@ -53,15 +53,15 @@ export const REQUIRED_ENTITLEMENTS = [
   "com.apple.security.cs.disable-library-validation",
 ] as const;
 
-/** Its absence *is* "App Sandbox off" (ADR 0008), so the absence is what we assert. */
+/** Its absence *is* "App Sandbox off", so the absence is what we assert. */
 export const FORBIDDEN_ENTITLEMENTS = ["com.apple.security.app-sandbox"] as const;
 
 /**
  * Top-level plist keys that would undo a decision.
  *
- * - `Sockets`: socket activation was dropped (ADR 0017, amended 2026-09-08 by #39).
- *   The daemon binds `~/.janela/run/janelad.sock` itself; a launchd-owned socket
- *   publishes its path only into the GUI login session.
+ * - `Sockets`: socket activation was dropped (#39, 2026-09-08). The daemon binds
+ *   `~/.janela/run/janelad.sock` itself; a launchd-owned socket publishes its path
+ *   only into the GUI login session.
  * - `Program`, `ProgramArguments`: an absolute path to a binary inside the bundle,
  *   which is user-specific. `BundleProgram` is the relative form SMAppService wants.
  * - `RunAtLoad`: registering the agent must not start a daemon nobody asked for.

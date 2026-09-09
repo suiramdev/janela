@@ -2,7 +2,7 @@
  * @janela/design's tokens, as CSS custom properties. The names are the `COLOR`
  * values in packages/design/src/tokens.ts; `styles.test.ts` pins this file to
  * them. Four appearances, one definition each — no component branches on
- * appearance (docs/decisions/0023-macos-first-portable.md).
+ * appearance.
  *
  * Values are the macOS system colours (orange, green, red) and their Increase
  * Contrast variants, so a badge here matches the one Notification Centre shows.

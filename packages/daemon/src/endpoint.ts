@@ -16,8 +16,7 @@ import { UserFacingError, type Logger } from "@janela/support";
  *
  * This is why the socket does not live beside the database in Application Support:
  * that path is already 73 bytes for a 15-character home directory and grows with
- * the username, which leaves too little headroom. See
- * docs/decisions/0016-daemon-protocol.md.
+ * the username, which leaves too little headroom.
  */
 export const MAXIMUM_SOCKET_PATH_LENGTH = 104;
 
@@ -176,8 +175,8 @@ export interface PeerCredential {
  *
  * ## Where the `getsockopt` lives
  *
- * `bun:ffi` is gated to `@janela/pty` (docs/decisions/0021) and Bun 1.3 exposes no
- * peer-credential accessor, so the call is one more export on the PTY cdylib:
+ * `bun:ffi` is gated to `@janela/pty` and Bun 1.3 exposes no peer-credential
+ * accessor, so the call is one more export on the PTY cdylib:
  *
  *   `jpty_peer_credential(fd: c_int, out: *mut u8, len: usize, out_pid: *mut i32) -> isize`
  *
@@ -218,7 +217,7 @@ export type PeerVerdict =
  *
  * This is not an escalation boundary — a process running as the user could already
  * run anything as the user. It is the boundary that keeps a *different* user on a
- * shared Mac out. Same posture as tmux; see docs/decisions/0016-daemon-protocol.md.
+ * shared Mac out. Same posture as tmux.
  */
 export function isAuthorized(credential: PeerCredential, ownUid: number): boolean {
   return credential.uid === ownUid;

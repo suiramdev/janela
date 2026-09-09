@@ -89,11 +89,11 @@ worktree add` either works against a real repository or it does not, and a mock
 would only assert that we call the function we think we call.
 
 The same applies to **`.worktreeinclude`**, and more so. Its correctness *is*
-git's pattern matching ([ADR 0013](decisions/0013-worktreeinclude.md)), so a test
-that fakes the matcher tests nothing. Write a real `.gitignore`, a real
-`.worktreeinclude`, real ignored files, create a real worktree, and assert on what
-landed in it — including what did **not**: an ignored-but-unlisted directory, an
-untracked-but-unlisted file, and `.git` itself.
+git's pattern matching, so a test that fakes the matcher tests nothing. Write a
+real `.gitignore`, a real `.worktreeinclude`, real ignored files, create a real
+worktree, and assert on what landed in it — including what did **not**: an
+ignored-but-unlisted directory, an untracked-but-unlisted file, and `.git`
+itself.
 
 The fixture is hermetic — `GIT_CONFIG_GLOBAL=/dev/null`,
 `GIT_CONFIG_SYSTEM=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `commit.gpgsign=false`, a
@@ -118,11 +118,10 @@ real clients over it. A fake transport would test our fake, and every interestin
 here is a real-socket bug: partial reads, a frame split across two `recv` calls, a
 peer that vanishes mid-frame, a length prefix that lies.
 
-Mind the path limit. `sun_path` is 104 bytes
-([ADR 0016](decisions/0016-daemon-protocol.md)) and a temp directory plus a test name
-gets close, so `TemporaryDirectory.socketPath(_:)` exists to keep them short. A test
-that builds its own socket path will pass for you and fail for someone with a longer
-home directory.
+Mind the path limit. `sun_path` is 104 bytes and a temp directory plus a test
+name gets close, so `TemporaryDirectory.socketPath(_:)` exists to keep them
+short. A test that builds its own socket path will pass for you and fail for
+someone with a longer home directory.
 
 ### We do **not** fake the emulator when testing the repaint encoder
 
@@ -148,10 +147,10 @@ tests is the orchestration logic, not git. Same for clocks.
 Four collaborators are fakes **by design**, because the thing under test is a
 decision rather than a subprocess:
 
-- **`AttentionDelivering`.** A recording fake, so every rule in
-  [ADR 0011](decisions/0011-notifications.md) is a test: no delivery for the
-  focused terminal, no delivery while frontmost, one delivery for four bells in
-  5 s. This is the whole reason policy and delivery were separated.
+- **`AttentionDelivering`.** A recording fake, so every attention rule is a test:
+  no delivery for the focused terminal, no delivery while frontmost, one delivery
+  for four bells in 5 s. This is the whole reason policy and delivery were
+  separated.
 - **`ForgeServing`.** Returning canned JSON, plus the failure cases that matter
   more than the success one: binary missing, logged out, malformed output,
   timeout. Each must render as absence, never as an error the user sees.
@@ -183,7 +182,7 @@ worktrees deletable, they must consciously delete a test that says why not.
 ### Layout algebra
 
 `SessionLayout` is the one piece of pure logic with real complexity, and every
-constraint in [ADR 0010](decisions/0010-terminal-layout.md) is a test:
+constraint it enforces is a test:
 
 - splitting a pane keeps every existing terminal id present, exactly once
 - closing a terminal promotes its sibling; closing the last one in a tab closes the
@@ -208,8 +207,8 @@ Every migration needs a test. Two kinds:
    deletion.
 
 Never edit a shipped migration. Add a new one and a new test. (`v1-initial` was
-rewritten once, before release, when the domain model changed — see
-[ADR 0005](decisions/0005-persistence.md) § Revisit when. That exception is spent.)
+rewritten once, before release, when the domain model changed. That exception is
+spent.)
 
 ### Concurrency and resource ownership
 

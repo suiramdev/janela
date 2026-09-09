@@ -18,7 +18,7 @@
  * runs `--foreground`; a client writes through the Tauri log plugin, and a future
  * browser client to the console — which is why the sink is injected rather than
  * chosen here. This module stays isomorphic so `@janela/support` can link into a
- * WebView. See docs/decisions/0023-macos-first-portable.md.
+ * WebView.
  */
 
 export type LogLevel = "debug" | "info" | "notice" | "warning" | "error";

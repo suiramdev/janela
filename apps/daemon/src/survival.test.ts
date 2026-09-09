@@ -1,8 +1,8 @@
 /**
  * The survival proof (#31), across two real processes.
  *
- * Every other test in this repository proves a piece. This one proves the bet in
- * ADR 0015: that a daemon can own terminals and a client can be nothing but a
+ * Every other test in this repository proves a piece. This one proves the central
+ * bet: that a daemon can own terminals and a client can be nothing but a
  * renderer. It is the only test that runs the **compiled sidecar** — the artifact
  * `apps/desktop/scripts/sidecar.ts` puts in the bundle — as a separate process,
  * from a directory containing nothing but the binary, and talks to it over a real
@@ -730,9 +730,9 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       );
       const history = await snapshot(arriving, terminalID, true);
 
-      // "Attach is a screen, not a history" (ADR 0015): sixty lines through a
-      // 24-row viewport means the repaint carries the tail and the first line
-      // exists only in the scrollback. This is exactly why step 4 of the
+      // "Attach is a screen, not a history": sixty lines through a 24-row
+      // viewport means the repaint carries the tail and the first line exists
+      // only in the scrollback. This is exactly why step 4 of the
       // procedure proves detached progress with `snapshotText` and not with a
       // repaint — and why serialising 10 000 lines on every attach would be the
       // wrong fix if someone ever "improves" this.

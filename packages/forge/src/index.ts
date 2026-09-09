@@ -4,8 +4,7 @@ import type { Instant, Forge, Project, Session } from "@janela/core";
  * `@janela/forge` — layer 3, daemon side.
  *
  * GitHub and GitLab state, read through the user's own `gh` and `glab`. The
- * interfaces below are the contract; the decisions behind them are
- * docs/decisions/0012-forge-integration.md.
+ * interfaces below are the contract.
  *
  * Three properties are load-bearing and none of them is about GitHub:
  *

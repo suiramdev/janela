@@ -25,7 +25,7 @@ export type RequestID = number & { readonly __brand: "RequestID" };
  * Note what is *not* here: nothing lets a client read or write the database, and
  * nothing lets it start a process directly. Every capability is expressed as an
  * intent the daemon validates. If the CLI cannot do it through this union, neither
- * can the app — see docs/decisions/0015-daemon-owned-sessions.md § Rules.
+ * can the app.
  */
 export type ClientMessage =
   /** Always first. Anything else before it is a protocol violation. */
@@ -77,13 +77,13 @@ export type ClientMessage =
   // ---- Terminals
   /**
    * Attach to a terminal's output. `viewport` participates in the size
-   * negotiation described in docs/decisions/0016-daemon-protocol.md.
+   * negotiation between the clients watching a terminal.
    *
    * Absent, the attachment is input and scope only: the client may type and is
    * subscribed to the terminal, but receives no repaints and takes no part in
-   * size negotiation. That is the CLI's reading path — ADR 0016, "a client
-   * attaching with no viewport does not participate". Participation is chosen
-   * here; attach again with a viewport to change it.
+   * size negotiation. That is the CLI's reading path — a client attaching with no
+   * viewport does not participate. Participation is chosen here; attach again with
+   * a viewport to change it.
    */
   | {
       readonly type: "attach";
@@ -168,8 +168,8 @@ export type ClientMessage =
    *
    * Stops the process when it is live, drops the descriptor and collapses the
    * layout with `closeTerminal`. Closing the last terminal of a session leaves
-   * one fresh idle shell behind: a session never has zero terminals
-   * (docs/decisions/0010-terminal-layout.md). Reply is `acknowledged`.
+   * one fresh idle shell behind: a session never has zero terminals. Reply is
+   * `acknowledged`.
    */
   | {
       readonly type: "removeTerminal";
@@ -201,7 +201,7 @@ export type DaemonMessage =
   | { readonly type: "state"; readonly update: StateUpdate }
   /**
    * A terminal wants attention. A fact, not a decision — policy lives in the
-   * client. See docs/decisions/0011-notifications.md.
+   * client.
    */
   | { readonly type: "attention"; readonly signal: AttentionSignal }
   | {

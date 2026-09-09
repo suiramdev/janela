@@ -15,11 +15,11 @@
 
 ## Decisions
 
-- [ ] This changes an architectural decision → ADR added or superseded in `docs/decisions/`
+- [ ] This changes an architectural decision → the reason is written down in `docs/architecture.md`
 - [ ] This adds a user-visible concept → justified against `docs/product.md` § Non-goals
 - [ ] This touches a documented budget → numbers below, and `docs/performance.md` updated
 - [ ] This adds a file the user writes, or anything that executes on their behalf
-      → ADR, and an explicit answer on the trust question (`0013` vs `0014`)
+      → an explicit answer on the trust question it raises
 
 <!--
 If you touched launch, terminal throughput, or memory, put before/after numbers

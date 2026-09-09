@@ -15,11 +15,11 @@
  *   filesystem at runtime. Verified in the migration spike: a single compiled
  *   binary, run from a directory containing nothing else, spawned a real PTY.
  *   This is why `janelad` ships as one file rather than a binary plus a dylib, and
- *   it is what removed a second artifact from ADR 0008's signing story.
+ *   it is what removed a second artifact from the signing story.
  *
  * The hardened runtime still needs `com.apple.security.cs.disable-library-validation`
- * for the `dlopen`, which ADR 0008 already sets so the daemon can spawn and load
- * the user's own unsigned tooling.
+ * for the `dlopen`, which `apps/desktop/src-tauri/Entitlements.plist` already sets
+ * so the daemon can spawn and load the user's own unsigned tooling.
  *
  * ## Marshalling
  *
@@ -35,8 +35,8 @@ import { dlopen, FFIType, ptr, type Pointer } from "bun:ffi";
 
 // The specifier must stay a literal. A computed one — `libjanela_pty.${suffix}` —
 // resolves at runtime and is invisible to `bun build --compile`, which then ships
-// a binary with no library in it. Janela is macOS-first (ADR 0023); a second
-// platform means a second literal import, which the bundler can also see.
+// a binary with no library in it. Janela is macOS-first; a second platform means a
+// second literal import, which the bundler can also see.
 import libraryPath from "../native/target/release/libjanela_pty.dylib" with { type: "file" };
 
 /** Opaque handle into the native side's terminal table. */

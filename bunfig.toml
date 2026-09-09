@@ -1,7 +1,7 @@
 # Bun configuration for the Janela workspace.
 #
 # Bun is both the package manager and the daemon's runtime, so this file is on
-# the path of every contributor command. See docs/decisions/0020-bun-daemon-runtime.md.
+# the path of every contributor command.
 
 [install]
 # Reproducible installs: the lockfile is authoritative and CI must not resolve

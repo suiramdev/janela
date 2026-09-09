@@ -6,11 +6,10 @@ import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
  * The daemon's heartbeat: once per frame, drain every live terminal and send each
  * attached client the repaint it is owed.
  *
- * This is the shape ADR 0003 called "socket writes are coalesced once per frame,
- * per attached client", and it is the reason a `yes` flood never reaches a client.
- * Measured in the migration spikes: 132 MB/s off the PTY becomes a bounded number
- * of frames per second on the socket, and the event loop stayed within 2 ms of its
- * interval throughout.
+ * Socket writes are coalesced once per frame, per attached client, and that is the
+ * reason a `yes` flood never reaches a client. Measured in the migration spikes:
+ * 132 MB/s off the PTY becomes a bounded number of frames per second on the socket,
+ * and the event loop stayed within 2 ms of its interval throughout.
  *
  * Four rules, all of them load-bearing:
  *

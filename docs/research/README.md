@@ -1,13 +1,13 @@
 # Research
 
-Primary-source research gathered while making the decisions in
-[`../decisions/`](../decisions/).
+Primary-source research gathered while the architecture and the technology choices
+were being decided.
 
 ## What these are
 
 Verbatim research artifacts. Every non-obvious claim cites the repository file,
 official document, or specification that owns it — not a blog post about it. They
-are the evidence an ADR points at when it says "because".
+are the evidence behind the "because" in the design documents.
 
 They were produced by independent research passes, which is why some topics have
 two files (`-2` suffix). The passes were run separately and cite different
@@ -36,14 +36,12 @@ Worth calling out, because these corrected assumptions rather than confirming th
    so dropping bytes desynchronises the parser. Water marks that stop re-arming
    the read are the correct mechanism; see `ByteStream.swift`.
 3. **SwiftTerm compiles in Swift 5 language mode**, so it needs `@preconcurrency`
-   containment from our Swift 6 modules. See
-   [ADR 0003](../decisions/0003-concurrency-model.md).
+   containment from our Swift 6 modules.
 4. **libghostty is more viable than assumed** — it ships an official Swift
    XCFramework example, and cmux uses it in production. It is a real v2 option
-   rather than a theoretical one. See [ADR 0004](../decisions/0004-terminal-engine.md).
+   rather than a theoretical one.
 5. **libgit2's worktree support is documented as incomplete** for submodules,
-   which is disqualifying for our main use case. See
-   [ADR 0007](../decisions/0007-git-integration.md).
+   which is disqualifying for our main use case.
 6. **cmux is workspace-centric, not worktree-centric** — worktrees are not a
    top-level noun there either. Independent corroboration of the product thesis.
 
@@ -51,8 +49,8 @@ Worth calling out, because these corrected assumptions rather than confirming th
 
 - They are **point-in-time**. Check the claims before relying on them for
   something load-bearing; upstream projects move.
-- They are **not authoritative for this project** — the ADRs are. If research and
-  an ADR disagree, the ADR is the decision and the research is the evidence it was
-  weighed against.
+- They are **not authoritative for this project** — the design documents are. If
+  research and [`../architecture.md`](../architecture.md) disagree, the document
+  is the decision and the research is the evidence it was weighed against.
 - They are **not maintained**. Do not update them to match new reality; run new
   research and add a new file.

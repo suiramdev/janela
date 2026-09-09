@@ -27,20 +27,19 @@ Then, as needed:
   central bet (quit the app, the terminals live), its per-step verdict, and the
   defects that run found. Re-run it when the daemon's lifecycle, the handshake or
   the frame loop changes.
-- **[`decisions/`](decisions/)** — ADRs. Read the relevant one before changing a
-  decision.
-- **[`research/`](research/)** — primary-source research behind the ADRs.
+- **[`research/`](research/)** — primary-source research behind the architecture and
+  the technology choices.
 
 ## What goes where
 
 | If you want to… | Write it in |
 | --- | --- |
 | Change what the product is | `product.md` |
-| Change a module boundary or dependency | `architecture.md` + an ADR |
-| Add or rename a domain concept | `domain-model.md` + an ADR (and justify it in `product.md`) |
-| Change a technology choice | A new ADR in `decisions/` |
-| Add a file the user writes, or anything that runs on their behalf | An ADR first — see `0013` and `0014` for why the two were answered differently |
-| Change the wire protocol, or what a client may do | `decisions/0016-daemon-protocol.md` + a version bump |
+| Change a module boundary or dependency | `architecture.md` |
+| Add or rename a domain concept | `domain-model.md` (and justify it in `product.md`) |
+| Change a technology choice | `architecture.md` |
+| Add a file the user writes, or anything that runs on their behalf | `architecture.md` — answer the trust question first: are we reading what the user wrote, or running what the repository supplied? |
+| Change the wire protocol, or what a client may do | `architecture.md` + a version bump |
 | Change a code style rule | `conventions.md` (and `.swift-format` / `.swiftlint.yml`) |
 | Record a performance budget | `performance.md` |
 | Prove the daemon really owns the terminals, or record that it does not | `survival-proof.md` |
@@ -52,18 +51,12 @@ Two things changed underneath everything else.
 
 **The central noun.** What was a **workspace** is now a **session**; what was a
 **session** is now a **terminal**; **repository** was absorbed into **project**, a
-new grouping level.
-[`decisions/0009-projects-sessions-terminals.md`](decisions/0009-projects-sessions-terminals.md)
-records why.
+new grouping level. [`domain-model.md`](domain-model.md) has the vocabulary as it
+now stands.
 
 **The process model.** Janela was one process; it is now a daemon plus clients.
 Anything that says "single process", "no IPC", or "sessions die when the app quits"
-predates [`decisions/0015-daemon-owned-sessions.md`](decisions/0015-daemon-owned-sessions.md)
-and is wrong.
-
-Both times, earlier ADRs were amended in place rather than superseded, because the
-decisions held and only their surroundings moved. See
-[`decisions/README.md`](decisions/README.md) for that exception and its expiry.
+predates that change and is wrong.
 
 ## Principles for these documents
 

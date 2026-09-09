@@ -6,7 +6,7 @@
  * this seam is `@janela/terminal-ui`, which draws.
  *
  * One of exactly two packages allowed to name an emulator library, and the rule is
- * enforced rather than reviewed. See docs/decisions/0018-terminal-engine.md.
+ * enforced rather than reviewed.
  */
 
 // `createEmulator` only: `HeadlessEmulator` itself stays inside the package, so

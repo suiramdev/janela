@@ -12,10 +12,10 @@ import { newAutomationID } from "@janela/core";
  * - The commands live in Janela's database and never in the repository, because a
  *   committed file that runs commands makes cloning a repo a code-execution
  *   vector. So this editor is the *only* way one gets created: a human typing it
- *   into this app. See docs/decisions/0014-project-automation.md.
+ *   into this app.
  */
 
-/** ADR 0014's default: deletion waits 30 s for a teardown command, then asks. */
+/** The default: deletion waits 30 s for a teardown command, then asks. */
 export const DEFAULT_AUTOMATION_TIMEOUT_SECONDS = 30;
 
 /**

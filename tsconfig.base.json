@@ -3,15 +3,16 @@
   "compilerOptions": {
     // Janela's module graph used to be enforced by a compiler, for free. TypeScript
     // will not do that, so every setting here that can turn a runtime surprise into a
-    // compile error is on. See docs/decisions/0022-layering-enforcement.md for the
-    // part the compiler still cannot do, and scripts/check-layers.ts for the gate.
+    // compile error is on. The part the compiler still cannot do is checked by
+    // scripts/check-layers.ts.
     "target": "ES2023",
     "lib": ["ES2023"],
     "module": "Preserve",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
 
-    // ---- Strictness. Nothing here is negotiable without an ADR.
+    // ---- Strictness. Nothing here is negotiable without a change to
+    // docs/conventions.md, and nothing is negotiable per-file.
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,

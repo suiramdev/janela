@@ -11,11 +11,6 @@ every `TODO:` seam, and what was deliberately dropped.
 the database migrations had real substance. So "migrated" means *the interface, the
 reasoning and the seam were carried across* — not that a body was translated.
 
-Read [`decisions/0023-macos-first-portable.md`](decisions/0023-macos-first-portable.md)
-first for why the migration happened, and
-[`decisions/README.md`](decisions/README.md) § On the six supersessions for how the
-ADRs handle it.
-
 ---
 
 ## Modules → packages
@@ -98,7 +93,7 @@ ADRs handle it.
 | --- | --- | --- |
 | `GitRunning`, `GitOutcome`, `GitFailure`, `GitRunner` | unchanged | |
 | `GitWorktree`, `WorktreeServing`, `WorktreeService`, `WorktreeRemovalSafety` | unchanged | |
-| *(inside ADR 0013 only)* | `WorktreeIncluding` | **New file.** `.worktreeinclude` had no type; it was a documented behaviour |
+| *(no Swift type)* | `WorktreeIncluding` | **New file.** `.worktreeinclude` had no type; it was a documented behaviour |
 | `TerminalSize`, `PseudoTerminal`, `PseudoTerminal.Configuration`, `.Failure` | `TerminalSize`, `PseudoTerminal`, `PseudoTerminalConfiguration`, `PseudoTerminalFailure` | Actor → an object over the native library |
 | `TerminalByteStream` | `byte-stream.ts` constants + `PseudoTerminal.drain()` | The `DispatchIO` machinery became a Rust reader thread; the water marks and the never-drop rule are unchanged |
 | `TerminalBytes` (`ContiguousArray<UInt8>`) | `TerminalBytes` (`Uint8Array`) | A view into a reusable buffer, valid only until the next drain |
@@ -114,7 +109,7 @@ ADRs handle it.
 | `DaemonEndpoint`, `SocketPathTooLong` | `endpoint.ts`, `SocketPathTooLong` | |
 | — | `PeerCredential`, `isAuthorized()` | **New.** The peer check needs a `getsockopt`, and `bun:ffi` is gated to `@janela/pty`, so the credential is passed in rather than fetched here |
 | `DaemonServer`, `ConnectionListening` | `DaemonServer`, `ConnectionListening`, `AcceptedConnection` | |
-| — | `FrameLoop` | **New.** "Coalesce once per frame per attached client" was a rule in ADR 0003 with no home |
+| — | `FrameLoop` | **New.** "Coalesce once per frame per attached client" was a rule with no home |
 
 ### Client packages
 
@@ -194,13 +189,12 @@ controls that emerged (`TextField`, `NumberField`, `SwitchField`, `Violations`,
 `@janela/pty` so Janela has exactly one FFI surface. Binding it would have meant a
 second FFI surface for one call.
 
-**Socket activation was given up deliberately, and
-[ADR 0017](decisions/0017-daemon-lifecycle.md) is the amendment saying so.** The
-bundled plist declares no `Sockets` key; the daemon binds the fixed path itself, and
-a client that cannot connect runs `launchctl kickstart gui/<uid>/sh.janela.janelad`
-and retries. The property socket activation was chosen for survives: a user who never
-opens Janela still never has a process running. `#31` exercised this path on an
-installed bundle.
+**Socket activation was given up deliberately.** The bundled plist declares no
+`Sockets` key; the daemon binds the fixed path itself, and a client that cannot
+connect runs `launchctl kickstart gui/<uid>/sh.janela.janelad` and retries. The
+property socket activation was chosen for survives: a user who never opens Janela
+still never has a process running. `#31` exercised this path on an installed
+bundle.
 
 ---
 
@@ -243,16 +237,16 @@ Two notes worth carrying:
 
 | Dropped | Why |
 | --- | --- |
-| `App/Janela/` — `Info.plist`, entitlements, asset catalog, `JanelaAppMain.swift` | Replaced by `tauri.conf.json` and `src-tauri/`. Entitlements and signing are unchanged in substance ([ADR 0008](decisions/0008-sandboxing-and-distribution.md)) |
-| `project.yml`, `Janela.xcodeproj`, XcodeGen | No Xcode project. [ADR 0001](decisions/0001-project-generation.md)'s two problems — a file that does not merge and that agents corrupt — are gone rather than solved |
+| `App/Janela/` — `Info.plist`, entitlements, asset catalog, `JanelaAppMain.swift` | Replaced by `tauri.conf.json` and `src-tauri/`. Entitlements and signing are unchanged in substance |
+| `project.yml`, `Janela.xcodeproj`, XcodeGen | No Xcode project. The two problems that drove generating it — a file that does not merge and that agents corrupt — are gone rather than solved |
 | `Makefile`, `scripts/*.sh` | Replaced by `bun run` scripts. Parity table above |
-| `.swift-format`, `.swiftlint.yml` | Replaced by `.oxfmtrc.json` and `.oxlintrc.json`. The rules a machine can check were carried over; see [ADR 0025](decisions/0025-monorepo-tooling.md) |
-| SwiftTerm, GRDB, swift-argument-parser | Replaced per [ADR 0018](decisions/0018-terminal-engine.md) and [ADR 0019](decisions/0019-prisma-sql-layer.md). `swift-argument-parser` was resolved but unused |
+| `.swift-format`, `.swiftlint.yml` | Replaced by `.oxfmtrc.json` and `.oxlintrc.json`. The rules a machine can check were carried over |
+| SwiftTerm, GRDB, swift-argument-parser | Replaced by `@xterm/headless` and Prisma over `bun:sqlite`. `swift-argument-parser` was resolved but unused |
 | `PlaceholderTransport` | A transport that silently drops frames is worse than a connection that honestly reports itself down, which the UI must handle anyway |
 | `GridDimensions` | Merged into `GridSize`. Two names for a terminal's size in cells was one too many |
 | `Sources/JanelaDesign/Resources/*.xcassets` | Colours are CSS custom properties. Same semantic names, same adaptation to appearance and contrast, no code branching |
 | `SettingsWindow` | Four tabs of `EmptyView`. Not carried because there was nothing to carry; the settings surface is a UI task |
-| Swift 6 strict concurrency | Not available. The isolation *rules* survive in [ADR 0020](decisions/0020-bun-daemon-runtime.md); compile-time data-race checking does not, and that ADR says so plainly |
+| Swift 6 strict concurrency | Not available. The isolation *rules* survive; compile-time data-race checking does not, and nothing in the TypeScript tree pretends it does |
 | `ExistentialAny`, `MemberImportVisibility` | Language features with no TypeScript equivalent. The nearest analogues — `verbatimModuleSyntax`, explicit `.ts` extensions — are on |
 
 ---
@@ -262,10 +256,9 @@ Two notes worth carrying:
 - **Building a package?** Its `src/index.ts` is the contract, and the doc comments
   carry the reasoning. The `TODO:` blocks name the traps.
 - **Adding a dependency edge?** `scripts/layers.ts` is the graph, and it is enforced.
-  Adding an edge is a design change: write it down in `decisions/` first.
-- **Touching the terminal path?** [ADR 0018](decisions/0018-terminal-engine.md) and
-  [ADR 0021](decisions/0021-pty-native-layer.md) carry the measurements, including the
-  ones that are counter-intuitive — feed chunk size governs emulator throughput by a
-  factor of twenty.
-- **Reading a document that mentions Swift?** It predates this migration. The ADRs it
-  belongs to are marked superseded, and the superseding one points back.
+  Adding an edge is a design change: write it down in `architecture.md` first.
+- **Touching the terminal path?** `performance.md` carries the budgets, and the
+  measurements behind them are counter-intuitive — feed chunk size governs
+  emulator throughput by a factor of twenty.
+- **Reading a document that mentions Swift?** It predates this migration; this
+  table says where each name went.

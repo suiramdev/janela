@@ -74,7 +74,7 @@ function fakeRegistry(liveCount = 0): FakeRegistry {
 }
 
 describe("the idle monitor", () => {
-  test("ADR 0017's grace period is five minutes", () => {
+  test("the idle grace period is five minutes", () => {
     expect(IDLE_GRACE_PERIOD_MS).toBe(5 * 60_000);
     expect(IDLE_POLL_INTERVAL_MS).toBeLessThan(IDLE_GRACE_PERIOD_MS);
   });

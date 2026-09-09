@@ -1,10 +1,9 @@
 /**
  * Prisma 7 moved the datasource URL out of `schema.prisma` and into here.
  *
- * The path is the same one ADR 0005 chose and for the same reason: the database is
- * daemon-private, it is not in a sandbox container because Janela is not
- * sandboxed, and it is inspectable with `sqlite3` when diagnosing a user's
- * problem.
+ * The path is chosen so the database is daemon-private, is not in a sandbox
+ * container because Janela is not sandboxed, and is inspectable with `sqlite3`
+ * when diagnosing a user's problem.
  *
  * Note this file configures the *CLI* — migrations and generation. The running
  * daemon passes its own adapter to the client constructor and never reads this.

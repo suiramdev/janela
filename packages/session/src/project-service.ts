@@ -46,7 +46,7 @@ export interface ProjectService {
    * the path. The daemon never discovers directories on its own and never scans the
    * home directory — that rule is what keeps macOS permission prompts attributed to
    * the app the user clicked rather than to a background binary they have never
-   * heard of. See docs/decisions/0017-daemon-lifecycle.md § TCC attribution.
+   * heard of.
    *
    * Detecting whether the directory is a git repository is opportunistic and never
    * blocks: a plain folder is a perfectly good project that simply cannot offer
@@ -111,7 +111,7 @@ export function createProjectService(deps: ProjectServiceDependencies): ProjectS
  *
  * Recognising the host is all we do: whether the integration *works* additionally
  * depends on the user having `gh` or `glab` installed and logged in, and a missing
- * one is silence rather than an error (ADR 0012).
+ * one is silence rather than an error.
  */
 export function forgeForRemote(remoteURL: string): Forge | undefined {
   const host = hostOf(remoteURL);

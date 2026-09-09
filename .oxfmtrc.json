@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "//": "Markdown is excluded deliberately. docs/ is hand-formatted to 80 columns with a table style the ADRs share, and a formatter rewrites both. See docs/conventions.md.",
+  "//": "Markdown is excluded deliberately. docs/ is hand-formatted to 80 columns with a table style of its own, and a formatter rewrites both. See docs/conventions.md.",
   "printWidth": 100,
   "tabWidth": 2,
   "useTabs": false,

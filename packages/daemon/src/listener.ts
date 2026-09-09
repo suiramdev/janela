@@ -18,7 +18,7 @@ import type { AcceptedConnection, ConnectionListening } from "./server.ts";
  * The only file in Janela that names `node:net`. Everything above it works
  * against `ConnectionListening` and `MessageTransport`, which is what lets the
  * server's own tests run in-process and a future WebSocket client be a transport
- * rather than a rewrite (ADR 0016, ADR 0023).
+ * rather than a rewrite.
  */
 
 /**
@@ -45,17 +45,17 @@ export interface SocketListenerOptions {
    * `accept()` runs are held in `pending`, up to `PENDING_CONNECTION_CAPACITY`.
    *
    * This package never binds and never chooses a path, because launchd owns the
-   * socket (ADR 0017). Whoever binds calls `verifySocketDirectory` first.
+   * socket. Whoever binds calls `verifySocketDirectory` first.
    */
   readonly server: Server;
   /**
    * The two `getsockopt` calls, run by whoever can reach the descriptor.
    *
-   * Injected rather than called here: `bun:ffi` is gated to `@janela/pty`
-   * (ADR 0021) and Bun exposes no peer-credential accessor, so the real reader is
-   * a native export the composition root supplies — see `RawPeerCredential`. A
-   * reader that throws is treated as `{ xucred: undefined, pid: undefined }`,
-   * which `verifyPeer` refuses as `credential-unavailable`.
+   * Injected rather than called here: `bun:ffi` is gated to `@janela/pty` and Bun
+   * exposes no peer-credential accessor, so the real reader is a native export the
+   * composition root supplies — see `RawPeerCredential`. A reader that throws is
+   * treated as `{ xucred: undefined, pid: undefined }`, which `verifyPeer` refuses
+   * as `credential-unavailable`.
    */
   readonly credentials: (socket: Socket) => RawPeerCredential;
   readonly ownUid: number;

@@ -5,23 +5,23 @@
 
   Tauri's bundler signs every Mach-O it bundles with one entitlements file and offers
   no per-target hook, so the app carries the daemon's entitlements too. Two keys, and
-  no more: App Sandbox is off by its absence (ADR 0008), and every key here widens the
-  attack surface of both binaries.
+  no more: App Sandbox is off by its absence, and every key here widens the attack
+  surface of both binaries.
 
   `scripts/verify-bundle.ts` asserts these two keys are present and that
   `com.apple.security.app-sandbox` is absent, on each executable, after every bundle.
 -->
 <plist version="1.0">
 <dict>
-  <!-- janelad is a compiled Bun binary (ADR 0020). Under the hardened runtime JSC
-       silently falls back to the interpreter without this: measured on macOS 26.2 /
-       Bun 1.3.14, a compute-bound script went 58 ms -> 2692 ms, a 47x regression the
-       daemon's throughput budget cannot absorb. -->
+  <!-- janelad is a compiled Bun binary. Under the hardened runtime JSC silently falls
+       back to the interpreter without this: measured on macOS 26.2 / Bun 1.3.14, a
+       compute-bound script went 58 ms -> 2692 ms, a 47x regression the daemon's
+       throughput budget cannot absorb. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
-  <!-- janelad dlopens its embedded PTY dylib, which Bun materialises into $TMPDIR
-       (ADR 0021), and spawns the user's own unsigned tools (ADR 0008). Measured:
-       with allow-jit alone the dlopen fails; adding this key is what makes it load. -->
+  <!-- janelad dlopens its embedded PTY dylib, which Bun materialises into $TMPDIR,
+       and spawns the user's own unsigned tools. Measured: with allow-jit alone the
+       dlopen fails; adding this key is what makes it load. -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
 </dict>

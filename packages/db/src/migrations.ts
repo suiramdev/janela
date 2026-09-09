@@ -102,7 +102,7 @@ async function appliedMigrations(connection: SqlDriverAdapter): Promise<Map<stri
  * last complete version rather than half-way through a schema change — SQLite
  * makes DDL transactional, which is the reason this is possible at all.
  *
- * No pragmas are set here: the adapter applied them on connect (ADR 0019).
+ * No pragmas are set here: the adapter applied them on connect.
  */
 export async function applyMigrations(
   connection: SqlDriverAdapter,

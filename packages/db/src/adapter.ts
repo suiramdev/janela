@@ -18,13 +18,12 @@
  * `bun:sqlite` is built into the runtime, so it survives `--compile` with nothing
  * to ship. A third-party `bun:sqlite` adapter exists and works — it is the
  * reference for this file — but the daemon's only durable state is not a place to
- * put a v0.x single-maintainer dependency — the same standard ADR 0005 applied when
- * it accepted its SQLite library for being mature and widely used.
+ * put a v0.x single-maintainer dependency — the same standard that admitted the
+ * SQLite library itself, which earned its place by being mature and widely used.
  *
  * The interface is small and first-party (`@prisma/driver-adapter-utils` supplies
  * the types), so owning it is a bounded cost. If it turns out not to be, the
- * escape hatch is to take the dependency after all — see
- * docs/decisions/0019-prisma-sql-layer.md § Revisit when.
+ * escape hatch is to take the dependency after all.
  */
 
 import { Database } from "bun:sqlite";

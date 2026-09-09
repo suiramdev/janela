@@ -11,8 +11,8 @@ import type { GitRunning } from "./git-runner.ts";
  * `.worktreeinclude` — the repo-declared list of ignored files to carry into a
  * new worktree: `.env`, `node_modules`, build caches.
  *
- * Two decisions from docs/decisions/0013-worktreeinclude.md are load-bearing here,
- * and both are about not writing code we would get wrong:
+ * Two decisions are load-bearing here, and both are about not writing code we
+ * would get wrong:
  *
  * 1. **git matches the patterns.** The honest implementation of "which ignored
  *    files match these patterns" is `git ls-files -o -i --exclude-from`, not a
@@ -76,7 +76,7 @@ export interface CopyReport {
 
 /**
  * 2 GiB. Past this nothing is copied unless the user opts in — a worktree is
- * meant to be cheap, and silently duplicating half a disk is not (ADR 0013).
+ * meant to be cheap, and silently duplicating half a disk is not.
  */
 export const DEFAULT_INCLUDE_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -379,7 +379,7 @@ export function worktreeIncluding(
           for (const entry of entries) {
             // Never a `.git`, at any depth, whatever the patterns matched: a
             // nested repository copied wholesale is a second checkout the user
-            // did not ask for (ADR 0013).
+            // did not ask for.
             if (entry.name === ".git") continue;
             const childSource = join(current.source, entry.name);
             const childDestination = join(current.destination, entry.name);

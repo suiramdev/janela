@@ -4,18 +4,23 @@
 #
 # Build output (node_modules/, dist/, target/, .turbo/) lives inside the worktree
 # and goes away with it, so there is nothing to clean there. The one thing this
-# workspace can leave behind outside itself is a resident `janelad` started from
-# *this* worktree's binary: after the directory is gone it serves code that no
-# longer exists, which is the footgun documented in docs/development.md.
+# workspace can leave behind outside itself is a resident daemon started from
+# *this* worktree: after the directory is gone it serves code that no longer
+# exists, which is the footgun documented in docs/development.md.
 #
 # Only a daemon whose command line points into this workspace is stopped. A janelad
 # from the root checkout or another workspace is the user's, and stays.
+#
+# Two spellings, because there are two ways to start one: the compiled sidecar
+# (`janelad` in its command line) and the source entry point `bun run dev` starts,
+# which never mentions the word and is spelled as an absolute path precisely so the
+# checkout it came from is visible here.
 
 set -euo pipefail
 
 workspace="${SUPERSET_WORKSPACE_PATH:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-matches="$(pgrep -lf janelad | grep -F -- "$workspace" || true)"
+matches="$(pgrep -lf 'janelad|main\.ts --foreground' | grep -F -- "$workspace" || true)"
 if [[ -z "$matches" ]]; then
     echo "No janelad running from $workspace."
     exit 0

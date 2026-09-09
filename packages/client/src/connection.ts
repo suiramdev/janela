@@ -31,7 +31,7 @@ import type { MirrorApplying } from "./stores.ts";
  * **The daemon is the truth; this is a mirror.** Nothing here computes state it
  * could ask for, and nothing writes state it did not receive. A client that infers
  * — "I sent input, so it must be running" — is guessing about a process in another
- * process. See docs/decisions/0015-daemon-owned-sessions.md § Rules.
+ * process.
  *
  * ## Disconnection is normal
  *
@@ -46,8 +46,7 @@ import type { MirrorApplying } from "./stores.ts";
  * shell's Unix socket, because a WebView cannot open one itself; a browser client
  * would supply one backed by a WebSocket. That is the seam that makes a browser
  * client a transport rather than a rewrite, and it is the only reason this package
- * is allowed to be as abstract as it is. See
- * docs/decisions/0023-macos-first-portable.md.
+ * is allowed to be as abstract as it is.
  */
 export interface DaemonConnection {
   readonly status: ConnectionStatus;

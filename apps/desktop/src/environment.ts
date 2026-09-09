@@ -27,8 +27,7 @@ import { openTauriTransport, type BridgeInvoke } from "./transport.ts";
  *
  * A **client**. It renders, it delivers notifications, and it asks `janelad` to do
  * things. It does not own a PTY, a database, or a git checkout — none of those
- * packages are even linked, so it could not if it tried. See
- * docs/decisions/0015-daemon-owned-sessions.md.
+ * packages are even linked, so it could not if it tried.
  *
  * ## Launch budget
  *
@@ -36,8 +35,7 @@ import { openTauriTransport, type BridgeInvoke } from "./transport.ts";
  * answers**. Connecting is started here and awaited nowhere: a launch that blocks on
  * a socket has handed the daemon a veto over the launch budget, which is the coupling
  * the two-process split exists to remove. See docs/performance.md § Launch — and note
- * that the budget itself was revised for a WebView client in
- * docs/decisions/0023-macos-first-portable.md rather than quietly dropped.
+ * that the budget itself was revised for a WebView client rather than quietly dropped.
  */
 
 /** What the daemon logs this client as. Appears in its "connected" record. */
@@ -62,8 +60,7 @@ export type LaunchAgentStatus =
    *
    * A **supported state, not an error**: the app works, terminals die when it
    * quits, and it says so plainly with a link to the settings pane. Refusing to
-   * work at all would be worse. See docs/decisions/0017-daemon-lifecycle.md
-   * § Registration.
+   * work at all would be worse.
    */
   | "requires-approval"
   /** The sidecar is missing beside the executable: a damaged install. */
@@ -97,8 +94,8 @@ export interface TerminalFocus {
   /**
    * The view installs the function that moves focus, and gets a disposer back.
    *
-   * Called by a notification click, which must land on the terminal that signalled
-   * (ADR 0011). In `main.tsx` this is `ViewState.focusTerminal` (#37) — **the**
+   * Called by a notification click, which must land on the terminal that
+   * signalled. In `main.tsx` this is `ViewState.focusTerminal` (#37) — **the**
    * pane-focus entry point, shared with the menu chords and the jump list, so a
    * click is not a second focus mechanism that can disagree with them.
    *

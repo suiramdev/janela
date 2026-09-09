@@ -2,8 +2,8 @@
  * The repositories, over Prisma.
  *
  * Separate from `repositories.ts` because these factories take a `PrismaClient`,
- * and that type must not appear in anything `@janela/session` can see (ADR 0019).
- * The interfaces are the package's API; this file is how they are met.
+ * and that type must not appear in anything `@janela/session` can see. The
+ * interfaces are the package's API; this file is how they are met.
  *
  * Three rules run through all of it:
  *
@@ -120,7 +120,7 @@ export function sessionRepository(client: PrismaClient, log: Logger): SessionRep
     async all(): Promise<readonly Session[]> {
       const rows = await client.session.findMany({
         include: { terminals: BY_POSITION },
-        // Standalone sessions first, then each project's own order (ADR 0009).
+        // Standalone sessions first, then each project's own order.
         orderBy: [{ projectId: { sort: "asc", nulls: "first" } }, { position: "asc" }],
       });
       return rows.map((row) => decodeSession(row, log));

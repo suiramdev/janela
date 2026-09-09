@@ -15,8 +15,7 @@ import type { SessionStore } from "./stores.ts";
  * process that has a window.
  *
  * So the daemon emits a *fact* and this decides what it means. Shipping focus state
- * to the daemon so it could decide would be a chatty protocol serving no one. See
- * docs/decisions/0011-notifications.md.
+ * to the daemon so it could decide would be a chatty protocol serving no one.
  */
 export interface AttentionPolicy {
   /**
@@ -200,8 +199,8 @@ export interface AttentionRouting {
  *
  * Every rule it applies is about mirrored state and focus, and none of it needs a
  * notification API — so putting it beside the policy keeps the app's part an
- * adapter, and keeps this testable in a browser (ADR 0011, ADR 0023). The app
- * supplies two facts it alone holds and one object that can post a notification.
+ * adapter, and keeps this testable in a browser. The app supplies two facts it
+ * alone holds and one object that can post a notification.
  *
  * ## What it does *not* do
  *
@@ -263,8 +262,8 @@ export function routeAttention(options: AttentionRoutingOptions): AttentionRouti
     const terminal = session?.terminals.find((candidate) => candidate.id === signal.terminalID);
     if (session === undefined || terminal === undefined) {
       // A signal for something this mirror cannot name is a notification that would
-      // land the user nowhere — worse than none (ADR 0011). The badge is unaffected:
-      // it is the daemon's `TerminalState`, not ours.
+      // land the user nowhere — worse than none. The badge is unaffected: it is
+      // the daemon's `TerminalState`, not ours.
       log.debug("attention for an unmirrored terminal", {
         sessionID: signal.sessionID,
         terminalID: signal.terminalID,

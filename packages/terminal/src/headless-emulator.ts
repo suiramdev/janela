@@ -2,10 +2,9 @@
  * `TerminalEmulating` over `@xterm/headless`.
  *
  * **The only module in the repository's daemon half that names an emulator
- * library**, which is the whole point of the seam it implements — see
- * docs/decisions/0018-terminal-engine.md and the gated-modules table in
- * `scripts/layers.ts`. Everything library-specific is here; everything else in
- * this package talks to `TerminalEmulating`.
+ * library**, which is the whole point of the seam it implements — see the
+ * gated-modules table in `scripts/layers.ts`. Everything library-specific is
+ * here; everything else in this package talks to `TerminalEmulating`.
  *
  * Damage tracking is the reason this file reaches past the public API. The
  * library knows which rows a chunk touched — it has to, to repaint a canvas — and

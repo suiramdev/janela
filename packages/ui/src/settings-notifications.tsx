@@ -15,7 +15,7 @@ import * as style from "./styles.ts";
  * not frontmost" are facts, not preferences, and a notification policy the user
  * has mis-tuned trains them to distrust the badge — which costs more than every
  * switch we could offer. So the settings surface is one switch per class of
- * signal, not a predicate builder (ADR 0011 § Alternatives).
+ * signal, not a predicate builder.
  *
  * The one genuine choice is the bell, because a bell means whatever the program
  * ringing it decided: a finished build, a failed test, or a `printf` in a loop.

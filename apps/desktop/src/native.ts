@@ -8,8 +8,7 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
  *
  * **The app performs file selection; the daemon is handed paths.** That is a rule,
  * not a convenience: it keeps macOS permission prompts attributed to the app the
- * user just clicked rather than to a background binary they have never heard of
- * (docs/decisions/0017-daemon-lifecycle.md § TCC attribution).
+ * user just clicked rather than to a background binary they have never heard of.
  */
 export function tauriNativeShell(): NativeShell {
   return {

@@ -18,8 +18,8 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /**
- * JSON, for the reason given in ADR 0016: control traffic is rare and small, and
- * a frame you can read in a log is worth more than the bytes it costs.
+ * JSON: control traffic is rare and small, and a frame you can read in a log is
+ * worth more than the bytes it costs.
  */
 export function encodeClientMessage(message: ClientMessage): Frame {
   return { kind: FrameKind.Control, payload: encoder.encode(JSON.stringify(message)) };

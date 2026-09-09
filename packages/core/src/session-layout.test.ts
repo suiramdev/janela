@@ -82,8 +82,7 @@ const nestedFraction = (value: SessionLayout): number => {
 /**
  * The layout algebra itself is a TODO seam, so these pin the *bounds* it will be
  * written against. They are here from the first commit because they are the rules
- * docs/decisions/0010-terminal-layout.md states, and a bound with no test is a
- * bound that drifts.
+ * the layout must obey, and a bound with no test is a bound that drifts.
  */
 describe("SessionLayout bounds", () => {
   test("depth is bounded, because Pane is recursive and read from a persisted blob", () => {

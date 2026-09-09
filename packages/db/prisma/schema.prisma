@@ -27,9 +27,6 @@
 //    `prisma/migrations/`; `prisma db push` produces nothing to test and is
 //    forbidden outside a scratch database.
 // 3. **Cascade rules encode product rules**, and there are tests for exactly those.
-//
-// See docs/decisions/0019-prisma-sql-layer.md and
-// docs/decisions/0005-persistence.md.
 
 generator client {
   provider = "prisma-client"
@@ -142,8 +139,7 @@ model Terminal {
 }
 
 /// Automation commands live here and never in the user's repository: a committed
-/// file that runs commands makes cloning a repo a code-execution vector. See
-/// docs/decisions/0014-project-automation.md.
+/// file that runs commands makes cloning a repo a code-execution vector.
 model AutomationCommand {
   id        String  @id
   projectId String

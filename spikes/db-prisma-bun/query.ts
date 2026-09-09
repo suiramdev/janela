@@ -32,7 +32,7 @@ const withTerms = await prisma.session.findMany({ include: { terminals: true, pr
 console.log("DB read back:", withTerms.length, "session(s),",
             withTerms[0]?.terminals.length, "terminal(s), project:", withTerms[0]?.project?.name);
 
-// ADR 0005 rule 3: deleting a project deletes its sessions and their terminals.
+// Cascade rule 3: deleting a project deletes its sessions and their terminals.
 await prisma.project.delete({ where: { id: project.id } });
 console.log("cascade — sessions left:", await prisma.session.count(),
             "terminals left:", await prisma.terminal.count(),
