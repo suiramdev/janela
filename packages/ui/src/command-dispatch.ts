@@ -194,10 +194,11 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     const terminalID = focusedIn(session);
     if (terminalID === undefined) return;
 
-    // Sequential: a start racing its own stop is how a restart leaves two
-    // processes, or none.
-    await connection.request({ type: "stopTerminal", terminalID });
-    await connection.request({ type: "startTerminal", terminalID });
+    // One request, not a stop followed by a start: closing a pty leaves the
+    // terminal `running` until the daemon's reader thread reaps the child, so a
+    // start sent straight afterwards finds a terminal that looks alive and does
+    // nothing. The ordering belongs where the reaping is visible.
+    await connection.request({ type: "restartTerminal", terminalID });
   };
 
   const focusNeighbourPane = (direction: "left" | "right" | "up" | "down"): void => {

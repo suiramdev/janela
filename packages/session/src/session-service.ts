@@ -126,6 +126,18 @@ export interface SessionService {
   stopTerminal(id: TerminalID): Promise<void>;
 
   /**
+   * Stop and start again, as one operation.
+   *
+   * The daemon owns the ordering: `stop()` closes the pty but the terminal stays
+   * `running` until its reader thread reaps the child, so a `startTerminal` that
+   * followed a `stopTerminal` over the wire would find a terminal it believes is
+   * already running and do nothing at all.
+   *
+   * @throws {UnknownTerminal}
+   */
+  restartTerminal(id: TerminalID): Promise<void>;
+
+  /**
    * Closes one terminal — the ⌘W path, and the only path that both stops a
    * terminal and forgets it.
    *
@@ -555,6 +567,27 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     // An unknown id is a no-op: the second click on "stop" must not be an error,
     // and a terminal that already exited is not registered.
     await this.deps.terminals.get(id)?.stop();
+  }
+
+  async restartTerminal(id: TerminalID): Promise<void> {
+    const located = this.locate(id);
+    if (located === undefined) throw new UnknownTerminal(id);
+
+    const live = this.deps.terminals.get(id);
+    // Never started, or exited and unregistered: restarting it is starting it,
+    // and `startTerminal` is where the launch is resolved.
+    if (live === undefined) {
+      await this.startTerminal(id);
+      return;
+    }
+
+    // `LiveTerminal.restart` is the one place that knows the old child's status
+    // need not be awaited: its reader thread reaps it, and `start()` clears the
+    // exit that would otherwise be reported.
+    await live.restart();
+    await this.deps.repository.touch(located.session.id);
+    located.session.lastActiveAt = now();
+    await this.publish();
   }
 
   async removeTerminal(id: TerminalID): Promise<void> {

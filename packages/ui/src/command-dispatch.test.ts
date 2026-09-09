@@ -384,17 +384,14 @@ describe("navigation", () => {
 });
 
 describe("the rest of the terminal menu", () => {
-  test("restart stops and then starts, in that order", async () => {
+  test("restart is one request: the daemon owns the stop/start ordering", async () => {
     const terminal = fakeTerminal();
     const session = fakeSession({ terminals: [terminal] });
     const context = harness({ sessions: [session], selection: session.id });
 
     await createCommandDispatch(context.target)("restartTerminal");
 
-    expect(context.sent).toEqual([
-      { type: "stopTerminal", terminalID: terminal.id },
-      { type: "startTerminal", terminalID: terminal.id },
-    ]);
+    expect(context.sent).toEqual([{ type: "restartTerminal", terminalID: terminal.id }]);
   });
 
   test("clear scrollback clears this client's viewport and asks the daemon nothing", async () => {

@@ -272,6 +272,10 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
         await sessions.stopTerminal(message.terminalID);
         return { type: "acknowledged", id };
 
+      case "restartTerminal":
+        await sessions.restartTerminal(message.terminalID);
+        return { type: "acknowledged", id };
+
       case "saveLaunchProfile": {
         const { profile } = message;
         if (!isLaunchProfile(profile)) throw new TypeError("save with an unusable profile");

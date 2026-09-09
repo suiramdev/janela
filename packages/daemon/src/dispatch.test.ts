@@ -836,6 +836,30 @@ describe("launch profiles", () => {
     expect(calls).toEqual([]);
   });
 
+  test("restartTerminal reaches the brain as one operation", async () => {
+    const restarted: TerminalID[] = [];
+    const going = terminalID();
+    const daemon = fixture({
+      sessions: [fakeSession("s1")],
+      sessionOverrides: {
+        // Neither of these may be reached: a stop and a start over the wire is
+        // exactly the ordering this message exists to avoid.
+        stopTerminal: () => Promise.reject(new Error("stopTerminal must not be called")),
+        startTerminal: () => Promise.reject(new Error("startTerminal must not be called")),
+        restartTerminal: (id) => {
+          restarted.push(id);
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "restartTerminal", id: 1 as RequestID, terminalID: going }));
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(restarted).toEqual([going]);
+  });
+
   test("removeTerminal closes one terminal and is acknowledged", async () => {
     const removed: TerminalID[] = [];
     const going = terminalID();

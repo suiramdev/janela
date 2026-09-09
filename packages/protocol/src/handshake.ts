@@ -55,8 +55,8 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    full snapshot, because merge-by-id cannot express a removal;
  *    `saveLaunchProfile`, `removeLaunchProfile` and `createTerminal` join it too,
  *    and `StateUpdate` carries the launch profiles with their availability.
- * 4  `createTerminal.placement` (a split, persisted by the daemon) and
- *    `removeTerminal` join `ClientMessage`.
+ * 4  `createTerminal.placement` (a split, persisted by the daemon), and
+ *    `removeTerminal` and `restartTerminal` join `ClientMessage`.
  * ```
  */
 export const PROTOCOL_VERSION = 4;

@@ -48,6 +48,7 @@ const CLIENT_MESSAGE_TYPES = {
   detach: true,
   startTerminal: true,
   stopTerminal: true,
+  restartTerminal: true,
   resize: true,
   saveLaunchProfile: true,
   removeLaunchProfile: true,

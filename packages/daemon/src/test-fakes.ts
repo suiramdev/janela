@@ -493,6 +493,7 @@ export function fakeSessions(
     rename: () => Promise.reject(new Error(NOT_CALLED)),
     startTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     stopTerminal: () => Promise.reject(new Error(NOT_CALLED)),
+    restartTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     ...overrides,
   };
 }

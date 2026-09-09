@@ -917,6 +917,50 @@ describe("startTerminal", () => {
       await fixture.sessions.stopTerminal(unknown);
     });
   });
+
+  test("restart hands the live terminal one operation, not a stop and a start", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const terminal = session.terminals[0]?.id as TerminalID;
+      await fixture.sessions.startTerminal(terminal);
+
+      await fixture.sessions.restartTerminal(terminal);
+
+      // One `LiveTerminal`, restarted in place: a stop followed by a start would
+      // find a terminal whose child has not been reaped yet and do nothing.
+      expect(fixture.factory.created).toHaveLength(1);
+      expect(fixture.factory.created[0]?.starts()).toBe(2);
+      expect(fixture.factory.created[0]?.stops()).toBe(1);
+    });
+  });
+
+  test("restarting a terminal that never ran starts it", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const terminal = session.terminals[0]?.id as TerminalID;
+
+      await fixture.sessions.restartTerminal(terminal);
+
+      expect(fixture.factory.created).toHaveLength(1);
+      expect(fixture.factory.created[0]?.starts()).toBe(1);
+      expect(fixture.terminals.get(terminal)).toBeDefined();
+    });
+  });
+
+  test("restarting an unknown terminal is an error", async () => {
+    await withSessions({}, async (fixture) => {
+      const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
+      expect(await rejection(fixture.sessions.restartTerminal(unknown))).toBeInstanceOf(
+        UnknownTerminal,
+      );
+    });
+  });
 });
 
 describe("createTerminal", () => {

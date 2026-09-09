@@ -43,6 +43,7 @@
 mod agent;
 mod bridge;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use agent::{
@@ -77,11 +78,21 @@ struct CommandSpec {
 
 /// Builds the menu bar from the table and installs it.
 ///
-/// Called once, after the page loads. Building it before then would need the table
-/// in Rust, which is exactly the duplication this design exists to avoid — at the
+/// Called after the page loads. Building it before then would need the table in
+/// Rust, which is exactly the duplication this design exists to avoid — at the
 /// cost of the default menu being visible for the first few frames.
+///
+/// **Exactly once per process.** A second `set_menu` does not retire the first
+/// menu's key equivalents: both stay registered with AppKit, and one ⌘D then
+/// splits twice. The table is a constant for the life of the process, so the
+/// second call has nothing to add — and in development the frontend remounts on
+/// every hot reload, which is how this was found.
 #[tauri::command]
 fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String> {
+    if MENU_INSTALLED.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
     let rows = |menu: &str| -> Vec<&CommandSpec> {
         commands.iter().filter(|spec| spec.menu == menu).collect()
     };
@@ -167,6 +178,9 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     app.set_menu(menu).map_err(to_message)?;
     Ok(())
 }
+
+/// Whether the menu bar has been built. See `install_menu`.
+static MENU_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Every menu the table may name. An unknown one is a bug in the table, not a row
 /// to silently drop.

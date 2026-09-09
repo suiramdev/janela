@@ -36,7 +36,11 @@
   splits the pane holding `beside` with `splitPane` and persists the result — and
   `removeTerminal` joins `ClientMessage`, stopping the process if it is live,
   dropping the descriptor and collapsing the layout, leaving one fresh idle shell
-  behind when it was the session's last (ADR 0010's "never zero"). The minimum
+  behind when it was the session's last (ADR 0010's "never zero"). `restartTerminal`
+  joins it too, and is not a convenience: `stop()` closes the pty but the terminal
+  stays `running` until its reader thread reaps the child, so a client sending
+  `stopTerminal` then `startTerminal` gets a start that finds a live terminal and
+  does nothing. Only the daemon can see the reaping, so the ordering lives there. The minimum
   supported version moves to 4: a v3 daemon meeting `removeTerminal` falls off the
   end of its dispatch switch and answers *nothing*, so the client would wait on a
   reply that is never coming — worse than a refusal. A v3 peer is refused with
@@ -195,6 +199,7 @@ enum ClientMessage {
     case createTerminal(SessionID, profileID: LaunchProfileID?,
                         placement: Placement?)      // (v3; placement is v4)
     case removeTerminal(TerminalID)        // stops it, forgets it, collapses (v4)
+    case restartTerminal(TerminalID)       // stop and start, ordered daemon-side (v4)
 }
 
 enum DaemonMessage {

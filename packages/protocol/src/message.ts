@@ -102,6 +102,15 @@ export type ClientMessage =
    */
   | { readonly type: "startTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
   | { readonly type: "stopTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
+  /**
+   * Stop and start again, as one operation.
+   *
+   * Not `stopTerminal` then `startTerminal`: a stop closes the pty and the state
+   * stays `running` until the reader thread reaps it, so a start that arrives
+   * first finds a terminal it believes is already running and does nothing. The
+   * daemon owns the ordering because only it can see the reaping.
+   */
+  | { readonly type: "restartTerminal"; readonly id: RequestID; readonly terminalID: TerminalID }
   | { readonly type: "resize"; readonly terminalID: TerminalID; readonly size: GridSize }
   /** What is on screen, as text. The reason a CLI is useful to an agent. */
   | {

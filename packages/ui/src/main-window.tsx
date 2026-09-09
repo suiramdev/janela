@@ -736,26 +736,40 @@ function TerminalPane(props: {
   useEffect(() => {
     if (!isConnected || attachViewport === undefined) return;
     isAttachedRef.current = true;
-    const release = attachPane(connection, terminalID, feed, attachViewport);
 
     // The one place a client asks for a process: a session just created in the UI
     // carries `startsAutomatically`, which means "tell the opening client to ask".
     // A restored session carries `false`, so relaunching the app spawns nothing.
     //
-    // Read from the store here rather than from props: what matters is the state
-    // at the moment of the attach, and a terminal that has since exited must not
-    // be started again by a re-render.
+    // Read from the store rather than from props: what matters is the state at the
+    // moment of the attach, and a terminal that has since exited must not be
+    // started again by a re-render.
     const owner = store.sessions.find((session) =>
       session.terminals.some((terminal) => terminal.id === terminalID),
     );
     const current = owner?.terminals.find((terminal) => terminal.id === terminalID);
-    if (shouldStartOnAttach(current, store.terminalStates[terminalID])) {
-      connection.request({ type: "startTerminal", terminalID }).catch(swallowRequestFailure);
-    }
+
+    // **Start first.** `attach` names a *live* terminal — the daemon deliberately
+    // never starts one for you (non-negotiable #5) and refuses an attach to a
+    // terminal that has not spawned, which would leave this pane rendering nothing
+    // and swallowing every keystroke. Nothing is missed by attaching a beat later:
+    // the daemon answers an attach with a full repaint.
+    const started = shouldStartOnAttach(current, store.terminalStates[terminalID])
+      ? connection.request({ type: "startTerminal", terminalID }).catch(swallowRequestFailure)
+      : Promise.resolve(undefined);
+
+    let release: (() => void) | undefined;
+    let unmounted = false;
+    void started.then(() => {
+      if (unmounted) return undefined;
+      release = attachPane(connection, terminalID, feed, attachViewport);
+      return undefined;
+    });
 
     return () => {
+      unmounted = true;
       isAttachedRef.current = false;
-      release();
+      release?.();
     };
   }, [isConnected, connection, terminalID, feed, attachViewport, store]);
 
