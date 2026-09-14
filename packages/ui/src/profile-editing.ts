@@ -207,3 +207,15 @@ export function blankProfile(): LaunchProfile {
     isBuiltIn: false,
   };
 }
+
+/**
+ * What to call this profile on screen.
+ *
+ * A profile the user has just created has no name yet, and a row with no title
+ * reads as a list that failed to render rather than as a form waiting for a
+ * word. One placeholder, used by the list and by the editor's heading, so the
+ * row and the form it opens never disagree about what they are.
+ */
+export function profileTitle(profile: Pick<LaunchProfile, "name">): string {
+  return profile.name.trim().length === 0 ? "New profile" : profile.name;
+}

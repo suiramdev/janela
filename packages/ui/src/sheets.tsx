@@ -1,4 +1,10 @@
-import type { Project, ProjectID, ProjectSettings, Session, SessionID } from "@janela/core";
+import {
+  supportsWorktrees,
+  type Project,
+  type ProjectID,
+  type Session,
+  type SessionID,
+} from "@janela/core";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, cn } from "@janela/design";
 import type { SessionCreationIntent } from "@janela/protocol";
 import type { ReactElement } from "react";
@@ -11,7 +17,6 @@ import type { CommandID } from "./commands.ts";
 import { JumpList } from "./jump-list.tsx";
 import { NewBranchSheet, type NewBranchIntent } from "./new-branch-sheet.tsx";
 import { NewSessionSheet, useBranchOverview } from "./new-session-sheet.tsx";
-import { ProjectSettingsSheet } from "./project-settings-sheet.tsx";
 import type { Sheet } from "./view-state.ts";
 
 /**
@@ -45,22 +50,30 @@ const SHEET_LABEL: Record<SheetKind, string> = {
   commands: "Command Palette",
   newSession: "New Session",
   newBranch: "New Branch Session",
-  projectSettings: "Project Settings",
 };
 
 /**
  * How wide each sheet is, and whether its title shows.
  *
+ * The width is the dialog's own ladder — `sm` 400, `lg` 540, `xl` 880, each a
+ * notch narrower in a compact region — rather than a Tailwind `max-w` of our
+ * own. Every sheet that is left sits at `lg`: each is one question, and the
+ * canvas step went with the project's settings when that form became a screen
+ * (`settings-window.tsx`). The step stays a per-sheet decision rather than a
+ * constant, because the next sheet is as likely to be `sm` as `lg`.
+ *
  * The find surfaces are a field over a list and title themselves by their
  * placeholder; a visible heading would be a second line saying the same thing.
  * The forms are read top to bottom and open on one.
  */
-const SHEET_SHAPE: Record<SheetKind, { readonly width: string; readonly titled: boolean }> = {
-  jumpList: { width: "sm:max-w-md", titled: false },
-  commands: { width: "sm:max-w-md", titled: false },
-  newSession: { width: "sm:max-w-lg", titled: true },
-  newBranch: { width: "sm:max-w-lg", titled: true },
-  projectSettings: { width: "sm:max-w-xl", titled: true },
+const SHEET_SHAPE: Record<
+  SheetKind,
+  { readonly size: "sm" | "lg" | "xl"; readonly titled: boolean }
+> = {
+  jumpList: { size: "lg", titled: false },
+  commands: { size: "lg", titled: false },
+  newSession: { size: "lg", titled: true },
+  newBranch: { size: "lg", titled: true },
 };
 
 /** A request from a sheet is best-effort, exactly as one from a view is. */
@@ -124,13 +137,19 @@ export function SheetHost(props: {
         initialFocus={initialFocus}
         finalFocus={false}
         showCloseButton={false}
+        size={shape.size}
         // Anchored near the top like a macOS sheet, not centred: the list below
         // a find field grows and shrinks as you type, and a centred box would
-        // bounce around its midpoint while it does.
-        className={cn(
-          "top-24 max-h-[80vh] translate-y-0 overflow-y-auto sm:max-w-none",
-          shape.width,
-        )}
+        // bounce around its midpoint while it does. The primitive's own
+        // `position` does this — it also drops the vertical half-translate, so
+        // there is no transform left here to fight.
+        position="top"
+        // A find surface is drawn flush: the command menu brings its own field,
+        // the hairline under it and the hint strip, all sized to the full width
+        // of the panel, so the dialog's own padding would inset a divider that
+        // is meant to reach both edges. It also scrolls inside itself, which is
+        // why the sheet clips rather than scrolls.
+        className={cn("max-h-[80vh]", shape.titled ? "overflow-y-auto" : "overflow-hidden p-0")}
       >
         {shape.titled ? (
           <DialogHeader>
@@ -156,8 +175,6 @@ function SheetBody(props: {
   const sessions = useStoreValue(sessionStore, () => sessionStore.sessions);
   const selection = useStoreValue(sessionStore, () => sessionStore.selection);
   const terminalStates = useStoreValue(sessionStore, () => sessionStore.terminalStates);
-  const profiles = useStoreValue(sessionStore, () => sessionStore.launchProfiles);
-  const availability = useStoreValue(sessionStore, () => sessionStore.launchProfileAvailability);
 
   const pickSession = useCallback(
     (sessionID: SessionID) => {
@@ -208,18 +225,6 @@ function SheetBody(props: {
     [connection, onClose, sessionStore, view],
   );
 
-  const saveProjectSettings = useCallback(
-    (next: ProjectSettings) => {
-      const projectID = sheet.kind === "projectSettings" ? sheet.projectID : undefined;
-      onClose();
-      if (projectID === undefined) return;
-      connection
-        .request({ type: "updateProjectSettings", projectID, settings: next })
-        .catch(swallowRequestFailure);
-    },
-    [connection, onClose, sheet],
-  );
-
   const selected = sessions.find((session) => session.id === selection);
 
   switch (sheet.kind) {
@@ -236,15 +241,25 @@ function SheetBody(props: {
       );
 
     case "commands":
-      return <CommandPalette onPick={runCommand} onCancel={onClose} />;
+      return (
+        <CommandPalette
+          projects={projects}
+          sessions={sessions}
+          terminalStates={terminalStates}
+          onPick={runCommand}
+          onPickSession={pickSession}
+          onCancel={onClose}
+        />
+      );
 
     case "newSession": {
-      const subject = projects.find((candidate) => candidate.id === sheet.projectID);
-      if (subject === undefined) return null;
+      // The `+` or context menu's project wins over the selection's, as for the
+      // branch sheet; from the header there is only the selection to go on.
+      const preselected = sheet.projectID ?? selected?.projectID;
       return (
         <ConnectedNewSessionSheet
-          project={subject}
-          projectID={subject.id}
+          projects={projects}
+          initialProjectID={preselected}
           sessions={sessions}
           onCreate={createSession}
           onCancel={onClose}
@@ -266,44 +281,41 @@ function SheetBody(props: {
         />
       );
     }
-
-    case "projectSettings": {
-      const subject = projects.find((candidate) => candidate.id === sheet.projectID);
-      // A project the mirror no longer has closes the sheet rather than rendering
-      // an editor over nothing. The daemon is the source of truth, and it has
-      // said this project is gone.
-      if (subject === undefined) return null;
-      return (
-        <ProjectSettingsSheet
-          project={subject}
-          profiles={profiles}
-          availability={availability}
-          onSave={saveProjectSettings}
-          onCancel={onClose}
-        />
-      );
-    }
   }
 }
 
 /**
  * Its own component so the overview request runs only while this sheet is the
- * open one: a hook in `SheetBody` would fire for every sheet kind.
+ * open one: a hook in `SheetBody` would fire for every sheet kind. Holds which
+ * project the sheet is on, because that is what the request is keyed by.
  */
 function ConnectedNewSessionSheet(props: {
-  readonly project: Project;
-  readonly projectID: ProjectID;
+  readonly projects: readonly Project[];
+  readonly initialProjectID: ProjectID | undefined;
   readonly sessions: readonly Session[];
   readonly onCreate: (intent: SessionCreationIntent) => void;
   readonly onCancel: () => void;
 }): ReactElement {
-  const { connection } = useClientEnvironment();
-  const overview = useBranchOverview(connection, props.projectID);
+  const { connection, native } = useClientEnvironment();
+  const [projectID, setProjectID] = useState(props.initialProjectID);
+  const project = props.projects.find((candidate) => candidate.id === projectID);
+  // Only a repository has branches to ask about.
+  const overview = useBranchOverview(
+    connection,
+    project !== undefined && supportsWorktrees(project) ? project.id : undefined,
+  );
+  const pickDirectory = useCallback(
+    () => native.pickDirectory({ title: "Choose Folder" }),
+    [native],
+  );
   return (
     <NewSessionSheet
-      project={props.project}
+      projects={props.projects}
+      projectID={project?.id}
+      onProjectChange={setProjectID}
       overview={overview}
       sessions={props.sessions}
+      onPickDirectory={pickDirectory}
       onCreate={props.onCreate}
       onCancel={props.onCancel}
     />

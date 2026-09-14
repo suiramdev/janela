@@ -1,7 +1,9 @@
 import type { LaunchProfileID } from "@janela/core";
 import {
+  CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
   withTerminalFontSize,
+  type ConfirmationKey,
   type GlobalSettings,
   type SettingsStoring,
 } from "@janela/ui";
@@ -69,7 +71,18 @@ export function parseSettings(raw: string | null): GlobalSettings {
     readonly terminalFontSize?: unknown;
     readonly notifiesOnBell?: unknown;
     readonly defaultProfileID?: unknown;
+    readonly silencedConfirmations?: unknown;
   };
+
+  // A key this build does not know is dropped rather than carried: the list is
+  // the *policy* (`ConfirmationKey`), and a question that no longer exists must
+  // not silence the one that replaced it.
+  const storedSilenced: readonly unknown[] = Array.isArray(stored.silencedConfirmations)
+    ? stored.silencedConfirmations
+    : [];
+  const silenced: readonly ConfirmationKey[] = CONFIRMATION_KEYS.filter((key) =>
+    storedSilenced.includes(key),
+  );
 
   let settings: GlobalSettings = {
     ...DEFAULT_GLOBAL_SETTINGS,
@@ -82,6 +95,7 @@ export function parseSettings(raw: string | null): GlobalSettings {
     ...(typeof stored.defaultProfileID === "string"
       ? { defaultProfileID: stored.defaultProfileID as LaunchProfileID }
       : {}),
+    ...(silenced.length === 0 ? {} : { silencedConfirmations: silenced }),
   };
 
   if (typeof stored.terminalFontSize === "number") {

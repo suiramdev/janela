@@ -5,13 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ProfileDraft } from "./profile-editing.ts";
 import { profileDraft } from "./profile-editing.ts";
+import type { SettingsDraft } from "./settings-draft.ts";
+import { EMPTY_SETTINGS_DRAFT, withDraftProfile, withoutDraftProfile } from "./settings-draft.ts";
 import { ProfileEditor, SettingsProfiles } from "./settings-profiles.tsx";
-import {
-  fakeProfile,
-  fakeShellProfile,
-  recordingProfileEditing,
-  reportedAvailable,
-} from "./test-fakes.ts";
+import { fakeProfile, fakeShellProfile, reportedAvailable } from "./test-fakes.ts";
 
 const noop = (): void => {};
 
@@ -26,25 +23,21 @@ const SHELL_AND_AGENT = [SHELL, AGENT];
 const SHELL_AVAILABLE = reportedAvailable(SHELL);
 const SHELL_AND_AGENT_AVAILABLE = reportedAvailable(SHELL, AGENT);
 
-const EDITING = recordingProfileEditing();
-
 const BUILT_IN_DRAFT = profileDraft(fakeProfile({ name: "Codex", isBuiltIn: true }));
 const USER_DRAFT = profileDraft(fakeProfile({ isBuiltIn: false }));
 const SHELL_ARGV_DRAFT = profileDraft(fakeProfile({ command: ["zsh", "-lc", "claude"] }));
 const NAMELESS_DRAFT = profileDraft(fakeProfile({ name: "" }));
 const MISSING_DRAFT = profileDraft(fakeProfile({ command: ["opencode"] }));
 
-function editorMarkup(draft: ProfileDraft, isAvailable = true): string {
+function editorMarkup(draft: ProfileDraft, isAvailable = true, isStored = true): string {
   return renderToStaticMarkup(
     <ProfileEditor
       draft={draft}
       isAvailable={isAvailable}
-      isKnown
+      isStored={isStored}
       onChange={noop}
-      onSave={noop}
       onRemove={noop}
       onDuplicate={noop}
-      onCancel={noop}
     />,
   );
 }
@@ -52,9 +45,15 @@ function editorMarkup(draft: ProfileDraft, isAvailable = true): string {
 function listMarkup(
   profiles: readonly LaunchProfile[],
   availability: LaunchProfileAvailability,
+  draft: SettingsDraft = EMPTY_SETTINGS_DRAFT,
 ): string {
   return renderToStaticMarkup(
-    <SettingsProfiles profiles={profiles} availability={availability} editing={EDITING} />,
+    <SettingsProfiles
+      profiles={profiles}
+      availability={availability}
+      draft={draft}
+      onChangeDraft={noop}
+    />,
   );
 }
 
@@ -84,6 +83,33 @@ describe("the profile list", () => {
 
   test("opens with no editor, so nothing is being edited by accident", () => {
     expect(listMarkup(SHELL_ONLY, SHELL_AVAILABLE)).not.toContain("Add Argument");
+  });
+
+  test("shows a staged rename, a staged addition and no staged removal", () => {
+    // The list is the mirror's read through the draft. Without that, a profile
+    // renamed here would keep its old name in the row that renamed it.
+    const renamed = withDraftProfile(
+      EMPTY_SETTINGS_DRAFT,
+      profileDraft({ ...AGENT, name: "Sonnet" }),
+    );
+    const added = withDraftProfile(renamed, profileDraft(fakeProfile({ name: "Codex" })));
+    const markup = listMarkup(SHELL_AND_AGENT, SHELL_AND_AGENT_AVAILABLE, added);
+
+    expect(markup).toContain("Sonnet");
+    expect(markup).not.toContain("Claude Code");
+    expect(markup).toContain("Codex");
+
+    const removed = withoutDraftProfile(EMPTY_SETTINGS_DRAFT, AGENT.id, SHELL_AND_AGENT);
+    expect(listMarkup(SHELL_AND_AGENT, SHELL_AND_AGENT_AVAILABLE, removed)).not.toContain(
+      "Claude Code",
+    );
+  });
+
+  test("a profile with no name yet still has a row you can read", () => {
+    // A blank row reads as a list that failed to render. The editor's heading
+    // and the row say the same placeholder.
+    const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft(fakeProfile({ name: "" })));
+    expect(listMarkup(SHELL_ONLY, SHELL_AVAILABLE, draft)).toContain("New profile");
   });
 });
 
@@ -131,18 +157,23 @@ describe("the editor", () => {
     expect(markup).toContain("absolute path");
   });
 
-  test("refuses to save a profile with a blank name", () => {
+  test("names a blank name as a violation, and leaves refusing to the bar", () => {
+    // The editor has no Save to disable: the screen's bar is what refuses, and
+    // `draftViolations` is what tells it to.
     const markup = editorMarkup(NAMELESS_DRAFT);
     expect(markup).toContain("A profile needs a name.");
-    // The attribute, not the substring: the button's own class list carries
-    // `disabled:opacity-50`, so a bare `toContain("disabled")` passes either way.
-    expect(markup).toMatch(/<button[^>]*\sdisabled=""[^>]*>Save</);
+    expect(markup).not.toContain(">Save</button>");
   });
 
-  test("a valid profile has nothing blocking Save", () => {
-    const markup = editorMarkup(USER_DRAFT);
-    expect(markup).not.toContain("A profile needs a name.");
-    expect(markup).not.toMatch(/<button[^>]*\sdisabled=""[^>]*>Save</);
+  test("a valid profile is named as nothing wrong", () => {
+    expect(editorMarkup(USER_DRAFT)).not.toContain("A profile needs a name.");
+  });
+
+  test("an unsaved profile is discarded rather than deleted", () => {
+    // Nothing to delete: the daemon has never heard of it. The label says which
+    // of the two the button is about to do.
+    expect(editorMarkup(USER_DRAFT, true, false)).toContain(">Discard</button>");
+    expect(editorMarkup(USER_DRAFT, true, false)).not.toContain(">Delete</button>");
   });
 
   test("offers a closed set of icons rather than a text field", () => {

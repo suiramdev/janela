@@ -40,6 +40,14 @@ export interface GlobalSettings {
 
   /** Profile for a new terminal when neither the project nor the user chose one. */
   readonly defaultProfileID?: LaunchProfileID;
+
+  /**
+   * Questions the user ticked "Don't ask again" on. See `ConfirmationKey`.
+   *
+   * Absent, not empty, when nothing is silenced — an absent key is what an
+   * older build's settings look like, and the two must mean the same thing.
+   */
+  readonly silencedConfirmations?: readonly ConfirmationKey[];
 }
 
 /**
@@ -107,6 +115,53 @@ export function withDefaultProfileID(
     return rest;
   }
   return { ...settings, defaultProfileID: profileID };
+}
+
+/**
+ * The questions a user may ask not to be asked again.
+ *
+ * A closed union rather than an open string, because the set is the *policy*:
+ * a confirmation earns a "Don't ask again" only when it is repetitive **and**
+ * what it guards is recoverable. Closing a tab of running shells is asked over
+ * and over by anyone working this way, and a terminal that should not have
+ * ended can be started again.
+ *
+ * Removing a session or a project is deliberately not in here. Both can delete
+ * a directory with uncommitted work in it, and a checkbox that silences that
+ * question forever is a checkbox that eventually loses someone a day's work —
+ * the one cost non-negotiable #7 exists to make explicit every time.
+ */
+export type ConfirmationKey = "closeTerminals";
+
+/** Every key, for storage to validate what an older build wrote against. */
+export const CONFIRMATION_KEYS: readonly ConfirmationKey[] = ["closeTerminals"];
+
+/** Whether this question has been silenced. Absent means it is still asked. */
+export function isConfirmationSilenced(settings: GlobalSettings, key: ConfirmationKey): boolean {
+  return settings.silencedConfirmations?.includes(key) ?? false;
+}
+
+/**
+ * Silences a question, or starts asking it again.
+ *
+ * Stored as the list of *silenced* keys rather than a flag per question, so the
+ * default — every question asked — is an absent key rather than a row that has
+ * to be written correctly. Silencing twice is not an error and does not grow
+ * the list.
+ */
+export function withSilencedConfirmation(
+  settings: GlobalSettings,
+  key: ConfirmationKey,
+  silenced: boolean,
+): GlobalSettings {
+  const current = settings.silencedConfirmations ?? [];
+  if (silenced === current.includes(key)) return settings;
+  const next = silenced ? [...current, key] : current.filter((each) => each !== key);
+  if (next.length === 0) {
+    const { silencedConfirmations: _removed, ...rest } = settings;
+    return rest;
+  }
+  return { ...settings, silencedConfirmations: next };
 }
 
 /**

@@ -4,6 +4,7 @@ import { parseRemovalPlan, type SessionRemovalPreview } from "@janela/protocol";
 
 import type { NativeShell } from "./client-environment.tsx";
 import { createTerminal } from "./command-dispatch.ts";
+import type { ConfirmationRequest, Confirming } from "./confirmation.ts";
 import type { ViewState } from "./view-state.ts";
 
 /**
@@ -32,6 +33,8 @@ export interface SidebarActionTarget {
   readonly connection: Pick<DaemonConnection, "request">;
   readonly view: ViewState;
   readonly native: NativeShell;
+  /** Asking before a session or a project goes. See `confirmation.ts`. */
+  readonly confirmations: Confirming;
 }
 
 export interface SidebarActions {
@@ -41,6 +44,10 @@ export interface SidebarActions {
   newBranchSession(projectID: ProjectID): void;
   /** A new terminal in the session. Always a shell — there is nothing to pick. */
   newTerminal(sessionID: SessionID): void;
+  /**
+   * Shows this project's pane in the settings screen. Navigation, not a dialog:
+   * the form lives in Settings under *Projects* (`settings-window.tsx`).
+   */
   openProjectSettings(projectID: ProjectID): void;
   /** Confirms first, naming the sessions that go with it. */
   removeProject(project: Project): void;
@@ -56,7 +63,7 @@ function swallowRequestFailure(): undefined {
 }
 
 export function createSidebarActions(target: SidebarActionTarget): SidebarActions {
-  const { sessions, connection, view, native } = target;
+  const { sessions, connection, view, native, confirmations } = target;
 
   const removeSession = async (session: Session): Promise<void> => {
     // The plan first, and from the daemon: whether a directory would be deleted,
@@ -66,7 +73,7 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
     if (reply === undefined) return;
     const plan = parseRemovalPlan(reply);
 
-    const agreed = await native.confirm(sessionRemovalPrompt(session, plan));
+    const agreed = await confirmations.confirm(sessionRemovalPrompt(session, plan));
     if (!agreed) return;
 
     await connection.request({
@@ -74,15 +81,15 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
       sessionID: session.id,
       // The plan says what the daemon would do; the client sends its own answer
       // back. This client agrees with it, having just shown the user what it
-      // means — there is no second dialog offering to keep the directory,
-      // because there is no third button on a native confirmation.
+      // means — the dialog states whether the directory goes, and a second
+      // question offering to keep it would be a fork this product does not have.
       deletesDirectory: plan.deletesDirectory,
     });
   };
 
   const removeProject = async (project: Project): Promise<void> => {
     const contained = sessions.inProject(project.id);
-    const agreed = await native.confirm(projectRemovalPrompt(project, contained.length));
+    const agreed = await confirmations.confirm(projectRemovalPrompt(project, contained.length));
     if (!agreed) return;
     await connection.request({ type: "removeProject", projectID: project.id });
   };
@@ -101,7 +108,7 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
     },
 
     openProjectSettings(projectID: ProjectID): void {
-      view.openSheet({ kind: "projectSettings", projectID });
+      view.showSettings({ kind: "project", projectID });
     },
 
     removeProject(project: Project): void {
@@ -122,11 +129,9 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
   };
 }
 
-export interface ConfirmationPrompt {
-  readonly title: string;
-  readonly message: string;
-  readonly confirmLabel: string;
-}
+// `ConfirmationPrompt` used to be declared here, with the three fields a native
+// alert could carry. It is `ConfirmationRequest` now — the same three, plus the
+// two the dialog adds — so there is one shape for a question in this client.
 
 /**
  * What removing this session costs, in words, before it is removed.
@@ -140,7 +145,7 @@ export interface ConfirmationPrompt {
 export function sessionRemovalPrompt(
   session: Session,
   plan: SessionRemovalPreview,
-): ConfirmationPrompt {
+): ConfirmationRequest {
   const parts: string[] = [];
 
   if (plan.liveTerminalCount > 0) {
@@ -172,7 +177,7 @@ export function sessionRemovalPrompt(
 }
 
 /** Removing a project removes its sessions, which is the part worth saying out loud. */
-export function projectRemovalPrompt(project: Project, sessionCount: number): ConfirmationPrompt {
+export function projectRemovalPrompt(project: Project, sessionCount: number): ConfirmationRequest {
   return {
     title: `Remove ${project.name}?`,
     message:

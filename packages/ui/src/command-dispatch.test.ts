@@ -12,12 +12,15 @@ import {
 } from "@janela/core";
 
 import {
+  closeTerminals,
   createCommandDispatch,
   createSessionAndSelect,
   sessionOrder,
   type CommandTarget,
 } from "./command-dispatch.ts";
 import { COMMANDS } from "./commands.ts";
+import type { ConfirmationRequest } from "./confirmation.ts";
+import type { ConfirmationKey } from "./global-settings.ts";
 import {
   fakeProfile,
   fakeProject,
@@ -25,6 +28,8 @@ import {
   fakeSurfaceHandle,
   fakeTerminal,
   inertNativeShell,
+  recordingConfirmations,
+  type RecordingConfirmations,
   type RecordingNativeShell,
 } from "./test-fakes.ts";
 import { createViewState, type ViewState } from "./view-state.ts";
@@ -35,6 +40,7 @@ interface Harness {
   readonly sessions: SessionStore;
   readonly sent: ClientRequest[];
   readonly native: RecordingNativeShell;
+  readonly confirmations: RecordingConfirmations;
   /** Appears in the mirror when the next `createSession` is answered. */
   appears: Session | undefined;
 }
@@ -46,6 +52,8 @@ function harness(options: {
   readonly states?: Readonly<Record<TerminalID, TerminalState>>;
   readonly profiles?: readonly ReturnType<typeof fakeProfile>[];
   readonly confirms?: boolean;
+  /** Questions the user has already ticked "Don't ask again" on. */
+  readonly silenced?: readonly ConfirmationKey[];
   readonly picks?: string;
 }): Harness {
   let sessions = options.sessions ?? [];
@@ -85,20 +93,21 @@ function harness(options: {
       await native.pickDirectory(request);
       return options.picks === undefined ? undefined : absolutePath(options.picks);
     },
-    confirm: async (request) => {
-      await native.confirm(request);
-      return options.confirms === true;
-    },
     revealInFinder: native.revealInFinder,
     openInTerminal: native.openInTerminal,
   };
 
   const view = createViewState(sessionStore);
+  const confirmations = recordingConfirmations({
+    agrees: options.confirms === true,
+    ...(options.silenced === undefined ? {} : { silenced: options.silenced }),
+  });
   const target: CommandTarget = {
     projects: projectStore,
     sessions: sessionStore,
     view,
     native: recording,
+    confirmations,
     connection: {
       request: (message) => {
         sent.push(message);
@@ -118,6 +127,7 @@ function harness(options: {
     sessions: sessionStore,
     sent,
     native: recording,
+    confirmations,
     get appears(): Session | undefined {
       return appearing.session;
     },
@@ -173,7 +183,7 @@ describe("sheets and screens", () => {
     const { target, view } = harness({});
     await createCommandDispatch(target)("openSettings");
 
-    expect(view.screen).toEqual({ kind: "settings", tab: "general" });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "general" } });
     expect(view.sheet).toBeUndefined();
   });
 
@@ -200,6 +210,17 @@ describe("creation", () => {
     await createCommandDispatch(context.target)("newSession");
 
     expect(context.view.sheet).toEqual({ kind: "newSession", projectID: project.id });
+    expect(context.sent).toEqual([]);
+  });
+
+  test("New Session with nothing selected opens the same dialog on no project", async () => {
+    const context = harness({ projects: [fakeProject()] });
+
+    await createCommandDispatch(context.target)("newSession");
+
+    // No folder dialog: "No project" is a choice in the sheet, not a picker.
+    expect(context.view.sheet).toEqual({ kind: "newSession" });
+    expect(context.native.calls).toEqual([]);
     expect(context.sent).toEqual([]);
   });
 
@@ -307,8 +328,40 @@ describe("closePane", () => {
 
     await createCommandDispatch(context.target)("closePane");
 
-    expect(context.native.calls).toEqual(["confirm:Close this pane?"]);
+    expect(context.confirmations.titles).toEqual(["Close this pane?"]);
     expect(context.sent).toEqual([]);
+  });
+
+  test("the question offers Don't ask again, because it is the repetitive one", async () => {
+    const terminal = fakeTerminal();
+    const session = fakeSession({ terminals: [terminal] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: { [terminal.id]: { kind: "running" } },
+    });
+
+    await createCommandDispatch(context.target)("closePane");
+
+    // The key is what the settings row and the switch both read. Without it
+    // the checkbox has nowhere to record an answer and never appears.
+    expect(context.confirmations.asked[0]?.remember).toBe("closeTerminals");
+  });
+
+  test("a silenced question closes a running pane without asking", async () => {
+    const terminal = fakeTerminal();
+    const session = fakeSession({ terminals: [terminal] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: { [terminal.id]: { kind: "running" } },
+      silenced: ["closeTerminals"],
+    });
+
+    await createCommandDispatch(context.target)("closePane");
+
+    expect(context.confirmations.titles).toEqual([]);
+    expect(context.sent).toEqual([{ type: "removeTerminal", terminalID: terminal.id }]);
   });
 
   test("a confirmed close removes the terminal", async () => {
@@ -333,8 +386,92 @@ describe("closePane", () => {
 
     await createCommandDispatch(context.target)("closePane");
 
-    expect(context.native.calls).toEqual([]);
+    expect(context.confirmations.titles).toEqual([]);
     expect(context.sent).toEqual([{ type: "removeTerminal", terminalID: terminal.id }]);
+  });
+});
+
+/** Records what the question actually said, which is the whole point of asking. */
+function asking(context: Harness, agrees: boolean) {
+  const confirmations = recordingConfirmations({ agrees });
+  return {
+    get messages(): readonly string[] {
+      return confirmations.asked.map((request) => request.message);
+    },
+    get asked(): readonly ConfirmationRequest[] {
+      return confirmations.asked;
+    },
+    target: {
+      sessions: context.sessions,
+      connection: context.target.connection,
+      confirmations,
+    },
+  };
+}
+
+describe("closeTerminals", () => {
+  test("closing a tab states how many terminals it ends, and ends all of them", async () => {
+    const shell = fakeTerminal({ title: "zsh" });
+    const agent = fakeTerminal({ title: "claude" });
+    const done = fakeTerminal({ title: "bun test" });
+    const session = fakeSession({ terminals: [shell, agent, done] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: {
+        [shell.id]: { kind: "running" },
+        [agent.id]: { kind: "needsAttention" },
+        [done.id]: { kind: "exited", code: 0 },
+      },
+    });
+    const asked = asking(context, true);
+
+    await closeTerminals(asked.target, session, [shell.id, agent.id, done.id], "tab");
+
+    // Two of the three are live, and the exited one costs nothing to close: the
+    // count in the question is what the user loses, not how many panes there are.
+    expect(asked.messages).toEqual(["2 terminals are still running. Closing the tab ends them."]);
+    expect(context.sent).toEqual([
+      { type: "removeTerminal", terminalID: shell.id },
+      { type: "removeTerminal", terminalID: agent.id },
+      { type: "removeTerminal", terminalID: done.id },
+    ]);
+  });
+
+  test("refusing keeps every terminal in the tab, including the finished ones", async () => {
+    const shell = fakeTerminal({ title: "zsh" });
+    const done = fakeTerminal();
+    const session = fakeSession({ terminals: [shell, done] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: { [shell.id]: { kind: "running" } },
+    });
+    const asked = asking(context, false);
+
+    await closeTerminals(asked.target, session, [shell.id, done.id], "tab");
+
+    expect(asked.messages).toEqual(["zsh is still running. Closing the tab ends it."]);
+    expect(context.sent).toEqual([]);
+  });
+
+  test("a tab of finished terminals closes without a question", async () => {
+    const first = fakeTerminal();
+    const second = fakeTerminal();
+    const session = fakeSession({ terminals: [first, second] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: { [first.id]: { kind: "exited", code: 130 } },
+    });
+
+    await closeTerminals(context.target, session, [first.id, second.id], "tab");
+
+    expect(context.confirmations.titles).toEqual([]);
+    expect(context.sent).toEqual([
+      { type: "removeTerminal", terminalID: first.id },
+      { type: "removeTerminal", terminalID: second.id },
+    ]);
   });
 });
 

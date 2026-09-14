@@ -9,8 +9,8 @@ import type {
 import type { ReactElement } from "react";
 import { useCallback, useMemo } from "react";
 
+import { FindSurface, type FindRow } from "./find-surface.tsx";
 import { rankBy } from "./fuzzy.ts";
-import { QuickList, type QuickListItem } from "./quick-list.tsx";
 import { sessionStatus, statusText } from "./sidebar-model.ts";
 
 /**
@@ -76,11 +76,12 @@ export function JumpList(props: JumpListProps): ReactElement {
   const { projects, sessions, terminalStates, currentSelection, onPick, onCancel } = props;
 
   const rank = useCallback(
-    (query: string): readonly QuickListItem[] =>
+    (query: string): readonly FindRow[] =>
       rankedSessions(query, projects, sessions, currentSelection).map((session) => ({
-        id: session.id,
-        title: session.name,
-        subtitle: projects.find((project) => project.id === session.projectID)?.name ?? STANDALONE,
+        value: session.id,
+        label: session.name,
+        description:
+          projects.find((project) => project.id === session.projectID)?.name ?? STANDALONE,
         status: statusText(sessionStatus(session, terminalStates)),
       })),
     [projects, sessions, terminalStates, currentSelection],
@@ -99,7 +100,7 @@ export function JumpList(props: JumpListProps): ReactElement {
   );
 
   return (
-    <QuickList
+    <FindSurface
       label="Sessions"
       placeholder="Go to session…"
       rank={rank}

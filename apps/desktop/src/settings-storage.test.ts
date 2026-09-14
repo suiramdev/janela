@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { DEFAULT_GLOBAL_SETTINGS, TERMINAL_FONT_SIZE_BOUNDS } from "@janela/ui";
+import {
+  DEFAULT_GLOBAL_SETTINGS,
+  TERMINAL_FONT_SIZE_BOUNDS,
+  withSilencedConfirmation,
+} from "@janela/ui";
 
 import { localStorageSettings, parseSettings } from "./settings-storage.ts";
 
@@ -79,5 +83,37 @@ describe("localStorageSettings", () => {
     };
 
     await localStorageSettings(refusing).save(DEFAULT_GLOBAL_SETTINGS);
+  });
+});
+
+describe("silenced confirmations", () => {
+  test("a silenced question survives a round trip", async () => {
+    const storage = memoryStorage();
+    const store = localStorageSettings(storage);
+
+    await store.save(withSilencedConfirmation(DEFAULT_GLOBAL_SETTINGS, "closeTerminals", true));
+
+    expect((await store.load()).silencedConfirmations).toEqual(["closeTerminals"]);
+  });
+
+  test("a key this build does not know is dropped", () => {
+    // A question that was removed must not silence the one that replaced it, and
+    // a list from a *newer* build is data this one cannot interpret.
+    const settings = parseSettings(
+      JSON.stringify({ silencedConfirmations: ["closeTerminals", "removeEverything"] }),
+    );
+
+    expect(settings.silencedConfirmations).toEqual(["closeTerminals"]);
+  });
+
+  test("nothing silenced is an absent key, not an empty list", () => {
+    expect("silencedConfirmations" in parseSettings(JSON.stringify({}))).toBe(false);
+    expect(
+      "silencedConfirmations" in parseSettings(JSON.stringify({ silencedConfirmations: [] })),
+    ).toBe(false);
+    // Not a list at all is the same as nothing, by the field-by-field rule.
+    expect(
+      "silencedConfirmations" in parseSettings(JSON.stringify({ silencedConfirmations: "yes" })),
+    ).toBe(false);
   });
 });

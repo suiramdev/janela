@@ -37,7 +37,7 @@
 @source "../../../packages/ui/src";
 
 /*
- * Reduce Motion is the user's word (packages/design/src/tokens.ts § MOTION). The
+ * Reduce Motion is the user's word (packages/design/src/tokens.ts § Motion). The
  * primitives above do not check it themselves, so it is enforced once, here:
  * every animation and transition collapses to a frame, and a dialog that would
  * have faded in simply appears.
@@ -54,6 +54,23 @@
 
 :root {
   color-scheme: light dark;
+
+  /* The motion ladder, for the half of the client that animates in CSS rather
+     than through `framer-motion`: the same three tiers as `spring` in
+     packages/design/src/lib/springs.ts, in milliseconds, so a Tailwind
+     transition can say `duration-(--spring-moderate)` instead of picking a
+     number. `styles.test.ts` fails if these stop matching the springs.
+
+     A tween at the tier's duration is not the tier's spring curve; what
+     transfers is the decision — how big the thing that moves is. The exits are
+     literal, because `spring.<tier>.exit` is a tween already. */
+  --spring-fast: 80ms;
+  --spring-moderate: 160ms;
+  --spring-slow: 240ms;
+  --spring-fast-exit: 60ms;
+  --spring-moderate-exit: 120ms;
+  --spring-slow-exit: 160ms;
+
   --janela-terminal-background: #ffffff;
   --janela-attention: #ff9500;
   --janela-running: #34c759;
@@ -84,6 +101,64 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* The Fluid Functionalism surface ladder the vendored sidebar paints with:
+     eight elevations, each with the shadow that belongs to it. A surface level
+     is a *depth*, not a colour choice — `surfaceClasses(n)` picks both halves
+     together, which is why the two ladders are defined side by side and never
+     mixed by hand.
+
+     Light: paper that stays paper, and depth carried by a hairline plus
+     progressively larger drop shadows. */
+  --surface-1: oklch(0.985 0 0);
+  --surface-2: oklch(0.995 0 0);
+  --surface-3: oklch(1 0 0);
+  --surface-4: oklch(1 0 0);
+  --surface-5: oklch(1 0 0);
+  --surface-6: oklch(1 0 0);
+  --surface-7: oklch(1 0 0);
+  --surface-8: oklch(1 0 0);
+  --shadow-color: oklch(0 0 0 / 6%);
+  --shadow-1: 0 0 0 1px var(--shadow-color);
+  --shadow-2: 0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color);
+  --shadow-3:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color);
+  --shadow-4:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color);
+  --shadow-5:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
+    0 12px 12px -6px var(--shadow-color);
+  --shadow-6:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
+    0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(--shadow-color);
+  --shadow-7:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
+    0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(--shadow-color),
+    0 48px 48px -24px var(--shadow-color);
+  --shadow-8:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
+    0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(--shadow-color),
+    0 48px 48px -24px var(--shadow-color), 0 96px 96px -48px var(--shadow-color);
+
+  /* One interaction ladder for rows: hover, pressed, selected. The sidebar's
+     travelling highlight paints `bg-hover`, and a row's own `:hover` paints the
+     same token, so the two cannot disagree about what "lit" looks like. */
+  --hover: oklch(0 0 0 / 4%);
+  --active: oklch(0 0 0 / 7%);
+  --selected: oklch(0.87 0 0);
+  --focus-ring: var(--ring);
+
+  /* The ink an overlay tints *with*, as a bare `R G B` triplet rather than a
+     colour: the scrollbar thumb composes it at three opacities
+     (`rgb(var(--overlay) / 0.08)` and up), and a colour value cannot be given a
+     new alpha that way. Black over a light appearance, white over a dark one. */
+  --overlay: 0 0 0;
 
   /* The registry's radius scale. The preset's "small" radius, which lands the
      primitives between CORNER_RADIUS.small and .medium. */
@@ -130,6 +205,74 @@
     --sidebar-ring: oklch(0.556 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
+
+    /* Dark surfaces lift by lightness first — a drop shadow is nearly invisible
+       against a dark background — but the drops still *accumulate* the way the
+       light ladder's do, which is what keeps level 5 reading as further off the
+       page than level 3 once both are overlays rather than cards. Each step adds
+       a layer and keeps the ones below it, and the inset highlight and hairline
+       ramp with the level: a dialog has a brighter top edge than a card does.
+
+       Simplified from the registry in one place: the outer edge is a single
+       alpha rather than a ramp from 12% to 22% across levels 3–8. That ramp is a
+       10% alpha change on black behind a 1px line, and one value is one thing to
+       raise when Increase Contrast asks for harder edges. */
+    --surface-1: oklch(0.205 0 0);
+    --surface-2: oklch(0.235 0 0);
+    --surface-3: oklch(0.265 0 0);
+    --surface-4: oklch(0.295 0 0);
+    --surface-5: oklch(0.325 0 0);
+    --surface-6: oklch(0.355 0 0);
+    --surface-7: oklch(0.385 0 0);
+    --surface-8: oklch(0.415 0 0);
+    --shadow-highlight-1: oklch(1 0 0 / 1%);
+    --shadow-highlight-2: oklch(1 0 0 / 2%);
+    --shadow-highlight-3: oklch(1 0 0 / 4%);
+    --shadow-highlight-4: oklch(1 0 0 / 6%);
+    --shadow-hairline-1: oklch(1 0 0 / 2%);
+    --shadow-hairline-2: oklch(1 0 0 / 4%);
+    --shadow-hairline-3: oklch(1 0 0 / 6%);
+    --shadow-edge: oklch(0 0 0 / 16%);
+    --shadow-drop: oklch(0 0 0 / 18%);
+    --shadow-1: inset 0 0 0 1px var(--shadow-hairline-1);
+    --shadow-2:
+      inset 0 1px 0 0 var(--shadow-highlight-1), inset 0 0 0 1px var(--shadow-hairline-1),
+      0 1px 1px -0.5px var(--shadow-drop);
+    --shadow-3:
+      inset 0 1px 0 0 var(--shadow-highlight-2), inset 0 0 0 1px var(--shadow-hairline-1),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop);
+    --shadow-4:
+      inset 0 1px 0 0 var(--shadow-highlight-2), inset 0 0 0 1px var(--shadow-hairline-2),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop), 0 6px 6px -3px var(--shadow-drop);
+    --shadow-5:
+      inset 0 1px 0 0 var(--shadow-highlight-3), inset 0 0 0 1px var(--shadow-hairline-2),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop), 0 6px 6px -3px var(--shadow-drop),
+      0 12px 12px -6px var(--shadow-drop);
+    --shadow-6:
+      inset 0 1px 0 0 var(--shadow-highlight-3), inset 0 0 0 1px var(--shadow-hairline-3),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop), 0 6px 6px -3px var(--shadow-drop),
+      0 12px 12px -6px var(--shadow-drop), 0 24px 24px -12px var(--shadow-drop);
+    --shadow-7:
+      inset 0 1px 0 0 var(--shadow-highlight-4), inset 0 0 0 1px var(--shadow-hairline-3),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop), 0 6px 6px -3px var(--shadow-drop),
+      0 12px 12px -6px var(--shadow-drop), 0 24px 24px -12px var(--shadow-drop),
+      0 48px 48px -24px var(--shadow-drop);
+    --shadow-8:
+      inset 0 1px 0 0 var(--shadow-highlight-4), inset 0 0 0 1px var(--shadow-hairline-3),
+      0 0 0 1px var(--shadow-edge), 0 1px 1px -0.5px var(--shadow-drop),
+      0 3px 3px -1.5px var(--shadow-drop), 0 6px 6px -3px var(--shadow-drop),
+      0 12px 12px -6px var(--shadow-drop), 0 24px 24px -12px var(--shadow-drop),
+      0 48px 48px -24px var(--shadow-drop), 0 96px 96px -48px var(--shadow-drop);
+
+    --hover: oklch(1 0 0 / 6%);
+    --active: oklch(1 0 0 / 10%);
+    --selected: oklch(0.371 0 0);
+    --overlay: 255 255 255;
   }
 }
 
@@ -146,6 +289,14 @@
     --ring: oklch(0.145 0 0);
     --sidebar-border: oklch(0.708 0 0);
     --sidebar-ring: oklch(0.145 0 0);
+
+    /* Increase Contrast: the faint tokens are the ones whose whole job is to be
+       faint, so the interaction ladder and the surface hairline are the two
+       that have to be darkened here. */
+    --hover: oklch(0 0 0 / 9%);
+    --active: oklch(0 0 0 / 14%);
+    --selected: oklch(0.708 0 0);
+    --shadow-color: oklch(0 0 0 / 20%);
   }
 }
 
@@ -162,6 +313,23 @@
     --ring: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 40%);
     --sidebar-ring: oklch(0.985 0 0);
+
+    --hover: oklch(1 0 0 / 14%);
+    --active: oklch(1 0 0 / 20%);
+    --selected: oklch(0.556 0 0);
+    --overlay: 255 255 255;
+    /* Increase Contrast wants an edge, not a ramp: every step of the hairline
+       and the highlight is flattened to one value a user can actually see, and
+       the outer edge with them. A surface that can be found by its border does
+       not need eight gradations of being findable. */
+    --shadow-hairline-1: oklch(1 0 0 / 30%);
+    --shadow-hairline-2: oklch(1 0 0 / 30%);
+    --shadow-hairline-3: oklch(1 0 0 / 30%);
+    --shadow-highlight-1: oklch(1 0 0 / 12%);
+    --shadow-highlight-2: oklch(1 0 0 / 12%);
+    --shadow-highlight-3: oklch(1 0 0 / 12%);
+    --shadow-highlight-4: oklch(1 0 0 / 12%);
+    --shadow-edge: oklch(0 0 0 / 40%);
   }
 }
 
@@ -188,6 +356,33 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  /* `bg-hover` is the class `FluidHoverHighlight` and every sidebar row paint
+     themselves with. One token, so the travelling highlight and a row's own
+     `:hover` cannot disagree about what "lit" looks like. */
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-selected: var(--selected);
+
+  /* The surface ladder, as utilities. `surfaceClasses(n)` in
+     packages/design/src/lib/surface-classes.ts emits `bg-surface-N
+     shadow-surface-N` as literal strings, because Tailwind's scanner cannot see
+     a composed class name — these are the pairs it resolves them to. */
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-surface-5: var(--surface-5);
+  --color-surface-6: var(--surface-6);
+  --color-surface-7: var(--surface-7);
+  --color-surface-8: var(--surface-8);
+  --shadow-surface-1: var(--shadow-1);
+  --shadow-surface-2: var(--shadow-2);
+  --shadow-surface-3: var(--shadow-3);
+  --shadow-surface-4: var(--shadow-4);
+  --shadow-surface-5: var(--shadow-5);
+  --shadow-surface-6: var(--shadow-6);
+  --shadow-surface-7: var(--shadow-7);
+  --shadow-surface-8: var(--shadow-8);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -229,20 +424,20 @@ body,
   overflow: hidden;
 }
 
+/*
+ * The window itself is level 1 of the surface ladder, not `--background`.
+ *
+ * The sidebar's `inset` variant paints nothing: the rail is transparent and the
+ * window shows through it, so this *is* the sidebar's colour as much as the
+ * window's. Level 1 is a hair off white (and a step up from black), which is
+ * what lets the content card at level 2 read as raised in both appearances —
+ * `--background` is where the card used to be, and a card on its own colour is
+ * not a card.
+ */
 body {
   margin: 0;
-  background-color: var(--background);
+  background-color: var(--surface-1);
   color: var(--foreground);
-}
-
-/*
- * The sidebar's search field keeps `type="search"` for its semantics — a screen
- * reader announces "search text field" — but not WebKit's clear button: the
- * sidebar has its own, and that one clears the status filter as well. Two X's
- * side by side, one of which does less, is worse than one.
- */
-input[type="search"]::-webkit-search-cancel-button {
-  display: none;
 }
 
 @layer base {
@@ -250,9 +445,282 @@ input[type="search"]::-webkit-search-cancel-button {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-surface-1 text-foreground;
   }
   html {
     @apply font-sans;
+  }
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * The scrollbars system, from the same registry as `ScrollArea`
+ * (`npx shadcn@latest add …/r/base/scroll-area.json` ships it as the item's
+ * `css` payload, which nothing in this repo installs automatically).
+ *
+ * Three parts, and only the third is global:
+ *
+ * 1. `.scroll-fade` / `.scroll-fade-x` — the mask a scroller wears so content
+ *    dissolves at the edge it can scroll toward instead of being cut off. The
+ *    `@supports` block makes each end's opacity a scroll-driven animation, so
+ *    an edge with nothing past it is *not* faded. WebKit has had scroll-driven
+ *    animations since Safari 26, which is what the app runs in; the static
+ *    fallback above it fades both ends unconditionally.
+ * 2. `.scroll-divider` — a hairline at a scroller's boundary, which appears
+ *    only once there is something scrolled past it. It cannot live on the
+ *    scroller itself (the mask would erase it), so it rides the wrapper and
+ *    reads the scroller's timeline through `timeline-scope`.
+ * 3. `@media (pointer: fine)` — the *native* scrollbar, restyled to match the
+ *    one `ScrollBar` draws. This is the part that reaches the scrollers no
+ *    component of ours owns: the settings pane, a sheet's body, the tab strip,
+ *    and xterm's own viewport. Guarded on a fine pointer, because a touch
+ *    device has no scrollbar to style and gets native overlay behaviour.
+ *
+ * Verbatim from the registry apart from `--overlay`, which is a token here.
+ * ---------------------------------------------------------------------------
+ */
+@property --sf-start {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+@property --sf-end {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+@keyframes sf-reveal-start {
+  from {
+    --sf-start: 1;
+  }
+  to {
+    --sf-start: 0;
+  }
+}
+
+@keyframes sf-reveal-end {
+  from {
+    --sf-end: 0;
+  }
+  to {
+    --sf-end: 1;
+  }
+}
+
+/*
+ * In `base`, not at top level: these are defaults a caller overrides with a
+ * utility (`[--scroll-fade-size:16px]` on a 28px row), and an unlayered rule
+ * would outrank every utility by source order alone.
+ */
+@layer base {
+  .scroll-fade,
+  .scroll-fade-x {
+    --scroll-fade-size: 48px;
+  }
+
+  .scroll-fade {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--scroll-fade-size),
+      #000 calc(100% - var(--scroll-fade-size)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--scroll-fade-size),
+      #000 calc(100% - var(--scroll-fade-size)),
+      transparent 100%
+    );
+  }
+
+  .scroll-fade-x {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--scroll-fade-size),
+      #000 calc(100% - var(--scroll-fade-size)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--scroll-fade-size),
+      #000 calc(100% - var(--scroll-fade-size)),
+      transparent 100%
+    );
+  }
+
+  @keyframes sf-divider-start {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes sf-divider-end {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @supports (timeline-scope: --sf) {
+    .scroll-divider {
+      position: relative;
+      timeline-scope: --sf-scroller;
+      --scroll-divider-size: 48px;
+    }
+
+    .scroll-divider .scroll-fade {
+      scroll-timeline-name: --sf-scroller;
+    }
+
+    .scroll-divider::before,
+    .scroll-divider::after {
+      content: "";
+      position: absolute;
+      left: var(--scroll-divider-inset, 0px);
+      right: var(--scroll-divider-inset, 0px);
+      height: 1px;
+      background-color: var(--border);
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0;
+    }
+
+    .scroll-divider::before {
+      top: 0;
+      animation: sf-divider-start both linear;
+      animation-timeline: --sf-scroller;
+      animation-range: 0 var(--scroll-divider-size);
+    }
+
+    .scroll-divider:first-child::before {
+      content: none;
+    }
+
+    .scroll-divider::after {
+      bottom: 0;
+      animation: sf-divider-end both linear;
+      animation-timeline: --sf-scroller;
+      animation-range: calc(100% - var(--scroll-divider-size)) 100%;
+    }
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .scroll-fade {
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, var(--sf-start)) 0,
+        #000 var(--scroll-fade-size),
+        #000 calc(100% - var(--scroll-fade-size)),
+        rgba(0, 0, 0, var(--sf-end)) 100%
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, var(--sf-start)) 0,
+        #000 var(--scroll-fade-size),
+        #000 calc(100% - var(--scroll-fade-size)),
+        rgba(0, 0, 0, var(--sf-end)) 100%
+      );
+      animation:
+        sf-reveal-start both linear,
+        sf-reveal-end both linear;
+      animation-timeline: scroll(self), scroll(self);
+      animation-range-start: 0, calc(100% - var(--scroll-fade-size));
+      animation-range-end: var(--scroll-fade-size), 100%;
+    }
+
+    .scroll-fade-x {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        rgba(0, 0, 0, var(--sf-start)) 0,
+        #000 var(--scroll-fade-size),
+        #000 calc(100% - var(--scroll-fade-size)),
+        rgba(0, 0, 0, var(--sf-end)) 100%
+      );
+      mask-image: linear-gradient(
+        to right,
+        rgba(0, 0, 0, var(--sf-start)) 0,
+        #000 var(--scroll-fade-size),
+        #000 calc(100% - var(--scroll-fade-size)),
+        rgba(0, 0, 0, var(--sf-end)) 100%
+      );
+      animation:
+        sf-reveal-start both linear,
+        sf-reveal-end both linear;
+      animation-timeline: scroll(self inline), scroll(self inline);
+      animation-range-start: 0, calc(100% - var(--scroll-fade-size));
+      animation-range-end: var(--scroll-fade-size), 100%;
+    }
+  }
+
+  @media (pointer: fine) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgb(var(--overlay) / 0.08) transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background-color: rgb(var(--overlay) / 0.08);
+      border: 3px solid transparent;
+      background-clip: content-box;
+      border-radius: 9999px;
+    }
+
+    ::-webkit-scrollbar-thumb:vertical {
+      border-left-width: 1px;
+      border-right-width: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:horizontal {
+      border-top-width: 1px;
+      border-bottom-width: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgb(var(--overlay) / 0.12);
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+      background-color: rgb(var(--overlay) / 0.16);
+    }
+  }
+}
+
+/*
+ * The `css` payload of the subtle tabs (`…/r/base/tabs-subtle.json`), which the
+ * command menu's filter row is built from: a scroller with no visible
+ * scrollbar. Not `overflow: hidden` — the row still scrolls, by drag and by
+ * keyboard, and the tabs that overflow it are reachable; it is the *bar* that
+ * is hidden, because the row is one control tall and a bar inside it would eat
+ * a third of a tab.
+ */
+@layer base {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }

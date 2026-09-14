@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { acceleratorSymbols, COMMANDS, isCommandID } from "./commands.ts";
+import { acceleratorCaps, COMMANDS, isCommandID } from "./commands.ts";
 
 const chordOf = (id: string): string | undefined =>
   COMMANDS.find((command) => command.id === id)?.accelerator;
@@ -43,10 +43,10 @@ describe("isCommandID", () => {
   });
 });
 
-describe("acceleratorSymbols", () => {
-  test("renders the chord a Mac user reads, with no separator", () => {
-    expect(acceleratorSymbols("CmdOrCtrl+Shift+]")).toBe("⌘⇧]");
-    expect(acceleratorSymbols("CmdOrCtrl+Alt+Left")).toBe("⌘⌥←");
-    expect(acceleratorSymbols("CmdOrCtrl+,")).toBe("⌘,");
+describe("acceleratorCaps", () => {
+  test("renders the chord a Mac user reads, one token per cap", () => {
+    expect(acceleratorCaps("CmdOrCtrl+Shift+]")).toBe("⌘+⇧+]");
+    expect(acceleratorCaps("CmdOrCtrl+Alt+Left")).toBe("⌘+⌥+←");
+    expect(acceleratorCaps("CmdOrCtrl+,")).toBe("⌘+,");
   });
 });

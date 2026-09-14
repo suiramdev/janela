@@ -2,6 +2,7 @@ import type { DaemonConnection, ProjectStore, SessionStore } from "@janela/clien
 import {
   focusedTab,
   focusNeighbour,
+  isLive,
   type Axis,
   type Project,
   type Session,
@@ -12,6 +13,7 @@ import type { SessionCreationIntent } from "@janela/protocol";
 
 import type { NativeShell } from "./client-environment.tsx";
 import type { CommandID } from "./commands.ts";
+import type { ConfirmationRequest, Confirming } from "./confirmation.ts";
 import { resolveLocalLayout, withFocusedTab } from "./layout-edits.ts";
 import type { ViewState } from "./view-state.ts";
 
@@ -42,6 +44,8 @@ export interface CommandTarget {
   readonly connection: Pick<DaemonConnection, "request">;
   readonly view: ViewState;
   readonly native: NativeShell;
+  /** Asking before something ends. See `confirmation.ts`. */
+  readonly confirmations: Confirming;
 }
 
 /**
@@ -149,6 +153,75 @@ export function splitTerminal(
   });
 }
 
+/**
+ * What closing one pane, or a whole tab, costs — as a question.
+ *
+ * One function behind ⌘W, a pane's close button and a tab's close button, because
+ * they differ only in how many terminals they name. A tab's button is the case
+ * that makes this worth sharing: it ends every terminal in that tab, including
+ * the ones its splits are not currently showing, and non-negotiable #7 says the
+ * user is told what they are ending rather than finding out.
+ *
+ * Idle, exited and failed terminals are closed without a word — there is nothing
+ * to lose — so a tab of finished shells shuts with one click.
+ *
+ * The removals are sent in order on one queue and then awaited together, not one
+ * after the other: they are independent — each collapses the layout around its
+ * own terminal — and a tab of six panes should not take six round trips. A
+ * session that loses its last terminal is given one fresh idle shell by the
+ * daemon rather than being left with none.
+ *
+ * `allSettled`, because a request that rejects while the daemon is away is
+ * routine and must not leave its siblings unobserved.
+ */
+export async function closeTerminals(
+  target: Pick<CommandTarget, "sessions" | "connection" | "confirmations">,
+  session: Session,
+  terminals: readonly TerminalID[],
+  scope: "pane" | "tab",
+): Promise<void> {
+  const { sessions, connection, confirmations } = target;
+
+  const live = terminals.filter((id) => {
+    const state = sessions.terminalStates[id];
+    return state !== undefined && isLive(state);
+  });
+
+  if (live.length > 0) {
+    const agreed = await confirmations.confirm(closingCost(session, live, scope));
+    if (!agreed) return;
+  }
+
+  await Promise.allSettled(
+    terminals.map((terminalID) => connection.request({ type: "removeTerminal", terminalID })),
+  );
+}
+
+/**
+ * The confirmation's words: what is still running, and what ends if it goes.
+ *
+ * The one question in the application that offers "Don't ask again". Anyone who
+ * works in splits meets it several times an hour, and what it guards is
+ * recoverable — a shell that should not have ended is one ⌘T away. Removing a
+ * session is the opposite on both counts, which is why it has no key.
+ */
+function closingCost(
+  session: Session,
+  live: readonly TerminalID[],
+  scope: "pane" | "tab",
+): ConfirmationRequest {
+  const named = session.terminals.find((terminal) => terminal.id === live[0])?.title ?? "It";
+  return {
+    title: scope === "pane" ? "Close this pane?" : "Close this tab?",
+    message:
+      live.length === 1
+        ? `${named} is still running. Closing the ${scope} ends it.`
+        : `${live.length} terminals are still running. Closing the ${scope} ends them.`,
+    confirmLabel: scope === "pane" ? "Close Pane" : "Close Tab",
+    remember: "closeTerminals",
+  };
+}
+
 export function createCommandDispatch(target: CommandTarget): (id: CommandID) => Promise<void> {
   const { projects, sessions, connection, view, native } = target;
 
@@ -197,19 +270,7 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     if (session === undefined) return;
     const terminalID = focusedIn(session);
     if (terminalID === undefined) return;
-
-    const state = sessions.terminalStates[terminalID];
-    if (state?.kind === "running" || state?.kind === "needsAttention") {
-      const title = session.terminals.find((terminal) => terminal.id === terminalID)?.title ?? "It";
-      const agreed = await native.confirm({
-        title: "Close this pane?",
-        message: `${title} is still running. Closing the pane ends it.`,
-        confirmLabel: "Close Pane",
-      });
-      if (!agreed) return;
-    }
-
-    await connection.request({ type: "removeTerminal", terminalID });
+    await closeTerminals(target, session, [terminalID], "pane");
   };
 
   const restart = async (): Promise<void> => {
@@ -238,12 +299,10 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
         return;
 
       case "newSession": {
-        const session = currentSession();
-        const projectID = session?.projectID;
-        // In a project, the same dialog the project's `+` opens; otherwise the
-        // question is "which folder?", which is Open Folder's question.
-        if (projectID === undefined) return openFolder();
-        view.openSheet({ kind: "newSession", projectID });
+        // The one sheet, preselected on the selected session's project when there
+        // is one; "No project" is a choice on it, not a different command.
+        const projectID = currentSession()?.projectID;
+        view.openSheet({ kind: "newSession", ...(projectID === undefined ? {} : { projectID }) });
         return;
       }
 

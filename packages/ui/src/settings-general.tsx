@@ -24,9 +24,13 @@ import {
   serviceRequestCost,
   serviceStopCost,
 } from "./background-service.ts";
-import { ProfileSelect, Section } from "./controls.tsx";
+import { ProfileSelect, Section, SwitchField } from "./controls.tsx";
 import type { GlobalSettings } from "./global-settings.ts";
-import { withDefaultProfileID } from "./global-settings.ts";
+import {
+  isConfirmationSilenced,
+  withDefaultProfileID,
+  withSilencedConfirmation,
+} from "./global-settings.ts";
 
 /**
  * The General tab: the default profile, and the background service.
@@ -59,6 +63,13 @@ export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
     [onChange, settings],
   );
 
+  const changeAsksBeforeClosing = useCallback(
+    (asks: boolean) => {
+      onChange(withSilencedConfirmation(settings, "closeTerminals", !asks));
+    },
+    [onChange, settings],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Section title="New terminals">
@@ -70,6 +81,21 @@ export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
           onChange={changeDefaultProfile}
           unsetTitle="Your login shell"
           hint="Used when a project has not chosen one of its own. A project's choice always wins."
+        />
+      </Section>
+
+      {/* Where a silenced question comes back.
+
+          Every "Don't ask again" in the product needs a row here, or it is a
+          one-way door: the checkbox is ticked in the moment of wanting the
+          dialog gone, and the place it is regretted is Settings. There is one
+          row because there is one silenceable question (`ConfirmationKey`). */}
+      <Section title="Confirmations">
+        <SwitchField
+          label="Ask before closing a running terminal"
+          isOn={!isConfirmationSilenced(settings, "closeTerminals")}
+          onChange={changeAsksBeforeClosing}
+          hint="Closing a pane or a tab ends the programs in it. Idle and finished terminals never ask."
         />
       </Section>
 

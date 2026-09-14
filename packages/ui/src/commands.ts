@@ -234,17 +234,22 @@ export function isCommandID(value: string): value is CommandID {
 }
 
 /**
- * An accelerator as the symbols a Mac user reads.
+ * An accelerator as the caps a Mac user reads, in the command menu's syntax.
  *
  * The table is in Tauri's notation because that is what the shell parses; the
  * palette shows the same chord the menu bar does, so it renders it here rather
  * than storing a second spelling that could disagree.
+ *
+ * Joined on `+` rather than run together: the menu draws a cap per token, and a
+ * glyph string it cannot split — `⌘,`, `⌘⇧]` — lands in one wide cap beside
+ * chords that did split. `⌘⇧P` happens to split anyway (every character is a
+ * modifier glyph or a letter); a punctuation key does not.
  */
-export function acceleratorSymbols(accelerator: string): string {
+export function acceleratorCaps(accelerator: string): string {
   return accelerator
     .split("+")
     .map((part) => ACCELERATOR_SYMBOLS[part] ?? part)
-    .join("");
+    .join("+");
 }
 
 const ACCELERATOR_SYMBOLS: Readonly<Record<string, string>> = {

@@ -10,7 +10,7 @@ import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from "./global-settings.ts";
 import { resolveLocalLayout, withFocusedTerminal, type LocalLayoutEntry } from "./layout-edits.ts";
-import type { SettingsTabID } from "./settings-window.tsx";
+import { EMPTY_SETTINGS_DRAFT, type SettingsDraft } from "./settings-draft.ts";
 
 /**
  * What this client is looking at, as a store.
@@ -36,15 +36,41 @@ import type { SettingsTabID } from "./settings-window.tsx";
 export type Sheet =
   | { readonly kind: "jumpList" }
   | { readonly kind: "commands" }
-  /** A session in `projectID`: which branch, and whether it gets a worktree. */
-  | { readonly kind: "newSession"; readonly projectID: ProjectID }
+  /**
+   * Where a session begins: a project — or none — and, in a repository, a branch.
+   * `projectID` is the project a `+` or context menu was opened over; absent
+   * when opened from the header, the welcome card or the menu bar, where the
+   * selection is the only subject there is.
+   */
+  | { readonly kind: "newSession"; readonly projectID?: ProjectID }
   /**
    * `projectID` is the project a *context menu* was opened over, which is
    * frequently not the selected session's project. Absent when the sheet was
    * opened from the menu bar, where the selection is the only subject there is.
    */
-  | { readonly kind: "newBranch"; readonly projectID?: ProjectID }
-  | { readonly kind: "projectSettings"; readonly projectID: ProjectID };
+  | { readonly kind: "newBranch"; readonly projectID?: ProjectID };
+
+/** The four panes that configure the application itself. */
+export type SettingsTabID = "general" | "terminal" | "profiles" | "notifications";
+
+/**
+ * What the settings screen is showing: one of the four global tabs, or one
+ * project.
+ *
+ * A project is a *route* rather than a fifth tab because there are as many of
+ * them as the user has added, and each one is a different form — the tab table
+ * is fixed data (`SETTINGS_TABS`), and the project list is the mirror's.
+ */
+export type SettingsRoute =
+  | { readonly kind: "tab"; readonly tab: SettingsTabID }
+  | { readonly kind: "project"; readonly projectID: ProjectID };
+
+/** Two routes naming the same pane. Used for selection and for "already there". */
+export function sameRoute(left: SettingsRoute, right: SettingsRoute): boolean {
+  return left.kind === "tab"
+    ? right.kind === "tab" && left.tab === right.tab
+    : right.kind === "project" && left.projectID === right.projectID;
+}
 
 /**
  * What fills the window.
@@ -52,12 +78,12 @@ export type Sheet =
  * Settings is a screen rather than a sheet: it replaces the sidebar with its own
  * navigation and the terminals with the chosen pane, and the only way back is the
  * button at the bottom of that navigation. A modal over the terminals would leave
- * the user reading settings through a scrim, and the tab strip it needs has no
- * room in a dialog.
+ * the user reading settings through a scrim, and the navigation it needs — four
+ * tabs *and* a row per project — has no room in a dialog.
  */
 export type Screen =
   | { readonly kind: "workspace" }
-  | { readonly kind: "settings"; readonly tab: SettingsTabID };
+  | { readonly kind: "settings"; readonly route: SettingsRoute };
 
 export interface ViewState {
   /** Local layout edits, keyed by session. Resolved against the mirror on read. */
@@ -93,11 +119,36 @@ export interface ViewState {
   setSettings(settings: GlobalSettings): void;
 
   /**
-   * Shows the settings screen. Without a tab, stays on the tab already showing
-   * when settings is open, and opens on General otherwise — so ⌘, pressed twice
-   * does not send someone back to the first tab.
+   * The settings screen's uncommitted edits, and the draft as last saved.
+   *
+   * They live here rather than in the screen so that pressing Back does not
+   * throw away what the user typed: navigation is not one of the two answers the
+   * bar asks for. The pair is the state — `hasUnsavedSettings` is reference
+   * inequality between them, and a save writes the difference — because every
+   * edit is an immutable update, so a new object *is* "the user changed
+   * something", and a deep comparison would exist only to make a value typed
+   * back to its original un-savable.
    */
-  showSettings(tab?: SettingsTabID): void;
+  readonly settingsDraft: SettingsDraft;
+  readonly savedSettingsDraft: SettingsDraft;
+  readonly hasUnsavedSettings: boolean;
+
+  editSettingsDraft(draft: SettingsDraft): void;
+  /**
+   * The draft has been sent. The bar goes quiet and the values stay on screen:
+   * clearing them would show the mirror's older answer until the daemon's
+   * broadcast arrives, which reads as the save having been undone.
+   */
+  settingsDraftSaved(): void;
+  /** Back to the last saved state, which on a first visit is the mirror's. */
+  revertSettingsDraft(): void;
+
+  /**
+   * Shows the settings screen. Without a route, stays on whatever settings was
+   * last showing, and opens on General otherwise — so ⌘, pressed twice does not
+   * send someone back to the first tab.
+   */
+  showSettings(route?: SettingsRoute): void;
   /** Back to the terminals. Nothing when they are already showing. */
   showWorkspace(): void;
 
@@ -116,12 +167,17 @@ export interface ViewState {
 
 const NO_LAYOUTS: ReadonlyMap<SessionID, LocalLayoutEntry> = new Map<SessionID, LocalLayoutEntry>();
 const WORKSPACE: Screen = { kind: "workspace" };
+const GENERAL: SettingsRoute = { kind: "tab", tab: "general" };
 
 export function createViewState(sessions: SessionStore): ViewState {
   let layouts = NO_LAYOUTS;
   let sheet: Sheet | undefined;
   let screen: Screen = WORKSPACE;
   let settings = DEFAULT_GLOBAL_SETTINGS;
+  // Two references, one value: `saved` is the draft as last sent (or as opened),
+  // and the difference between them is the answer to "is there anything to save".
+  let settingsDraft = EMPTY_SETTINGS_DRAFT;
+  let savedSettingsDraft = EMPTY_SETTINGS_DRAFT;
 
   // Surfaces are not part of the notified state: they are mount bookkeeping, and a
   // pane registering itself must not re-render the tree that just mounted it.
@@ -163,6 +219,15 @@ export function createViewState(sessions: SessionStore): ViewState {
     get settings(): GlobalSettings {
       return settings;
     },
+    get settingsDraft(): SettingsDraft {
+      return settingsDraft;
+    },
+    get savedSettingsDraft(): SettingsDraft {
+      return savedSettingsDraft;
+    },
+    get hasUnsavedSettings(): boolean {
+      return settingsDraft !== savedSettingsDraft;
+    },
 
     applyLayout,
 
@@ -196,10 +261,28 @@ export function createViewState(sessions: SessionStore): ViewState {
       notify();
     },
 
-    showSettings(tab?: SettingsTabID): void {
-      const next = tab ?? (screen.kind === "settings" ? screen.tab : "general");
-      if (screen.kind === "settings" && screen.tab === next) return;
-      screen = { kind: "settings", tab: next };
+    editSettingsDraft(next: SettingsDraft): void {
+      if (settingsDraft === next) return;
+      settingsDraft = next;
+      notify();
+    },
+
+    settingsDraftSaved(): void {
+      if (savedSettingsDraft === settingsDraft) return;
+      savedSettingsDraft = settingsDraft;
+      notify();
+    },
+
+    revertSettingsDraft(): void {
+      if (settingsDraft === savedSettingsDraft) return;
+      settingsDraft = savedSettingsDraft;
+      notify();
+    },
+
+    showSettings(route?: SettingsRoute): void {
+      const next = route ?? (screen.kind === "settings" ? screen.route : GENERAL);
+      if (screen.kind === "settings" && sameRoute(screen.route, next)) return;
+      screen = { kind: "settings", route: next };
       notify();
     },
 

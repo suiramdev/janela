@@ -63,6 +63,16 @@ export interface TerminalRendering {
    */
   selectedText(): string | undefined;
 
+  /**
+   * Sends text as if the user had pasted it.
+   *
+   * Through the emulator rather than straight onto the wire, because *that* is
+   * what knows whether the program in the terminal turned bracketed paste on. A
+   * multi-line paste sent raw to a shell runs every line; sent bracketed, the
+   * shell gets one block to edit.
+   */
+  paste(text: string): void;
+
   /** Clears the local view without touching the daemon's scrollback. */
   clearViewport(): void;
 

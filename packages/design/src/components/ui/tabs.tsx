@@ -2,6 +2,8 @@ import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 
+import { useSize, type SizeVariant } from "../../lib/size-context.tsx";
+
 function Tabs({ className, orientation = "horizontal", ...props }: TabsPrimitive.Root.Props) {
   return (
     <TabsPrimitive.Root
@@ -13,8 +15,12 @@ function Tabs({ className, orientation = "horizontal", ...props }: TabsPrimitive
   );
 }
 
+// Adapted: the list's height and padding come from the size ladder
+// (`lib/size-context.tsx`) rather than the registry's literal `h-8` / `p-[3px]`.
+// A segmented control is a control, so its box is the same step as the buttons
+// beside it — and a strip that disagreed with them by 4px is what this was.
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg text-muted-foreground group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {
@@ -31,13 +37,23 @@ const tabsListVariants = cva(
 function TabsList({
   className,
   variant = "default",
+  size,
   ...props
-}: TabsPrimitive.List.Props & VariantProps<typeof tabsListVariants>) {
+}: TabsPrimitive.List.Props &
+  VariantProps<typeof tabsListVariants> & {
+    /** One step of the ladder, for this list only. Omitted, it follows the
+     *  surrounding `SizeProvider`. */
+    readonly size?: SizeVariant | undefined;
+  }) {
+  // Plain classes, not `group-data-horizontal/tabs:` ones: a variant-prefixed
+  // utility wins on source order, so the vertical override still lands and the
+  // horizontal case is simply the default.
+  const ladder = useSize(size);
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
+      className={cn(tabsListVariants({ variant }), ladder.control, ladder.segmentPad, className)}
       {...props}
     />
   );

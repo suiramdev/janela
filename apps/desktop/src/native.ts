@@ -1,6 +1,6 @@
 import { absolutePath, type AbsolutePath } from "@janela/core";
 import type { NativeShell } from "@janela/ui";
-import { ask, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 /**
@@ -9,6 +9,11 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
  * **The app performs file selection; the daemon is handed paths.** That is a rule,
  * not a convenience: it keeps macOS permission prompts attributed to the app the
  * user just clicked rather than to a background binary they have never heard of.
+ *
+ * Confirmations used to live here too, as the plugin's `ask()`. They are the
+ * application's own dialog now (`@janela/ui`'s `confirmation.ts`): a question
+ * about a terminal in this window belongs in this window, and an AppKit alert
+ * has no room for the "Don't ask again" the repetitive one needs.
  */
 export function tauriNativeShell(): NativeShell {
   return {
@@ -16,15 +21,6 @@ export function tauriNativeShell(): NativeShell {
       const chosen = await open({ directory: true, multiple: false, title: options.title });
       // `null` is a cancelled dialog, which is an answer rather than a failure.
       return chosen === null ? undefined : absolutePath(chosen);
-    },
-
-    async confirm(options): Promise<boolean> {
-      return await ask(options.message, {
-        title: options.title,
-        kind: "warning",
-        okLabel: options.confirmLabel,
-        cancelLabel: "Cancel",
-      });
     },
 
     async revealInFinder(path): Promise<void> {

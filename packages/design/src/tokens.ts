@@ -24,6 +24,10 @@ export const GRID_UNIT = 4;
  * Sidebar bounds. Below the minimum, session names truncate uselessly — and they sit
  * indented under a project, so they start further right than the width alone
  * suggests.
+ *
+ * All three are load-bearing: the vendored sidebar starts at `ideal` and its rail
+ * clamps a drag to `minimum`…`maximum`, so this is the only place the window's
+ * navigation width is decided.
  */
 export const SIDEBAR_WIDTH = { minimum: 180, ideal: 240, maximum: 400 } as const;
 
@@ -67,10 +71,21 @@ export const TERMINAL_FONT_STACK =
   '"SF Mono", "Menlo", "DejaVu Sans Mono", ui-monospace, monospace';
 
 /**
- * Motion.
+ * Motion lives in `lib/springs.ts`, not here.
  *
- * Every transition must respect `prefers-reduced-motion`, which is the web's
- * spelling of the Reduce Motion setting the native app honoured. A component that
- * animates unconditionally is a bug, not a flourish.
+ * Three tiers — `fast`, `moderate`, `slow` — each an enter spring with a
+ * matching, quicker exit tween. Nothing hand-writes a duration; the tier says
+ * how big the thing that moves is, and the number follows from that. What used
+ * to be a two-value `MOTION` constant here was a second, unused vocabulary for
+ * the same decision.
+ *
+ * A `framer-motion` component reaches for `spring.<tier>` directly. A CSS
+ * transition cannot read TypeScript, so `styles.css` publishes the same ladder
+ * as `--spring-fast` / `--spring-moderate` / `--spring-slow` in milliseconds —
+ * `duration-(--spring-moderate)` — and `styles.test.ts` fails if the two drift.
+ *
+ * Either way the transition must respect `prefers-reduced-motion`, which is the
+ * web's spelling of the Reduce Motion setting the native app honoured, and which
+ * `styles.css` enforces once for everything. A component that animates
+ * unconditionally is a bug, not a flourish.
  */
-export const MOTION = { fast: 120, medium: 200 } as const;

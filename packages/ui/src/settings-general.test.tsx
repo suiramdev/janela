@@ -8,7 +8,7 @@ import {
   SERVICE_REQUEST_TITLE,
   serviceStopCost,
 } from "./background-service.ts";
-import { DEFAULT_GLOBAL_SETTINGS } from "./global-settings.ts";
+import { DEFAULT_GLOBAL_SETTINGS, withSilencedConfirmation } from "./global-settings.ts";
 import { ServiceCostConfirmation, SettingsGeneral } from "./settings-general.tsx";
 import {
   fakeProfile,
@@ -42,6 +42,11 @@ const NO_STATES: Readonly<Record<TerminalID, TerminalState>> = states();
 const QUIET_COST = serviceStopCost(NO_SESSIONS, NO_STATES);
 
 const SERVICE = recordingService();
+
+/** The state of this pane's one switch, as announced. */
+function ariaChecked(markup: string): string | undefined {
+  return /role="switch"[^>]*aria-checked="(?<state>[a-z]+)"/u.exec(markup)?.groups?.["state"];
+}
 
 function paneMarkup(): string {
   return renderToStaticMarkup(
@@ -151,5 +156,35 @@ describe("the confirmation", () => {
     expect(markup).toContain(SERVICE_REQUEST_TITLE.stopAndUnregister);
     expect(markup).not.toContain(SERVICE_REQUEST_TITLE.stop);
     expect(markup).toContain("Keep it running");
+  });
+});
+
+describe("the confirmations section", () => {
+  test("offers the one silenceable question, on by default", () => {
+    const markup = paneMarkup();
+    expect(markup).toContain("Ask before closing a running terminal");
+    // The switch mirrors "is it asked", not "is it silenced": on means asking.
+    expect(markup).toContain("Idle and finished terminals never ask");
+  });
+
+  test("reads as off once the question has been silenced", () => {
+    const markup = renderToStaticMarkup(
+      <SettingsGeneral
+        settings={withSilencedConfirmation(DEFAULT_GLOBAL_SETTINGS, "closeTerminals", true)}
+        onChange={noop}
+        profiles={SHELL_AND_CLAUDE}
+        availability={BOTH_AVAILABLE}
+        sessions={NO_SESSIONS}
+        terminalStates={NO_STATES}
+        service={SERVICE}
+      />,
+    );
+    // Read off the switch's `aria-checked`, which is what a screen reader says
+    // and the only unambiguous copy of the state — the `data-checked` attribute
+    // also appears inside Tailwind variant class names. This pane has one
+    // switch, and what is pinned is the direction: silencing turns it off, and
+    // an inverted row would announce the opposite of what it does.
+    expect(ariaChecked(markup)).toBe("false");
+    expect(ariaChecked(paneMarkup())).toBe("true");
   });
 });

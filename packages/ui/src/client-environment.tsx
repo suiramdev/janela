@@ -24,6 +24,7 @@ import {
 
 import type { BackgroundServiceControlling } from "./background-service.ts";
 import type { CommandID } from "./commands.ts";
+import type { ConfirmationQueue } from "./confirmation.ts";
 import type { SettingsStoring } from "./global-settings.ts";
 import type { ViewState } from "./view-state.ts";
 
@@ -41,23 +42,36 @@ export interface CommandSource {
 /**
  * The parts of the desktop the client may ask for by name.
  *
- * Everything here is something only the shell can do, and each one is a *request
- * with a person in it*: a directory the user picked, a confirmation they gave.
- * The daemon is handed the result, never the dialog.
+ * Everything here is something only the shell can do, and it is down to three:
+ * a directory only the OS can let someone pick, and the two places outside this
+ * window a path can be opened in. Asking a question is no longer one of them —
+ * a confirmation is this application's own dialog now (`confirmation.tsx`),
+ * because a native alert has no room for "Don't ask again" and nothing in a
+ * test can read one.
  */
 export interface NativeShell {
   /** Native directory dialog; `undefined` when the user cancelled. */
   pickDirectory(options: { readonly title: string }): Promise<AbsolutePath | undefined>;
 
-  /** Native confirmation; true when the user chose `confirmLabel`. */
-  confirm(options: {
-    readonly title: string;
-    readonly message: string;
-    readonly confirmLabel: string;
-  }): Promise<boolean>;
-
   revealInFinder(path: AbsolutePath): Promise<void>;
   openInTerminal(path: AbsolutePath): Promise<void>;
+}
+
+/**
+ * The system clipboard, as two requests.
+ *
+ * A seam rather than a direct `navigator.clipboard` call, for the usual reason:
+ * the app is the composition root and a test gets a fake. It is also the one
+ * place where a platform can refuse — reading the clipboard is a permission on
+ * some, and a refusal is *not* an error to show anyone. A paste that cannot
+ * read answers `undefined` and the terminal receives nothing, which is what
+ * pressing the key with an empty clipboard does too (AGENTS.md §
+ * Non-negotiables 10).
+ */
+export interface Clipboard {
+  copy(text: string): Promise<void>;
+  /** The clipboard's text, or `undefined` when it is empty or unreadable. */
+  paste(): Promise<string | undefined>;
 }
 
 export interface ClientEnvironment {
@@ -71,8 +85,20 @@ export interface ClientEnvironment {
   /** Chosen menu commands, as ids. See `COMMANDS`. */
   readonly commands: CommandSource;
 
-  /** Directory dialogs, confirmations, Finder and Terminal.app. */
+  /** The directory picker, Finder and Terminal.app. */
   readonly native: NativeShell;
+
+  /**
+   * Questions with a cost, as a promise. The one dialog that is not a sheet.
+   *
+   * On the environment rather than reached for by the view that renders it,
+   * because the callers are decisions — `closeTerminals`, the sidebar's
+   * removals, the version-skew banner — and none of them is inside a component.
+   */
+  readonly confirmations: ConfirmationQueue;
+
+  /** Copy and paste, for the terminal's context menu. */
+  readonly clipboard: Clipboard;
 
   /** Where `GlobalSettings` are kept. The app supplies the storage. */
   readonly settings: SettingsStoring;

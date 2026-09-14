@@ -333,6 +333,12 @@ export const GATED_MODULES: readonly GatedModule[] = [
       "One Tailwind class merger, in the package that owns the classes. Two of them resolve conflicting utilities by different rules, and nothing would tell you which one a control used — so @janela/design re-exports `cn` and nobody installs a second.",
   },
   {
+    pattern: "framer-motion",
+    allowed: ["@janela/design"],
+    reason:
+      "The motion seam, and the same rule as @base-ui/react: one package names the library, and everything above composes what @janela/design exports. It arrived with Fluid Hover, whose highlight needs a spring; a view that animates by hand instead grows a second motion dialect, and the terminal path must stay free of per-frame React work (docs/performance.md).",
+  },
+  {
     pattern: "react-dom",
     allowed: ["@janela/ui", "@janela/desktop"],
     reason:

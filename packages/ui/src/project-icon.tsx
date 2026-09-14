@@ -69,7 +69,13 @@ export function ProjectIcon(props: ProjectIconProps): ReactElement {
         <AvatarImage src={imageSource} alt="" className="rounded-[3px]" />
       )}
       <AvatarFallback className="rounded-[3px] bg-transparent">
-        <DitherAvatar name={project.directory} className="size-full" />
+        {/* `animate={false}`: the registry's default sweeps the cells in over
+            600ms on mount, and these mount constantly — typing in the sidebar
+            filter remounts every row that survives the keystroke, so the icons
+            would shimmer while the user reads the names they are filtering. An
+            icon is an identity, not an event: it has nothing to announce, and
+            the one thing it must do is be recognisable the instant it appears. */}
+        <DitherAvatar name={project.directory} animate={false} className="size-full" />
       </AvatarFallback>
     </Avatar>
   );

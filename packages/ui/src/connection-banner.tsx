@@ -2,8 +2,14 @@ import type { ConnectionStatus } from "@janela/client";
 import type { Session, SessionID } from "@janela/core";
 import { Alert, AlertAction, AlertDescription, AlertTitle, Button, Spinner } from "@janela/design";
 import type { ReactElement } from "react";
+import { useCallback } from "react";
 
 import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
+
+/** A declined question is an answer. Nothing to report, nothing to log. */
+function swallowRefusal(): undefined {
+  return undefined;
+}
 
 /**
  * What the banner is, in each state.
@@ -79,9 +85,33 @@ export function runningSummary(
  */
 export function ConnectionBanner(): ReactElement | null {
   const environment = useClientEnvironment();
-  const { connection } = environment;
+  const { connection, confirmations, restartDaemon } = environment;
   const status = useStoreValue(connection, () => connection.status);
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
+  const cost = runningSummary(sessions, (id) => environment.sessions.isRunning(id));
+
+  /**
+   * The banner states the cost; the dialog makes it the answer to a question.
+   *
+   * This is the one button in the window that ends every terminal the daemon
+   * holds, and it sits under a sentence people have learned to dismiss — the
+   * banner is what appears after an update. So the count is repeated where the
+   * pointer already is, and the acting button names what it does rather than
+   * agreeing with a title (AGENTS.md § Non-negotiables 7). No "Don't ask
+   * again": there is nothing repetitive about it, and nothing to recover.
+   */
+  const restart = useCallback(() => {
+    void confirmations
+      .confirm({
+        title: "Restart the background service?",
+        message: `${cost}. Restarting closes every terminal janelad is running, and the programs in them end.`,
+        confirmLabel: "Restart and Close Terminals",
+      })
+      .then((agreed) => {
+        if (agreed) restartDaemon();
+        return undefined;
+      }, swallowRefusal);
+  }, [confirmations, cost, restartDaemon]);
 
   const model = bannerModel(status);
   if (model.kind === "none") return null;
@@ -112,11 +142,9 @@ export function ConnectionBanner(): ReactElement | null {
       className="absolute inset-x-0 top-0 z-10 rounded-none has-data-[slot=alert-action]:absolute has-data-[slot=alert-action]:pr-2.5"
     >
       <AlertTitle>{VERSION_SKEW_COPY}</AlertTitle>
-      <AlertDescription>
-        {runningSummary(sessions, (id) => environment.sessions.isRunning(id))}
-      </AlertDescription>
+      <AlertDescription>{cost}</AlertDescription>
       <AlertAction className="static mt-2">
-        <Button variant="outline" size="sm" onClick={environment.restartDaemon}>
+        <Button variant="outline" size="sm" onClick={restart}>
           Restart the background service
         </Button>
       </AlertAction>

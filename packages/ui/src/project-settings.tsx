@@ -11,15 +11,7 @@ import type {
   ProjectSettings,
 } from "@janela/core";
 import { absolutePath, AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
-import {
-  Button,
-  ButtonGroup,
-  DialogFooter,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  Item,
-} from "@janela/design";
+import { Button, ButtonGroup, Empty, EmptyDescription, EmptyHeader, Item } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -45,13 +37,12 @@ import {
 } from "./controls.tsx";
 import type { ArgumentDraft } from "./profile-editing.ts";
 import { argumentDrafts, argvOf } from "./profile-editing.ts";
+import { PANE_COLUMN } from "./window-chrome.tsx";
 
 /**
- * A project's own settings, edited from its row in the sidebar.
+ * One project's settings, as the Projects section's pane.
  *
- * This is where automation commands come from. It is also the reason there is no
- * Projects tab in the settings window: these settings belong to a project, and the
- * place you edit a project is the project.
+ * This is where automation commands come from.
  *
  * ## The security property this preserves
  *
@@ -61,139 +52,149 @@ import { argumentDrafts, argvOf } from "./profile-editing.ts";
  * that cannot be added later. So this editor is not a convenience over a config
  * file; it is the whole mechanism.
  *
- * ## What it emits
+ * ## Why it holds no state of its own
  *
- * A whole `ProjectSettings`, which is what the `updateProjectSettings` message
- * already carries. Nothing is applied as you type: `onSave` is pressed once, so a
- * half-typed `pnpm ins` never reaches the daemon and never runs.
+ * Every edit goes straight out through `onChange` into the screen's draft, and
+ * the value comes back down through `settings`. The pane is the most obvious
+ * reason the draft exists — a field applied per keystroke would send `pnpm ins`
+ * to the daemon, which stores commands that *run* — but it is not the owner of
+ * it: the Save and Revert that commit this form are the same pair that commit
+ * every other tab, and they live with the draft in `SettingsScreen`.
  */
 
-export interface ProjectSettingsSheetProps {
+export interface ProjectSettingsPaneProps {
   readonly project: Project;
+  /** The draft's value for this project, which is the mirror's until it is edited. */
+  readonly settings: ProjectSettings;
   readonly profiles: readonly LaunchProfile[];
   readonly availability: LaunchProfileAvailability;
-  readonly onSave: (settings: ProjectSettings) => void;
-  readonly onCancel: () => void;
+  readonly onChange: (settings: ProjectSettings) => void;
 }
 
-export function ProjectSettingsSheet(props: ProjectSettingsSheetProps): ReactElement {
-  const { project, onSave } = props;
-  const [draft, setDraft] = useState<ProjectSettings>(project.settings);
+export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactElement {
+  const { project, settings, onChange } = props;
   const projectDirectory = project.directory;
 
-  const changeDefaultProfile = useCallback((profileID: LaunchProfileID | undefined) => {
-    setDraft((current) => {
+  const changeDefaultProfile = useCallback(
+    (profileID: LaunchProfileID | undefined) => {
       if (profileID === undefined) {
-        const { defaultProfileID: _removed, ...rest } = current;
-        return rest;
+        const { defaultProfileID: _removed, ...rest } = settings;
+        onChange(rest);
+        return;
       }
-      return { ...current, defaultProfileID: profileID };
-    });
-  }, []);
+      onChange({ ...settings, defaultProfileID: profileID });
+    },
+    [onChange, settings],
+  );
 
-  const changeForge = useCallback((isForgeEnabled: boolean) => {
-    setDraft((current) => ({ ...current, isForgeEnabled }));
-  }, []);
+  const changeForge = useCallback(
+    (isForgeEnabled: boolean) => {
+      onChange({ ...settings, isForgeEnabled });
+    },
+    [onChange, settings],
+  );
 
   const changeCustomRoot = useCallback(
     (isCustom: boolean) => {
-      setDraft((current) => {
-        if (!isCustom) return { ...current, worktreeRoot: { kind: "siblingDirectory" } };
-        // The project's own directory is always absolute, so the field never opens
-        // in an invalid state and the user edits from somewhere real.
-        const directory =
-          current.worktreeRoot.kind === "custom"
-            ? current.worktreeRoot.directory
-            : projectDirectory;
-        return { ...current, worktreeRoot: { kind: "custom", directory } };
-      });
+      if (!isCustom) {
+        onChange({ ...settings, worktreeRoot: { kind: "siblingDirectory" } });
+        return;
+      }
+      // The project's own directory is always absolute, so the field never opens
+      // in an invalid state and the user edits from somewhere real.
+      const directory =
+        settings.worktreeRoot.kind === "custom"
+          ? settings.worktreeRoot.directory
+          : projectDirectory;
+      onChange({ ...settings, worktreeRoot: { kind: "custom", directory } });
     },
-    [projectDirectory],
+    [onChange, projectDirectory, settings],
   );
 
-  const changeRootPath = useCallback((path: string) => {
-    setDraft((current) => {
+  const changeRootPath = useCallback(
+    (path: string) => {
       // Guarded rather than thrown: `absolutePath` refuses a relative path, and a
       // user halfway through typing `/Users/…` has one for a keystroke.
-      if (!path.startsWith("/")) return current;
-      return { ...current, worktreeRoot: { kind: "custom", directory: absolutePath(path) } };
-    });
-  }, []);
+      if (!path.startsWith("/")) return;
+      onChange({
+        ...settings,
+        worktreeRoot: { kind: "custom", directory: absolutePath(path) },
+      });
+    },
+    [onChange, settings],
+  );
 
-  const changeCommands = useCallback((automation: readonly AutomationCommand[]) => {
-    setDraft((current) => ({ ...current, automation }));
-  }, []);
+  const changeCommands = useCallback(
+    (automation: readonly AutomationCommand[]) => {
+      onChange({ ...settings, automation });
+    },
+    [onChange, settings],
+  );
 
-  const save = useCallback(() => {
-    onSave(draft);
-  }, [draft, onSave]);
-
-  const violations = draft.automation.flatMap((command) => automationViolations(command));
+  const violations = settings.automation.flatMap((command) => automationViolations(command));
 
   return (
-    <div className="flex flex-col gap-6">
-      <Section title={project.name}>
-        <ProfileSelect
-          label="Default launch profile"
-          profiles={props.profiles}
-          availability={props.availability}
-          value={draft.defaultProfileID}
-          onChange={changeDefaultProfile}
-          unsetTitle="Use the global default"
-          hint="What this project's new sessions start in."
-        />
-        <SwitchField
-          label="Read pull request and check state"
-          isOn={draft.isForgeEnabled}
-          onChange={changeForge}
-          hint="Uses your own gh or glab. A missing or logged-out CLI means this is quietly absent, never an error."
-        />
-      </Section>
-
-      {supportsWorktrees(project) ? (
-        <Section title="Worktrees" hint="Where sessions cut from a branch are created.">
+    <div className={PANE_COLUMN}>
+      <h2 className="text-base font-semibold">{project.name}</h2>
+      {/* The directory under the name: two clones of one repository are two
+          projects with the same name, and the path is the only thing that
+          tells them apart. */}
+      <p className="text-muted-foreground mt-0.5 truncate font-mono text-xs">{project.directory}</p>
+      <div className="mt-5 flex flex-col gap-6">
+        <Section title="General">
+          <ProfileSelect
+            label="Default launch profile"
+            profiles={props.profiles}
+            availability={props.availability}
+            value={settings.defaultProfileID}
+            onChange={changeDefaultProfile}
+            unsetTitle="Use the global default"
+            hint="What this project's new sessions start in."
+          />
           <SwitchField
-            label="Use a directory I choose"
-            isOn={draft.worktreeRoot.kind === "custom"}
-            onChange={changeCustomRoot}
-            hint="Off puts them in .worktrees beside the repository, which keeps relative paths short — build tools embed them."
+            label="Read pull request and check state"
+            isOn={settings.isForgeEnabled}
+            onChange={changeForge}
+            hint="Uses your own gh or glab. A missing or logged-out CLI means this is quietly absent, never an error."
           />
-          {draft.worktreeRoot.kind === "custom" ? (
-            <TextField
-              label="Worktree directory"
-              value={draft.worktreeRoot.directory}
-              onChange={changeRootPath}
-              isMonospaced
-              hint="Must be an absolute path."
-            />
-          ) : undefined}
         </Section>
-      ) : undefined}
 
-      <Section
-        title="Automation"
-        hint="Commands Janela runs for you, each in a real terminal in the session you can watch and interrupt. They are stored here and never read from the repository."
-      >
-        {AUTOMATION_EVENTS.map((event) => (
-          <AutomationEventSection
-            key={event}
-            event={event}
-            commands={draft.automation}
-            onChange={changeCommands}
-          />
-        ))}
-      </Section>
+        {supportsWorktrees(project) ? (
+          <Section title="Worktrees" hint="Where sessions cut from a branch are created.">
+            <SwitchField
+              label="Use a directory I choose"
+              isOn={settings.worktreeRoot.kind === "custom"}
+              onChange={changeCustomRoot}
+              hint="Off puts them in .worktrees beside the repository, which keeps relative paths short — build tools embed them."
+            />
+            {settings.worktreeRoot.kind === "custom" ? (
+              <TextField
+                label="Worktree directory"
+                value={settings.worktreeRoot.directory}
+                onChange={changeRootPath}
+                isMonospaced
+                hint="Must be an absolute path."
+              />
+            ) : undefined}
+          </Section>
+        ) : undefined}
 
-      <Violations violations={violations} />
+        <Section
+          title="Automation"
+          hint="Commands Janela runs for you, each in a real terminal in the session you can watch and interrupt. They are stored here and never read from the repository."
+        >
+          {AUTOMATION_EVENTS.map((event) => (
+            <AutomationEventSection
+              key={event}
+              event={event}
+              commands={settings.automation}
+              onChange={changeCommands}
+            />
+          ))}
+        </Section>
 
-      <DialogFooter>
-        <Button variant="outline" onClick={props.onCancel}>
-          Cancel
-        </Button>
-        <Button onClick={save} disabled={violations.length > 0}>
-          Save
-        </Button>
-      </DialogFooter>
+        <Violations violations={violations} />
+      </div>
     </div>
   );
 }

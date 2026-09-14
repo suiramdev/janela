@@ -435,6 +435,7 @@ describe("liveEnvironment", () => {
       feed: () => {},
       clearViewport: () => {},
       selectedText: () => undefined,
+      paste: () => {},
       focus: () => focusedSurface.push("focus"),
       viewport: () => undefined,
     };

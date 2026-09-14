@@ -39,6 +39,9 @@ export interface TerminalSurfaceHandle {
 
   selectedText(): string | undefined;
 
+  /** Types text into the terminal as a paste, bracketed if the program asked. */
+  paste(text: string): void;
+
   focus(): void;
 
   /** The measured grid, or undefined before the first measurement lands. */
@@ -133,6 +136,7 @@ export function TerminalSurface({
         renderingRef.current?.clearViewport();
       },
       selectedText: () => renderingRef.current?.selectedText(),
+      paste: (text: string) => renderingRef.current?.paste(text),
       focus: () => {
         renderingRef.current?.focus();
       },

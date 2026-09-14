@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
 import type { SessionStore } from "@janela/client";
-import type { Session, SessionID, TerminalID } from "@janela/core";
+import type { ProjectID, Session, SessionID, TerminalID } from "@janela/core";
 
+import { DEFAULT_GLOBAL_SETTINGS, withTerminalFontSize } from "./global-settings.ts";
 import { withFocusedTab } from "./layout-edits.ts";
+import type { SettingsDraft } from "./settings-draft.ts";
+import { draftSettings, EMPTY_SETTINGS_DRAFT, withDraftSettings } from "./settings-draft.ts";
 import { fakeSession, fakeSurfaceHandle, fakeTerminal } from "./test-fakes.ts";
-import { createViewState } from "./view-state.ts";
+import { createViewState, sameRoute } from "./view-state.ts";
+
+const projectID = (raw: string): ProjectID => raw as ProjectID;
 
 /**
  * A mirror whose `sessions` can be swapped, which is what the store reads at the
@@ -159,7 +164,7 @@ describe("sheets", () => {
 });
 
 describe("screens", () => {
-  test("settings opens on General, keeps its tab when asked again, and goes back", () => {
+  test("settings opens on General, keeps its route when asked again, and goes back", () => {
     const view = createViewState(fakeStore([]));
     let notifications = 0;
     view.subscribe(() => {
@@ -168,21 +173,124 @@ describe("screens", () => {
 
     expect(view.screen).toEqual({ kind: "workspace" });
     view.showSettings();
-    expect(view.screen).toEqual({ kind: "settings", tab: "general" });
-    view.showSettings("terminal");
-    expect(view.screen).toEqual({ kind: "settings", tab: "terminal" });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "general" } });
+    view.showSettings({ kind: "tab", tab: "terminal" });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
     // ⌘, pressed again is not a trip back to the first tab.
     view.showSettings();
-    expect(view.screen).toEqual({ kind: "settings", tab: "terminal" });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
 
     const settled = notifications;
-    view.showSettings("terminal");
+    view.showSettings({ kind: "tab", tab: "terminal" });
     expect(notifications).toBe(settled);
 
     view.showWorkspace();
     expect(view.screen).toEqual({ kind: "workspace" });
     view.showWorkspace();
     expect(notifications).toBe(settled + 1);
+  });
+
+  test("a project is a route, and ⌘, comes back to the project you were in", () => {
+    const view = createViewState(fakeStore([]));
+    const route = { kind: "project", projectID: projectID("p") } as const;
+
+    view.showSettings(route);
+    expect(view.screen).toEqual({ kind: "settings", route });
+    // The same project asked for twice is not a notification, and not a trip
+    // back to General: the route is compared by value, not by identity.
+    let notifications = 0;
+    view.subscribe(() => {
+      notifications += 1;
+    });
+    view.showSettings({ kind: "project", projectID: projectID("p") });
+    view.showSettings();
+    expect(notifications).toBe(0);
+    expect(view.screen).toEqual({ kind: "settings", route });
+  });
+
+  test("two routes are the same route only when they name the same pane", () => {
+    const general = { kind: "tab", tab: "general" } as const;
+    const project = { kind: "project", projectID: projectID("p") } as const;
+
+    expect(sameRoute(general, { kind: "tab", tab: "general" })).toBe(true);
+    expect(sameRoute(general, { kind: "tab", tab: "terminal" })).toBe(false);
+    expect(sameRoute(project, { kind: "project", projectID: projectID("p") })).toBe(true);
+    expect(sameRoute(project, { kind: "project", projectID: projectID("q") })).toBe(false);
+    // A tab and a project are never the same pane, whatever they are named.
+    expect(sameRoute(general, project)).toBe(false);
+  });
+});
+
+/** A draft holding one global edit: the font size, because it is one number. */
+const edited = (size: number): SettingsDraft =>
+  withDraftSettings(EMPTY_SETTINGS_DRAFT, withTerminalFontSize(DEFAULT_GLOBAL_SETTINGS, size));
+
+describe("the settings draft", () => {
+  test("opens clean, and an edit makes it dirty", () => {
+    const view = createViewState(fakeStore([]));
+    expect(view.hasUnsavedSettings).toBe(false);
+
+    view.editSettingsDraft(edited(20));
+    expect(view.hasUnsavedSettings).toBe(true);
+    expect(draftSettings(view.settingsDraft, DEFAULT_GLOBAL_SETTINGS).terminalFontSize).toBe(20);
+  });
+
+  test("survives leaving settings, because Back is not an answer to the bar", () => {
+    const view = createViewState(fakeStore([]));
+    view.showSettings();
+    view.editSettingsDraft(edited(20));
+
+    view.showWorkspace();
+    view.showSettings();
+
+    expect(view.hasUnsavedSettings).toBe(true);
+    expect(draftSettings(view.settingsDraft, DEFAULT_GLOBAL_SETTINGS).terminalFontSize).toBe(20);
+  });
+
+  test("a save goes quiet without discarding what is on screen", () => {
+    // Clearing the values would show the mirror's older answer until the daemon
+    // broadcast arrived, which reads as the save having been undone.
+    const view = createViewState(fakeStore([]));
+    view.editSettingsDraft(edited(20));
+
+    view.settingsDraftSaved();
+
+    expect(view.hasUnsavedSettings).toBe(false);
+    expect(draftSettings(view.settingsDraft, DEFAULT_GLOBAL_SETTINGS).terminalFontSize).toBe(20);
+  });
+
+  test("a revert goes back to the last save, not to the mirror", () => {
+    const view = createViewState(fakeStore([]));
+    view.editSettingsDraft(edited(20));
+    view.settingsDraftSaved();
+    view.editSettingsDraft(edited(30));
+
+    view.revertSettingsDraft();
+
+    expect(view.hasUnsavedSettings).toBe(false);
+    expect(draftSettings(view.settingsDraft, DEFAULT_GLOBAL_SETTINGS).terminalFontSize).toBe(20);
+  });
+
+  test("notifies on an edit, a save and a revert, and on nothing else", () => {
+    const view = createViewState(fakeStore([]));
+    let notifications = 0;
+    view.subscribe(() => {
+      notifications += 1;
+    });
+
+    const draft = edited(20);
+    view.editSettingsDraft(draft);
+    // The same draft again is not a change: panes re-render, and a notification
+    // per render is a loop.
+    view.editSettingsDraft(draft);
+    expect(notifications).toBe(1);
+
+    view.settingsDraftSaved();
+    view.settingsDraftSaved();
+    expect(notifications).toBe(2);
+
+    view.revertSettingsDraft();
+    expect(notifications).toBe(2);
   });
 });
 

@@ -286,17 +286,53 @@
       //                            an input group's addon focuses its field on click
       //   jsx-a11y/label-has-associated-control  `Label` takes `htmlFor` from its caller
       //   react/no-array-index-key  `FieldError` lists messages that have no id
+      //   react(refs), react(immutability), react(memo-dependencies),
+      //   react-hooks/exhaustive-deps
+      //                            `useFluidHover` is a measurement loop: it
+      //                            reads a session counter during render, its
+      //                            coalesced remeasure callback names itself,
+      //                            and its observers are torn down off refs
+      //   react/static-components  the sidebar resolves its glyphs from the icon
+      //                            context and clones a caller's `render`
+      //                            element, so a component value is named
+      //                            during render by design
+      //   react/jsx-no-constructed-context-values  `SurfaceProvider` publishes a
+      //                            clamped *number*; there is nothing to memoize
+      //   unicorn/no-array-sort    the menu scope sorts its own freshly-built
+      //                            array of rows into DOM order
+      //   jsx-a11y/no-noninteractive-tabindex  the scroll area's native (touch)
+      //                            branch makes its scroller focusable on
+      //                            purpose: a scrollable region has to be
+      //                            reachable by keyboard, which is why it also
+      //                            carries `role="group"`
+      //   jsx-a11y/no-static-element-interactions, interactive-supports-focus
+      //                            the command menu's rows are `role="option"`
+      //                            in a listbox the *field* owns: focus never
+      //                            leaves the input, which points at the
+      //                            highlighted row through
+      //                            `aria-activedescendant`, so a row is neither
+      //                            focusable nor keyboard-handled itself — and
+      //                            its `onMouseDown` is what stops a click from
+      //                            taking focus off the field
       //
       // What stays on is everything load-bearing: no `any`, no `!`, no
       // `console`, the import restrictions, and `consistent-type-imports`. The
       // registry copies pass all of those as shipped.
-      "files": ["packages/design/src/components/**", "packages/design/src/hooks/**"],
+      "files": [
+        "packages/design/src/components/**",
+        "packages/design/src/hooks/**",
+        "packages/design/src/lib/**"
+      ],
       "rules": {
         "react-perf/jsx-no-new-object-as-prop": "off",
         "react-perf/jsx-no-new-function-as-prop": "off",
         "react-perf/jsx-no-jsx-as-prop": "off",
         "react/set-state-in-effect": "off",
         "react/exhaustive-effect-dependencies": "off",
+        "react/refs": "off",
+        "react/immutability": "off",
+        "react/memo-dependencies": "off",
+        "react-hooks/exhaustive-deps": "off",
         "jsx-a11y/prefer-tag-over-role": "off",
         "unicorn/no-new-array": "off",
         "no-shadow": "off",
@@ -305,7 +341,13 @@
         "jsx-a11y/click-events-have-key-events": "off",
         "jsx-a11y/no-noninteractive-element-interactions": "off",
         "jsx-a11y/label-has-associated-control": "off",
-        "react/no-array-index-key": "off"
+        "react/no-array-index-key": "off",
+        "react/static-components": "off",
+        "react/jsx-no-constructed-context-values": "off",
+        "unicorn/no-array-sort": "off",
+        "jsx-a11y/no-noninteractive-tabindex": "off",
+        "jsx-a11y/no-static-element-interactions": "off",
+        "jsx-a11y/interactive-supports-focus": "off"
       }
     },
     {

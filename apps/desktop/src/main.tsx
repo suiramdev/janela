@@ -9,6 +9,7 @@ import { setLogSink, type LogRecord } from "@janela/support";
 import {
   ClientEnvironmentProvider,
   MainWindow,
+  createConfirmationQueue,
   createViewState,
   type ClientEnvironment,
 } from "@janela/ui";
@@ -17,6 +18,7 @@ import { debug, error, info, trace, warn } from "@tauri-apps/plugin-log";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
+import { browserClipboard } from "./clipboard.ts";
 import { liveEnvironment } from "./environment.ts";
 import { installNativeMenu, tauriCommandSource } from "./menu.ts";
 import { tauriNativeShell } from "./native.ts";
@@ -85,6 +87,18 @@ environment.focus.install((terminalID) => {
   view.focusTerminal(terminalID);
 });
 
+/** Where global settings are kept: this WebView's `localStorage`. */
+const settingsStore = localStorageSettings();
+
+/**
+ * The questions this window asks before something ends.
+ *
+ * Built here, from `view` and the settings store, because a silenced question
+ * has to land in both — the window it was silenced in, and the storage the next
+ * launch reads.
+ */
+const confirmations = createConfirmationQueue({ view, settings: settingsStore });
+
 const clientEnvironment: ClientEnvironment = {
   projects: environment.projects,
   sessions: environment.sessions,
@@ -95,7 +109,9 @@ const clientEnvironment: ClientEnvironment = {
   onFocusedTerminalChange: environment.focus.report,
   commands: tauriCommandSource(),
   native: tauriNativeShell(),
-  settings: localStorageSettings(),
+  confirmations,
+  clipboard: browserClipboard(),
+  settings: settingsStore,
   service: {
     // Both are the *user's* explicit choice, made after the settings surface has
     // stated what stopping the daemon ends (non-negotiable #7).

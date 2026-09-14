@@ -11,7 +11,9 @@ import {
   absolutePath,
   emptyLayout,
   instant,
+  newAutomationID,
   singleTerminalLayout,
+  splitPane,
   type GridSize,
   type Pane,
   type Project,
@@ -23,8 +25,16 @@ import {
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
-import { SidebarProvider } from "@janela/design";
+import {
+  Elevated,
+  sizeMap,
+  SidebarProvider,
+  SizeProvider,
+  useSurface,
+  type SizeVariant,
+} from "@janela/design";
 import type { StateUpdate } from "@janela/protocol";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AppSidebar } from "./app-sidebar.tsx";
@@ -37,15 +47,25 @@ import {
   type LocalLayoutEntry,
   type PanePath,
 } from "./layout-edits.ts";
-import { MainWindow, SessionDetail, attachPane, shouldStartOnAttach } from "./main-window.tsx";
+import {
+  MainWindow,
+  SessionDetail,
+  attachPane,
+  shouldStartOnAttach,
+  tabTerminals,
+} from "./main-window.tsx";
+import { EMPTY_SETTINGS_DRAFT, withDraftProjectSettings } from "./settings-draft.ts";
 import { sessionStatus, sidebarRows } from "./sidebar-model.ts";
 import {
+  inertClipboard,
   inertNativeShell,
+  recordingConfirmations,
   memorySettingsStore,
   neverCommands,
   recordingService,
 } from "./test-fakes.ts";
 import { createViewState } from "./view-state.ts";
+import { ContentCard } from "./window-chrome.tsx";
 
 // ---------------------------------------------------------------------------
 // Values. Built here rather than imported: @janela/client's fakes are not
@@ -169,6 +189,8 @@ function fakeEnvironment(options: {
     view: createViewState(sessionStore),
     commands: neverCommands(),
     native: inertNativeShell(),
+    confirmations: recordingConfirmations(),
+    clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     service: recordingService(),
     restartDaemon: () => {},
@@ -208,6 +230,8 @@ function environmentOver(state: {
     view: createViewState(stores.sessions),
     commands: neverCommands(),
     native: inertNativeShell(),
+    confirmations: recordingConfirmations(),
+    clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     service: recordingService(),
     restartDaemon: () => {},
@@ -591,7 +615,9 @@ describe("AppSidebar markup", () => {
     const markup = renderSidebar(environment);
 
     expect(markup).toContain('aria-label="fix/pty — needs attention"');
-    expect(markup).toContain("bg-attention");
+    // The dot is painted in the attention colour, whatever element carries it:
+    // the claim is that a state has a colour, not which tag it is drawn with.
+    expect(markup).toContain("text-attention");
   });
 
   test("project rows are disclosures and the selected session is current", () => {
@@ -608,18 +634,30 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain('aria-current="true"');
   });
 
-  test("the header offers project creation, search and filtering, above the scroller", () => {
+  test("the header offers search, collapsing and creation, above the scroller", () => {
     const markup = renderSidebar(fakeEnvironment({ projects: [project("p", false)] }));
 
+    // Two compact controls at the top, then the rows that make something.
+    expect(markup).toContain('aria-label="Search"');
+    expect(markup).toContain("Toggle Sidebar");
+    expect(markup).toContain("New Session");
     expect(markup).toContain('aria-label="New Project"');
-    expect(markup).toContain("Search projects and sessions");
     expect(markup).toContain('aria-label="Filter: All Sessions"');
     // The header is a sibling of the scroller, not inside it: that is the whole
-    // reason those three controls survive a long list.
+    // reason those controls survive a long list.
     expect(markup.indexOf('data-sidebar="header"')).toBeLessThan(
       markup.indexOf('data-sidebar="content"'),
     );
-    expect(markup).toContain("overflow-auto");
+    // And the rows are inside a scroller of their own.
+    expect(markup).toContain('data-slot="scroll-area-viewport"');
+  });
+
+  test("the Inbox row promises nothing: disabled, and badged as planned", () => {
+    const markup = renderSidebar(fakeEnvironment({}));
+
+    expect(markup).toContain("Inbox");
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Planned");
   });
 
   test("each project offers a new session on hover, named after the project", () => {
@@ -630,12 +668,60 @@ describe("AppSidebar markup", () => {
   });
 
   test("an empty sidebar says which nothing it is", () => {
-    expect(renderSidebar(fakeEnvironment({}))).toContain("No projects yet");
+    expect(renderSidebar(fakeEnvironment({}))).toContain("No sessions yet");
+  });
+
+  test("every session sits under one Sessions heading, standalone or not", () => {
+    const markup = renderSidebar(
+      fakeEnvironment({
+        projects: [project("janela", true)],
+        sessions: [session("loose"), session("inside", { project: "janela" })],
+      }),
+    );
+
+    // One group label, and it is not "Projects": the list is a list of sessions.
+    expect(markup.split('data-sidebar="group-label"')).toHaveLength(2);
+    const label = markup.indexOf('data-sidebar="group-label"');
+    expect(markup.slice(label, markup.indexOf("loose"))).toContain("Sessions");
+    expect(markup).not.toContain(">Projects<");
+    // Standalone still leads, project sessions still indent: the order is the same rows.
+    expect(markup.indexOf("loose")).toBeLessThan(markup.indexOf("janela"));
+    expect(markup.indexOf("janela")).toBeLessThan(markup.indexOf("inside"));
   });
 });
 
+/** The opening tag of the window's content column, attributes and all. */
+function insetColumn(markup: string): string {
+  const at = markup.indexOf('<main data-slot="sidebar-inset"');
+  expect(at).toBeGreaterThan(-1);
+  return markup.slice(at, markup.indexOf(">", at));
+}
+
+/** Which `Sidebar` variant a screen asked the primitive for. */
+function sidebarVariant(markup: string): string {
+  const match = /data-variant="([a-z]+)"/.exec(markup);
+  expect(match).not.toBeNull();
+  return match?.[1] ?? "";
+}
+
+const drawSettings = (
+  environment: ClientEnvironment,
+  route?: Parameters<ClientEnvironment["view"]["showSettings"]>[0],
+): string => {
+  environment.view.showSettings(route);
+  return renderToStaticMarkup(
+    <ClientEnvironmentProvider environment={environment}>
+      <MainWindow />
+    </ClientEnvironmentProvider>,
+  );
+};
+
+/** One bar button's own tag: every button's classes mention `disabled:`. */
+const barButton = (markup: string, label: "Save" | "Revert"): string =>
+  new RegExp(`<button[^>]*>${label}</button>`).exec(markup)?.[0] ?? "";
+
 describe("MainWindow markup", () => {
-  test("no selection renders the empty state, not a detail view", () => {
+  test("no selection renders the welcome screen, not a detail view", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
 
     const markup = renderToStaticMarkup(
@@ -644,8 +730,131 @@ describe("MainWindow markup", () => {
       </ClientEnvironmentProvider>,
     );
 
-    expect(markup).toContain("No session selected");
+    expect(markup).toContain("No session open");
+    // The screen a fresh install lands on offers both ways to make one.
+    expect(markup).toContain("New Session");
+    expect(markup).toContain("Add Project");
     expect(markup).not.toContain('role="tablist"');
+  });
+
+  test("settings fills the window exactly the way the workspace does", () => {
+    const environment = fakeEnvironment({ sessions: [session("s")] });
+    const draw = (): string =>
+      renderToStaticMarkup(
+        <ClientEnvironmentProvider environment={environment}>
+          <MainWindow />
+        </ClientEnvironmentProvider>,
+      );
+
+    const workspace = draw();
+    environment.view.showSettings();
+    const settings = draw();
+
+    // Byte-identical chrome: the same inset column, and a sidebar with the same
+    // variant beside it. Settings is the same window with different contents —
+    // it used to be a second layout, with the sidebar against the window frame
+    // and no way to collapse it.
+    expect(insetColumn(settings)).toBe(insetColumn(workspace));
+    expect(sidebarVariant(settings)).toBe(sidebarVariant(workspace));
+    expect(settings).toContain("Background service");
+  });
+
+  test("a project's settings are a pane in the settings screen, reached by route", () => {
+    const environment = fakeEnvironment({ projects: [project("janela", false)] });
+    const draw = (): string =>
+      renderToStaticMarkup(
+        <ClientEnvironmentProvider environment={environment}>
+          <MainWindow />
+        </ClientEnvironmentProvider>,
+      );
+
+    environment.view.showSettings({ kind: "project", projectID: projectID("janela") });
+    const markup = draw();
+
+    // The project's own form, in the window rather than in a dialog: the
+    // automation editor is copy no other pane renders.
+    expect(markup).toContain("When a session is first opened");
+    expect(markup).toContain("/repos/janela");
+    // And the navigation says where you are.
+    expect(markup).toMatch(/aria-selected="true"[^>]*>(?:(?!<\/button>).)*janela/);
+  });
+
+  test("a project the mirror does not have falls back to General, not to an empty pane", () => {
+    // The removal arrives from the daemon while its pane is showing. A screen
+    // that kept the route would leave the user looking at nothing, with a
+    // selected row for a project that is gone.
+    const environment = fakeEnvironment({ projects: [project("janela", false)] });
+    environment.view.showSettings({ kind: "project", projectID: projectID("gone") });
+    const markup = renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <MainWindow />
+      </ClientEnvironmentProvider>,
+    );
+
+    expect(markup).toContain("Background service");
+    expect(markup).not.toContain("When a session is first opened");
+    expect([...markup.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
+  });
+
+  /**
+   * The bar that commits every tab. Driven through `MainWindow` because that is
+   * the only place the draft, the panes and the bar meet — and because "the
+   * violation is on another pane" is a claim about exactly that meeting.
+   */
+  describe("the settings bar", () => {
+    test("is quiet at rest: nothing to save, and it does not say so twice", () => {
+      const markup = drawSettings(fakeEnvironment({ projects: [project("janela", false)] }));
+
+      expect(barButton(markup, "Save")).toContain('disabled=""');
+      expect(barButton(markup, "Revert")).toContain('disabled=""');
+      expect(markup).not.toContain("unsaved change");
+    });
+
+    test("counts an edit made on a pane the user has since left", () => {
+      // The reach of one Save is the reason the count is there at all: the edit
+      // below is a project's, and the pane on screen is Terminal.
+      const environment = fakeEnvironment({ projects: [project("janela", false)] });
+      environment.view.editSettingsDraft(
+        withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, projectID("janela"), {
+          worktreeRoot: { kind: "siblingDirectory" },
+          automation: [],
+          isForgeEnabled: true,
+        }),
+      );
+      const markup = drawSettings(environment, { kind: "tab", tab: "terminal" });
+
+      expect(markup).toContain("1 unsaved change");
+      expect(barButton(markup, "Save")).not.toContain('disabled=""');
+      expect(barButton(markup, "Revert")).not.toContain('disabled=""');
+    });
+
+    test("refuses a save the daemon would reject, and names the pane to fix it on", () => {
+      const environment = fakeEnvironment({ projects: [project("janela", false)] });
+      environment.view.editSettingsDraft(
+        withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, projectID("janela"), {
+          worktreeRoot: { kind: "siblingDirectory" },
+          automation: [
+            {
+              id: newAutomationID(),
+              event: "sessionStart",
+              command: [""],
+              isEnabled: true,
+              timeoutSeconds: 30,
+            },
+          ],
+          isForgeEnabled: false,
+        }),
+      );
+      const markup = drawSettings(environment, { kind: "tab", tab: "notifications" });
+
+      expect(barButton(markup, "Save")).toContain('disabled=""');
+      // Named, and reachable: a disabled Save whose reason is three panes away
+      // is a dead end.
+      expect(markup).toContain("An enabled command needs an executable.");
+      expect(markup).toContain("janela");
+      // Revert is the way out, so it stays live.
+      expect(barButton(markup, "Revert")).not.toContain('disabled=""');
+    });
   });
 
   /**
@@ -700,7 +909,7 @@ describe("MainWindow markup", () => {
       </ClientEnvironmentProvider>,
     );
 
-    expect(markup).not.toContain("No session selected");
+    expect(markup).not.toContain("No session open");
     // The terminal is on screen, and the sidebar row agrees with the pane.
     expect(markup).toContain('aria-label="Terminal: claude — running"');
     expect(markup).toContain('aria-current="true"');
@@ -715,11 +924,75 @@ describe("MainWindow markup", () => {
       </ClientEnvironmentProvider>,
     );
 
-    expect(markup).toContain("No session selected");
+    expect(markup).toContain("No session open");
+  });
+});
+
+/**
+ * One terminal pane's own markup: its wrapper, its bar, everything down to the
+ * surface's label.
+ *
+ * Scoped deliberately. An assertion over the whole view would be about the tab
+ * strip too, and the tab strip is *supposed* to follow pane focus — an untitled
+ * tab is named for the terminal it is showing.
+ */
+function paneMarkup(markup: string, title: string): string {
+  const at = markup.indexOf(`aria-label="Terminal: ${title} — `);
+  expect(at).toBeGreaterThan(-1);
+  const opening = markup.lastIndexOf('<div data-slot="terminal-pane"', at);
+  expect(opening).toBeGreaterThan(-1);
+  return markup.slice(opening, at);
+}
+
+/** The `class` attribute of the element carrying `marker`. */
+function classOf(markup: string, marker: string): string {
+  const at = markup.indexOf(marker);
+  expect(at).toBeGreaterThan(-1);
+  const opening = markup.lastIndexOf("<", at);
+  const closing = markup.indexOf(">", at);
+  const match = /class="([^"]*)"/.exec(markup.slice(opening, closing));
+  expect(match).not.toBeNull();
+  return match?.[1] ?? "";
+}
+
+/** The same split, drawn twice, differing only in which half has the keyboard. */
+function splitFocusing(id: TerminalID): SessionLayout {
+  const split = splitPane(
+    singleTerminalLayout(terminalID("t1")),
+    terminalID("t1"),
+    terminalID("t2"),
+    "horizontal",
+  );
+  return withFocusedTerminal(split, id);
+}
+
+describe("tabTerminals", () => {
+  test("a tab is every terminal in its tree, not the pane it happens to show", () => {
+    const layout = splitFocusing(terminalID("t2"));
+
+    // Closing a tab closes what is *in* it: the split half that is not focused
+    // is not a separate tab and must not survive its tab being thrown away.
+    expect(tabTerminals(layout, 0)).toEqual([terminalID("t1"), terminalID("t2")]);
+    expect(tabTerminals(layout, 1)).toEqual([]);
   });
 });
 
 describe("SessionDetail markup", () => {
+  /**
+   * A detail view is a child of the sidebar layout: its tab strip carries the
+   * control that brings a collapsed sidebar back, so it reads the same provider
+   * the sidebar does.
+   */
+  function renderDetail(environment: ClientEnvironment, id: string): string {
+    return renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <SidebarProvider>
+          <SessionDetail sessionID={sessionID(id)} />
+        </SidebarProvider>
+      </ClientEnvironmentProvider>,
+    );
+  }
+
   test("a tab strip and a labelled surface carrying the terminal's state", () => {
     const withTerminal = session("s", {
       terminals: [terminal("t1", "zsh")],
@@ -731,43 +1004,181 @@ describe("SessionDetail markup", () => {
       status: { kind: "connected" },
     });
 
-    const markup = renderToStaticMarkup(
-      <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID={sessionID("s")} />
-      </ClientEnvironmentProvider>,
-    );
+    const markup = renderDetail(environment, "s");
 
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('role="tab"');
     expect(markup).toContain("zsh");
     expect(markup).toContain('aria-label="Terminal: zsh — running"');
-    // The one creation affordance in the window, and the same action as ⌘T.
+    // The strip's three controls, at its end: they act on the tab showing.
+    expect(markup).toContain('aria-label="Split Vertically"');
+    expect(markup).toContain('aria-label="Split Horizontally"');
     expect(markup).toContain('aria-label="New Terminal"');
+  });
+
+  test("each tab and each terminal carries its own close control", () => {
+    const split = session("s", {
+      terminals: [terminal("t1", "zsh"), terminal("t2", "bash")],
+      layout: splitFocusing(terminalID("t2")),
+    });
+    const environment = fakeEnvironment({
+      sessions: [split],
+      states: {
+        [terminalID("t1")]: { kind: "running" },
+        [terminalID("t2")]: { kind: "running" },
+      },
+      status: { kind: "connected" },
+    });
+
+    const markup = renderDetail(environment, "s");
+
+    // The tab is named for the terminal it shows, and closing it takes the whole
+    // tree with it; the two panes close one terminal each. Three controls, three
+    // different targets.
+    expect(markup).toContain('aria-label="Close tab: bash"');
+    expect(markup).toContain('aria-label="Close terminal: zsh"');
+    expect(markup).toContain('aria-label="Close terminal: bash"');
+  });
+
+  test("the shells are what is raised, not the region that holds them", () => {
+    const split = session("s", {
+      terminals: [terminal("t1", "zsh"), terminal("t2", "bash")],
+      layout: splitFocusing(terminalID("t1")),
+    });
+    const markup = renderDetail(
+      fakeEnvironment({ sessions: [split], status: { kind: "connected" } }),
+      "s",
+    );
+
+    // Two panes, two elevations. Counting is the point: a surface on the region
+    // behind them, or on a card wrapping the strip and the panes together, would
+    // be a third — and would say "this box is raised" about a box the user never
+    // thinks of, while drawing a frame around panes that already have an edge.
+    expect([...markup.matchAll(/shadow-surface-\d/g)]).toHaveLength(2);
+    expect(paneMarkup(markup, "zsh")).toContain("shadow-surface-2");
+  });
+
+  test("the chrome is a step of the size ladder, not a number per surface", () => {
+    const split = session("s", {
+      terminals: [terminal("t1", "zsh")],
+      layout: singleTerminalLayout(terminalID("t1")),
+    });
+    const environment = fakeEnvironment({ sessions: [split], status: { kind: "connected" } });
+    const drawn = (size: SizeVariant): string =>
+      renderToStaticMarkup(
+        <ClientEnvironmentProvider environment={environment}>
+          <SizeProvider size={size}>
+            <SidebarProvider>
+              <SessionDetail sessionID={sessionID("s")} />
+            </SidebarProvider>
+          </SizeProvider>
+        </ClientEnvironmentProvider>,
+      );
+
+    // Rendered at both steps, because matching `compact` proves nothing on its
+    // own: a hand-written `h-7` matches it too. What the ladder being
+    // load-bearing means is that the chrome *moves* when the step does — and
+    // that nothing keeps the other step's height.
+    for (const step of ["compact", "default"] as const) {
+      const markup = drawn(step);
+      const other = step === "compact" ? "default" : "compact";
+
+      expect(markup).toContain(sizeMap[step].control);
+      expect(markup).not.toContain(sizeMap[other].control);
+      // And the segmented strip is a control too, not 4px taller than every
+      // other one, which is what its own `h-8` used to make it.
+      expect(classOf(markup, 'aria-label="Terminals"')).toContain(sizeMap[step].control);
+    }
+  });
+
+  test("moving the keyboard between two panes changes nothing that is drawn", () => {
+    const terminals = [terminal("t1", "zsh"), terminal("t2", "bash")];
+    const states = {
+      [terminalID("t1")]: { kind: "running" },
+      [terminalID("t2")]: { kind: "running" },
+    } as const;
+    const drawn = (focused: TerminalID): string =>
+      renderDetail(
+        fakeEnvironment({
+          sessions: [session("s", { terminals, layout: splitFocusing(focused) })],
+          states,
+          status: { kind: "connected" },
+        }),
+        "s",
+      );
+
+    // Byte-identical, and that is the claim: a pane has the keyboard because the
+    // user just clicked or typed in it, and the caret already says so. An
+    // outline, ring or tint on top is a signal for something nobody was confused
+    // about, drawn around half the window.
+    //
+    // Per pane rather than over the whole view, because the tab *does* change:
+    // an untitled tab is named for the terminal it is showing.
+    const keyboardInFirst = drawn(terminalID("t1"));
+    const keyboardInSecond = drawn(terminalID("t2"));
+
+    expect(paneMarkup(keyboardInSecond, "zsh")).toBe(paneMarkup(keyboardInFirst, "zsh"));
+    expect(paneMarkup(keyboardInSecond, "bash")).toBe(paneMarkup(keyboardInFirst, "bash"));
+    expect(paneMarkup(keyboardInFirst, "zsh")).not.toContain("AccentColor");
   });
 
   test("a session the mirror does not have says so", () => {
     const environment = fakeEnvironment({ sessions: [] });
 
-    const markup = renderToStaticMarkup(
-      <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID={sessionID("ghost")} />
-      </ClientEnvironmentProvider>,
-    );
-
-    expect(markup).toContain("Session not found");
+    expect(renderDetail(environment, "ghost")).toContain("Session not found");
   });
 
   test("a session with no terminals has no tab strip and says why", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
 
-    const markup = renderToStaticMarkup(
-      <ClientEnvironmentProvider environment={environment}>
-        <SessionDetail sessionID={sessionID("s")} />
-      </ClientEnvironmentProvider>,
-    );
+    const markup = renderDetail(environment, "s");
 
     expect(markup).toContain("No terminals in this session");
     expect(markup).not.toContain('role="tablist"');
+  });
+});
+
+/** Renders the substrate it was given, so a missing announcement is visible. */
+function Substrate(): ReactElement {
+  return <span data-substrate={String(useSurface())} />;
+}
+
+describe("ContentCard", () => {
+  test("the card is a step above the window, and says so to what it holds", () => {
+    // Two claims, and the second is the one that used to be missing. The card
+    // painted level 2 as a class string while still *reporting* level 1, so a
+    // menu opened over it computed `1 + 2` and landed on `--surface-3` when it
+    // should have been on 4 — in dark appearance, a menu the same colour as the
+    // card it floats above.
+    const markup = renderToStaticMarkup(
+      <ContentCard>
+        <Substrate />
+      </ContentCard>,
+    );
+
+    expect(markup).toContain("bg-surface-2");
+    expect(markup).toContain("shadow-surface-2");
+    expect(markup).toContain('data-substrate="2"');
+  });
+
+  test("a surface inside the card climbs from the card, and stops at the top", () => {
+    // What `offset` buys over a hardcoded level: the same dialog is level 5 on
+    // the page and level 6 inside a card, and nothing can ask for a token that
+    // does not exist. The clamp is the reason a deeply nested surface degrades
+    // to "as near as it gets" rather than to transparent.
+    const markup = renderToStaticMarkup(
+      <ContentCard>
+        <Elevated offset={4}>
+          <Elevated offset={4}>
+            <Substrate />
+          </Elevated>
+        </Elevated>
+      </ContentCard>,
+    );
+
+    expect(markup).toContain("bg-surface-6");
+    expect(markup).toContain("bg-surface-8");
+    expect(markup).toContain('data-substrate="8"');
   });
 });
 

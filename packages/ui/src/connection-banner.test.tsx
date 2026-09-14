@@ -26,7 +26,9 @@ import {
   runningSummary,
 } from "./connection-banner.tsx";
 import {
+  inertClipboard,
   inertNativeShell,
+  recordingConfirmations,
   memorySettingsStore,
   neverCommands,
   recordingService,
@@ -109,6 +111,8 @@ function fakeEnvironment(options: {
     view: createViewState(sessionStore),
     commands: neverCommands(),
     native: inertNativeShell(),
+    confirmations: recordingConfirmations(),
+    clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     service: recordingService(),
     restartDaemon: options.onRestart ?? (() => {}),

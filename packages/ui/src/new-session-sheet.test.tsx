@@ -9,7 +9,9 @@ import {
   newSessionIntent,
   NewSessionSheet,
   preselectedBranch,
+  standaloneIntent,
   startChoices,
+  type NewSessionSheetProps,
 } from "./new-session-sheet.tsx";
 import { fakeFolderProject, fakeProject, fakeSession } from "./test-fakes.ts";
 
@@ -117,33 +119,72 @@ describe("preselectedBranch", () => {
   });
 });
 
+describe("standaloneIntent", () => {
+  test("a folder is a path or nothing; the daemon decides whether it exists", () => {
+    expect(standaloneIntent("  /tmp/notes ")).toEqual({
+      kind: "standalone",
+      directory: absolutePath("/tmp/notes"),
+    });
+    expect(standaloneIntent("")).toBeUndefined();
+    expect(standaloneIntent("notes")).toBeUndefined();
+  });
+});
+
+const FOLDER = fakeFolderProject();
+const PROJECTS = [project, FOLDER] as const;
+const noPick = (): Promise<undefined> => Promise.resolve(undefined);
+
+/** Whether "Create Session" is offered: a refused start is also `disabled`. */
+function canCreate(markup: string): boolean {
+  const button = /<button[^>]*>Create Session<\/button>/.exec(markup)?.[0];
+  if (button === undefined) throw new Error("no Create Session button");
+  return !/\sdisabled=""/.test(button);
+}
+
+function render(overrides: Partial<NewSessionSheetProps>): string {
+  return renderToStaticMarkup(
+    <NewSessionSheet
+      projects={PROJECTS}
+      projectID={project.id}
+      onProjectChange={noop}
+      overview={LOADED}
+      sessions={NO_SESSIONS}
+      onPickDirectory={noPick}
+      onCreate={noop}
+      onCancel={noop}
+      {...overrides}
+    />,
+  );
+}
+
 describe("the sheet", () => {
-  test("opens on the default branch with a refused start disabled and explained", () => {
-    const markup = renderToStaticMarkup(
-      <NewSessionSheet
-        project={project}
-        overview={LOADED}
-        sessions={NO_SESSIONS}
-        onCreate={noop}
-        onCancel={noop}
-      />,
-    );
+  test("a repository opens on its default branch with a refused start explained", () => {
+    const markup = render({});
+    expect(markup).toContain("No project");
     expect(markup).toContain('value="main"');
     expect(markup).toContain("Already checked out in the project directory.");
-    expect(markup).toContain("Create Session");
+    expect(canCreate(markup)).toBe(true);
   });
 
-  test("says why when the daemon could not answer, and offers only Cancel", () => {
-    const markup = renderToStaticMarkup(
-      <NewSessionSheet
-        project={project}
-        overview={FAILED}
-        sessions={NO_SESSIONS}
-        onCreate={noop}
-        onCancel={noop}
-      />,
-    );
+  test("no project asks for a folder, and offers to create once there is one", () => {
+    const markup = render({ projectID: undefined });
+    expect(markup).toContain("Folder");
+    expect(markup).toContain("Choose…");
+    expect(markup).not.toContain("Branch");
+    expect(canCreate(markup)).toBe(false);
+  });
+
+  test("a plain folder project asks nothing more and can be created", () => {
+    const markup = render({ projectID: FOLDER.id, overview: FAILED });
+    expect(markup).toContain(FOLDER.directory);
+    expect(markup).not.toContain("Not a git repository.");
+    expect(canCreate(markup)).toBe(true);
+  });
+
+  test("says why when the daemon could not answer, and keeps the project switchable", () => {
+    const markup = render({ overview: FAILED });
     expect(markup).toContain("Not a git repository.");
-    expect(markup).not.toContain("Create Session");
+    expect(markup).toContain("No project");
+    expect(canCreate(markup)).toBe(false);
   });
 });

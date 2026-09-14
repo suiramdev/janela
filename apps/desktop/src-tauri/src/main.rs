@@ -5,10 +5,12 @@
 //!   * the window, and its native chrome
 //!   * the native menu bar and its accelerators
 //!   * native notifications
-//!   * native file dialogs — **the app performs file selection; the daemon is handed
-//!     paths.** That is a rule, not a convenience: it is what keeps macOS permission
-//!     prompts attributed to the app the user just clicked rather than to a
-//!     background binary they have never heard of.
+//!   * the native directory picker — **the app performs file selection; the daemon
+//!     is handed paths.** That is a rule, not a convenience: it is what keeps macOS
+//!     permission prompts attributed to the app the user just clicked rather than to
+//!     a background binary they have never heard of. Confirmations are *not* native:
+//!     a question about a terminal in this window is asked in it, which is why the
+//!     capability is `dialog:allow-open` rather than `dialog:default`.
 //!   * the daemon sidecar's lifecycle and launch-agent registration
 //!   * **the Unix-socket bridge**, because a WebView cannot open a socket
 //!

@@ -10,7 +10,13 @@ import {
   sessionRemovalPrompt,
   type SidebarActionTarget,
 } from "./sidebar-actions.ts";
-import { fakeProject, fakeSession, inertNativeShell } from "./test-fakes.ts";
+import {
+  fakeProject,
+  fakeSession,
+  inertNativeShell,
+  recordingConfirmations,
+  type RecordingConfirmations,
+} from "./test-fakes.ts";
 import { createViewState } from "./view-state.ts";
 
 const projectID = (raw: string): ProjectID => raw as ProjectID;
@@ -52,7 +58,8 @@ function emptySessionStore(): SessionStore {
 interface Harness {
   readonly target: SidebarActionTarget;
   readonly sent: ClientRequest[];
-  readonly answered: string[];
+  /** The live queue, so an assertion reads the questions asked by then. */
+  readonly confirmations: RecordingConfirmations;
 }
 
 /**
@@ -68,7 +75,7 @@ function harness(options: {
   readonly sessions?: SessionStore;
 }): Harness {
   const sent: ClientRequest[] = [];
-  const answered: string[] = [];
+  const confirmations = recordingConfirmations({ agrees: options.agrees });
   const sessions = options.sessions ?? emptySessionStore();
 
   const target: SidebarActionTarget = {
@@ -83,16 +90,15 @@ function harness(options: {
       },
     },
     view: createViewState(sessions),
-    native: {
-      ...inertNativeShell(),
-      confirm: async (dialog) => {
-        answered.push(dialog.title);
-        return options.agrees;
-      },
-    },
+    native: inertNativeShell(),
+    confirmations,
   };
 
-  return { target, sent, answered };
+  return {
+    target,
+    sent,
+    confirmations,
+  };
 }
 
 describe("createSidebarActions", () => {
@@ -123,16 +129,22 @@ describe("createSidebarActions", () => {
     expect(target.view.sheet).toEqual({ kind: "newBranch", projectID: projectID("p") });
   });
 
-  test("project settings open as a sheet naming that project", () => {
+  test("project settings navigate to that project's pane in settings, not to a sheet", () => {
     const { target } = harness({ agrees: true });
 
     createSidebarActions(target).openProjectSettings(projectID("p"));
 
-    expect(target.view.sheet).toEqual({ kind: "projectSettings", projectID: projectID("p") });
+    expect(target.view.screen).toEqual({
+      kind: "settings",
+      route: { kind: "project", projectID: projectID("p") },
+    });
+    // No modal over the row: the form is a screen, and the terminals are behind
+    // it rather than under a scrim.
+    expect(target.view.sheet).toBeUndefined();
   });
 
   test("removing a session asks the daemon what it costs before asking the user", async () => {
-    const { target, sent, answered } = harness({
+    const { target, sent, confirmations } = harness({
       agrees: true,
       plan: { ...SAFE, liveTerminalCount: 2, canDeleteDirectory: true, deletesDirectory: true },
     });
@@ -144,7 +156,7 @@ describe("createSidebarActions", () => {
     // The plan first, then the human, then the removal. Any other order either
     // asks about consequences it does not know, or removes before asking.
     expect(sent.map((message) => message.type)).toEqual(["removalPlan", "removeSession"]);
-    expect(answered).toEqual(["Remove fix/pty?"]);
+    expect(confirmations.titles).toEqual(["Remove fix/pty?"]);
     expect(sent[1]).toEqual({
       type: "removeSession",
       sessionID: sessionID("s"),
@@ -162,12 +174,12 @@ describe("createSidebarActions", () => {
   });
 
   test("declining a project removal sends nothing", async () => {
-    const { target, sent, answered } = harness({ agrees: false });
+    const { target, sent, confirmations } = harness({ agrees: false });
 
     createSidebarActions(target).removeProject(fakeProject({ id: projectID("p") }));
     await tick();
 
-    expect(answered).toHaveLength(1);
+    expect(confirmations.titles).toHaveLength(1);
     expect(sent).toEqual([]);
   });
 
@@ -193,6 +205,14 @@ describe("sessionRemovalPrompt", () => {
 
   test("nothing to warn about still says what happens", () => {
     expect(sessionRemovalPrompt(session, SAFE).message.length).toBeGreaterThan(0);
+  });
+
+  test("cannot be silenced: it is the question that can delete a directory", () => {
+    // No `remember`, so the dialog shows no "Don't ask again" — a one-way door
+    // for a removal that takes uncommitted work with it is the mistake this
+    // whole confirmation exists to prevent.
+    expect(sessionRemovalPrompt(session, SAFE).remember).toBeUndefined();
+    expect(projectRemovalPrompt(fakeProject({ name: "janela" }), 2).remember).toBeUndefined();
   });
 
   test("live terminals are counted, and the count reads as English", () => {

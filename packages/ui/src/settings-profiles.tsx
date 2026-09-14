@@ -31,10 +31,13 @@ import {
   duplicatedProfile,
   profileDraft,
   profileOf,
+  profileTitle,
   profileViolations,
   variablesAppending,
 } from "./profile-editing.ts";
 import { PROFILE_ICON_NAMES, ProfileIcon } from "./profile-icons.tsx";
+import type { SettingsDraft } from "./settings-draft.ts";
+import { draftProfiles, withDraftProfile, withoutDraftProfile } from "./settings-draft.ts";
 
 /**
  * The Profiles tab: authoring what ⌘T offers.
@@ -68,55 +71,69 @@ import { PROFILE_ICON_NAMES, ProfileIcon } from "./profile-icons.tsx";
 // oxlint-disable-next-line jsx-a11y/control-has-associated-label -- see above
 const PROFILE_ROW = <button type="button" />;
 
-export interface ProfileEditing {
-  save(profile: LaunchProfile): void;
-  remove(profileID: LaunchProfileID): void;
-}
-
 export interface SettingsProfilesProps {
+  /** The mirror's profiles. The draft is read against them, never in place of them. */
   readonly profiles: readonly LaunchProfile[];
   readonly availability: LaunchProfileAvailability;
-  readonly editing: ProfileEditing;
+  readonly draft: SettingsDraft;
+  readonly onChangeDraft: (draft: SettingsDraft) => void;
 }
 
+/**
+ * ## Why this pane takes the draft rather than a value and a callback
+ *
+ * It is the one pane whose edits are not a field: adding, duplicating and
+ * deleting a profile are changes to a *list*, and the difference between
+ * deleting a stored profile and discarding one that only ever existed in this
+ * draft decides whether the daemon hears about it at all. Passing the draft down
+ * keeps that decision next to the button that causes it, rather than in a flag
+ * threaded back up.
+ *
+ * The open editor still holds a working copy, because argv and environment rows
+ * need identities that survive a neighbour being removed. Every change writes
+ * through to the draft on the way, so the list, the picker and the bar all see
+ * the edit; the copy exists for the caret, not for the value.
+ */
 export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
-  const { profiles, availability, editing } = props;
-  const [draft, setDraft] = useState<ProfileDraft | undefined>(undefined);
+  const { profiles, availability, draft, onChangeDraft } = props;
+  const [editor, setEditor] = useState<ProfileDraft | undefined>(undefined);
 
-  const selectedID = draft?.profile.id;
+  const listed = draftProfiles(draft, profiles);
+  const selectedID = editor?.profile.id;
 
   const select = useCallback(
     (profileID: LaunchProfileID) => {
-      const found = profiles.find((profile) => profile.id === profileID);
-      setDraft(found === undefined ? undefined : profileDraft(found));
+      const found = listed.find((profile) => profile.id === profileID);
+      setEditor(found === undefined ? undefined : profileDraft(found));
     },
-    [profiles],
+    [listed],
+  );
+  const change = useCallback(
+    (next: ProfileDraft) => {
+      setEditor(next);
+      onChangeDraft(withDraftProfile(draft, next));
+    },
+    [draft, onChangeDraft],
   );
   const add = useCallback(() => {
-    setDraft(profileDraft(blankProfile()));
-  }, []);
-  const dismiss = useCallback(() => {
-    setDraft(undefined);
-  }, []);
-  const save = useCallback(
-    (saved: ProfileDraft) => {
-      editing.save(profileOf(saved));
-      setDraft(undefined);
+    // Staged on the spot rather than on a Save of its own: the row has to appear
+    // in the list to be edited, and an unsaved row the bar does not count is one
+    // the user loses by pressing Revert without being told.
+    change(profileDraft(blankProfile()));
+  }, [change]);
+  const duplicate = useCallback(
+    (profile: LaunchProfile) => {
+      change(profileDraft(duplicatedProfile(profile)));
     },
-    [editing],
+    [change],
   );
   const remove = useCallback(
     (profileID: LaunchProfileID) => {
-      editing.remove(profileID);
-      setDraft(undefined);
+      setEditor(undefined);
+      onChangeDraft(withoutDraftProfile(draft, profileID, profiles));
     },
-    [editing],
+    [draft, onChangeDraft, profiles],
   );
-  const duplicate = useCallback((profile: LaunchProfile) => {
-    // Not saved yet: a copy the user has not named is a draft, and saving it on
-    // the spot would put "Codex Copy" in their picker on a stray click.
-    setDraft(profileDraft(duplicatedProfile(profile)));
-  }, []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -125,7 +142,7 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
         hint="A profile is a command Janela starts in a terminal. It is not an integration: Janela does not wrap, parse or manage what it launches."
       >
         <ItemGroup>
-          {profiles.map((profile) => (
+          {listed.map((profile) => (
             <ProfileListRow
               key={profile.id}
               profile={profile}
@@ -143,16 +160,14 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
         </div>
       </Section>
 
-      {draft === undefined ? undefined : (
+      {editor === undefined ? undefined : (
         <ProfileEditor
-          draft={draft}
-          isAvailable={isProfileAvailable(profileOf(draft), availability)}
-          isKnown={profiles.some((profile) => profile.id === draft.profile.id)}
-          onChange={setDraft}
-          onSave={save}
+          draft={editor}
+          isAvailable={isProfileAvailable(profileOf(editor), availability)}
+          isStored={profiles.some((profile) => profile.id === editor.profile.id)}
+          onChange={change}
           onRemove={remove}
           onDuplicate={duplicate}
-          onCancel={dismiss}
         />
       )}
     </div>
@@ -189,7 +204,7 @@ function ProfileListRow(props: {
         <ProfileIcon iconName={profile.iconName} />
       </ItemMedia>
       <ItemContent>
-        <ItemTitle>{profile.name}</ItemTitle>
+        <ItemTitle>{profileTitle(profile)}</ItemTitle>
       </ItemContent>
       <ItemActions>
         {profile.isAgent ? <Badge variant="secondary">Agent</Badge> : undefined}
@@ -205,21 +220,28 @@ function ProfileListRow(props: {
 /**
  * The editor for one profile.
  *
+ * It has no Save of its own: the bar at the bottom of the screen commits this
+ * form along with every other tab's, so a second Save here would be two
+ * different promises about the same keystrokes. Delete and Duplicate stay,
+ * because neither is a field — one stages a removal and the other stages a new
+ * profile, and both are counted by the bar like any other change.
+ *
  * Exported so it can be rendered — and tested — without first driving a click
  * through the list above it.
  */
 export function ProfileEditor(props: {
   readonly draft: ProfileDraft;
   readonly isAvailable: boolean;
-  /** False for a new profile or an unsaved duplicate: there is nothing to delete. */
-  readonly isKnown: boolean;
+  /**
+   * Whether the daemon has this profile. False for a new one or an unsaved
+   * duplicate, which is discarded outright rather than deleted — and says so.
+   */
+  readonly isStored: boolean;
   readonly onChange: (draft: ProfileDraft) => void;
-  readonly onSave: (draft: ProfileDraft) => void;
   readonly onRemove: (profileID: LaunchProfileID) => void;
   readonly onDuplicate: (profile: LaunchProfile) => void;
-  readonly onCancel: () => void;
 }): ReactElement {
-  const { draft, onChange, onSave, onRemove, onDuplicate } = props;
+  const { draft, onChange, onRemove, onDuplicate } = props;
   const { profile } = draft;
   const violations = profileViolations(profileOf(draft));
 
@@ -253,9 +275,6 @@ export function ProfileEditor(props: {
     },
     [draft, onChange],
   );
-  const save = useCallback(() => {
-    onSave(draft);
-  }, [draft, onSave]);
   const remove = useCallback(() => {
     onRemove(profile.id);
   }, [onRemove, profile.id]);
@@ -266,7 +285,7 @@ export function ProfileEditor(props: {
   const isRenamable = canRenameProfile(profile);
 
   return (
-    <Section title={profile.name.trim().length === 0 ? "New profile" : profile.name}>
+    <Section title={profileTitle(profile)}>
       <TextField
         label="Name"
         value={profile.name}
@@ -309,20 +328,14 @@ export function ProfileEditor(props: {
       <Violations violations={violations} />
 
       <div className="flex gap-2">
-        <Button type="button" onClick={save} disabled={violations.length > 0}>
-          Save
-        </Button>
         <Button type="button" variant="outline" onClick={duplicate}>
           Duplicate
         </Button>
-        <Button type="button" variant="outline" onClick={props.onCancel}>
-          Cancel
-        </Button>
-        {props.isKnown && canRemoveProfile(profile) ? (
-          // Pushed away from the others: a destructive action next to Cancel is a
-          // mis-click waiting to happen.
+        {canRemoveProfile(profile) ? (
+          // Pushed away from the other one: a destructive action beside a button
+          // people reach for is a mis-click waiting to happen.
           <Button type="button" variant="destructive" onClick={remove} className="ml-auto">
-            Delete
+            {props.isStored ? "Delete" : "Discard"}
           </Button>
         ) : undefined}
       </div>

@@ -4,6 +4,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "cn";
 import * as React from "react";
 
+import { surfaceClasses } from "../../lib/surface-classes.ts";
+import { SurfaceProvider, useSurface } from "../../lib/surface-context.tsx";
 import { Button } from "./button.tsx";
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -35,6 +37,10 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   );
 }
 
+// Adapted like `dialog.tsx`: a modal is four steps above the substrate with the
+// shadow pinned to 5. Nothing in this client uses it — our sheets are dialogs —
+// but a primitive left on `bg-popover` is a second answer to "what colour is an
+// overlay" waiting for its first call site.
 function SheetContent({
   className,
   children,
@@ -45,6 +51,7 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
 }) {
+  const level = Math.min(useSurface() + 4, 8);
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -52,12 +59,13 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-50 flex flex-col bg-popover bg-clip-padding text-xs/relaxed text-popover-foreground shadow-lg transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
+          surfaceClasses(level, 5),
+          "fixed z-50 flex flex-col bg-clip-padding text-xs/relaxed text-foreground transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
           className,
         )}
         {...props}
       >
-        {children}
+        <SurfaceProvider value={level}>{children}</SurfaceProvider>
         {showCloseButton && (
           <SheetPrimitive.Close
             data-slot="sheet-close"

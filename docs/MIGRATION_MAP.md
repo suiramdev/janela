@@ -184,11 +184,12 @@ emerged while screens were built over bare tokens (`TextField`, `NumberField`,
 and still live in `@janela/ui` — but they are now compositions of `Field`, `Input`
 and `Switch`, not markup of their own, and the inline-style module they used to
 draw with (`packages/ui/src/styles.ts`) is gone. Every view composes registry
-primitives: `Dialog` for the sheets, `Sidebar` for both the workspace and the
-settings screen, `Tabs` for the terminal strip, `Item`/`Badge`/`Kbd` for the lists,
-`NativeSelect` for pickers,
-`Alert` for the in-place confirmations and the version-skew banner, `Empty` for
-every empty state.
+primitives: `Dialog` for the sheets *and for every confirmation* — what used to be
+Tauri's native `ask()`, which could not offer a third answer and which nothing
+could read in a test — `Sidebar` for both the workspace and the settings screen,
+`Tabs` for the terminal strip, `Item`/`Badge`/`Kbd` for the lists, `NativeSelect`
+for pickers, `Alert` for the version-skew banner and the settings screen's
+two-step service controls, `Empty` for every empty state.
 
 What `@janela/design` holds now is **vendored**: shadcn/ui's `base-mira` set — the
 Base UI variant, with Hugeicons — installed with `bunx shadcn@latest add`, plus Dither Kit's

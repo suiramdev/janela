@@ -76,6 +76,28 @@ function bytesOfBinaryString(data: string): Uint8Array {
 export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
   const container = options.container;
 
+  /**
+   * The colour painted behind this surface, or nothing when it is transparent.
+   *
+   * xterm fills the cells it owns, and its default is black. The letterbox below
+   * deliberately shows the container through wherever whole cells do not reach —
+   * so unless the two agree, every pane is drawn with a frame around it.
+   *
+   * Read from the computed style rather than from a token name: the value has four
+   * appearance variants (packages/design/src/tokens.ts § COLOR) and which one
+   * applies is a fact about the document, not about this module.
+   */
+  function backgroundBehind(): string | undefined {
+    const behind = getComputedStyle(container).backgroundColor;
+    // Nothing is painting behind the surface, so xterm's own default is as good an
+    // answer as any.
+    if (behind === "" || behind === "transparent" || behind === "rgba(0, 0, 0, 0)") {
+      return undefined;
+    }
+    return behind;
+  }
+
+  const background = backgroundBehind();
   const terminal = new Terminal({
     fontFamily: TERMINAL_FONT_STACK,
     scrollback: CLIENT_SCROLLBACK_LINES,
@@ -86,6 +108,9 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
     // no case for parameter 8, so the resize below is ours. See the handler.
     windowOptions: { setWinSizeChars: true },
     allowProposedApi: true,
+    // In the constructor, not assigned afterwards: the theme decides the glyph
+    // atlas the renderer builds on `open()`.
+    theme: background === undefined ? {} : { background },
   });
 
   const fit = new FitAddon();
@@ -117,6 +142,33 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
     webgl = undefined;
   }
 
+  /**
+   * `xterm.css` paints `.xterm-viewport` `#000` — with the comment that the macOS
+   * scrollbar needs an opaque backing — and it is the one colour in the surface
+   * that does not come from the theme. Left alone, it draws a black box inside
+   * every pane, framed by the letterbox in whatever colour the surface is.
+   *
+   * So it follows the same value the theme does, and stays opaque.
+   */
+  const scroller = host.querySelector<HTMLElement>(".xterm-viewport");
+
+  /**
+   * Follows the appearance. A theme swap rebuilds xterm's glyph atlas, so this is
+   * wired to the two queries that can change the colour rather than polled.
+   */
+  function syncBackground(): void {
+    const behind = backgroundBehind();
+    terminal.options.theme = behind === undefined ? {} : { background: behind };
+    if (scroller !== null) scroller.style.backgroundColor = behind ?? "";
+  }
+  syncBackground();
+
+  const appearances =
+    typeof matchMedia === "function"
+      ? [matchMedia("(prefers-color-scheme: dark)"), matchMedia("(prefers-contrast: more)")]
+      : [];
+  for (const query of appearances) query.addEventListener("change", syncBackground);
+
   const encoder = new TextEncoder();
 
   const rendering: XtermRendering = {
@@ -139,6 +191,12 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
       return terminal.getSelection() || undefined;
     },
 
+    paste(text: string): void {
+      // `Terminal.paste` runs the same path a DOM paste does, which is where
+      // bracketed paste is applied — see the contract in `terminal-rendering.ts`.
+      terminal.paste(text);
+    },
+
     clearViewport(): void {
       // Local only. The daemon's scrollback is untouched, which is why this is
       // safe to offer to one client while another is attached.
@@ -151,6 +209,7 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
 
     dispose(): void {
       observer.disconnect();
+      for (const query of appearances) query.removeEventListener("change", syncBackground);
       windowSize.dispose();
       for (const subscription of subscriptions) subscription.dispose();
       webgl?.dispose();

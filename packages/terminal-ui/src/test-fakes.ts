@@ -65,7 +65,17 @@ export class FakeRendering implements TerminalRendering {
   }
 
   selectedText(): string | undefined {
-    return undefined;
+    return this.selection;
+  }
+
+  /** What `selectedText` answers; a test that needs a selection sets it. */
+  selection: string | undefined;
+
+  /** Every text handed to `paste`, in order. */
+  readonly pasted: string[] = [];
+
+  paste(text: string): void {
+    this.pasted.push(text);
   }
 
   clearViewport(): void {
