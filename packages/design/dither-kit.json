@@ -1,0 +1,30 @@
+{
+  "$schema": "https://tripwire.sh/schema/dither-kit.json",
+  "lockfileVersion": 1,
+  "registry": "https://tripwire.sh",
+  "mode": "source",
+  "components": {
+    "avatar": {
+      "version": "0.1.0",
+      "hash": "sha256:c7a639c023dcfb9f1365f11de35986d265de494b60c1887807aedf6504acf0cd",
+      "files": [
+        {
+          "path": "components/dither-kit/avatar.tsx",
+          "hash": "sha256:bf9736b474a5e050b19b23fb4d858924758d6df1d0a1006eed95f1fc42b84cb5"
+        },
+        {
+          "path": "components/dither-kit/lib.ts",
+          "hash": "sha256:41493601eb53a70f7629f6e50bad233f7185eaad42ba2397ca56ac1afcf1bb5f"
+        },
+        {
+          "path": "components/dither-kit/palette.ts",
+          "hash": "sha256:fd020c230ad818a5d9d6dfdfcb6ef50b0dba012c77f44f1a61449fc9a65947f7"
+        },
+        {
+          "path": "components/dither-kit/pixel.ts",
+          "hash": "sha256:eea1493d54a86d164b40d69c95956238777331ded7a556f099230dab161ab5a7"
+        }
+      ]
+    }
+  }
+}

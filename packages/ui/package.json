@@ -13,12 +13,13 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "4.3.2",
+    "@hugeicons/react": "1.1.10",
     "@janela/client": "workspace:*",
     "@janela/core": "workspace:*",
     "@janela/design": "workspace:*",
     "@janela/protocol": "workspace:*",
-    "@janela/terminal-ui": "workspace:*",
-    "lucide-react": "1.33.0"
+    "@janela/terminal-ui": "workspace:*"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",

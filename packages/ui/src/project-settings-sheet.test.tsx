@@ -80,9 +80,21 @@ function sheetMarkup(project: Project, profiles: readonly LaunchProfile[] = PROF
   );
 }
 
-/** `checked=""` occurrences: the forge switch is a checkbox too. */
+/** Switches reading as on: the forge switch is one too, so this is counted. */
 function checkedCount(markup: string): number {
-  return [...markup.matchAll(/checked=""/g)].length;
+  return [...markup.matchAll(/aria-checked="true"/g)].length;
+}
+
+/**
+ * The Save button's own tag.
+ *
+ * Extracted rather than searched for the word "disabled": every button's classes
+ * mention `disabled:`, so a bare `toContain` would pass whatever Save's state was.
+ */
+function saveButton(markup: string): string {
+  const tag = /<button[^>]*>Save<\/button>/.exec(markup)?.[0];
+  expect(tag).toBeDefined();
+  return tag ?? "";
 }
 
 describe("automation authoring", () => {
@@ -134,7 +146,7 @@ describe("the teardown timeout", () => {
   test("a zero timeout blocks saving", () => {
     const markup = sheetMarkup(WITH_ZERO_TIMEOUT);
     expect(markup).toContain("A teardown timeout must be at least one second.");
-    expect(markup).toContain("disabled");
+    expect(saveButton(markup)).toContain('disabled=""');
   });
 });
 
@@ -149,13 +161,13 @@ describe("enabled state", () => {
   test("an enabled command with no executable blocks saving", () => {
     const markup = sheetMarkup(WITH_BLANK_ENABLED);
     expect(markup).toContain("An enabled command needs an executable.");
-    expect(markup).toContain("disabled");
+    expect(saveButton(markup)).toContain('disabled=""');
   });
 
   test("a disabled blank command does not block saving", () => {
-    expect(sheetMarkup(WITH_BLANK_DISABLED)).not.toContain(
-      "An enabled command needs an executable.",
-    );
+    const markup = sheetMarkup(WITH_BLANK_DISABLED);
+    expect(markup).not.toContain("An enabled command needs an executable.");
+    expect(saveButton(markup)).not.toContain('disabled=""');
   });
 });
 

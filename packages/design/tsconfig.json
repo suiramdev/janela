@@ -5,7 +5,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "jsx": "react-jsx",
-    "types": ["bun"]
+    "types": ["bun"],
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "generated", "native/target", "src-tauri"],

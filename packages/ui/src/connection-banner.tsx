@@ -1,5 +1,6 @@
 import type { ConnectionStatus } from "@janela/client";
 import type { Session, SessionID } from "@janela/core";
+import { Alert, AlertAction, AlertDescription, AlertTitle, Button, Spinner } from "@janela/design";
 import type { ReactElement } from "react";
 
 import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
@@ -88,38 +89,37 @@ export function ConnectionBanner(): ReactElement | null {
   if (model.kind === "strip") {
     return (
       // `<output>` carries `role="status"` implicitly, and the polite live region
-      // is what makes a reconnect announce itself without interrupting.
+      // is what makes a reconnect announce itself without interrupting. The
+      // spinner is hidden from it: the sentence is the announcement.
       <output
         aria-live="polite"
-        className="absolute inset-x-0 top-0 flex items-center justify-center gap-2 bg-black/60 px-2 py-1 text-xs text-white"
+        className="border-border bg-muted text-muted-foreground absolute inset-x-0 top-0 flex items-center justify-center gap-2 border-b px-2 py-1 text-xs"
       >
-        <span
-          aria-hidden="true"
-          className="size-1.5 rounded-full bg-white/70 motion-safe:animate-pulse"
-        />
+        <Spinner aria-hidden="true" className="size-3" />
         {model.text}
       </output>
     );
   }
 
   return (
-    <div
-      role="alert"
-      className="rounded-medium absolute inset-x-4 top-4 flex flex-col gap-2 bg-black/80 p-4 text-sm text-white"
+    // The action is a sentence rather than an icon, so it sits below the copy
+    // instead of in the corner `AlertAction` reserves for one — hence `static` on
+    // the action, and hence both of the primitive's `has-[action]` rules (a
+    // `relative` box and a reserved right gutter) being overridden here rather
+    // than fought with specificity.
+    <Alert
+      variant="destructive"
+      className="absolute inset-x-0 top-0 z-10 rounded-none has-data-[slot=alert-action]:absolute has-data-[slot=alert-action]:pr-2.5"
     >
-      <p>{VERSION_SKEW_COPY}</p>
-      <p className="text-xs text-white/70">
+      <AlertTitle>{VERSION_SKEW_COPY}</AlertTitle>
+      <AlertDescription>
         {runningSummary(sessions, (id) => environment.sessions.isRunning(id))}
-      </p>
-      <div>
-        <button
-          type="button"
-          onClick={environment.restartDaemon}
-          className="rounded-small bg-white/15 px-3 py-1 hover:bg-white/25"
-        >
+      </AlertDescription>
+      <AlertAction className="static mt-2">
+        <Button variant="outline" size="sm" onClick={environment.restartDaemon}>
           Restart the background service
-        </button>
-      </div>
-    </div>
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }

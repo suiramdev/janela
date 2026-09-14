@@ -1,3 +1,5 @@
+import { LayoutTwoColumnIcon, LayoutTwoRowIcon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { DaemonConnection } from "@janela/client";
 import {
   emptyLayout,
@@ -7,16 +9,31 @@ import {
   type GridSize,
   type LayoutTab,
   type Pane,
-  type Project,
-  type ProjectID,
-  type Session,
   type SessionID,
   type SessionLayout,
   type TerminalDescriptor,
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
-import { SIDEBAR_WIDTH } from "@janela/design";
+import {
+  Badge,
+  Button,
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  Kbd,
+  SIDEBAR_WIDTH,
+  SidebarInset,
+  SidebarProvider,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from "@janela/design";
 import {
   animationFrameScheduler,
   coalescePerFrame,
@@ -30,12 +47,15 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
+  type DragEvent,
   type PointerEvent,
   type ReactElement,
 } from "react";
 
+import { AppSidebar } from "./app-sidebar.tsx";
 import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
-import { createCommandDispatch, selectSession } from "./command-dispatch.ts";
+import { createCommandDispatch, createTerminal, splitTerminal } from "./command-dispatch.ts";
 import type { CommandID } from "./commands.ts";
 import { ConnectionBanner } from "./connection-banner.tsx";
 import {
@@ -45,8 +65,8 @@ import {
   withSplitFraction,
   type PanePath,
 } from "./layout-edits.ts";
+import { SettingsScreen } from "./settings-window.tsx";
 import { SheetHost } from "./sheets.tsx";
-import { sidebarRows, statusText, type SessionStatus } from "./sidebar-model.ts";
 
 export * from "./client-environment.tsx";
 
@@ -70,7 +90,8 @@ export * from "./client-environment.tsx";
  *
  * That is the entire application. There is no inspector, no bottom panel, no
  * activity bar, and adding one should require an argument that survives
- * docs/product.md § Non-goals.
+ * docs/product.md § Non-goals. Settings is the one thing that replaces it: the
+ * same two columns, filled with tabs and a pane instead (`SettingsScreen`).
  *
  * ## What this view is looking at
  *
@@ -94,6 +115,7 @@ export function MainWindow(): ReactElement {
   const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
 
   const { view, commands, settings } = environment;
+  const screen = useStoreValue(view, () => view.screen);
 
   const dispatch = useMemo(
     () =>
@@ -136,168 +158,80 @@ export function MainWindow(): ReactElement {
       : undefined;
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden">
-      <div style={SIDEBAR_STYLE} className="shrink-0 overflow-y-auto border-r border-black/10">
-        <Sidebar />
-      </div>
-      <div className="relative min-w-0 flex-1">
-        {selected === undefined ? (
-          <p className="flex h-full items-center justify-center text-sm text-neutral-500">
-            No session selected
-          </p>
-        ) : (
-          // Deliberately unkeyed: one instance across session switches, so the
-          // local layout of a session survives being switched away from.
-          <SessionDetail sessionID={selected} />
-        )}
-      </div>
-      <ConnectionBanner />
-      <SheetHost dispatch={run} />
-    </div>
-  );
-}
-
-/**
- * A fixed ideal width, with the token's bounds declared for a future drag
- * affordance to honour. Resizing the sidebar is not in this issue.
- */
-const SIDEBAR_STYLE = {
-  width: SIDEBAR_WIDTH.ideal,
-  minWidth: SIDEBAR_WIDTH.minimum,
-  maxWidth: SIDEBAR_WIDTH.maximum,
-} as const;
-
-// MARK: - Sidebar
-
-const STATUS_DOT: Record<SessionStatus, string> = {
-  attention: "bg-attention",
-  running: "bg-running",
-  failed: "bg-failure",
-  idle: "bg-transparent",
-};
-
-const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
-
-/**
- * Two levels, and never a third: standalone sessions, then collapsible projects
- * with their sessions inside.
- *
- * Deliberately a flat list of buttons rather than a recursive tree component.
- * Expanding does no work — it flips a local boolean and reads nothing, because a
- * project that had to load anything to expand would have broken the laziness rule
- * upstream (docs/performance.md § Interaction).
- *
- * The expansion override is local. `Project.isExpanded` is the mirror's value and
- * the only way to change it would be a protocol message that does not exist; so a
- * click overrides it here and the override lasts as long as the window (#35).
- */
-export function Sidebar(): ReactElement {
-  const environment = useClientEnvironment();
-  const projects = useStoreValue(environment.projects, () => environment.projects.projects);
-  const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
-  const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
-  const states = useStoreValue(environment.sessions, () => environment.sessions.terminalStates);
-
-  const [overrides, setOverrides] = useState(NO_OVERRIDES);
-  const rows = useMemo(
-    () => sidebarRows(projects, sessions, states, overrides),
-    [projects, sessions, states, overrides],
-  );
-
-  const sessionStore = environment.sessions;
-  const select = useCallback(
-    (id: SessionID) => {
-      selectSession(sessionStore, id);
-    },
-    [sessionStore],
-  );
-
-  const toggle = useCallback((id: ProjectID, wasExpanded: boolean) => {
-    setOverrides((current) => new Map(current).set(id, !wasExpanded));
-  }, []);
-
-  return (
-    <nav aria-label="Sessions" className="flex flex-col gap-px p-2">
-      {rows.map((row) =>
-        row.kind === "project" ? (
-          <ProjectRow
-            key={row.project.id}
-            project={row.project}
-            isExpanded={row.isExpanded}
-            onToggle={toggle}
-          />
-        ) : (
-          <SessionRow
-            key={row.session.id}
-            session={row.session}
-            status={row.status}
-            indented={row.indented}
-            isSelected={row.session.id === selection}
-            onSelect={select}
-          />
-        ),
-      )}
-    </nav>
-  );
-}
-
-function ProjectRow(props: {
-  readonly project: Project;
-  readonly isExpanded: boolean;
-  readonly onToggle: (id: ProjectID, wasExpanded: boolean) => void;
-}): ReactElement {
-  const { project, isExpanded, onToggle } = props;
-  const handleClick = useCallback(() => {
-    onToggle(project.id, isExpanded);
-  }, [onToggle, project.id, isExpanded]);
-
-  return (
-    <button
-      type="button"
-      aria-expanded={isExpanded}
-      onClick={handleClick}
-      className="rounded-small flex items-center gap-1 px-2 py-1 text-left text-sm font-medium hover:bg-black/5"
-    >
-      <span
-        aria-hidden="true"
-        className={`inline-block motion-safe:transition-transform ${isExpanded ? "rotate-90" : ""}`}
+    // One provider for the whole window: every tooltip in it then shares a single
+    // hover delay, rather than each control deciding for itself how eager it is.
+    <TooltipProvider delay={400}>
+      <SidebarProvider
+        style={SIDEBAR_VARIABLES}
+        className="relative h-full min-h-0 overflow-hidden"
       >
-        ▸
-      </span>
-      <span className="truncate">{project.name}</span>
-    </button>
+        {screen.kind === "settings" ? (
+          <SettingsScreen tab={screen.tab} />
+        ) : (
+          <>
+            <AppSidebar dispatch={run} />
+            <SidebarInset className="min-w-0 overflow-hidden">
+              {selected === undefined ? (
+                NO_SESSION_SELECTED
+              ) : (
+                // Deliberately unkeyed: one instance across session switches, so the
+                // local layout of a session survives being switched away from.
+                <SessionDetail sessionID={selected} />
+              )}
+            </SidebarInset>
+          </>
+        )}
+        <ConnectionBanner />
+        <SheetHost dispatch={run} />
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
 
-function SessionRow(props: {
-  readonly session: Session;
-  readonly status: SessionStatus;
-  readonly indented: boolean;
-  readonly isSelected: boolean;
-  readonly onSelect: (id: SessionID) => void;
-}): ReactElement {
-  const { session, status, indented, isSelected, onSelect } = props;
-  const handleClick = useCallback(() => {
-    onSelect(session.id);
-  }, [onSelect, session.id]);
+/**
+ * The three states in which this window has nothing to show.
+ *
+ * Hoisted because they are constant: the empty pane is not worth an allocation on
+ * every render, and `react-perf` would object to it as a prop anyway. The copy is
+ * a single title each — none of the three has an action the user could take from
+ * here that the sidebar and ⌘T do not already offer.
+ */
+const NO_SESSION_SELECTED = (
+  <Empty className="h-full">
+    <EmptyHeader>
+      <EmptyTitle>No session selected</EmptyTitle>
+    </EmptyHeader>
+  </Empty>
+);
 
-  return (
-    <button
-      type="button"
-      // The status is in the name, not only in the dot: a colour alone is a state
-      // a screen reader cannot read and a colour-blind user cannot distinguish.
-      aria-label={`${session.name} — ${statusText(status)}`}
-      aria-current={isSelected ? "true" : undefined}
-      onClick={handleClick}
-      className={`rounded-small flex items-center gap-2 py-1 pr-2 text-left text-sm hover:bg-black/5 ${
-        indented ? "pl-6" : "pl-2"
-      } ${isSelected ? "bg-black/10" : ""}`}
-    >
-      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${STATUS_DOT[status]}`} />
-      <span className="truncate">{session.name}</span>
-    </button>
-  );
-}
+const SESSION_NOT_FOUND = (
+  <Empty className="h-full">
+    <EmptyHeader>
+      <EmptyTitle>Session not found</EmptyTitle>
+    </EmptyHeader>
+  </Empty>
+);
+
+const NO_TERMINALS_IN_SESSION = (
+  <Empty className="h-full">
+    <EmptyHeader>
+      <EmptyTitle>No terminals in this session</EmptyTitle>
+    </EmptyHeader>
+  </Empty>
+);
+
+/**
+ * The sidebar's width, as the CSS variables the primitive reads.
+ *
+ * `@janela/design`'s tokens stay authoritative: the registry component ships a
+ * 16rem default, and this is where our 240px replaces it. The bounds travel with
+ * it for a future drag affordance to honour — resizing is not built.
+ */
+const SIDEBAR_VARIABLES = {
+  "--sidebar-width": `${SIDEBAR_WIDTH.ideal}px`,
+  "--sidebar-width-minimum": `${SIDEBAR_WIDTH.minimum}px`,
+  "--sidebar-width-maximum": `${SIDEBAR_WIDTH.maximum}px`,
+} as CSSProperties;
 
 // MARK: - Layout model
 
@@ -392,8 +326,29 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
     [view, sessionID],
   );
   const newTerminal = useCallback(() => {
-    view.openSheet({ kind: "profilePicker", sessionID });
-  }, [view, sessionID]);
+    void createTerminal(connection, sessionID).catch(swallowRequestFailure);
+  }, [connection, sessionID]);
+  const splitTab = useCallback(
+    (index: number, axis: Axis) => {
+      // The tab's own focused pane, not the strip's: the control sits on a tab
+      // that may not be the one showing, and splitting it means going there.
+      const target = layout.tabs[index];
+      if (target === undefined) return;
+      view.applyLayout(sessionID, (current) => withFocusedTab(current, index));
+      void splitTerminal(connection, sessionID, target.focusedTerminalID, axis).catch(
+        swallowRequestFailure,
+      );
+    },
+    [connection, layout, sessionID, view],
+  );
+  const moveTab = useCallback(
+    (from: number, to: number) => {
+      void connection
+        .request({ type: "moveTab", sessionID, from, to })
+        .catch(swallowRequestFailure);
+    },
+    [connection, sessionID],
+  );
 
   const tab = focusedTab(layout);
   const focusedTerminalID = tab?.focusedTerminalID;
@@ -411,13 +366,7 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
     [onFocusedTerminalChange],
   );
 
-  if (session === undefined) {
-    return (
-      <p className="flex h-full items-center justify-center text-sm text-neutral-500">
-        Session not found
-      </p>
-    );
-  }
+  if (session === undefined) return SESSION_NOT_FOUND;
 
   return (
     <div className="flex h-full flex-col">
@@ -426,12 +375,12 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
         terminals={terminals}
         onFocusTab={focusTab}
         onNewTerminal={newTerminal}
+        onSplitTab={splitTab}
+        onMoveTab={moveTab}
       />
       <div className="min-h-0 flex-1">
         {tab === undefined ? (
-          <p className="flex h-full items-center justify-center text-sm text-neutral-500">
-            No terminals in this session
-          </p>
+          NO_TERMINALS_IN_SESSION
         ) : (
           <PaneView
             pane={tab.root}
@@ -456,70 +405,239 @@ const ROOT_PATH: PanePath = [];
 /**
  * Always rendered when the session has a tab, even a single one.
  *
- * The `+` is the only creation affordance in the window that is not also a menu
- * item — and it is the same action, opening the same picker ⌘T does.
+ * The `+` is the same action ⌘T is: a new shell in a new tab. Each tab ends in
+ * two split controls for its own focused pane, and tabs reorder by drag.
+ *
+ * ## Why the order is a request
+ *
+ * Tab order lives in `SessionLayout.tabs`, which the daemon owns and every
+ * snapshot replaces. A local reorder would last until the next terminal exited.
+ * So a drop sends `moveTab`, and the new order arrives back through the mirror
+ * — the same way a split does.
  */
 function TabStrip(props: {
   readonly layout: SessionLayout;
   readonly terminals: readonly TerminalDescriptor[];
   readonly onFocusTab: (index: number) => void;
   readonly onNewTerminal: () => void;
+  readonly onSplitTab: (index: number, axis: Axis) => void;
+  readonly onMoveTab: (from: number, to: number) => void;
 }): ReactElement | null {
-  const { layout, terminals, onFocusTab, onNewTerminal } = props;
+  const { layout, terminals, onFocusTab, onNewTerminal, onSplitTab, onMoveTab } = props;
+
+  // The tab primitive's value is a string; this strip's is an index into
+  // `layout.tabs`, which is what every layout edit is written in terms of.
+  const handleValueChange = useCallback(
+    (value: unknown) => {
+      onFocusTab(Number(value));
+    },
+    [onFocusTab],
+  );
+
+  const [drag, setDrag] = useState<TabDrag | undefined>(undefined);
+  const endDrag = useCallback(() => {
+    setDrag(undefined);
+  }, []);
+
   if (layout.tabs.length === 0) return null;
   return (
-    <div
-      role="tablist"
-      aria-label="Terminals"
-      className="flex shrink-0 items-center gap-px border-b border-black/10 px-1"
+    // No `TabsContent`: the pane tree below this strip *is* the content of every
+    // tab, and only the focused tab's panes are ever mounted (that is the laziness
+    // rule, and a panel per tab would undo it).
+    <Tabs
+      value={String(layout.focusedTabIndex)}
+      onValueChange={handleValueChange}
+      className="shrink-0 gap-0"
     >
-      {layout.tabs.map((tab, index) => (
-        <TabButton
-          key={tab.focusedTerminalID}
-          index={index}
-          label={tabLabel(tab, terminals)}
-          isSelected={index === layout.focusedTabIndex}
-          onFocusTab={onFocusTab}
-        />
-      ))}
-      <button
-        type="button"
-        aria-label="New Terminal"
-        title="New Terminal ⌘T"
-        onClick={onNewTerminal}
-        className="rounded-small px-2 py-1 text-xs hover:bg-black/5"
+      <TabsList
+        variant="line"
+        aria-label="Terminals"
+        className="border-border h-8 w-full shrink-0 justify-start gap-0 border-b px-1"
       >
-        +
-      </button>
+        {layout.tabs.map((tab, index) => (
+          <TabItem
+            key={tab.focusedTerminalID}
+            index={index}
+            label={tabLabel(tab, terminals)}
+            drag={drag}
+            onDrag={setDrag}
+            onDrop={onMoveTab}
+            onDragEnd={endDrag}
+            onSplit={onSplitTab}
+          />
+        ))}
+        <Tooltip>
+          <TooltipTrigger render={NEW_TERMINAL_BUTTON} onClick={onNewTerminal} />
+          <TooltipContent>
+            New Terminal <Kbd>⌘T</Kbd>
+          </TooltipContent>
+        </Tooltip>
+      </TabsList>
+    </Tabs>
+  );
+}
+
+/** The tab being dragged, and the slot it would land in if dropped now. */
+interface TabDrag {
+  readonly from: number;
+  /** Where the tab would go: an index into the strip *after* removal, or none yet. */
+  readonly to: number | undefined;
+}
+
+/** The MIME type a tab drag carries. Private, so a file dropped on the strip is not a tab. */
+const TAB_DRAG_TYPE = "application/x-janela-tab";
+
+/**
+ * Which slot a pointer over tab `index` means: before it on the left half, after
+ * it on the right — as indices into the strip with the dragged tab removed.
+ */
+export function dropSlot(
+  from: number,
+  over: number,
+  pointerX: number,
+  bounds: { readonly left: number; readonly width: number },
+): number {
+  const after = pointerX - bounds.left > bounds.width / 2;
+  const slot = after ? over + 1 : over;
+  return slot > from ? slot - 1 : slot;
+}
+
+function TabItem(props: {
+  readonly index: number;
+  readonly label: string;
+  readonly drag: TabDrag | undefined;
+  readonly onDrag: (drag: TabDrag | undefined) => void;
+  readonly onDrop: (from: number, to: number) => void;
+  readonly onDragEnd: () => void;
+  readonly onSplit: (index: number, axis: Axis) => void;
+}): ReactElement {
+  const { index, label, drag, onDrag, onDrop, onDragEnd, onSplit } = props;
+
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      event.dataTransfer.setData(TAB_DRAG_TYPE, String(index));
+      event.dataTransfer.effectAllowed = "move";
+      onDrag({ from: index, to: undefined });
+    },
+    [index, onDrag],
+  );
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (drag === undefined) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const to = dropSlot(drag.from, index, event.clientX, bounds);
+      if (to !== drag.to) onDrag({ from: drag.from, to });
+    },
+    [drag, index, onDrag],
+  );
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (drag === undefined) return;
+      event.preventDefault();
+      const to = dropSlot(
+        drag.from,
+        index,
+        event.clientX,
+        event.currentTarget.getBoundingClientRect(),
+      );
+      onDragEnd();
+      if (to !== drag.from) onDrop(drag.from, to);
+    },
+    [drag, index, onDrop, onDragEnd],
+  );
+
+  const splitVertically = useCallback(() => {
+    onSplit(index, "horizontal");
+  }, [index, onSplit]);
+  const splitHorizontally = useCallback(() => {
+    onSplit(index, "vertical");
+  }, [index, onSplit]);
+
+  // The indicator draws on the tab the slot sits beside: its left edge for a slot
+  // before it, its right edge for one after — in strip indices, with the dragged
+  // tab still in place.
+  const indicator = drag === undefined || drag.to === undefined ? undefined : dropEdge(drag, index);
+
+  return (
+    <div
+      className={cn(
+        "group/tab relative flex h-full items-center",
+        indicator === "before" && "shadow-[inset_2px_0_0_0_var(--color-foreground)]",
+        indicator === "after" && "shadow-[inset_-2px_0_0_0_var(--color-foreground)]",
+        drag?.from === index && "opacity-50",
+      )}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <TabsTrigger
+        value={String(index)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={onDragEnd}
+        // Room for the controls only on the tab that shows them all the time;
+        // on the others they overlay the tail while hovered, so the strip's
+        // widths do not jump as the pointer crosses it.
+        className="max-w-48 flex-none truncate data-active:pr-13"
+      >
+        {label}
+      </TabsTrigger>
+      {/* Beside the trigger, not inside it: a button in a button is not HTML.
+          Faded until the tab is hovered, focused or showing. */}
+      <div className="bg-background absolute inset-y-0.5 right-1 flex items-center gap-0.5 rounded-md pl-1 opacity-0 transition-opacity duration-150 group-focus-within/tab:opacity-100 group-hover/tab:opacity-100 group-has-[[data-active]]/tab:opacity-100">
+        <Tooltip>
+          <TooltipTrigger render={SPLIT_VERTICALLY_BUTTON} onClick={splitVertically} />
+          <TooltipContent>
+            Split Vertically <Kbd>⌘D</Kbd>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger render={SPLIT_HORIZONTALLY_BUTTON} onClick={splitHorizontally} />
+          <TooltipContent>
+            Split Horizontally <Kbd>⇧⌘D</Kbd>
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   );
 }
 
-function TabButton(props: {
-  readonly index: number;
-  readonly label: string;
-  readonly isSelected: boolean;
-  readonly onFocusTab: (index: number) => void;
-}): ReactElement {
-  const { index, label, isSelected, onFocusTab } = props;
-  const handleClick = useCallback(() => {
-    onFocusTab(index);
-  }, [onFocusTab, index]);
-
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={isSelected}
-      onClick={handleClick}
-      className={`rounded-small truncate px-3 py-1 text-xs ${
-        isSelected ? "bg-black/10 font-medium" : "hover:bg-black/5"
-      }`}
-    >
-      {label}
-    </button>
-  );
+/** Which edge of tab `index` the drop slot in `drag` touches, if either. */
+export function dropEdge(drag: TabDrag, index: number): "before" | "after" | undefined {
+  // A slot that puts the tab back where it is draws nothing: there is no move to
+  // preview, and a line beside the faded tab reads as one.
+  if (drag.to === undefined || drag.to === drag.from) return undefined;
+  // Back to strip indices: slots at or past the dragged tab shift by one.
+  const slot = drag.to >= drag.from ? drag.to + 1 : drag.to;
+  if (slot === index) return "before";
+  if (slot === index + 1) return "after";
+  return undefined;
 }
+
+/**
+ * Hoisted so the triggers compose one element rather than allocating one per
+ * render — `react-perf` forbids JSX as a prop, and this is why.
+ */
+const NEW_TERMINAL_BUTTON = (
+  <Button variant="ghost" size="icon-xs" aria-label="New Terminal" className="ml-1">
+    <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
+  </Button>
+);
+
+const SPLIT_VERTICALLY_BUTTON = (
+  <Button variant="ghost" size="icon-xs" aria-label="Split Vertically">
+    <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} />
+  </Button>
+);
+
+const SPLIT_HORIZONTALLY_BUTTON = (
+  <Button variant="ghost" size="icon-xs" aria-label="Split Horizontally">
+    <HugeiconsIcon icon={LayoutTwoRowIcon} strokeWidth={2} />
+  </Button>
+);
 
 interface PaneViewProps {
   readonly pane: Pane;
@@ -671,7 +789,7 @@ function Divider(props: {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onLostPointerCapture={handlePointerUp}
-      className={`m-0 shrink-0 appearance-none bg-black/10 p-0 ${
+      className={`bg-border hover:bg-ring m-0 shrink-0 appearance-none p-0 ${
         axis === "horizontal" ? "h-full w-1 cursor-col-resize" : "h-1 w-full cursor-row-resize"
       }`}
     />
@@ -803,13 +921,14 @@ function TerminalPane(props: {
         onViewportChange={handleViewportChange}
       />
       {state?.kind === "running" ? null : (
-        <p
-          className={`rounded-small pointer-events-none absolute right-1 bottom-1 bg-black/40 px-1 text-[10px] ${
-            isFailureState(state) ? "text-failure" : "text-white"
-          }`}
+        // A pane that is not running says so over its own corner: not a layer of
+        // chrome above the terminal, which would cost a row of the grid.
+        <Badge
+          variant={isFailureState(state) ? "destructive" : "secondary"}
+          className="pointer-events-none absolute right-1 bottom-1"
         >
           {stateText}
-        </p>
+        </Badge>
       )}
     </div>
   );

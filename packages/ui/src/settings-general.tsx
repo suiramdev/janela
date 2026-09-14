@@ -6,6 +6,7 @@ import type {
   TerminalID,
   TerminalState,
 } from "@janela/core";
+import { Alert, AlertDescription, AlertTitle, Button, FieldDescription } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useState } from "react";
 
@@ -23,11 +24,9 @@ import {
   serviceRequestCost,
   serviceStopCost,
 } from "./background-service.ts";
-import { Section } from "./controls.tsx";
+import { ProfileSelect, Section } from "./controls.tsx";
 import type { GlobalSettings } from "./global-settings.ts";
 import { withDefaultProfileID } from "./global-settings.ts";
-import { ProfileSelect } from "./launch-profile-picker.tsx";
-import * as style from "./styles.ts";
 
 /**
  * The General tab: the default profile, and the background service.
@@ -61,7 +60,7 @@ export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
   );
 
   return (
-    <div style={style.PANE}>
+    <div className="flex flex-col gap-6">
       <Section title="New terminals">
         <ProfileSelect
           label="Default launch profile"
@@ -132,8 +131,8 @@ function BackgroundServiceSection(props: {
       title="Background service"
       hint="janelad runs your terminals, which is why they survive closing the window. It exits on its own when nothing is live."
     >
-      <p style={style.HINT}>Running now: {cost.sentence}.</p>
-      <div style={style.ROW}>
+      <FieldDescription>Running now: {cost.sentence}.</FieldDescription>
+      <div className="flex gap-2">
         <ServiceRequestButton request="stop" onRequest={request} />
         <ServiceRequestButton request="stopAndUnregister" onRequest={request} />
       </div>
@@ -159,9 +158,9 @@ function ServiceRequestButton(props: {
   }, [onRequest, request]);
 
   return (
-    <button type="button" onClick={press} style={style.BUTTON}>
+    <Button type="button" variant="outline" size="sm" onClick={press}>
       {SERVICE_REQUEST_TITLE[request]}
-    </button>
+    </Button>
   );
 }
 
@@ -184,20 +183,21 @@ export function ServiceCostConfirmation(props: {
   }, [onConfirm, request]);
 
   return (
-    // A `fieldset` rather than a labelled `role="group"`: it is a named group of
-    // controls, which is what the element is for, and the legend gives the
-    // confirmation an accessible name without a role attribute.
-    <fieldset style={style.COST}>
-      <legend style={style.SECTION_HEADING}>{SERVICE_REQUEST_TITLE[request]}</legend>
-      <p style={style.COST_SENTENCE}>{serviceRequestCost(request, props.cost)}</p>
-      <div style={style.ROW}>
-        <button type="button" onClick={confirm} style={style.DESTRUCTIVE_BUTTON}>
+    // An `Alert` in place rather than a dialog: a modal asking "are you sure"
+    // trains people to dismiss it, while the cost sentence sitting where the
+    // button was is read before the second, differently-labelled button is
+    // pressed. `role="alert"` also announces the sentence the moment it appears.
+    <Alert variant="destructive">
+      <AlertTitle>{SERVICE_REQUEST_TITLE[request]}</AlertTitle>
+      <AlertDescription>{serviceRequestCost(request, props.cost)}</AlertDescription>
+      <div className="mt-2 flex gap-2">
+        <Button type="button" variant="destructive" size="sm" onClick={confirm}>
           {SERVICE_CONFIRM_TITLE[request]}
-        </button>
-        <button type="button" onClick={props.onCancel} style={style.BUTTON}>
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={props.onCancel}>
           Keep it running
-        </button>
+        </Button>
       </div>
-    </fieldset>
+    </Alert>
   );
 }

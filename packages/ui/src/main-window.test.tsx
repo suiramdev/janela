@@ -23,9 +23,11 @@ import {
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
+import { SidebarProvider } from "@janela/design";
 import type { StateUpdate } from "@janela/protocol";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { AppSidebar } from "./app-sidebar.tsx";
 import { ClientEnvironmentProvider, type ClientEnvironment } from "./client-environment.tsx";
 import {
   resolveLocalLayout,
@@ -35,13 +37,7 @@ import {
   type LocalLayoutEntry,
   type PanePath,
 } from "./layout-edits.ts";
-import {
-  MainWindow,
-  Sidebar,
-  SessionDetail,
-  attachPane,
-  shouldStartOnAttach,
-} from "./main-window.tsx";
+import { MainWindow, SessionDetail, attachPane, shouldStartOnAttach } from "./main-window.tsx";
 import { sessionStatus, sidebarRows } from "./sidebar-model.ts";
 import {
   inertNativeShell,
@@ -58,6 +54,9 @@ import { createViewState } from "./view-state.ts";
 // ---------------------------------------------------------------------------
 
 const AT = instant("2026-01-01T00:00:00.000Z");
+
+/** A dispatch that runs nothing: markup rendering never presses a button. */
+const ignoreCommand = (): undefined => undefined;
 
 const terminalID = (raw: string): TerminalID => raw as TerminalID;
 const sessionID = (raw: string): SessionID => raw as SessionID;
@@ -567,7 +566,21 @@ describe("attachPane", () => {
 // Markup
 // ---------------------------------------------------------------------------
 
-describe("Sidebar markup", () => {
+describe("AppSidebar markup", () => {
+  /**
+   * The sidebar is a `SidebarProvider` child now: `SidebarMenuButton` reads the
+   * expanded/collapsed state from it, and a row rendered outside one throws.
+   */
+  function renderSidebar(environment: ClientEnvironment): string {
+    return renderToStaticMarkup(
+      <ClientEnvironmentProvider environment={environment}>
+        <SidebarProvider>
+          <AppSidebar dispatch={ignoreCommand} />
+        </SidebarProvider>
+      </ClientEnvironmentProvider>,
+    );
+  }
+
   test("a session needing attention says so in its name", () => {
     const withAttention = session("fix/pty", { terminals: [terminal("t1")] });
     const environment = fakeEnvironment({
@@ -575,11 +588,7 @@ describe("Sidebar markup", () => {
       states: { [terminalID("t1")]: { kind: "needsAttention" } },
     });
 
-    const markup = renderToStaticMarkup(
-      <ClientEnvironmentProvider environment={environment}>
-        <Sidebar />
-      </ClientEnvironmentProvider>,
-    );
+    const markup = renderSidebar(environment);
 
     expect(markup).toContain('aria-label="fix/pty — needs attention"');
     expect(markup).toContain("bg-attention");
@@ -593,14 +602,35 @@ describe("Sidebar markup", () => {
       selection: sessionID("main"),
     });
 
-    const markup = renderToStaticMarkup(
-      <ClientEnvironmentProvider environment={environment}>
-        <Sidebar />
-      </ClientEnvironmentProvider>,
-    );
+    const markup = renderSidebar(environment);
 
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('aria-current="true"');
+  });
+
+  test("the header offers project creation, search and filtering, above the scroller", () => {
+    const markup = renderSidebar(fakeEnvironment({ projects: [project("p", false)] }));
+
+    expect(markup).toContain('aria-label="New Project"');
+    expect(markup).toContain("Search projects and sessions");
+    expect(markup).toContain('aria-label="Filter: All Sessions"');
+    // The header is a sibling of the scroller, not inside it: that is the whole
+    // reason those three controls survive a long list.
+    expect(markup.indexOf('data-sidebar="header"')).toBeLessThan(
+      markup.indexOf('data-sidebar="content"'),
+    );
+    expect(markup).toContain("overflow-auto");
+  });
+
+  test("each project offers a new session on hover, named after the project", () => {
+    const markup = renderSidebar(fakeEnvironment({ projects: [project("janela", false)] }));
+
+    expect(markup).toContain('aria-label="New Session in janela"');
+    expect(markup).toContain('data-sidebar="menu-action"');
+  });
+
+  test("an empty sidebar says which nothing it is", () => {
+    expect(renderSidebar(fakeEnvironment({}))).toContain("No projects yet");
   });
 });
 
@@ -618,9 +648,18 @@ describe("MainWindow markup", () => {
     expect(markup).not.toContain('role="tablist"');
   });
 
-  test("an open sheet renders as a labelled dialog over the window", () => {
+  /**
+   * The sheet is a dialog now, and a dialog's content is *portalled* — it renders
+   * nothing at all on the server, so there is no markup here to assert about it.
+   * What this test can still hold is the routing: the open sheet is a value on
+   * `ViewState`, the host renders from it, and the window behind it keeps
+   * rendering (the sheet is not a mode the mirror disappears into).
+   */
+  test("an open sheet is view state the window keeps rendering behind", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
     environment.view.openSheet({ kind: "jumpList" });
+
+    expect(environment.view.sheet).toEqual({ kind: "jumpList" });
 
     const markup = renderToStaticMarkup(
       <ClientEnvironmentProvider environment={environment}>
@@ -628,8 +667,9 @@ describe("MainWindow markup", () => {
       </ClientEnvironmentProvider>,
     );
 
-    expect(markup).toContain('aria-label="Go to Session"');
-    expect(markup).toContain("<dialog");
+    // The sidebar — and so the mirror — is still on screen underneath.
+    expect(markup).toContain('data-sidebar="content"');
+    expect(markup).toContain('aria-label="Filter: All Sessions"');
   });
 
   /**
@@ -754,6 +794,8 @@ describe("shouldStartOnAttach", () => {
 
 describe("useClientEnvironment", () => {
   test("a view rendered outside the provider says what is missing", () => {
-    expect(() => renderToStaticMarkup(<Sidebar />)).toThrow(/ClientEnvironmentProvider/);
+    expect(() => renderToStaticMarkup(<AppSidebar dispatch={ignoreCommand} />)).toThrow(
+      /ClientEnvironmentProvider/,
+    );
   });
 });

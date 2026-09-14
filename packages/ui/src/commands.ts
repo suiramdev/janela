@@ -145,8 +145,15 @@ export const COMMANDS: readonly Command[] = [
   { id: "revealInFinder", title: "Reveal in Finder", menu: "session", section: 2 },
   { id: "openInTerminal", title: "Open in Terminal", menu: "session", section: 2 },
 
-  { id: "splitRight", title: "Split Right", accelerator: "CmdOrCtrl+D", menu: "terminal" },
-  { id: "splitDown", title: "Split Down", accelerator: "CmdOrCtrl+Shift+D", menu: "terminal" },
+  // Vertically and horizontally name the divider, as iTerm does: ⌘D puts a new
+  // pane beside the focused one, ⇧⌘D below it.
+  { id: "splitRight", title: "Split Vertically", accelerator: "CmdOrCtrl+D", menu: "terminal" },
+  {
+    id: "splitDown",
+    title: "Split Horizontally",
+    accelerator: "CmdOrCtrl+Shift+D",
+    menu: "terminal",
+  },
   {
     id: "focusPaneLeft",
     title: "Focus Pane Left",

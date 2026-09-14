@@ -158,6 +158,34 @@ describe("sheets", () => {
   });
 });
 
+describe("screens", () => {
+  test("settings opens on General, keeps its tab when asked again, and goes back", () => {
+    const view = createViewState(fakeStore([]));
+    let notifications = 0;
+    view.subscribe(() => {
+      notifications += 1;
+    });
+
+    expect(view.screen).toEqual({ kind: "workspace" });
+    view.showSettings();
+    expect(view.screen).toEqual({ kind: "settings", tab: "general" });
+    view.showSettings("terminal");
+    expect(view.screen).toEqual({ kind: "settings", tab: "terminal" });
+    // ⌘, pressed again is not a trip back to the first tab.
+    view.showSettings();
+    expect(view.screen).toEqual({ kind: "settings", tab: "terminal" });
+
+    const settled = notifications;
+    view.showSettings("terminal");
+    expect(notifications).toBe(settled);
+
+    view.showWorkspace();
+    expect(view.screen).toEqual({ kind: "workspace" });
+    view.showWorkspace();
+    expect(notifications).toBe(settled + 1);
+  });
+});
+
 describe("registerSurface", () => {
   test("a remount keeps the new handle when the old one unregisters", () => {
     const view = createViewState(fakeStore([]));

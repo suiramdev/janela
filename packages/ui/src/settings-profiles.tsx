@@ -1,7 +1,25 @@
+import { Cancel01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { LaunchProfile, LaunchProfileAvailability, LaunchProfileID } from "@janela/core";
 import { isProfileAvailable } from "@janela/core";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  FieldLabel,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+  RadioGroup,
+  RadioGroupItem,
+  cn,
+} from "@janela/design";
 import type { ReactElement } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 
 import { ArgumentsEditor } from "./argv-editor.tsx";
 import { Section, SwitchField, TextField, Violations } from "./controls.tsx";
@@ -17,7 +35,6 @@ import {
   variablesAppending,
 } from "./profile-editing.ts";
 import { PROFILE_ICON_NAMES, ProfileIcon } from "./profile-icons.tsx";
-import * as style from "./styles.ts";
 
 /**
  * The Profiles tab: authoring what ⌘T offers.
@@ -37,6 +54,19 @@ import * as style from "./styles.ts";
  * the other two are consequences of seeding, which re-inserts built-ins by name on
  * every open. `canRemoveProfile` and `canRenameProfile` carry the reasoning.
  */
+
+/**
+ * The list row is a button, not a `div` with a click handler: selecting a profile
+ * is an action, and `Item`'s `render` is how the primitive lends its layout to
+ * whichever element the semantics call for. Hoisted because the linter — rightly —
+ * refuses JSX built during render as a prop.
+ *
+ * It is an empty template, not a control: `Item` renders it with the row's
+ * children — the profile's name and its badges — which is where its label comes
+ * from.
+ */
+// oxlint-disable-next-line jsx-a11y/control-has-associated-label -- see above
+const PROFILE_ROW = <button type="button" />;
 
 export interface ProfileEditing {
   save(profile: LaunchProfile): void;
@@ -89,12 +119,12 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
   }, []);
 
   return (
-    <div style={style.PANE}>
+    <div className="flex flex-col gap-6">
       <Section
         title="Launch profiles"
         hint="A profile is a command Janela starts in a terminal. It is not an integration: Janela does not wrap, parse or manage what it launches."
       >
-        <ul style={style.LIST}>
+        <ItemGroup>
           {profiles.map((profile) => (
             <ProfileListRow
               key={profile.id}
@@ -104,11 +134,12 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
               onSelect={select}
             />
           ))}
-        </ul>
-        <div style={style.ROW}>
-          <button type="button" onClick={add} style={style.BUTTON}>
+        </ItemGroup>
+        <div>
+          <Button type="button" variant="outline" size="sm" onClick={add}>
+            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
             New Profile
-          </button>
+          </Button>
         </div>
       </Section>
 
@@ -139,24 +170,35 @@ function ProfileListRow(props: {
     onSelect(profile.id);
   }, [onSelect, profile.id]);
 
-  const rowStyle = props.isSelected
-    ? style.LIST_ROW_SELECTED
-    : props.isAvailable
-      ? style.LIST_ROW
-      : style.UNAVAILABLE_ROW;
-
   return (
-    <li>
-      <button type="button" onClick={select} aria-pressed={props.isSelected} style={rowStyle}>
+    <Item
+      render={PROFILE_ROW}
+      size="sm"
+      variant="outline"
+      onClick={select}
+      aria-pressed={props.isSelected}
+      className={cn(
+        "text-left",
+        props.isSelected && "bg-accent text-accent-foreground",
+        // Dimmed rather than hidden: this is the surface where a missing binary
+        // gets fixed, so the row has to stay reachable.
+        !props.isAvailable && "opacity-60",
+      )}
+    >
+      <ItemMedia variant="icon">
         <ProfileIcon iconName={profile.iconName} />
-        <span>{profile.name}</span>
-        {profile.isAgent ? <span style={style.HINT}>Agent</span> : undefined}
-        {profile.isBuiltIn ? <span style={style.HINT}>Built-in</span> : undefined}
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>{profile.name}</ItemTitle>
+      </ItemContent>
+      <ItemActions>
+        {profile.isAgent ? <Badge variant="secondary">Agent</Badge> : undefined}
+        {profile.isBuiltIn ? <Badge variant="outline">Built-in</Badge> : undefined}
         {props.isAvailable ? undefined : (
-          <span style={style.HINT}>Not on your PATH — hidden from the picker</span>
+          <Badge variant="destructive">Not on your PATH — hidden from the picker</Badge>
         )}
-      </button>
-    </li>
+      </ItemActions>
+    </Item>
   );
 }
 
@@ -256,28 +298,32 @@ export function ProfileEditor(props: {
       />
 
       {props.isAvailable ? undefined : (
-        <p style={style.HINT}>
-          {draft.argumentDrafts[0]?.value ?? ""} is not on your PATH, so this profile is hidden from
-          the picker. Give it an absolute path, or install it.
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>
+            {draft.argumentDrafts[0]?.value ?? ""} is not on your PATH, so this profile is hidden
+            from the picker. Give it an absolute path, or install it.
+          </AlertDescription>
+        </Alert>
       )}
 
       <Violations violations={violations} />
 
-      <div style={style.ROW}>
-        <button type="button" onClick={save} disabled={violations.length > 0} style={style.BUTTON}>
+      <div className="flex gap-2">
+        <Button type="button" onClick={save} disabled={violations.length > 0}>
           Save
-        </button>
-        <button type="button" onClick={duplicate} style={style.BUTTON}>
+        </Button>
+        <Button type="button" variant="outline" onClick={duplicate}>
           Duplicate
-        </button>
-        <button type="button" onClick={props.onCancel} style={style.BUTTON}>
+        </Button>
+        <Button type="button" variant="outline" onClick={props.onCancel}>
           Cancel
-        </button>
+        </Button>
         {props.isKnown && canRemoveProfile(profile) ? (
-          <button type="button" onClick={remove} style={style.DESTRUCTIVE_BUTTON}>
+          // Pushed away from the others: a destructive action next to Cancel is a
+          // mis-click waiting to happen.
+          <Button type="button" variant="destructive" onClick={remove} className="ml-auto">
             Delete
-          </button>
+          </Button>
         ) : undefined}
       </div>
     </Section>
@@ -289,7 +335,9 @@ export function ProfileEditor(props: {
  *
  * Real radio inputs, one per icon, so the browser owns arrow-key navigation
  * within the group and the roving tab stop — both of which a set of buttons with
- * `role="radio"` would have to reimplement, and would get subtly wrong.
+ * `role="radio"` would have to reimplement, and would get subtly wrong. Base UI's
+ * `RadioGroup` mirrors a hidden `input[type=radio]` per option and keeps that
+ * behaviour.
  */
 function IconChoice(props: {
   readonly iconName: string;
@@ -297,42 +345,38 @@ function IconChoice(props: {
 }): ReactElement {
   return (
     <Section title="Icon">
-      <div style={style.ROW}>
+      <RadioGroup
+        value={props.iconName}
+        onValueChange={props.onChange}
+        className="grid grid-cols-4 gap-2"
+      >
         {PROFILE_ICON_NAMES.map((iconName) => (
-          <IconOption
-            key={iconName}
-            iconName={iconName}
-            isSelected={iconName === props.iconName}
-            onChange={props.onChange}
-          />
+          <IconOption key={iconName} iconName={iconName} />
         ))}
-      </div>
+      </RadioGroup>
     </Section>
   );
 }
 
-function IconOption(props: {
-  readonly iconName: string;
-  readonly isSelected: boolean;
-  readonly onChange: (iconName: string) => void;
-}): ReactElement {
-  const { iconName, onChange } = props;
-  const choose = useCallback(() => {
-    onChange(iconName);
-  }, [iconName, onChange]);
+function IconOption(props: { readonly iconName: string }): ReactElement {
+  const { iconName } = props;
+  const id = useId();
+  const captionID = `${id}-caption`;
 
   return (
-    <label style={props.isSelected ? style.LIST_ROW_SELECTED : style.LIST_ROW}>
-      <input
-        type="radio"
-        name="profile-icon"
-        value={iconName}
-        checked={props.isSelected}
-        onChange={choose}
-      />
+    // `htmlFor` reaches the hidden radio Base UI mirrors, so the whole card is a
+    // click target; `aria-labelledby` names the visible radio with the icon's
+    // name, which is the only text that distinguishes one option from another.
+    <FieldLabel
+      htmlFor={id}
+      className="has-data-checked:border-primary flex w-full flex-col items-center gap-1 rounded-lg border p-2"
+    >
+      <RadioGroupItem value={iconName} id={id} aria-labelledby={captionID} />
       <ProfileIcon iconName={iconName} />
-      <span style={style.HINT}>{iconName}</span>
-    </label>
+      <span id={captionID} className="text-muted-foreground text-xs">
+        {iconName}
+      </span>
+    </FieldLabel>
   );
 }
 
@@ -366,10 +410,11 @@ function VariablesEditor(props: {
       {drafts.map((draft) => (
         <VariableRow key={draft.id} draft={draft} onChange={change} onRemove={remove} />
       ))}
-      <div style={style.ROW}>
-        <button type="button" onClick={append} style={style.BUTTON}>
+      <div>
+        <Button type="button" variant="outline" size="sm" onClick={append}>
+          <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
           Add Variable
-        </button>
+        </Button>
       </div>
     </Section>
   );
@@ -397,18 +442,23 @@ function VariableRow(props: {
     onRemove(draft.id);
   }, [draft.id, onRemove]);
 
+  // A freshly added row has no name yet, and an icon-only button whose label is
+  // `Remove ` is a button a screen reader cannot announce.
+  const removeLabel = draft.key.trim().length === 0 ? "Remove variable" : `Remove ${draft.key}`;
+
   return (
-    <div style={style.ROW}>
+    <div className="flex items-end gap-2">
       <TextField label="Name" value={draft.key} onChange={changeKey} isMonospaced />
       <TextField label="Value" value={draft.value} onChange={changeValue} isMonospaced />
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={remove}
-        style={style.BUTTON}
-        aria-label={`Remove ${draft.key}`}
+        aria-label={removeLabel}
       >
-        Remove
-      </button>
+        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+      </Button>
     </div>
   );
 }

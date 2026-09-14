@@ -2,7 +2,7 @@ import type { DaemonConnection, ProjectStore, SessionStore } from "@janela/clien
 import {
   focusedTab,
   focusNeighbour,
-  type LaunchProfileID,
+  type Axis,
   type Project,
   type Session,
   type SessionID,
@@ -27,7 +27,7 @@ import type { ViewState } from "./view-state.ts";
  *
  * A menu item is always clickable, and a command with no applicable target does
  * nothing at all — quietly. Enabled state would mean the shell asking the client
- * about every row on every menu open, and a greyed-out "Split Right" teaches a
+ * about every row on every menu open, and a greyed-out "Split Vertically" teaches a
  * user nothing they did not already know from having no session selected.
  *
  * ## Requests are best-effort
@@ -114,6 +114,41 @@ export async function createSessionAndSelect(
   else view.focusTerminal(terminal);
 }
 
+/**
+ * A new terminal in a session: a login shell, in a new focused tab.
+ *
+ * No profile, ever. A new pane is a terminal — the ⌘T picker that once asked
+ * "which kind?" is gone, and a launch profile is something a terminal may be
+ * started with later, not a kind of pane. The daemon configures it; the pane
+ * starts it on attach.
+ */
+export function createTerminal(
+  connection: Pick<DaemonConnection, "request">,
+  sessionID: SessionID,
+): Promise<string | undefined> {
+  return connection.request({ type: "createTerminal", sessionID });
+}
+
+/**
+ * Splits the pane holding `beside` and puts a new shell in the other half.
+ *
+ * The split is the daemon's — part of the session's layout, persisted with it —
+ * which is why this is a request and not a local layout edit. Like `createTerminal`,
+ * no profile is inherited: the new half is a terminal, whatever the old one runs.
+ */
+export function splitTerminal(
+  connection: Pick<DaemonConnection, "request">,
+  sessionID: SessionID,
+  beside: TerminalID,
+  axis: Axis,
+): Promise<string | undefined> {
+  return connection.request({
+    type: "createTerminal",
+    sessionID,
+    placement: { kind: "split", beside, axis },
+  });
+}
+
 export function createCommandDispatch(target: CommandTarget): (id: CommandID) => Promise<void> {
   const { projects, sessions, connection, view, native } = target;
 
@@ -131,23 +166,12 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     await createSessionAndSelect(target, { kind: "standalone", directory });
   };
 
-  const split = (axis: "horizontal" | "vertical"): Promise<unknown> | undefined => {
+  const split = (axis: Axis): Promise<unknown> | undefined => {
     const session = currentSession();
     if (session === undefined) return undefined;
     const beside = focusedIn(session);
     if (beside === undefined) return undefined;
-
-    // "Another one of these": a split inherits the pane's profile rather than
-    // asking, and falls back to the login shell when that profile has since gone.
-    const descriptor = session.terminals.find((terminal) => terminal.id === beside);
-    const profileID = inheritedProfileID(descriptor?.profileID, sessions);
-
-    return connection.request({
-      type: "createTerminal",
-      sessionID: session.id,
-      placement: { kind: "split", beside, axis },
-      ...(profileID === undefined ? {} : { profileID }),
-    });
+    return splitTerminal(connection, session.id, beside, axis);
   };
 
   const stepSession = (delta: -1 | 1): void => {
@@ -210,22 +234,23 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
   return async (id: CommandID): Promise<void> => {
     switch (id) {
       case "openSettings":
-        view.openSheet({ kind: "settings" });
+        view.showSettings();
         return;
 
       case "newSession": {
         const session = currentSession();
         const projectID = session?.projectID;
-        // In a project, another session in that project; otherwise the question
-        // is "which folder?", which is Open Folder's question.
+        // In a project, the same dialog the project's `+` opens; otherwise the
+        // question is "which folder?", which is Open Folder's question.
         if (projectID === undefined) return openFolder();
-        return createSessionAndSelect(target, { kind: "inProject", projectID });
+        view.openSheet({ kind: "newSession", projectID });
+        return;
       }
 
       case "newTerminal": {
         const session = currentSession();
         if (session === undefined) return;
-        view.openSheet({ kind: "profilePicker", sessionID: session.id });
+        await createTerminal(connection, session.id);
         return;
       }
 
@@ -323,15 +348,4 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
       }
     }
   };
-}
-
-/** The profile a split inherits, or none when the mirror no longer has it. */
-function inheritedProfileID(
-  profileID: LaunchProfileID | undefined,
-  sessions: SessionStore,
-): LaunchProfileID | undefined {
-  if (profileID === undefined) return undefined;
-  return sessions.launchProfiles.some((profile) => profile.id === profileID)
-    ? profileID
-    : undefined;
 }

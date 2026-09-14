@@ -30,7 +30,7 @@ export function rankedCommands(query: string): readonly QuickListItem[] {
     title: command.title,
     ...(command.accelerator === undefined
       ? {}
-      : { trailing: acceleratorSymbols(command.accelerator) }),
+      : { chord: acceleratorSymbols(command.accelerator) }),
   }));
 }
 

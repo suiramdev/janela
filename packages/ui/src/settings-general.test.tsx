@@ -146,6 +146,10 @@ describe("the confirmation", () => {
         onCancel={noop}
       />,
     );
-    expect(markup).toContain(`>${SERVICE_REQUEST_TITLE.stopAndUnregister}</legend>`);
+    // Names the action it is confirming, and only that one: the sentence and the
+    // two buttons must be readable against the press that produced them.
+    expect(markup).toContain(SERVICE_REQUEST_TITLE.stopAndUnregister);
+    expect(markup).not.toContain(SERVICE_REQUEST_TITLE.stop);
+    expect(markup).toContain("Keep it running");
   });
 });

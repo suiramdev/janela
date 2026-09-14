@@ -11,7 +11,12 @@ import {
   type TerminalState,
 } from "@janela/core";
 
-import { createCommandDispatch, sessionOrder, type CommandTarget } from "./command-dispatch.ts";
+import {
+  createCommandDispatch,
+  createSessionAndSelect,
+  sessionOrder,
+  type CommandTarget,
+} from "./command-dispatch.ts";
 import { COMMANDS } from "./commands.ts";
 import {
   fakeProfile,
@@ -150,8 +155,8 @@ describe("every command", () => {
   });
 });
 
-describe("sheets", () => {
-  test("the four sheet commands open their own sheet", async () => {
+describe("sheets and screens", () => {
+  test("the sheet commands open their own sheet", async () => {
     const session = fakeSession();
     const { target, view } = harness({ sessions: [session], selection: session.id });
     const dispatch = createCommandDispatch(target);
@@ -162,37 +167,67 @@ describe("sheets", () => {
     expect(view.sheet).toEqual({ kind: "commands" });
     await dispatch("newBranchSession");
     expect(view.sheet).toEqual({ kind: "newBranch" });
-    await dispatch("openSettings");
-    expect(view.sheet).toEqual({ kind: "settings" });
-    await dispatch("newTerminal");
-    expect(view.sheet).toEqual({ kind: "profilePicker", sessionID: session.id });
+  });
+
+  test("Settings is a screen, not a sheet", async () => {
+    const { target, view } = harness({});
+    await createCommandDispatch(target)("openSettings");
+
+    expect(view.screen).toEqual({ kind: "settings", tab: "general" });
+    expect(view.sheet).toBeUndefined();
+  });
+
+  test("New Terminal asks for a shell directly; there is no picker", async () => {
+    const session = fakeSession();
+    const context = harness({ sessions: [session], selection: session.id });
+    await createCommandDispatch(context.target)("newTerminal");
+
+    expect(context.view.sheet).toBeUndefined();
+    expect(context.sent).toEqual([{ type: "createTerminal", sessionID: session.id }]);
   });
 });
 
 describe("creation", () => {
-  test("New Session in a project makes another session in that project", async () => {
+  test("New Session in a project opens the branch dialog for that project", async () => {
     const project = fakeProject();
     const session = fakeSession({ projectID: project.id });
-    const appeared = fakeSession({
-      projectID: project.id,
-      terminals: [fakeTerminal()],
-      createdAt: AT,
-    });
     const context = harness({
       projects: [project],
       sessions: [session],
       selection: session.id,
     });
+
+    await createCommandDispatch(context.target)("newSession");
+
+    expect(context.view.sheet).toEqual({ kind: "newSession", projectID: project.id });
+    expect(context.sent).toEqual([]);
+  });
+
+  test("createSessionAndSelect lands the keyboard in the session that appeared", async () => {
+    const project = fakeProject();
+    const appeared = fakeSession({
+      projectID: project.id,
+      terminals: [fakeTerminal()],
+      createdAt: AT,
+    });
+    const context = harness({ projects: [project] });
     context.appears = appeared;
     const handle = fakeSurfaceHandle();
     const firstTerminal = appeared.terminals[0];
     if (firstTerminal === undefined) throw new Error("the fixture has no terminal");
     context.view.registerSurface(firstTerminal.id, handle);
 
-    await createCommandDispatch(context.target)("newSession");
+    await createSessionAndSelect(context.target, {
+      kind: "inProject",
+      projectID: project.id,
+      branch: "main",
+    });
 
     expect(context.sent).toEqual([
-      { type: "createSession", intent: { kind: "inProject", projectID: project.id } },
+      {
+        type: "createSession",
+        intent: { kind: "inProject", projectID: project.id, branch: "main" },
+      },
     ]);
     // Selected *and* focused: creating a session means wanting to type in it, and
     // a row highlighted in the sidebar is not a keyboard in the pane.
@@ -232,7 +267,7 @@ describe("creation", () => {
 });
 
 describe("splits", () => {
-  test("a split names the focused pane and inherits its profile", async () => {
+  test("a split names the focused pane and starts a shell, whatever that pane runs", async () => {
     const profile = fakeProfile();
     const terminal = fakeTerminal({ profileID: profile.id });
     const session = fakeSession({ terminals: [terminal] });
@@ -250,29 +285,13 @@ describe("splits", () => {
         type: "createTerminal",
         sessionID: session.id,
         placement: { kind: "split", beside: terminal.id, axis: "horizontal" },
-        profileID: profile.id,
       },
       {
         type: "createTerminal",
         sessionID: session.id,
         placement: { kind: "split", beside: terminal.id, axis: "vertical" },
-        profileID: profile.id,
       },
     ]);
-  });
-
-  test("a profile the mirror no longer has is left off rather than sent stale", async () => {
-    const terminal = fakeTerminal({ profileID: fakeProfile().id });
-    const session = fakeSession({ terminals: [terminal] });
-    const context = harness({ sessions: [session], selection: session.id });
-
-    await createCommandDispatch(context.target)("splitRight");
-
-    expect(context.sent[0]).toEqual({
-      type: "createTerminal",
-      sessionID: session.id,
-      placement: { kind: "split", beside: terminal.id, axis: "horizontal" },
-    });
   });
 });
 

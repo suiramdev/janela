@@ -1,9 +1,9 @@
+import { FieldDescription } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback } from "react";
 
 import { Section, SwitchField } from "./controls.tsx";
 import type { GlobalSettings } from "./global-settings.ts";
-import * as style from "./styles.ts";
 
 /**
  * The Notifications tab: one switch.
@@ -46,7 +46,7 @@ export function SettingsNotifications(props: SettingsNotificationsProps): ReactE
   );
 
   return (
-    <div style={style.PANE}>
+    <div className="flex flex-col gap-6">
       <Section
         title="Notification Centre"
         hint="Janela never notifies for the terminal you are looking at, and never while its window is frontmost and that session is selected."
@@ -58,10 +58,10 @@ export function SettingsNotifications(props: SettingsNotificationsProps): ReactE
           hint="Off by default: a bell badges the sidebar but does not interrupt. Programs that ask for a notification by name always deliver, whatever this is set to."
         />
       </Section>
-      <p style={style.HINT}>
+      <FieldDescription>
         Permission is asked for the first time a notification would actually be sent, not at launch.
         Declining is fine — the sidebar keeps working.
-      </p>
+      </FieldDescription>
     </div>
   );
 }

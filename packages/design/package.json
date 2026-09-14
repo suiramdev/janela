@@ -2,7 +2,7 @@
   "name": "@janela/design",
   "version": "0.0.0",
   "private": true,
-  "description": "Tokens, semantic colours, and the small set of reusable controls.",
+  "description": "Tokens, semantic colours, and the registry primitives every screen builds on.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -13,11 +13,12 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
+    "@hugeicons/core-free-icons": "4.3.2",
+    "@hugeicons/react": "1.1.10",
     "@janela/support": "workspace:*",
     "class-variance-authority": "0.7.1",
-    "clsx": "2.1.1",
-    "lucide-react": "1.33.0",
-    "tailwind-merge": "3.6.0"
+    "cn": "0.2.6"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",

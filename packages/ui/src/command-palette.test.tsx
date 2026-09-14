@@ -23,15 +23,15 @@ describe("rankedCommands", () => {
   });
 
   test("a row's chord travels with it, as symbols", () => {
-    const split = rankedCommands("Split Right")[0];
+    const split = rankedCommands("Split Vertically")[0];
     expect(split?.id).toBe("splitRight");
-    expect(split?.trailing).toBe("⌘D");
+    expect(split?.chord).toBe("⌘D");
   });
 
   test("commands with no chord carry none", () => {
     const reveal = rankedCommands("Reveal in Finder")[0];
     expect(reveal?.id).toBe("revealInFinder");
-    expect(reveal?.trailing).toBeUndefined();
+    expect(reveal?.chord).toBeUndefined();
   });
 });
 

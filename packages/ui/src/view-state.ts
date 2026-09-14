@@ -1,9 +1,16 @@
 import type { SessionStore } from "@janela/client";
-import { emptyLayout, type SessionID, type SessionLayout, type TerminalID } from "@janela/core";
+import {
+  emptyLayout,
+  type ProjectID,
+  type SessionID,
+  type SessionLayout,
+  type TerminalID,
+} from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from "./global-settings.ts";
 import { resolveLocalLayout, withFocusedTerminal, type LocalLayoutEntry } from "./layout-edits.ts";
+import type { SettingsTabID } from "./settings-window.tsx";
 
 /**
  * What this client is looking at, as a store.
@@ -20,17 +27,37 @@ import { resolveLocalLayout, withFocusedTerminal, type LocalLayoutEntry } from "
  * ## What is in here, and what is not
  *
  * Everything here is *this window's view of the mirror*: which panes are focused,
- * which sheet is open, the settings the WebView renders with. None of it is on the
- * wire, and none of it is invented state about sessions — the mirror is still the
- * only source for what exists. Session **selection** deliberately stays on
- * `SessionStore`, because that is where the sidebar already reads it.
+ * which screen and sheet are showing, the settings the WebView renders with. None
+ * of it is on the wire, and none of it is invented state about sessions — the
+ * mirror is still the only source for what exists. Session **selection**
+ * deliberately stays on `SessionStore`, because that is where the sidebar already
+ * reads it.
  */
 export type Sheet =
   | { readonly kind: "jumpList" }
   | { readonly kind: "commands" }
-  | { readonly kind: "profilePicker"; readonly sessionID: SessionID }
-  | { readonly kind: "newBranch" }
-  | { readonly kind: "settings" };
+  /** A session in `projectID`: which branch, and whether it gets a worktree. */
+  | { readonly kind: "newSession"; readonly projectID: ProjectID }
+  /**
+   * `projectID` is the project a *context menu* was opened over, which is
+   * frequently not the selected session's project. Absent when the sheet was
+   * opened from the menu bar, where the selection is the only subject there is.
+   */
+  | { readonly kind: "newBranch"; readonly projectID?: ProjectID }
+  | { readonly kind: "projectSettings"; readonly projectID: ProjectID };
+
+/**
+ * What fills the window.
+ *
+ * Settings is a screen rather than a sheet: it replaces the sidebar with its own
+ * navigation and the terminals with the chosen pane, and the only way back is the
+ * button at the bottom of that navigation. A modal over the terminals would leave
+ * the user reading settings through a scrim, and the tab strip it needs has no
+ * room in a dialog.
+ */
+export type Screen =
+  | { readonly kind: "workspace" }
+  | { readonly kind: "settings"; readonly tab: SettingsTabID };
 
 export interface ViewState {
   /** Local layout edits, keyed by session. Resolved against the mirror on read. */
@@ -38,6 +65,8 @@ export interface ViewState {
 
   /** The one sheet that is open, if any. There is never more than one. */
   readonly sheet: Sheet | undefined;
+
+  readonly screen: Screen;
 
   readonly settings: GlobalSettings;
 
@@ -64,6 +93,15 @@ export interface ViewState {
   setSettings(settings: GlobalSettings): void;
 
   /**
+   * Shows the settings screen. Without a tab, stays on the tab already showing
+   * when settings is open, and opens on General otherwise — so ⌘, pressed twice
+   * does not send someone back to the first tab.
+   */
+  showSettings(tab?: SettingsTabID): void;
+  /** Back to the terminals. Nothing when they are already showing. */
+  showWorkspace(): void;
+
+  /**
    * Registers a mounted terminal surface, returning its unregistration.
    *
    * Mounted surfaces are how Clear Scrollback reaches a viewport and how focus
@@ -77,10 +115,12 @@ export interface ViewState {
 }
 
 const NO_LAYOUTS: ReadonlyMap<SessionID, LocalLayoutEntry> = new Map<SessionID, LocalLayoutEntry>();
+const WORKSPACE: Screen = { kind: "workspace" };
 
 export function createViewState(sessions: SessionStore): ViewState {
   let layouts = NO_LAYOUTS;
   let sheet: Sheet | undefined;
+  let screen: Screen = WORKSPACE;
   let settings = DEFAULT_GLOBAL_SETTINGS;
 
   // Surfaces are not part of the notified state: they are mount bookkeeping, and a
@@ -117,6 +157,9 @@ export function createViewState(sessions: SessionStore): ViewState {
     get sheet(): Sheet | undefined {
       return sheet;
     },
+    get screen(): Screen {
+      return screen;
+    },
     get settings(): GlobalSettings {
       return settings;
     },
@@ -150,6 +193,19 @@ export function createViewState(sessions: SessionStore): ViewState {
     setSettings(next: GlobalSettings): void {
       if (settings === next) return;
       settings = next;
+      notify();
+    },
+
+    showSettings(tab?: SettingsTabID): void {
+      const next = tab ?? (screen.kind === "settings" ? screen.tab : "general");
+      if (screen.kind === "settings" && screen.tab === next) return;
+      screen = { kind: "settings", tab: next };
+      notify();
+    },
+
+    showWorkspace(): void {
+      if (screen.kind === "workspace") return;
+      screen = WORKSPACE;
       notify();
     },
 

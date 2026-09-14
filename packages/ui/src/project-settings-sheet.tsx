@@ -1,3 +1,5 @@
+import { ArrowDown01Icon, ArrowUp01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type {
   AutomationCommand,
   AutomationEvent,
@@ -9,6 +11,15 @@ import type {
   ProjectSettings,
 } from "@janela/core";
 import { absolutePath, AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
+import {
+  Button,
+  ButtonGroup,
+  DialogFooter,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  Item,
+} from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -24,11 +35,16 @@ import {
   commandsForEvent,
   usesTimeout,
 } from "./automation-editing.ts";
-import { NumberField, Section, SwitchField, TextField, Violations } from "./controls.tsx";
-import { ProfileSelect } from "./launch-profile-picker.tsx";
+import {
+  NumberField,
+  ProfileSelect,
+  Section,
+  SwitchField,
+  TextField,
+  Violations,
+} from "./controls.tsx";
 import type { ArgumentDraft } from "./profile-editing.ts";
 import { argumentDrafts, argvOf } from "./profile-editing.ts";
-import * as style from "./styles.ts";
 
 /**
  * A project's own settings, edited from its row in the sidebar.
@@ -115,7 +131,7 @@ export function ProjectSettingsSheet(props: ProjectSettingsSheetProps): ReactEle
   const violations = draft.automation.flatMap((command) => automationViolations(command));
 
   return (
-    <div style={style.PANE}>
+    <div className="flex flex-col gap-6">
       <Section title={project.name}>
         <ProfileSelect
           label="Default launch profile"
@@ -170,14 +186,14 @@ export function ProjectSettingsSheet(props: ProjectSettingsSheetProps): ReactEle
 
       <Violations violations={violations} />
 
-      <div style={style.ROW}>
-        <button type="button" onClick={save} disabled={violations.length > 0} style={style.BUTTON}>
-          Save
-        </button>
-        <button type="button" onClick={props.onCancel} style={style.BUTTON}>
+      <DialogFooter>
+        <Button variant="outline" onClick={props.onCancel}>
           Cancel
-        </button>
-      </div>
+        </Button>
+        <Button onClick={save} disabled={violations.length > 0}>
+          Save
+        </Button>
+      </DialogFooter>
     </div>
   );
 }
@@ -214,7 +230,13 @@ function AutomationEventSection(props: {
 
   return (
     <Section title={AUTOMATION_EVENT_TITLE[event]} hint={AUTOMATION_EVENT_HINT[event]}>
-      {forEvent.length === 0 ? <p style={style.HINT}>Nothing runs.</p> : undefined}
+      {forEvent.length === 0 ? (
+        <Empty className="p-4">
+          <EmptyHeader>
+            <EmptyDescription>Nothing runs.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : undefined}
       {forEvent.map((command) => (
         <AutomationCommandEditor
           key={command.id}
@@ -224,10 +246,11 @@ function AutomationEventSection(props: {
           onMove={move}
         />
       ))}
-      <div style={style.ROW}>
-        <button type="button" onClick={append} style={style.BUTTON}>
+      <div className="flex">
+        <Button variant="outline" size="sm" onClick={append}>
+          <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
           Add Command
-        </button>
+        </Button>
       </div>
     </Section>
   );
@@ -282,7 +305,7 @@ function AutomationCommandEditor(props: {
   }, [command.id, onMove]);
 
   return (
-    <div style={style.FIELD}>
+    <Item variant="outline" className="flex-col items-stretch gap-3">
       <SwitchField
         label="Enabled"
         isOn={command.isEnabled}
@@ -310,17 +333,21 @@ function AutomationCommandEditor(props: {
 
       <Violations violations={automationViolations(command)} />
 
-      <div style={style.ROW}>
-        <button type="button" onClick={moveEarlier} style={style.BUTTON}>
-          Run Earlier
-        </button>
-        <button type="button" onClick={moveLater} style={style.BUTTON}>
-          Run Later
-        </button>
-        <button type="button" onClick={remove} style={style.DESTRUCTIVE_BUTTON}>
+      {/* The order controls are one control with two directions, so they read as
+          one; Remove is not, and stands apart from them. */}
+      <div className="flex items-center justify-end gap-2">
+        <ButtonGroup>
+          <Button variant="outline" size="sm" onClick={moveEarlier} aria-label="Run Earlier">
+            <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} />
+          </Button>
+          <Button variant="outline" size="sm" onClick={moveLater} aria-label="Run Later">
+            <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} />
+          </Button>
+        </ButtonGroup>
+        <Button variant="destructive" size="sm" onClick={remove}>
           Remove
-        </button>
+        </Button>
       </div>
-    </div>
+    </Item>
   );
 }

@@ -9,6 +9,11 @@
  * not carry needs a protocol message, not a shortcut.
  */
 
+// ---- The sidebar: the only navigation there is.
+export * from "./app-sidebar.tsx";
+export * from "./project-icon.tsx";
+export * from "./sidebar-actions.ts";
+export * from "./sidebar-filter.ts";
 export * from "./command-dispatch.ts";
 export * from "./command-palette.tsx";
 export * from "./commands.ts";
@@ -18,6 +23,7 @@ export * from "./jump-list.tsx";
 export * from "./layout-edits.ts";
 export * from "./main-window.tsx";
 export * from "./new-branch-sheet.tsx";
+export * from "./new-session-sheet.tsx";
 export * from "./quick-list.tsx";
 export * from "./sheets.tsx";
 export * from "./sidebar-model.ts";
@@ -29,7 +35,6 @@ export * from "./automation-editing.ts";
 export * from "./background-service.ts";
 export * from "./controls.tsx";
 export * from "./global-settings.ts";
-export * from "./launch-profile-picker.tsx";
 export * from "./profile-editing.ts";
 export * from "./profile-icons.tsx";
 export * from "./project-settings-sheet.tsx";
@@ -38,4 +43,3 @@ export * from "./settings-notifications.tsx";
 export * from "./settings-profiles.tsx";
 export * from "./settings-terminal.tsx";
 export * from "./settings-window.tsx";
-export * from "./styles.ts";

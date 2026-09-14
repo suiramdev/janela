@@ -268,6 +268,47 @@
       }
     },
     {
+      // ---- Vendored registry components. Not authored here, and not edited
+      // except for the four documented reasons in packages/design/src/index.ts.
+      //
+      // These rules encode how *we* write React. Hand-massaging someone else's
+      // component into that shape is work the next `shadcn add --overwrite`
+      // throws away, and it hides the diff that tells us what upstream changed.
+      // So they are off here, and only here — file by file, this is the closed
+      // set the registry copies actually trip:
+      //
+      //   react-perf/*             inline `style` objects and `render` props
+      //   react/set-state-in-effect  `useIsMobile` seeds from matchMedia
+      //   react/exhaustive-effect-dependencies  the avatar's replay token
+      //   jsx-a11y/prefer-tag-over-role  a canvas pair announced as one image
+      //   unicorn/no-new-array, no-shadow, no-param-reassign, eqeqeq  style
+      //   jsx-a11y/click-events-have-key-events, no-noninteractive-element-interactions
+      //                            an input group's addon focuses its field on click
+      //   jsx-a11y/label-has-associated-control  `Label` takes `htmlFor` from its caller
+      //   react/no-array-index-key  `FieldError` lists messages that have no id
+      //
+      // What stays on is everything load-bearing: no `any`, no `!`, no
+      // `console`, the import restrictions, and `consistent-type-imports`. The
+      // registry copies pass all of those as shipped.
+      "files": ["packages/design/src/components/**", "packages/design/src/hooks/**"],
+      "rules": {
+        "react-perf/jsx-no-new-object-as-prop": "off",
+        "react-perf/jsx-no-new-function-as-prop": "off",
+        "react-perf/jsx-no-jsx-as-prop": "off",
+        "react/set-state-in-effect": "off",
+        "react/exhaustive-effect-dependencies": "off",
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "unicorn/no-new-array": "off",
+        "no-shadow": "off",
+        "no-param-reassign": "off",
+        "eqeqeq": "off",
+        "jsx-a11y/click-events-have-key-events": "off",
+        "jsx-a11y/no-noninteractive-element-interactions": "off",
+        "jsx-a11y/label-has-associated-control": "off",
+        "react/no-array-index-key": "off"
+      }
+    },
+    {
       // Tests are allowed the assertions production code is not.
       "files": ["**/*.test.ts", "**/*.test.tsx", "packages/test-support/**"],
       "rules": {

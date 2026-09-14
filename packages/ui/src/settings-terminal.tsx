@@ -9,7 +9,6 @@ import {
   withTerminalFontFamily,
   withTerminalFontSize,
 } from "./global-settings.ts";
-import * as style from "./styles.ts";
 
 /**
  * The Terminal tab: the font override, and nothing else yet.
@@ -42,7 +41,7 @@ export function SettingsTerminal(props: SettingsTerminalProps): ReactElement {
   );
 
   return (
-    <div style={style.PANE}>
+    <div className="flex flex-col gap-6">
       <Section title="Font">
         <TextField
           label="Font family"

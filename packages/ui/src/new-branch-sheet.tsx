@@ -1,8 +1,20 @@
 import { supportsWorktrees, type Project, type ProjectID } from "@janela/core";
+import {
+  Button,
+  DialogFooter,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  NativeSelect,
+  NativeSelectOption,
+} from "@janela/design";
 import type { ChangeEvent, FormEvent, ReactElement } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
-import * as style from "./styles.ts";
+import { TextField } from "./controls.tsx";
 
 /**
  * ⌘⇧B: a new branch to work on.
@@ -82,11 +94,7 @@ export function NewBranchSheet(props: NewBranchSheetProps): ReactElement {
   const [editedStartPoint, setEditedStartPoint] = useState<string | undefined>(undefined);
   const startPoint = editedStartPoint ?? preselectedStartPoint(project);
 
-  const branchRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    // The sheet exists to be typed into: the project is usually already right.
-    branchRef.current?.focus();
-  }, []);
+  const projectFieldID = useId();
 
   const draft = newBranchDraft(projectID, branch, startPoint);
 
@@ -99,15 +107,15 @@ export function NewBranchSheet(props: NewBranchSheetProps): ReactElement {
   );
 
   const handleBranch = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setBranch(event.target.value);
+    (value: string) => {
+      setBranch(value);
     },
     [setBranch],
   );
 
   const handleStartPoint = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setEditedStartPoint(event.target.value);
+    (value: string) => {
+      setEditedStartPoint(value);
     },
     [setEditedStartPoint],
   );
@@ -122,63 +130,63 @@ export function NewBranchSheet(props: NewBranchSheetProps): ReactElement {
 
   if (eligible.length === 0) {
     return (
-      <div style={style.PICKER}>
-        <p style={style.HINT}>Add a git repository as a project first.</p>
-        <button type="button" style={style.BUTTON} onClick={onCancel}>
+      <Empty>
+        <EmptyHeader>
+          <EmptyDescription>Add a git repository as a project first.</EmptyDescription>
+        </EmptyHeader>
+        <Button variant="outline" size="sm" onClick={onCancel}>
           Cancel
-        </button>
-      </div>
+        </Button>
+      </Empty>
     );
   }
 
   return (
-    <form style={style.PICKER} onSubmit={handleSubmit}>
-      <label style={style.FIELD}>
-        <span style={style.FIELD_LABEL}>Project</span>
-        <select style={style.INPUT} value={projectID ?? ""} onChange={handleProject}>
-          {eligible.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.name}
-            </option>
-          ))}
-        </select>
-      </label>
+    <form onSubmit={handleSubmit}>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor={projectFieldID}>Project</FieldLabel>
+          <NativeSelect
+            id={projectFieldID}
+            className="w-full"
+            value={projectID ?? ""}
+            onChange={handleProject}
+          >
+            {eligible.map((candidate) => (
+              <NativeSelectOption key={candidate.id} value={candidate.id}>
+                {candidate.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
 
-      <label style={style.FIELD}>
-        <span style={style.FIELD_LABEL}>Branch name</span>
-        <input
-          ref={branchRef}
-          type="text"
-          style={style.INPUT}
+        {/* The sheet exists to be typed into: the project is usually already
+            right, so `SheetHost` opens focus here rather than on the select. */}
+        <TextField
+          label="Branch name"
           value={branch}
           onChange={handleBranch}
           placeholder="feature/x"
-          autoComplete="off"
-          spellCheck={false}
+          isInitialFocus
         />
-      </label>
 
-      <label style={style.FIELD}>
-        <span style={style.FIELD_LABEL}>Start point</span>
-        <input
-          type="text"
-          style={style.INPUT}
+        <TextField
+          label="Start point"
           value={startPoint}
           onChange={handleStartPoint}
           placeholder="main"
-          autoComplete="off"
-          spellCheck={false}
+          isMonospaced
         />
-      </label>
 
-      <div style={style.ROW}>
-        <button type="submit" style={style.BUTTON} disabled={draft === undefined}>
-          Create Session
-        </button>
-        <button type="button" style={style.BUTTON} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
+        <DialogFooter>
+          <Button variant="outline" type="button" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={draft === undefined}>
+            Create Session
+          </Button>
+        </DialogFooter>
+      </FieldGroup>
     </form>
   );
 }

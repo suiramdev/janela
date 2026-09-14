@@ -321,6 +321,18 @@ export const GATED_MODULES: readonly GatedModule[] = [
       "Nothing in @janela/session or below may import a view layer. The daemon detects, the client decides, the app delivers.",
   },
   {
+    pattern: "@base-ui/react",
+    allowed: ["@janela/design"],
+    reason:
+      "The primitive seam, and the same rule as @xterm/*: one package names the library that owns focus, portals and dismissal, and everything above it composes what @janela/design exports. A view that imports a primitive directly is a view that has to be rewritten when the library does.",
+  },
+  {
+    pattern: "cn",
+    allowed: ["@janela/design"],
+    reason:
+      "One Tailwind class merger, in the package that owns the classes. Two of them resolve conflicting utilities by different rules, and nothing would tell you which one a control used — so @janela/design re-exports `cn` and nobody installs a second.",
+  },
+  {
     pattern: "react-dom",
     allowed: ["@janela/ui", "@janela/desktop"],
     reason:

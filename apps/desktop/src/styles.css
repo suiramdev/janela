@@ -6,8 +6,29 @@
  *
  * Values are the macOS system colours (orange, green, red) and their Increase
  * Contrast variants, so a badge here matches the one Notification Centre shows.
+ *
+ * The second half of the file is the shadcn/ui token set the vendored primitives
+ * in packages/design/src/components read — `--sidebar`, `--popover`, `--accent`
+ * and the rest, from the `neutral` base colour. Two rules govern it:
+ *
+ * - **There is no `.dark` class.** The registry ships light values under `:root`
+ *   and dark ones under `.dark`, and a class means something has to decide when
+ *   to add it. This application decides nothing: the values live in the same
+ *   `prefers-color-scheme` blocks the Janela tokens do, so a primitive follows
+ *   the system exactly as a terminal badge does.
+ * - **Increase Contrast is an appearance, not an afterthought.** The registry has
+ *   no palette for it, so the borders, rings and secondary text — the tokens whose
+ *   whole job is to be faint — are darkened here.
  */
 @import "tailwindcss";
+/* The registry primitives enter and leave with `animate-in`/`animate-out`, which
+   are this package's utilities. Without it every popup, sheet and tooltip snaps. */
+@import "tw-animate-css";
+/* The `data-open`, `data-checked` and `data-active` variants the mira primitives
+   are written against. Nothing in it decides appearance: `dark:` stays Tailwind's
+   own `prefers-color-scheme` variant, which is the rule below. */
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
 
 /* Workspace packages are symlinked under node_modules, which Tailwind's source
    detection ignores; name the client view packages explicitly. */
@@ -15,12 +36,65 @@
 @source "../../../packages/terminal-ui/src";
 @source "../../../packages/ui/src";
 
+/*
+ * Reduce Motion is the user's word (packages/design/src/tokens.ts § MOTION). The
+ * primitives above do not check it themselves, so it is enforced once, here:
+ * every animation and transition collapses to a frame, and a dialog that would
+ * have faded in simply appears.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 :root {
   color-scheme: light dark;
   --janela-terminal-background: #ffffff;
   --janela-attention: #ff9500;
   --janela-running: #34c759;
   --janela-failure: #ff3b30;
+
+  /* shadcn/ui, `neutral`, light. */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* The registry's radius scale. The preset's "small" radius, which lands the
+     primitives between CORNER_RADIUS.small and .medium. */
+  --radius: 0.45rem;
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,6 +103,33 @@
     --janela-attention: #ff9f0a;
     --janela-running: #30d158;
     --janela-failure: #ff453a;
+
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
   }
 }
 
@@ -38,6 +139,13 @@
     --janela-attention: #c93400;
     --janela-running: #248a3d;
     --janela-failure: #d70015;
+
+    --muted-foreground: oklch(0.371 0 0);
+    --border: oklch(0.708 0 0);
+    --input: oklch(0.556 0 0);
+    --ring: oklch(0.145 0 0);
+    --sidebar-border: oklch(0.708 0 0);
+    --sidebar-ring: oklch(0.145 0 0);
   }
 }
 
@@ -47,6 +155,13 @@
     --janela-attention: #ffb340;
     --janela-running: #30db5b;
     --janela-failure: #ff6961;
+
+    --muted-foreground: oklch(0.87 0 0);
+    --border: oklch(1 0 0 / 40%);
+    --input: oklch(1 0 0 / 50%);
+    --ring: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 40%);
+    --sidebar-ring: oklch(0.985 0 0);
   }
 }
 
@@ -58,4 +173,86 @@
   --radius-small: 6px;
   --radius-medium: 10px;
   --font-mono: "SF Mono", "Menlo", "DejaVu Sans Mono", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", sans-serif;
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * The window is the application. `overflow: hidden` on the root is what keeps a
+ * long session list from scrolling the whole window instead of the list — the
+ * sidebar's own scroller is the only thing that may scroll.
+ */
+html,
+body,
+#janela-root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/*
+ * The sidebar's search field keeps `type="search"` for its semantics — a screen
+ * reader announces "search text field" — but not WebKit's clear button: the
+ * sidebar has its own, and that one clears the status filter as well. Two X's
+ * side by side, one of which does less, is worse than one.
+ */
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }

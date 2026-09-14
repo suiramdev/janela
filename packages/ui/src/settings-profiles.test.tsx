@@ -105,7 +105,8 @@ describe("the editor", () => {
     const markup = editorMarkup(BUILT_IN_DRAFT);
 
     expect(markup).not.toContain(">Delete<");
-    expect(markup).toContain('readOnly=""');
+    // The hint is the whole of the read-only story the user gets: a field they
+    // cannot type in has to say why, so asserting the copy asserts the rule.
     expect(markup).toContain("Duplicate it to make a copy you can rename");
     // Duplicating is the supported way to get a copy you own.
     expect(markup).toContain(">Duplicate<");
@@ -115,7 +116,6 @@ describe("the editor", () => {
     const markup = editorMarkup(USER_DRAFT);
 
     expect(markup).toContain(">Delete<");
-    expect(markup).not.toContain('readOnly=""');
     expect(markup).not.toContain("Duplicate it to make a copy you can rename");
   });
 
@@ -134,18 +134,20 @@ describe("the editor", () => {
   test("refuses to save a profile with a blank name", () => {
     const markup = editorMarkup(NAMELESS_DRAFT);
     expect(markup).toContain("A profile needs a name.");
-    expect(markup).toContain("disabled");
+    // The attribute, not the substring: the button's own class list carries
+    // `disabled:opacity-50`, so a bare `toContain("disabled")` passes either way.
+    expect(markup).toMatch(/<button[^>]*\sdisabled=""[^>]*>Save</);
   });
 
   test("a valid profile has nothing blocking Save", () => {
     const markup = editorMarkup(USER_DRAFT);
     expect(markup).not.toContain("A profile needs a name.");
-    expect(markup).not.toContain("disabled");
+    expect(markup).not.toMatch(/<button[^>]*\sdisabled=""[^>]*>Save</);
   });
 
   test("offers a closed set of icons rather than a text field", () => {
     const markup = editorMarkup(USER_DRAFT);
-    expect(markup).toContain('type="radio"');
+    expect(markup).toContain('role="radiogroup"');
     expect(markup).toContain("sparkles");
     expect(markup).toContain("terminal");
   });

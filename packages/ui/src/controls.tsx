@@ -1,22 +1,40 @@
+import {
+  availableProfiles,
+  type LaunchProfile,
+  type LaunchProfileAvailability,
+  type LaunchProfileID,
+} from "@janela/core";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  Input,
+  NativeSelect,
+  NativeSelectOption,
+  Switch,
+} from "@janela/design";
 import type { ChangeEvent, ReactElement, ReactNode } from "react";
-import { useCallback } from "react";
-
-import * as style from "./styles.ts";
+import { useCallback, useId } from "react";
 
 /**
- * The handful of controls the settings surface needs.
+ * The handful of labelled controls the settings surfaces share.
  *
- * These are local to `@janela/ui` on purpose. `@janela/design`'s control set is a
- * seam another issue owns, and its list is closed by design — a design package
- * that grows a component per screen has become the UI package. When those land,
- * these move; until then a settings pane is not a reason to open that file.
+ * Each is a composition of `@janela/design` primitives — `Field`, `Input`,
+ * `Switch` — and nothing more: the label, the hint below it, and the wiring that
+ * ties the two to the control. They live here rather than in the design package
+ * because a *labelled* field is a decision about how this app's forms read, and
+ * the design package deliberately knows nothing about that.
  *
- * Two rules, from AGENTS.md § Non-negotiables 4 and the design package's own
- * comment, and both are why these are hand-written rather than borrowed:
+ * Two rules, from AGENTS.md § Non-negotiables 4:
  *
- * - Keyboard-reachable, with the platform focus ring left alone. Every control
- *   here is a real `input`, `select` or `button` inside a `label`, so focus,
- *   labelling and activation are the browser's job and cannot be got wrong.
+ * - Keyboard-reachable, with the platform focus ring left alone. The text and
+ *   number fields are real `input`s; the switch is Base UI's, which mirrors a
+ *   hidden checkbox so a `label` still toggles it.
  * - **No `Ctrl` handling anywhere.** `Ctrl` belongs to the program running in the
  *   terminal, and a control that swallows it breaks that program.
  */
@@ -31,10 +49,16 @@ export interface TextFieldProps {
   readonly isReadOnly?: boolean | undefined;
   /** Set for argv and environment values, where alignment carries meaning. */
   readonly isMonospaced?: boolean | undefined;
+  /**
+   * The field a sheet opens on. Read by `SheetHost`, which asks the dialog to
+   * focus it instead of the first focusable thing — see `sheets.tsx`.
+   */
+  readonly isInitialFocus?: boolean | undefined;
 }
 
 export function TextField(props: TextFieldProps): ReactElement {
   const { onChange } = props;
+  const id = useId();
   const handle = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       onChange(event.target.value);
@@ -43,18 +67,22 @@ export function TextField(props: TextFieldProps): ReactElement {
   );
 
   return (
-    <label style={style.FIELD}>
-      <span style={style.FIELD_LABEL}>{props.label}</span>
-      <input
+    <Field>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <Input
+        id={id}
         type="text"
         value={props.value}
         placeholder={props.placeholder}
         readOnly={props.isReadOnly ?? false}
         onChange={handle}
-        style={props.isMonospaced === true ? style.ARGUMENT_INPUT : style.INPUT}
+        className={props.isMonospaced === true ? "font-mono" : undefined}
+        data-autofocus={props.isInitialFocus === true ? "" : undefined}
+        autoComplete="off"
+        spellCheck={false}
       />
-      {props.hint === undefined ? undefined : <span style={style.HINT}>{props.hint}</span>}
-    </label>
+      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
+    </Field>
   );
 }
 
@@ -69,6 +97,7 @@ export interface NumberFieldProps {
 
 export function NumberField(props: NumberFieldProps): ReactElement {
   const { onChange } = props;
+  const id = useId();
   const handle = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       // `valueAsNumber` is NaN for an empty field, which the caller's clamp turns
@@ -79,18 +108,19 @@ export function NumberField(props: NumberFieldProps): ReactElement {
   );
 
   return (
-    <label style={style.FIELD}>
-      <span style={style.FIELD_LABEL}>{props.label}</span>
-      <input
+    <Field>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <Input
+        id={id}
         type="number"
         value={props.value}
         min={props.minimum}
         max={props.maximum}
         onChange={handle}
-        style={style.INPUT}
+        className="w-24"
       />
-      {props.hint === undefined ? undefined : <span style={style.HINT}>{props.hint}</span>}
-    </label>
+      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
+    </Field>
   );
 }
 
@@ -103,21 +133,80 @@ export interface SwitchFieldProps {
 
 export function SwitchField(props: SwitchFieldProps): ReactElement {
   const { onChange } = props;
+  const id = useId();
+  const labelID = `${id}-label`;
   const handle = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      onChange(event.target.checked);
+    (checked: boolean) => {
+      onChange(checked);
     },
     [onChange],
   );
 
   return (
-    <label style={style.FIELD}>
-      <span style={style.ROW}>
-        <input type="checkbox" checked={props.isOn} onChange={handle} />
-        <span style={style.FIELD_LABEL}>{props.label}</span>
-      </span>
-      {props.hint === undefined ? undefined : <span style={style.HINT}>{props.hint}</span>}
-    </label>
+    <Field orientation="horizontal">
+      <FieldContent>
+        <FieldLabel id={labelID} htmlFor={id}>
+          {props.label}
+        </FieldLabel>
+        {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
+      </FieldContent>
+      {/* `htmlFor` reaches the hidden checkbox Base UI mirrors, so clicking the
+          label toggles; `aria-labelledby` names the visible switch, which is the
+          element a screen reader lands on. */}
+      <Switch id={id} aria-labelledby={labelID} checked={props.isOn} onCheckedChange={handle} />
+    </Field>
+  );
+}
+
+export interface ProfileSelectProps {
+  readonly label: string;
+  readonly profiles: readonly LaunchProfile[];
+  readonly availability: LaunchProfileAvailability;
+  readonly value: LaunchProfileID | undefined;
+  readonly onChange: (profileID: LaunchProfileID | undefined) => void;
+  /** What an unset value means here — it differs per scope, so the caller says. */
+  readonly unsetTitle: string;
+  readonly hint?: string;
+}
+
+/**
+ * A dropdown for "which profile by default", used by both settings scopes.
+ *
+ * Lists available profiles only — a profile whose tool is not installed is an
+ * advert — plus the currently selected one even if it has become unavailable,
+ * because a select that silently drops the stored value shows the user a setting
+ * they never made.
+ */
+export function ProfileSelect(props: ProfileSelectProps): ReactElement {
+  const { onChange, profiles, value } = props;
+  const id = useId();
+  const pickable = availableProfiles(profiles, props.availability);
+  const stored = profiles.find((profile) => profile.id === value);
+  const listed =
+    stored === undefined || pickable.includes(stored) ? pickable : [stored, ...pickable];
+
+  const handle = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      // Matched rather than re-branded: the option values are ids this component
+      // rendered, so looking one up is both the validation and the conversion.
+      onChange(profiles.find((profile) => profile.id === event.target.value)?.id);
+    },
+    [onChange, profiles],
+  );
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+      <NativeSelect id={id} className="w-full" value={value ?? ""} onChange={handle}>
+        <NativeSelectOption value="">{props.unsetTitle}</NativeSelectOption>
+        {listed.map((profile) => (
+          <NativeSelectOption key={profile.id} value={profile.id}>
+            {profile.name}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
+      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
+    </Field>
   );
 }
 
@@ -130,13 +219,13 @@ export function SwitchField(props: SwitchFieldProps): ReactElement {
 export function Violations(props: { readonly violations: readonly string[] }): ReactElement | null {
   if (props.violations.length === 0) return null;
   return (
-    <ul style={style.LIST} role="alert">
-      {props.violations.map((violation) => (
-        <li key={violation} style={style.VIOLATION}>
-          {violation}
-        </li>
-      ))}
-    </ul>
+    <FieldError>
+      <ul className="ml-4 flex list-disc flex-col gap-1">
+        {props.violations.map((violation) => (
+          <li key={violation}>{violation}</li>
+        ))}
+      </ul>
+    </FieldError>
   );
 }
 
@@ -153,10 +242,10 @@ export function Section(props: {
   readonly children: ReactNode;
 }): ReactElement {
   return (
-    <fieldset style={style.SECTION}>
-      <legend style={style.SECTION_HEADING}>{props.title}</legend>
-      {props.hint === undefined ? undefined : <p style={style.HINT}>{props.hint}</p>}
-      {props.children}
-    </fieldset>
+    <FieldSet>
+      <FieldLegend>{props.title}</FieldLegend>
+      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
+      <FieldGroup>{props.children}</FieldGroup>
+    </FieldSet>
   );
 }

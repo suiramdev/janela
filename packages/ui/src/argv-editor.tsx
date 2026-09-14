@@ -1,10 +1,20 @@
-import type { ReactElement } from "react";
-import { useCallback } from "react";
+import { Cancel01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@janela/design";
+import type { ChangeEvent, ReactElement } from "react";
+import { useCallback, useId } from "react";
 
-import { Section, TextField } from "./controls.tsx";
+import { Section } from "./controls.tsx";
 import type { ArgumentDraft } from "./profile-editing.ts";
 import { argumentsAppending } from "./profile-editing.ts";
-import * as style from "./styles.ts";
 
 /**
  * One field per argv element, shared by launch profiles and automation commands.
@@ -55,10 +65,11 @@ export function ArgumentsEditor(props: ArgumentsEditorProps): ReactElement {
           onRemove={remove}
         />
       ))}
-      <div style={style.ROW}>
-        <button type="button" onClick={append} style={style.BUTTON}>
+      <div>
+        <Button type="button" variant="outline" size="sm" onClick={append}>
+          <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
           Add Argument
-        </button>
+        </Button>
       </div>
     </Section>
   );
@@ -71,9 +82,10 @@ function ArgumentRow(props: {
   readonly onRemove: (id: string) => void;
 }): ReactElement {
   const { draft, index, onChange, onRemove } = props;
+  const id = useId();
   const change = useCallback(
-    (value: string) => {
-      onChange(draft.id, value);
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onChange(draft.id, event.target.value);
     },
     [draft.id, onChange],
   );
@@ -86,11 +98,25 @@ function ArgumentRow(props: {
   const label = index === 0 ? "Executable" : `Argument ${index}`;
 
   return (
-    <div style={style.ROW}>
-      <TextField label={label} value={draft.value} onChange={change} isMonospaced />
-      <button type="button" onClick={remove} style={style.BUTTON} aria-label={`Remove ${label}`}>
-        Remove
-      </button>
-    </div>
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <InputGroup>
+        {/* Monospaced because an argument is read character by character: a
+            trailing space or an l/1 confusion is the bug being looked for. */}
+        <InputGroupInput
+          id={id}
+          value={draft.value}
+          onChange={change}
+          className="font-mono"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton size="icon-xs" onClick={remove} aria-label={`Remove ${label}`}>
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
+    </Field>
   );
 }

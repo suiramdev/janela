@@ -81,7 +81,7 @@ export function JumpList(props: JumpListProps): ReactElement {
         id: session.id,
         title: session.name,
         subtitle: projects.find((project) => project.id === session.projectID)?.name ?? STANDALONE,
-        trailing: statusText(sessionStatus(session, terminalStates)),
+        status: statusText(sessionStatus(session, terminalStates)),
       })),
     [projects, sessions, terminalStates, currentSelection],
   );
