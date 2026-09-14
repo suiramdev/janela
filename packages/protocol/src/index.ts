@@ -10,6 +10,7 @@
  * the widest part of the design and the thinnest part of the code.
  */
 
+export * from "./branch-overview.ts";
 export * from "./frame.ts";
 export * from "./handshake.ts";
 export * from "./message-coder.ts";

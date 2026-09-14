@@ -73,6 +73,34 @@ export type ClientMessage =
    * with `parseRemovalPlan`.
    */
   | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
+  /**
+   * The project's local branches and every checkout of its repository, so a
+   * client can offer "which branch, and where" — check it out in the project's
+   * own directory, adopt the worktree that already holds it, or create a new
+   * one. The reply is `text` carrying `serializeBranchOverview` JSON — parse it
+   * with `parseBranchOverview`.
+   *
+   * Refused for a project that is not a repository: there is no honest empty
+   * answer, because "no branches" and "not a repository" are different things
+   * to say to a person.
+   */
+  | { readonly type: "projectBranches"; readonly id: RequestID; readonly projectID: ProjectID }
+  /**
+   * Reorder a session's tabs: the tab at `from` moves to index `to`.
+   *
+   * A request rather than a client-local rearrangement, because tab order is
+   * part of `SessionLayout` and the daemon owns that — a client that reordered
+   * its mirror would lose the change on the next state snapshot. Reply is
+   * `acknowledged`; a move that changes nothing is acknowledged and persists
+   * nothing.
+   */
+  | {
+      readonly type: "moveTab";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly from: number;
+      readonly to: number;
+    }
 
   // ---- Terminals
   /**
@@ -278,7 +306,17 @@ export interface StateUpdate {
  */
 export type SessionCreationIntent =
   | { readonly kind: "standalone"; readonly directory: AbsolutePath; readonly name?: string }
-  | { readonly kind: "inProject"; readonly projectID: ProjectID; readonly name?: string }
+  /**
+   * A session in the project's own directory. `branch` checks that branch out
+   * there first — the "work on this branch, in place" answer to the same
+   * dialog `projectBranches` feeds. A checkout git refuses creates no session.
+   */
+  | {
+      readonly kind: "inProject";
+      readonly projectID: ProjectID;
+      readonly branch?: string;
+      readonly name?: string;
+    }
   | {
       readonly kind: "newWorktree";
       readonly projectID: ProjectID;

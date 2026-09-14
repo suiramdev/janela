@@ -489,6 +489,8 @@ export function fakeSessions(
     createTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removeTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removalPlan: () => Promise.reject(new Error(NOT_CALLED)),
+    branchOverview: () => Promise.reject(new Error(NOT_CALLED)),
+    moveTab: () => Promise.reject(new Error(NOT_CALLED)),
     removeSession: () => Promise.reject(new Error(NOT_CALLED)),
     rename: () => Promise.reject(new Error(NOT_CALLED)),
     startTerminal: () => Promise.reject(new Error(NOT_CALLED)),

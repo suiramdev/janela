@@ -11,6 +11,7 @@ import {
   focusedTab,
   layoutTerminalIDs,
   layoutViolations,
+  moveTab,
   paneDepth,
   paneTerminalIDs,
   repairLayout,
@@ -313,6 +314,72 @@ const corruptFixtures: readonly {
   { layout: layout([], 4), existing: [] },
   { layout: layout([tab(terminal("x"))], 0), existing: [] },
 ];
+
+/** Three tabs of one terminal each, named a, b, c in that order. */
+const threeTabs = (focusedTabIndex = 0): SessionLayout =>
+  layout([tab(terminal("a")), tab(terminal("b")), tab(terminal("c"))], focusedTabIndex);
+
+/** Which terminal each tab holds, which is the order the user sees. */
+const tabOrder = (value: SessionLayout): readonly string[] =>
+  value.tabs.map((entry) => (entry.root.kind === "terminal" ? entry.root.id : "split"));
+
+describe("moveTab", () => {
+  test("moves a tab forward, keeping every other tab's order", () => {
+    const after = moveTab(threeTabs(), 0, 2);
+
+    expect(tabOrder(after)).toEqual(["b", "c", "a"]);
+  });
+
+  test("moves a tab backward", () => {
+    const after = moveTab(threeTabs(), 2, 0);
+
+    expect(tabOrder(after)).toEqual(["c", "a", "b"]);
+  });
+
+  test("focus follows the tab that moved", () => {
+    // The user dragged the tab they were looking at: it is still the one on
+    // screen afterwards, wherever it landed.
+    expect(moveTab(threeTabs(0), 0, 2).focusedTabIndex).toBe(2);
+    expect(moveTab(threeTabs(2), 2, 1).focusedTabIndex).toBe(1);
+  });
+
+  test("focus stays on an unmoved tab whose index shifted", () => {
+    // "b" was focused and did not move; dragging "a" past it must not switch
+    // the user to a different tab, so the index changes and the tab does not.
+    const after = moveTab(threeTabs(1), 0, 2);
+
+    expect(tabOrder(after)).toEqual(["b", "c", "a"]);
+    expect(after.focusedTabIndex).toBe(0);
+
+    // The mirror case: dragging the last tab in front of the focused one.
+    const backward = moveTab(threeTabs(1), 2, 0);
+    expect(tabOrder(backward)).toEqual(["c", "a", "b"]);
+    expect(backward.focusedTabIndex).toBe(2);
+  });
+
+  test("a move that changes nothing returns the same layout, by reference", () => {
+    const before = threeTabs(1);
+
+    // Identity, so the daemon can persist nothing for a drag that ended where
+    // it started.
+    expect(moveTab(before, 1, 1)).toBe(before);
+    expect(moveTab(before, 3, 0)).toBe(before);
+    expect(moveTab(before, 0, 3)).toBe(before);
+    expect(moveTab(before, -1, 0)).toBe(before);
+    expect(moveTab(before, 0, -1)).toBe(before);
+    expect(moveTab(before, 0.5, 1)).toBe(before);
+    expect(moveTab(emptyLayout, 0, 0)).toBe(emptyLayout);
+  });
+
+  test("the tabs themselves are carried by reference, titles and focus intact", () => {
+    const before = layout([tab(terminal("a")), { ...tab(terminal("b")), title: "logs" }]);
+
+    const after = moveTab(before, 1, 0);
+
+    expect(after.tabs[0]).toBe(before.tabs[1]);
+    expect(after.tabs[0]?.title).toBe("logs");
+  });
+});
 
 describe("repairLayout", () => {
   test("drops panes naming absent terminals, and the tabs left with none", () => {

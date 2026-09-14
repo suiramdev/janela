@@ -201,6 +201,8 @@ export interface FakeWorktrees {
     readonly repository: AbsolutePath;
     readonly force: boolean;
   }[];
+  /** Every `checkoutBranch`, so a path that must run none can prove it. */
+  readonly checkedOut: readonly { readonly repository: AbsolutePath; readonly branch: string }[];
   /** git's view, which the fake grows as worktrees are created. */
   readonly listed: readonly GitWorktree[];
 }
@@ -217,6 +219,8 @@ export function fakeWorktrees(options?: {
   readonly failCreate?: Error;
   readonly safety?: Partial<WorktreeRemovalSafety>;
   readonly events?: EventLog;
+  /** What `branches()` answers. Empty unless a test cares. */
+  readonly branches?: readonly string[];
 }): FakeWorktrees {
   const listed: GitWorktree[] = [...(options?.listed ?? [])];
   const created: {
@@ -226,11 +230,21 @@ export function fakeWorktrees(options?: {
     startPoint?: string;
   }[] = [];
   const removed: { directory: AbsolutePath; repository: AbsolutePath; force: boolean }[] = [];
+  const checkedOut: { repository: AbsolutePath; branch: string }[] = [];
 
   return {
     worktrees: {
       async worktrees(): Promise<readonly GitWorktree[]> {
         return listed;
+      },
+
+      async branches(): Promise<readonly string[]> {
+        return options?.branches ?? [];
+      },
+
+      async checkoutBranch(repository, branch): Promise<void> {
+        options?.events?.record("worktree.checkout");
+        checkedOut.push({ repository, branch });
       },
 
       async createWorktree(request): Promise<GitWorktree> {
@@ -275,6 +289,7 @@ export function fakeWorktrees(options?: {
     },
     created,
     removed,
+    checkedOut,
     listed,
   };
 }

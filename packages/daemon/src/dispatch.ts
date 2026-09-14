@@ -8,6 +8,7 @@ import type {
 } from "@janela/core";
 import {
   FrameError,
+  serializeBranchOverview,
   serializeRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -227,6 +228,25 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
         return { type: "text", id, text: serializeRemovalPlan(plan) };
       }
 
+      case "projectBranches": {
+        // The brain's overview is structurally the wire type and wider than it;
+        // `serializeBranchOverview` takes exactly the wire fields, the same
+        // relationship `serializeRemovalPlan` has with `SessionRemovalPlan`.
+        const overview = await sessions.branchOverview(message.projectID);
+        return { type: "text", id, text: serializeBranchOverview(overview) };
+      }
+
+      case "moveTab": {
+        const { from, to } = message;
+        // Both are typed `number` and neither was validated: the decoder checked
+        // the discriminant and stopped, and these reach the layout algebra.
+        if (!isTabIndex(from) || !isTabIndex(to)) {
+          throw new TypeError("moveTab with an impossible tab index");
+        }
+        await sessions.moveTab(message.sessionID, from, to);
+        return { type: "acknowledged", id };
+      }
+
       case "removeSession": {
         // Recomputed here rather than taken from the client: a plan the peer held
         // may describe a session that has since gained a terminal or lost its
@@ -416,6 +436,19 @@ function isGridSize(size: unknown): size is GridSize {
     columns >= 1 &&
     rows >= 1
   );
+}
+
+/**
+ * A position in a session's tab list. Same reason as `isGridSize`: the decoder
+ * checked the discriminant and nothing else, and this reaches `moveTab`.
+ *
+ * A number outside this is a client bug rather than a request with no answer —
+ * `moveTab` treats an index past the end as a move that changes nothing, and
+ * silently acknowledging `"2"` or `1.5` would hide the bug instead. The upper
+ * bound is the layout's business: only the brain knows how many tabs there are.
+ */
+function isTabIndex(value: number): boolean {
+  return Number.isInteger(value) && value >= 0;
 }
 
 /**

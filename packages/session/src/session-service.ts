@@ -19,6 +19,7 @@ import {
   closeTerminal,
   emptyLayout,
   isLive,
+  moveTab as moveLayoutTab,
   newSessionID,
   newTerminalID,
   now,
@@ -92,6 +93,34 @@ export interface SessionService {
    * disconnect mid-flight without changing the outcome.
    */
   createSession(request: SessionCreationRequest): Promise<Session>;
+
+  /**
+   * What a client needs to offer "which branch, and where": the project's local
+   * branches, plus every checkout of its repository — so the dialog can offer
+   * checking a branch out in the project's own directory, adopting the worktree
+   * that already holds it, or creating a new one.
+   *
+   * One question rather than three, because the three placements are answered
+   * by the same two lists and a client that asked separately could show a
+   * branch as free while another window checked it out.
+   *
+   * @throws {UnknownProject} @throws {WorktreesUnsupported} for a project that
+   *   is not a repository: "no branches" and "not a repository" are different
+   *   things to tell a person, and an empty list says the wrong one.
+   */
+  branchOverview(projectID: ProjectID): Promise<ProjectBranchOverview>;
+
+  /**
+   * Reorders a session's tabs: the tab at `from` moves to index `to`.
+   *
+   * Here rather than in the client because tab order lives in `SessionLayout`,
+   * which the daemon owns — a client that rearranged its mirror would lose the
+   * drag on the next state snapshot. Persisted and announced exactly as a split
+   * is. A move that changes nothing persists nothing.
+   *
+   * @throws {UnknownSession}
+   */
+  moveTab(sessionID: SessionID, from: number, to: number): Promise<void>;
 
   /** Checks what would be lost, so a client can describe it before asking. */
   removalPlan(id: SessionID): Promise<SessionRemovalPlan>;
@@ -169,6 +198,33 @@ export interface NewTerminalOptions {
   };
 }
 
+/** One checkout of a project's repository. Reduced from git's `GitWorktree`. */
+export interface ProjectBranchWorktree {
+  readonly directory: AbsolutePath;
+  /** Absent when detached. */
+  readonly branch?: string;
+  /** The repository's own checkout, as opposed to a linked worktree. */
+  readonly isMain: boolean;
+}
+
+/**
+ * The project's branches and the checkouts that exist, as one answer.
+ *
+ * Shaped like `BranchOverview` on the wire without importing it: the brain does
+ * not depend on the protocol, exactly as `SessionCreationRequest` mirrors
+ * `SessionCreationIntent` and `SessionRemovalPlan` mirrors
+ * `SessionRemovalPreview`. The wire shape is frozen by the protocol version and
+ * this one is free to grow a field.
+ *
+ * Both lists rather than a branch-to-worktree map: a worktree may be detached
+ * and name no branch, and a branch may be checked out nowhere. A map would have
+ * to invent a key for the first and lose the second.
+ */
+export interface ProjectBranchOverview {
+  readonly branches: readonly string[];
+  readonly worktrees: readonly ProjectBranchWorktree[];
+}
+
 /**
  * How the user asked for a session to come into being.
  *
@@ -178,8 +234,20 @@ export interface NewTerminalOptions {
 export type SessionCreationRequest =
   /** "Just give me a terminal in this folder." No project, no git, no ceremony. */
   | { readonly kind: "standalone"; readonly directory: AbsolutePath; readonly name?: string }
-  /** A simple session running in the project's own directory. */
-  | { readonly kind: "inProject"; readonly projectID: ProjectID; readonly name?: string }
+  /**
+   * A simple session running in the project's own directory.
+   *
+   * `branch` moves that directory onto the branch first — "work on this branch,
+   * in place", the third answer to the dialog `branchOverview` feeds, next to
+   * adopting a worktree and creating one. A checkout git refuses creates no
+   * session, because the alternative is a session on a branch it does not name.
+   */
+  | {
+      readonly kind: "inProject";
+      readonly projectID: ProjectID;
+      readonly branch?: string;
+      readonly name?: string;
+    }
   /**
    * "Give me a new branch to work on." Creates a worktree behind the scenes, placed
    * according to the project's `worktreeRoot` unless told otherwise.
@@ -310,6 +378,13 @@ interface ResolvedRequest {
   readonly backing: Backing;
   /** Set only when a worktree still has to be created. */
   readonly worktreePlan?: { readonly branch: string; readonly startPoint?: string };
+  /**
+   * Set only when the project's own directory must be moved onto a branch
+   * first. Carried out of `resolve` rather than done there, so resolution stays
+   * a read: the checkout is the one step that changes the user's checkout, and
+   * it runs where the ordering is visible.
+   */
+  readonly checkoutBranch?: string;
 }
 
 class BrainSessionService implements SessionService, ProjectRemovalObserving {
@@ -348,6 +423,14 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   async createSession(request: SessionCreationRequest): Promise<Session> {
     const resolved = await this.resolve(request);
+
+    if (resolved.checkoutBranch !== undefined && resolved.project !== undefined) {
+      // Before the record exists, and before anything is announced: a checkout
+      // git refuses must leave no session behind, and `GitFailure` already says
+      // which subcommand refused and why. This moves the *user's own* checkout,
+      // which is why nothing else in creation runs first.
+      await this.deps.worktrees.checkoutBranch(resolved.project.directory, resolved.checkoutBranch);
+    }
 
     const created = now();
     const session: Session = {
@@ -397,6 +480,52 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       backing: session.backing.kind,
     });
     return session;
+  }
+
+  async branchOverview(projectID: ProjectID): Promise<ProjectBranchOverview> {
+    const project = this.requireProject(projectID);
+    if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+
+    // Both reads at once: they are independent, and the dialog waits on the
+    // slower of the two rather than their sum.
+    const [branches, listed] = await Promise.all([
+      this.deps.worktrees.branches(project.directory),
+      this.deps.worktrees.worktrees(project.directory),
+    ]);
+
+    return {
+      branches,
+      worktrees: listed
+        // git lists the main worktree first, then each linked one. Taken from
+        // the order rather than by comparing paths to the project's directory,
+        // because a project may itself have been added at a linked worktree —
+        // and then a path comparison would call that one main.
+        .map((entry, index) => ({ entry, isMain: index === 0 }))
+        // A bare repository has no working directory a session could run in, so
+        // it is not a placement the dialog may offer. Filtered after the index
+        // is taken, so a bare main worktree does not promote a linked one.
+        .filter(({ entry }) => !entry.isBare)
+        .map(({ entry, isMain }) => ({
+          directory: entry.path,
+          ...(entry.branch === undefined ? {} : { branch: entry.branch }),
+          isMain,
+        })),
+    };
+  }
+
+  async moveTab(sessionID: SessionID, from: number, to: number): Promise<void> {
+    const session = this.find(sessionID);
+    if (session === undefined) throw new UnknownSession(sessionID);
+
+    const layout = moveLayoutTab(session.layout, from, to);
+    // Identity is `moveTab`'s answer for a move that changes nothing, including
+    // an index off the end: no write, and no announcement to make every other
+    // client re-render the order it already has.
+    if (layout === session.layout) return;
+
+    session.layout = layout;
+    await this.deps.repository.save(session);
+    await this.publish();
   }
 
   async removalPlan(id: SessionID): Promise<SessionRemovalPlan> {
@@ -651,11 +780,21 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
       case "inProject": {
         const project = this.requireProject(request.projectID);
+        // A folder project has no branch to check out, and running git against
+        // a directory that is not a repository would report git's confusion
+        // instead of ours.
+        if (request.branch !== undefined && !supportsWorktrees(project)) {
+          throw new WorktreesUnsupported(project.id);
+        }
+
         return {
           project,
-          name: request.name ?? project.name,
+          // The branch, when there is one: it is what the user picked and what
+          // they will look for in the sidebar. The project's name otherwise.
+          name: request.name ?? request.branch ?? project.name,
           directory: project.directory,
           backing: { kind: "projectDirectory" },
+          ...(request.branch === undefined ? {} : { checkoutBranch: request.branch }),
         };
       }
 

@@ -69,6 +69,12 @@ const refusingWorktrees: WorktreeServing = {
   worktrees: () => {
     throw new Error("git must not run here");
   },
+  branches: () => {
+    throw new Error("git must not run here");
+  },
+  checkoutBranch: () => {
+    throw new Error("git must not run here");
+  },
   createWorktree: () => {
     throw new Error("git must not run here");
   },
@@ -277,6 +283,8 @@ describe("createSession", () => {
       expect(session.name).toBe("janela");
       expect(fixture.automation.runs.map((run) => run.event)).toEqual(["sessionStart"]);
       expect(fixture.worktrees.created).toEqual([]);
+      // No branch named, so the user's own checkout is left exactly where it is.
+      expect(fixture.worktrees.checkedOut).toEqual([]);
     });
   });
 
@@ -1154,6 +1162,79 @@ describe("removeTerminal", () => {
       const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
       expect(await rejection(fixture.sessions.removeTerminal(unknown))).toBeInstanceOf(
         UnknownTerminal,
+      );
+    });
+  });
+});
+
+/** A session with three tabs, one terminal each, in creation order. */
+const threeTabSession = async (fixture: Fixture): Promise<SessionID> => {
+  const session = await fixture.sessions.createSession({
+    kind: "inProject",
+    projectID: fixture.project.id,
+  });
+  await fixture.sessions.createTerminal(session.id);
+  await fixture.sessions.createTerminal(session.id);
+  return session.id;
+};
+
+/** The persisted tab order, as terminal ids. */
+const storedTabOrder = async (fixture: Fixture, id: SessionID): Promise<readonly TerminalID[]> => {
+  const stored = await fixture.database.sessions.find(id);
+  return (stored?.layout.tabs ?? []).map((tab) => tab.focusedTerminalID);
+};
+
+describe("moveTab", () => {
+  test("persists the new order, so a later read of the session shows it", async () => {
+    await withSessions({}, async (fixture) => {
+      const id = await threeTabSession(fixture);
+      const before = await storedTabOrder(fixture, id);
+
+      await fixture.sessions.moveTab(id, 0, 2);
+
+      const after = await storedTabOrder(fixture, id);
+      // Rotated left by one: the first tab went to the end and the rest closed up.
+      expect(after).toEqual([...before.slice(1), ...before.slice(0, 1)]);
+      // Tab order is part of the layout the daemon owns, so the in-memory
+      // session and the row agree.
+      expect(fixture.sessions.find(id)?.layout.tabs.map((tab) => tab.focusedTerminalID)).toEqual([
+        ...after,
+      ]);
+    });
+  });
+
+  test("announces the move, because every client mirrors the order", async () => {
+    await withSessions({}, async (fixture) => {
+      const id = await threeTabSession(fixture);
+      const announcements = fixture.observer.sessionCalls.length;
+
+      await fixture.sessions.moveTab(id, 2, 0);
+
+      expect(fixture.observer.sessionCalls.length).toBe(announcements + 1);
+    });
+  });
+
+  test("a move that changes nothing writes nothing and announces nothing", async () => {
+    await withSessions({}, async (fixture) => {
+      const id = await threeTabSession(fixture);
+      const before = await storedTabOrder(fixture, id);
+      const announcements = fixture.observer.sessionCalls.length;
+
+      await fixture.sessions.moveTab(id, 1, 1);
+      await fixture.sessions.moveTab(id, 0, 9);
+      await fixture.sessions.moveTab(id, -1, 0);
+
+      expect(await storedTabOrder(fixture, id)).toEqual(before);
+      expect(fixture.observer.sessionCalls.length).toBe(announcements);
+    });
+  });
+
+  test("an unknown session is an error, not a silent no-op", async () => {
+    await withSessions({}, async (fixture) => {
+      const unknown = "00000000-0000-4000-8000-000000000000" as SessionID;
+
+      expect(await rejection(fixture.sessions.moveTab(unknown, 0, 1))).toBeInstanceOf(
+        UnknownSession,
       );
     });
   });

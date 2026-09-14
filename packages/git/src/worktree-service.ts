@@ -21,13 +21,44 @@ export interface GitWorktree {
 }
 
 /**
- * Everything Janela does with worktrees. Note how small it is: create, list,
- * remove, and check whether removal is safe. Anything more elaborate belongs in
- * the user's own git, not in this app.
+ * Everything Janela does with git. Note how small it is: list branches and
+ * worktrees, create a worktree, check out a branch, remove a worktree, and
+ * check whether removal is safe. Anything more elaborate belongs in the user's
+ * own git, not in this app.
+ *
+ * The two branch operations are here rather than behind a `GitRunning` the brain
+ * holds, because this package's rule is that a raw git command string never
+ * leaves it — and because "which branch, and where" is one question the client
+ * asks, answered by one seam.
  */
 export interface WorktreeServing {
   /** `git worktree list --porcelain -z` for a repository. */
   worktrees(repository: AbsolutePath): Promise<readonly GitWorktree[]>;
+
+  /**
+   * Local branch names, in git's order.
+   *
+   * Short names — what the user typed, and what `createWorktree` and
+   * `checkoutBranch` take. `refs/heads` only: a remote-tracking ref is not
+   * something the user can check out, and offering one would produce a detached
+   * HEAD they did not ask for.
+   */
+  branches(repository: AbsolutePath): Promise<readonly string[]>;
+
+  /**
+   * `git checkout <branch>` in the repository's own directory.
+   *
+   * Never `-b`: a branch that does not exist is git's error to report, because
+   * creating the name the user typed answers a different question. A branch
+   * already checked out here is a no-op that succeeds; one checked out in a
+   * linked worktree is refused by git, and that refusal is the answer — the
+   * user wanted the "adopt" or "new worktree" choice instead.
+   *
+   * @throws {GitFailure} with git's own reason, which is more useful than
+   *   anything we could add: uncommitted changes that would be overwritten,
+   *   a branch held by another worktree, or no such branch.
+   */
+  checkoutBranch(repository: AbsolutePath, branch: string): Promise<void>;
 
   /**
    * Creates a worktree. `branch` is created if it does not exist, checked out if
@@ -208,6 +239,26 @@ export function worktreeService(git: GitRunning): WorktreeServing {
 
   return {
     worktrees,
+
+    async branches(repository: AbsolutePath): Promise<readonly string[]> {
+      // `%(refname:short)` rather than trimming `refs/heads/` ourselves, and
+      // `refs/heads` rather than `--branches`, so nothing remote-tracking or
+      // tag-shaped can arrive. Newlines are impossible in a ref name, so
+      // line-splitting is safe here in a way it is not for worktree paths.
+      const output = await git.run(
+        ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        repository,
+      );
+      return output.split("\n").filter((line) => line !== "");
+    },
+
+    async checkoutBranch(repository: AbsolutePath, branch: string): Promise<void> {
+      // Never `-b`, and no pathspec: `checkout <branch>` is the whole command,
+      // and git's refusal for a name that does not exist is the answer we want.
+      // git itself rejects a ref name beginning with `-`, so there is nothing
+      // for an option terminator to protect against.
+      await git.run(["checkout", branch], repository);
+    },
 
     async createWorktree({ repository, directory, branch, startPoint }): Promise<GitWorktree> {
       const start = startPoint === undefined ? [] : [startPoint];

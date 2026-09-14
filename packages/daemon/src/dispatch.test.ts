@@ -15,6 +15,7 @@ import {
   decodeDaemonMessage,
   encodeClientMessage,
   encodeInput,
+  parseBranchOverview,
   parseRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -25,7 +26,9 @@ import {
 import type {
   LaunchProfileService,
   NewTerminalOptions,
+  ProjectBranchOverview,
   ProjectService,
+  SessionCreationRequest,
   SessionRemovalPlan,
   SessionService,
 } from "@janela/session";
@@ -656,6 +659,161 @@ describe("sessions", () => {
       },
     });
     expect(everythingSaid(peer, daemon.records)).not.toContain(STDERR);
+  });
+
+  test("a branch overview round-trips as text", async () => {
+    const asked: Project["id"][] = [];
+    const overview: ProjectBranchOverview = {
+      branches: ["main", "feat/pty"],
+      worktrees: [
+        { directory: "/Users/x/code/janela" as Session["directory"], branch: "main", isMain: true },
+        {
+          directory: "/Users/x/code/.worktrees/feat-pty" as Session["directory"],
+          branch: "feat/pty",
+          isMain: false,
+        },
+        { directory: "/Users/x/code/.worktrees/spike" as Session["directory"], isMain: false },
+      ],
+    };
+    const daemon = fixture({
+      sessionOverrides: {
+        branchOverview: (id) => {
+          asked.push(id);
+          return Promise.resolve(overview);
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    const projectID = "p1" as Project["id"];
+
+    await peer.send(request({ type: "projectBranches", id: 1 as RequestID, projectID }));
+    const reply = await peer.reply(1 as RequestID);
+
+    if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+    // Through the same serialize/parse pair a client uses, so the detached
+    // worktree's absent branch survives the trip.
+    expect(parseBranchOverview(reply.text)).toEqual(overview);
+    expect(asked).toEqual([projectID]);
+  });
+
+  test("a project with no git is refused, not answered with an empty overview", async () => {
+    class NoGit extends UserFacingError {
+      override readonly summary = "This project isn't a git repository.";
+    }
+    const daemon = fixture({
+      sessionOverrides: { branchOverview: () => Promise.reject(new NoGit("not a repository")) },
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "projectBranches",
+        id: 1 as RequestID,
+        projectID: "p1" as Project["id"],
+      }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({
+      type: "failed",
+      id: 1 as RequestID,
+      failure: { summary: "This project isn't a git repository." },
+    });
+  });
+
+  test("moveTab reaches the brain and is acknowledged", async () => {
+    const moves: { id: SessionID; from: number; to: number }[] = [];
+    const daemon = fixture({
+      sessionOverrides: {
+        moveTab: (id, from, to) => {
+          moves.push({ id, from, to });
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    const sessionID = "s1" as SessionID;
+
+    await peer.send(request({ type: "moveTab", id: 1 as RequestID, sessionID, from: 2, to: 0 }));
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(moves).toEqual([{ id: sessionID, from: 2, to: 0 }]);
+  });
+
+  test("an impossible tab index is refused, and the brain is not called", async () => {
+    const moves: number[] = [];
+    const daemon = fixture({
+      sessionOverrides: {
+        moveTab: () => {
+          moves.push(1);
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    // The wire has no type system: each of these is typed `number` and reaches
+    // the layout algebra if nobody looks.
+    const impossible: readonly { readonly from: unknown; readonly to: unknown }[] = [
+      { from: "0", to: 1 },
+      { from: 0, to: null },
+      { from: -1, to: 0 },
+      { from: 0, to: 1.5 },
+      { from: Number.NaN, to: 0 },
+    ];
+
+    for (const [index, indices] of impossible.entries()) {
+      const id = (index + 1) as RequestID;
+      // oxlint-disable-next-line no-await-in-loop
+      await peer.send(
+        encodeClientMessage({
+          type: "moveTab",
+          id,
+          sessionID: "s1" as SessionID,
+          ...indices,
+        } as unknown as ClientMessage),
+      );
+      // oxlint-disable-next-line no-await-in-loop
+      expect((await peer.reply(id)).type).toBe("failed");
+    }
+    expect(moves).toEqual([]);
+  });
+
+  test("an inProject intent carries its branch to the brain, and omits it when absent", async () => {
+    const intents: SessionCreationRequest[] = [];
+    const daemon = fixture({
+      sessionOverrides: {
+        createSession: (received) => {
+          intents.push(received);
+          return Promise.resolve(fakeSession("s1"));
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    const projectID = "p1" as Project["id"];
+
+    await peer.send(
+      request({
+        type: "createSession",
+        id: 1 as RequestID,
+        intent: { kind: "inProject", projectID, branch: "feat/pty" },
+      }),
+    );
+    await peer.reply(1 as RequestID);
+    await peer.send(
+      request({
+        type: "createSession",
+        id: 2 as RequestID,
+        intent: { kind: "inProject", projectID },
+      }),
+    );
+    await peer.reply(2 as RequestID);
+
+    // `exactOptionalPropertyTypes`: the second request must carry no `branch`
+    // key at all, because `{ branch: undefined }` is a different request.
+    expect(intents).toEqual([
+      { kind: "inProject", projectID, branch: "feat/pty" },
+      { kind: "inProject", projectID },
+    ]);
+    expect(Object.hasOwn(intents[1] ?? {}, "branch")).toBe(false);
   });
 });
 

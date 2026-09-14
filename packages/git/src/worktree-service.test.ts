@@ -358,3 +358,76 @@ describe("removeWorktree", () => {
     await expect(stat(directory)).rejects.toThrow();
   });
 });
+
+describe("branches", () => {
+  test("lists every local branch, and no remote-tracking or tag ref", async () => {
+    await using world = await setup("wt-branches");
+    await world.git("branch", "feat/a");
+    await world.git("branch", "feat/b");
+    await world.git("tag", "v1");
+    await withOrigin(world);
+
+    const listed = await world.service.branches(world.repository);
+
+    // Short names, as `createWorktree` and `checkoutBranch` take them, and in
+    // git's own order — which for `refs/heads` is lexicographic.
+    expect(listed).toEqual(["feat/a", "feat/b", "main"]);
+  });
+
+  test("a detached HEAD does not hide the branches", async () => {
+    await using world = await setup("wt-branches-detached");
+    await world.git("branch", "feat/c");
+    await world.git("checkout", "-q", "--detach", "HEAD");
+
+    // The dialog this feeds is exactly what a user with a detached checkout
+    // needs, so "no current branch" must not mean "no branches".
+    expect(await world.service.branches(world.repository)).toEqual(["feat/c", "main"]);
+  });
+});
+
+describe("checkoutBranch", () => {
+  test("moves the repository's own checkout onto an existing branch", async () => {
+    await using world = await setup("wt-checkout");
+    await world.git("branch", "feat/target");
+
+    await world.service.checkoutBranch(world.repository, "feat/target");
+
+    expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("feat/target");
+  });
+
+  test("checking out the branch already checked out is a no-op that succeeds", async () => {
+    await using world = await setup("wt-checkout-same");
+
+    await world.service.checkoutBranch(world.repository, "main");
+
+    expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
+  });
+
+  test("a branch that does not exist is git's failure, not an invented branch", async () => {
+    await using world = await setup("wt-checkout-missing");
+
+    await expect(
+      world.service.checkoutBranch(world.repository, "feat/absent"),
+    ).rejects.toBeInstanceOf(GitFailure);
+    // Never `checkout -b`: creating what the user named would answer a
+    // different question.
+    expect(await world.service.branches(world.repository)).toEqual(["main"]);
+    expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
+  });
+
+  test("a branch checked out in a linked worktree is refused rather than stolen", async () => {
+    await using world = await setup("wt-checkout-elsewhere");
+    await world.service.createWorktree({
+      repository: world.repository,
+      directory: world.scratch("held"),
+      branch: "feat/held",
+    });
+
+    // git refuses, and that refusal is the user's answer: the "new worktree" or
+    // "adopt" choice in the dialog is what they wanted.
+    await expect(
+      world.service.checkoutBranch(world.repository, "feat/held"),
+    ).rejects.toBeInstanceOf(GitFailure);
+    expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
+  });
+});

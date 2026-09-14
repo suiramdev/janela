@@ -31,11 +31,12 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("the negotiated grid on the wire is a wire change: version 5", () => {
-    expect(PROTOCOL_VERSION).toBe(5);
-    // Equal, not merely ordered: a v4 peer drops the size announcement and
-    // renders the wrong geometry in silence, so the ranges must not overlap.
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(5);
+  test("the branch overview and tab reordering are a wire change: version 6", () => {
+    expect(PROTOCOL_VERSION).toBe(6);
+    // Equal, not merely ordered: a v5 peer's control decoder rejects an unknown
+    // message type and its read loop closes the connection, so the ranges must
+    // not overlap — a refusal a person can read beats a socket that drops.
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(6);
   });
 });
 

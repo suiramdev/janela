@@ -387,6 +387,42 @@ export function focusNeighbour(
 }
 
 /**
+ * Moves the tab at `from` to index `to`, as dragging it there would.
+ *
+ * `focusedTabIndex` keeps naming the tab it named before the move — the moved
+ * one when it was focused, and the same tab at its new index when it was not.
+ * Reordering tabs is not switching tab.
+ *
+ * Returns the layout unchanged, and by reference, when the move would change
+ * nothing: `from === to`, or either index outside `0..tabs.length - 1`. Identity
+ * is part of the contract rather than an optimisation — it is how the daemon
+ * decides a drag that ended where it started needs no write.
+ */
+export function moveTab(layout: SessionLayout, from: number, to: number): SessionLayout {
+  const last = layout.tabs.length - 1;
+  const inRange = (index: number): boolean =>
+    Number.isInteger(index) && index >= 0 && index <= last;
+  if (from === to || !inRange(from) || !inRange(to)) return layout;
+
+  const tabs = [...layout.tabs];
+  const [moved] = tabs.splice(from, 1);
+  if (moved === undefined) return layout;
+  tabs.splice(to, 0, moved);
+
+  // The focused tab's new index, derived the same way: removed from `from`, then
+  // reinserted at `to`. Tracking the tab rather than the number is what keeps a
+  // drag of some *other* tab from switching the user's view.
+  let focusedTabIndex = layout.focusedTabIndex;
+  if (focusedTabIndex === from) focusedTabIndex = to;
+  else {
+    if (focusedTabIndex > from) focusedTabIndex -= 1;
+    if (focusedTabIndex >= to) focusedTabIndex += 1;
+  }
+
+  return { tabs, focusedTabIndex };
+}
+
+/**
  * Sets the fraction of the split whose direct child is the pane holding
  * `terminal`, clamped to `FRACTION_RANGE` — a non-finite fraction becomes a half.
  *

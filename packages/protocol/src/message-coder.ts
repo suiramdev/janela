@@ -43,6 +43,8 @@ const CLIENT_MESSAGE_TYPES = {
   createSession: true,
   removeSession: true,
   removalPlan: true,
+  projectBranches: true,
+  moveTab: true,
   renameSession: true,
   attach: true,
   detach: true,

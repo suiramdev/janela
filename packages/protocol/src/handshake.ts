@@ -62,27 +62,36 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    because it belongs to the same ordered stream as the bytes it describes —
  *    a size arriving out of band would paint one geometry's screen into
  *    another's grid.
+ * 6  `projectBranches` and `moveTab` join `ClientMessage`, and
+ *    `SessionCreationIntent`'s `inProject` case gains an optional `branch` to
+ *    check out in the project's own directory. A "new session" dialog can then
+ *    offer a branch and a place to put it, and a tab drag survives the next
+ *    state snapshot because the daemon owns the order.
  * ```
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * Oldest version we still accept.
  *
- * Also 5, because the v5 change degrades *silently*, which is the worst way. A
- * v4 peer parses `CSI 8 ; rows ; cols t` and drops it — measured against
- * `@xterm/xterm` 6.0.0, whose `windowOptions` switch has no case for parameter
- * 8 — so it would render a 127-column screen into a 40-column PTY's geometry:
- * lines wrapping at the wrong width, nothing letterboxed, and no error anywhere
- * to say so. A refusal a person can read beats a screen that is quietly wrong.
- * A v4 peer's `hello` is answered with `refused` / `incompatibleVersion`
- * carrying this range, the daemon keeps running and no terminal is touched; a v5
- * client meeting a v4 daemon refuses on its own side and tells the skew story —
- * "the background service is older", whose only button is "Restart the background
- * service" — rather than reporting a handshake failure. Nothing after `hello` is
- * decoded from a refused peer.
+ * Also 6, because a v5 peer does not degrade — it *disconnects*. Its
+ * `decodeClientMessage` matches the discriminant against an exhaustive table
+ * (`CLIENT_MESSAGE_TYPES` in message-coder.ts) and throws `malformedControl`
+ * for anything absent from it, and the daemon's read loop turns that into a
+ * closed connection rather than a `failed` reply: the strictness is deliberate,
+ * because it is what keeps terminal traffic out of the control path. So a v6
+ * client meeting a v5 daemon would lose its connection the moment a user opened
+ * the new-session dialog, with no reply to correlate and no explanation. A
+ * refusal a person can read beats a socket that drops on a menu click.
+ *
+ * As at v5: a v5 peer's `hello` is answered with `refused` /
+ * `incompatibleVersion` carrying this range, the daemon keeps running and no
+ * terminal is touched; a v6 client meeting a v5 daemon refuses on its own side
+ * and tells the skew story — "the background service is older", whose only
+ * button is "Restart the background service" — rather than reporting a
+ * handshake failure. Nothing after `hello` is decoded from a refused peer.
  */
-export const MINIMUM_SUPPORTED_VERSION = 5;
+export const MINIMUM_SUPPORTED_VERSION = 6;
 
 /**
  * Whether the two version ranges overlap: each side's current version must be at
