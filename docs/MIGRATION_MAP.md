@@ -56,7 +56,7 @@ reasoning and the seam were carried across* — not that a body was translated.
 | `TerminalDescriptor`, `TerminalRole`, `TerminalState` | unchanged | |
 | `SessionLayout`, `.Tab`, `.Pane`, `.Axis` | `SessionLayout`, `LayoutTab`, `Pane`, `Axis` | Flattened out of the namespace |
 | `Pane.maximumDepth`, `.fractionRange` | `MAXIMUM_PANE_DEPTH`, `FRACTION_RANGE` | |
-| `LaunchProfile` | `LaunchProfile` | `symbolName` → `iconName`: SF Symbols are not available to a WebView, so it names a Lucide icon. Presentational either way, and an unknown name falls back rather than rendering nothing |
+| `LaunchProfile` | `LaunchProfile` | `symbolName` → `iconName`: SF Symbols are not available to a WebView, so it is a key `@janela/ui` maps to a Hugeicons glyph. Presentational either way, and an unknown name falls back rather than rendering nothing |
 | `LaunchProfile.builtIns` | `BUILT_IN_PROFILES` | Now `Omit<LaunchProfile, "id">`: ids are assigned at seed time, because a hardcoded id would collide with a user's own copy |
 | `GridSize` | `GridSize` | Was in `JanelaProtocol`; moved to `@janela/core`, where the other domain values live |
 
@@ -124,7 +124,7 @@ reasoning and the seam were carried across* — not that a body was translated.
 | `TerminalRendering` | `TerminalRendering` | |
 | `MainWindow`, `Sidebar`, `SessionDetail`, `ConnectionBanner` | unchanged | SwiftUI views → React components |
 | `JanelaCommands` (SwiftUI `Commands`) | `COMMANDS` table in `@janela/ui` | Data, not a view: the native menu bar is built from it in the Rust shell, so the menu and the in-app palette cannot drift apart |
-| `SettingsWindow` | *(not yet carried)* | Four tabs of `EmptyView`. Nothing was lost; a settings surface is a UI worker's task |
+| `SettingsWindow` | `SettingsScreen` in `@janela/ui` | Not a window: a screen that replaces the workspace, with the tabs in the sidebar and Back where Settings was |
 | `JanelaMain`, `AppEnvironment`, `PlaceholderTransport` | `apps/desktop/src/environment.ts`, `transport.ts` | `PlaceholderTransport` is gone: the real transport is a bridge to the Rust shell, and a placeholder that silently drops frames is worse than a connection that reports itself down |
 | `JanelaAppMain.swift` | `apps/desktop/src/main.tsx` + `src-tauri/src/main.rs` | |
 
@@ -177,11 +177,29 @@ adapter, the automation runner, the frame loop, the Tauri IPC transport, the Rus
 shell's window/menu/bridge/sidecar, and `@janela/forge`'s CLI reader — the forge
 package was planned and empty in Swift, so there was nothing to carry across.
 
-One planned seam was **retired rather than built**: a closed set of reusable controls
-in `@janela/design`. Every screen built its markup over the tokens instead, and the
-controls that emerged (`TextField`, `NumberField`, `SwitchField`, `Violations`,
-`Section`) turned out to be Janela-specific, so they live in `@janela/ui`.
-`@janela/design` is a token package, and its doc comment says so.
+One planned seam was retired, and then **filled from a registry instead of
+written**: a closed set of reusable controls in `@janela/design`. The controls that
+emerged while screens were built over bare tokens (`TextField`, `NumberField`,
+`SwitchField`, `Violations`, `Section`) are Janela's labelled-field compositions
+and still live in `@janela/ui` — but they are now compositions of `Field`, `Input`
+and `Switch`, not markup of their own, and the inline-style module they used to
+draw with (`packages/ui/src/styles.ts`) is gone. Every view composes registry
+primitives: `Dialog` for the sheets, `Sidebar` for both the workspace and the
+settings screen, `Tabs` for the terminal strip, `Item`/`Badge`/`Kbd` for the lists,
+`NativeSelect` for pickers,
+`Alert` for the in-place confirmations and the version-skew banner, `Empty` for
+every empty state.
+
+What `@janela/design` holds now is **vendored**: shadcn/ui's `base-mira` set — the
+Base UI variant, with Hugeicons — installed with `bunx shadcn@latest add`, plus Dither Kit's
+generated avatar. That is not the same decision reversed: the objection was to
+*writing* ten controls no screen asked for, and none of these were written here.
+Documented edits are applied on the way in, and the reasons are in
+`packages/design/src/index.ts` — the load-bearing one being that
+`SidebarProvider`'s shortcut is `⌘B` only, because the registry's `Ctrl-B` is
+tmux's prefix. One registry component is deliberately absent: `command`, whose
+`cmdk` dependency would bring Radix in beside Base UI and binds `Ctrl-n`/`Ctrl-p`;
+the find surfaces compose `InputGroup`, `Item` and `Kbd` around their own ranking.
 
 ### Seam 14 is the one that got harder, and it was given up
 

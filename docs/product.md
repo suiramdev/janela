@@ -282,8 +282,8 @@ A developer can:
 2. Press `⌘⇧B`, type a branch name, and be looking at a terminal in a fresh
    worktree seconds later — with their `.env` already in place and `pnpm install`
    already running, because the project said so.
-3. Press `⌘T`, pick "Claude Code", and have it running in the right directory with
-   their real `PATH`. Split the pane, start a dev server next to it.
+3. Press `⌘T` and have a shell in the right directory with their real `PATH`.
+   Split the pane, start `claude` in one half and a dev server in the other.
 4. Switch to another session instantly, and be told — in the sidebar, and in
    Notification Centre if Janela is not frontmost — when the first one wants
    attention.

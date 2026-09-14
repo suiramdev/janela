@@ -145,7 +145,14 @@ by accident.
 Each is checked, along with a table of **gated modules** — `bun:ffi` only in
 `@janela/pty`, `bun:sqlite` and `@prisma/client` only in `@janela/db`,
 `node:child_process` only in `@janela/support`, `@tauri-apps/*` only in the desktop
-app.
+app, and `@base-ui/react` plus `cn` only in `@janela/design`.
+
+The last pair is the newest, and it is rule 2 applied to a second library family:
+`@janela/design` names the primitive library, and everything above it composes what
+that package exports. A view that reaches for `@base-ui/react` directly is a view
+that has to be rewritten when the library does — and a second copy of `cn` is a
+second set of rules for resolving conflicting Tailwind utilities, with nothing to
+say which control used which.
 
 ---
 

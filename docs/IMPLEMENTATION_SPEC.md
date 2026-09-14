@@ -1335,7 +1335,7 @@ export const ACCENTS = [
 export type Accent = (typeof ACCENTS)[number];
 ```
 
-`iconName` names a Lucide icon resolved by `@janela/design`; the field is
+`iconName` is a stable key that `@janela/ui` maps to a Hugeicons glyph; the field is
 presentational, and a name the client does not recognise falls back to the
 terminal glyph rather than rendering nothing. An empty `command` means the
 user's login shell, resolved at launch by `@janela/session`. Ids for the
@@ -2372,6 +2372,13 @@ is unused over the local socket, where the operating system vouches for the
 peer, and is carried from v1 because adding a field to a shipped protocol is a
 breaking change and this one costs nothing.
 
+Code versus spec: the shipped constants are `PROTOCOL_VERSION = 6` and
+`MINIMUM_SUPPORTED_VERSION = 6`. They have moved together at every bump for
+the reason the paragraph above gives — a change is compatible or it is not —
+and `packages/protocol/src/handshake.ts` carries the numbered history of what
+each version added, plus what an older peer does when it meets a newer one.
+The code wins.
+
 #### Messages
 
 `ClientMessage` has 14 variants. `hello` and `resize` carry no `id`; the other
@@ -2440,6 +2447,17 @@ database, and nothing lets it start a process directly. Every capability is an
 intent the daemon validates. If the CLI cannot do it through `ClientMessage`,
 neither can the app. `startTerminal` exists because attaching starts nothing —
 otherwise opening a session would spawn processes.
+
+Code versus spec: the union above is the version-1 shape and the code has
+grown past it. `packages/protocol/src/message.ts` is authoritative; the
+additions, with the version each arrived in, are `removalPlan`,
+`saveLaunchProfile`, `removeLaunchProfile` and `createTerminal` (v3, which
+also made `attach.viewport` optional), `restartTerminal` and `removeTerminal`
+(v4), and `projectBranches` and `moveTab` (v6, which also gave
+`SessionCreationIntent`'s `inProject` case an optional `branch`). Twenty-two
+variants, of which `hello` and `resize` carry no `id`. The paragraph above
+still holds: none of them reads or writes the database, and `startTerminal` is
+still the only one that starts a process.
 
 `DaemonMessage` has 8 variants.
 
@@ -3133,8 +3151,8 @@ export const MOTION = { fast: 120, medium: 200 } as const;
    for a new token: used in at least two places, or it encodes a decision
    someone would otherwise get wrong. Everything else is a literal at the call
    site.
-3. **Icons are `lucide-react`**: the dependency is declared in
-   `packages/design/package.json`. An unknown `iconName` — the field
+3. **Icons are Hugeicons** (`@hugeicons/react` + `@hugeicons/core-free-icons`),
+   declared in `packages/design/package.json` and `packages/ui/package.json`. An unknown `iconName` — the field
    `LaunchProfile` carries — falls back to a default glyph rather than
    rendering nothing, because a profile row with an invisible icon looks like a
    layout bug.
@@ -3146,15 +3164,20 @@ export const MOTION = { fast: 120, medium: 200 } as const;
    the Reduce Motion setting `docs/product.md` § Principles 4 commits to. A
    component that animates unconditionally is a bug, not a flourish. `MOTION`
    carries the only two durations, in milliseconds: fast 120, medium 200.
-6. **The control set is closed**: `Button`, `IconButton`, `Sheet`,
-   `DisclosureGroup`, `StatusDot`, `Field`, `Segmented`, `ContextMenu`,
-   `Tooltip`, `EmptyState`, as shadcn/ui-derived components over the tokens
-   above. A design package that grows a component per screen has become the UI
-   package. Two rules for every one of them: keyboard-reachable with a visible
-   focus ring — anything reachable only by mouse is a feature we have
-   half-shipped — and **no `Ctrl`-based key handling anywhere**, because `Ctrl`
-   belongs to the program running in the terminal and a control that swallows it
-   breaks that program.
+6. **The control set is closed, and vendored rather than written**: the shadcn/ui
+   `base-nova` set — `Sidebar` and its parts, `ContextMenu`, `DropdownMenu`,
+   `Collapsible`, `Avatar`, `Button`, `Input`, `Separator`, `Sheet`, `Tooltip`,
+   `Skeleton` — installed with `bunx shadcn@latest add` over the tokens above,
+   plus Dither Kit's `DitherAvatar`, which generates a project's icon from its
+   directory. Closed means the export list in `packages/design/src/index.ts` is a
+   decision, not a dumping ground: a design package that grows a component per
+   screen has become the UI package. Two rules for every one of them:
+   keyboard-reachable with a visible focus ring — anything reachable only by mouse
+   is a feature we have half-shipped — and **no `Ctrl`-based key handling
+   anywhere**, because `Ctrl` belongs to the program running in the terminal and a
+   control that swallows it breaks that program. That second rule is the reason
+   the vendored `SidebarProvider` is edited: the registry's `⌘B`-or-`Ctrl-B`
+   shortcut becomes `⌘B` only, `Ctrl-B` being tmux's prefix.
 7. **`@janela/core` is deliberately absent from the dependencies**: the only
    first-party edge is `@janela/support` (`scripts/layers.ts`). It knows
    nothing about projects or sessions and could be lifted into another app; that
@@ -3362,8 +3385,8 @@ menu bar in `apps/desktop/src-tauri` is built from this table.
 | `previousSession`   | Previous Session     | `CmdOrCtrl+Shift+[`    |
 | `revealInFinder`    | Reveal in Finder     | —                      |
 | `openInTerminal`    | Open in Terminal     | —                      |
-| `splitRight`        | Split Right          | `CmdOrCtrl+D`          |
-| `splitDown`         | Split Down           | `CmdOrCtrl+Shift+D`    |
+| `splitRight`        | Split Vertically     | `CmdOrCtrl+D`          |
+| `splitDown`         | Split Horizontally   | `CmdOrCtrl+Shift+D`    |
 | `focusPaneLeft`     | Focus Pane Left      | `CmdOrCtrl+Alt+Left`   |
 | `focusPaneRight`    | Focus Pane Right     | `CmdOrCtrl+Alt+Right`  |
 | `focusPaneUp`       | Focus Pane Up        | `CmdOrCtrl+Alt+Up`     |
