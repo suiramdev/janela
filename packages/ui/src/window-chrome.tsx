@@ -86,12 +86,19 @@ export function WindowControlsRoom(): ReactElement | null {
  * it, the card is one object the tabs point at, which is also what makes a tab
  * plausible to drag somewhere else later.
  *
- * No height of its own: `p-1` around content that is one step of the size ladder
- * tall, which is the 4px the card insets its panes by on either side of a
- * control. A number here would be a third place to re-tier — the ladder decides
- * how tall a control is, and this bar is a control's worth of band.
+ * No height of its own: a control's worth of band, with 4px around it — the
+ * inset the card uses on either side of a pane. A number here would be a third
+ * place to re-tier; the ladder decides how tall a control is.
+ *
+ * The top is 8px rather than 4, and that is the one asymmetry: it puts this
+ * row's centre line on the sidebar header's. Both columns start 8px inside the
+ * window — the panel's `py-2` and the inset column's `m-2` — and the header
+ * then spends `p-2` where this bar spent `p-1`, which left the tab strip 4px
+ * above the row across the gap from it. Invisible until the window controls
+ * moved into that row: they are drawn at a fixed point by macOS, so a tab or a
+ * sidebar trigger 4px above them reads as broken rather than as tight.
  */
-export const WINDOW_BAR = "flex shrink-0 items-center gap-1 p-1";
+export const WINDOW_BAR = "flex shrink-0 items-center gap-1 px-1 pt-2 pb-1";
 
 /**
  * The raised surface a screen's content is drawn on.
