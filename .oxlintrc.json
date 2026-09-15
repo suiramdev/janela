@@ -1,6 +1,28 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["import", "typescript", "unicorn", "promise", "react", "react-perf", "jsx-a11y"],
+
+  // ---- @shadcn/lint: the design system's own rules, for the half of the
+  // conventions that is about *using* a primitive rather than writing one. It
+  // reads @janela/design's components, their `cva` variants, and the theme in
+  // apps/desktop/src/styles.css, so a diagnostic can name the size or token to
+  // use instead of the class it rejected.
+  //
+  // Registered with no rules enabled: what this project allows a screen to
+  // restyle is a design decision, not a setup step. Rules go in "rules" below,
+  // next to the ones already there. Oxlint's JS plugin API is alpha, and it
+  // arrived in 1.80 — which is why the oxlint pin moved off 1.79.
+  "jsPlugins": ["@shadcn/lint"],
+  "settings": {
+    "shadcn": {
+      // The primitives are not under a `components/ui` directory and there is
+      // no `@/` alias: every screen imports them from the package barrel
+      // (`packages/design/src/index.ts`), which re-exports the registry copies
+      // under `packages/design/src/components/`. This prefix is what tells the
+      // linter that `Button` from `@janela/design` is *our* Button.
+      "ui": "@janela/design"
+    }
+  },
   "categories": {
     "correctness": "error",
     "suspicious": "error",
