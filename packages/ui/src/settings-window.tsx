@@ -26,7 +26,6 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
-  SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -65,7 +64,7 @@ import {
   SIDEBAR_SCROLLER,
   ShowSidebarBar,
   SidebarTitleRow,
-  WINDOW_COLUMN,
+  WindowColumn,
 } from "./window-chrome.tsx";
 
 /**
@@ -629,7 +628,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
       <SettingsSidebar route={route} projects={projects} onSelect={select} onBack={back} />
       {/* The column, the bar and the card the workspace uses, in that order:
           the shape of the window belongs to the window, not to what fills it. */}
-      <SidebarInset className={WINDOW_COLUMN}>
+      <WindowColumn>
         <ShowSidebarBar />
         <ContentCard className="flex flex-col">
           <SettingsPane
@@ -654,7 +653,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             onRevert={revert}
           />
         </ContentCard>
-      </SidebarInset>
+      </WindowColumn>
     </>
   );
 }

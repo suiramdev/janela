@@ -34,7 +34,6 @@ import {
   EmptyTitle,
   Kbd,
   Separator,
-  SidebarInset,
   SidebarProvider,
   SizeProvider,
   useSize,
@@ -92,8 +91,8 @@ import {
   PANE_REGION,
   ShowSidebarBar,
   ShowSidebarButton,
-  WINDOW_COLUMN,
   WindowBar,
+  WindowColumn,
 } from "./window-chrome.tsx";
 
 export * from "./client-environment.tsx";
@@ -214,8 +213,8 @@ export function MainWindow(): ReactElement {
             ) : (
               <>
                 <AppSidebar dispatch={run} />
-                {/* The column, not the card — see `WINDOW_COLUMN`. */}
-                <SidebarInset className={WINDOW_COLUMN}>
+                {/* The column, not the card — see `WindowColumn`. */}
+                <WindowColumn>
                   {selected === undefined ? (
                     <WelcomeScreen dispatch={run} />
                   ) : (
@@ -223,7 +222,7 @@ export function MainWindow(): ReactElement {
                     // local layout of a session survives being switched away from.
                     <SessionDetail sessionID={selected} />
                   )}
-                </SidebarInset>
+                </WindowColumn>
               </>
             )}
             <ConnectionBanner />
