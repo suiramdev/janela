@@ -9,6 +9,7 @@ import type {
   Error as AdapterError,
   SqlDriverAdapter,
   SqlQuery,
+  SqlResultSet,
 } from "@prisma/driver-adapter-utils";
 
 import { janelaSqliteAdapter } from "./adapter.ts";
@@ -209,7 +210,7 @@ describe("column types", () => {
     }
   });
 
-  test("duplicate column names are refused rather than silently misaligned", async () => {
+  test("duplicate column names never misalign the values they belong to", async () => {
     const adapter = await open(
       `CREATE TABLE a (id TEXT PRIMARY KEY, x TEXT); CREATE TABLE b (id TEXT PRIMARY KEY);`,
     );
@@ -218,11 +219,29 @@ describe("column types", () => {
         `INSERT INTO a VALUES ('a1', 'ax'); INSERT INTO b VALUES ('b1');`,
       );
 
-      // bun:sqlite collapses same-named columns in `columnNames` while `values()`
-      // keeps them, so the names would no longer line up with the values.
-      const failure = await failureOf(adapter.queryRaw(q(`SELECT a.id, b.id, a.x FROM a JOIN b`)));
-      expect(failure.kind).toBe("InconsistentColumnData");
+      // Which branch runs is bun's business: through 1.3 it collapsed same-named
+      // columns in `columnNames` while `values()` kept every one, and later
+      // versions report them all. Pinning the test to either behaviour makes a
+      // bun upgrade look like a regression, so the claim is the invariant both
+      // owe us — the names are never quietly shorter than the row.
+      const outcome: SqlResultSet | DriverAdapterError = await adapter
+        .queryRaw(q(`SELECT a.id, b.id, a.x FROM a JOIN b`))
+        .catch((error: unknown) => {
+          expect(error).toBeInstanceOf(DriverAdapterError);
+          if (!(error instanceof DriverAdapterError)) throw error;
+          return error;
+        });
 
+      if (outcome instanceof DriverAdapterError) {
+        // The names came back short, and there is no telling which position lost
+        // one. Refusing beats decoding a row against the wrong column.
+        expect(outcome.cause.kind).toBe("InconsistentColumnData");
+      } else {
+        expect(outcome.columnNames).toEqual(["id", "id", "x"]);
+        expect(outcome.rows).toEqual([["a1", "b1", "ax"]]);
+      }
+
+      // Aliasing lines them up on every version, and is what the refusal asks for.
       const aliased = await adapter.queryRaw(
         q(`SELECT a.id AS aid, b.id AS bid, a.x FROM a JOIN b`),
       );

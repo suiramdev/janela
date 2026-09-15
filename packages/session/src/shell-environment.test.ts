@@ -7,6 +7,7 @@ import {
   DEFAULT_LOGIN_SHELL,
   janelaVariables,
   resolveShellEnvironment,
+  type AccountInformation,
 } from "./shell-environment.ts";
 import { recordingLogger, scriptedProcesses } from "./test-fakes.ts";
 
@@ -35,6 +36,18 @@ const session = (overrides?: Partial<Session>): Session => ({
 });
 
 const terminal = "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901" as TerminalID;
+
+/**
+ * The account facts as Bun's runtime reports them: the sentinel shell, a real
+ * name.
+ *
+ * Injected by every test that cares which shell wins, because the default is not
+ * hermetic. Bun's `os.userInfo().shell` is `$SHELL`, and only falls back to
+ * `"unknown"` when that is unset — so on any machine with `$SHELL` exported, a
+ * CI runner included, `resolveLoginShell` returns it and never reaches the fake
+ * processes the test scripted.
+ */
+const bunAccount = (): AccountInformation => ({ shell: "unknown", username: "ada" });
 
 /** What `printf '\0JANELA_ENVIRONMENT\0'; /usr/bin/env -0` writes. */
 function captureOutput(variables: Readonly<Record<string, string>>, greeting = ""): string {
@@ -66,6 +79,7 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
+      account: bunAccount,
       processEnvironment: { ...daemonEnvironment, SHELL: "/opt/homebrew/bin/fish" },
       processes: fake.processes,
       timeoutMs: 5,
@@ -106,6 +120,7 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
+      account: bunAccount,
       processEnvironment: daemonEnvironment,
       processes: fake.processes,
       log: logger,
@@ -136,6 +151,7 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
+      account: bunAccount,
       processEnvironment: daemonEnvironment,
       processes: fake.processes,
       log: logger,
@@ -154,6 +170,7 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
+      account: bunAccount,
       processEnvironment: daemonEnvironment,
       processes: fake.processes,
       log: logger,
@@ -243,12 +260,14 @@ describe("resolveShellEnvironment", () => {
 
   test("$SHELL is used when Directory Services is absent, and only when absolute", async () => {
     const withShell = await resolveShellEnvironment({
+      account: bunAccount,
       processEnvironment: { SHELL: "/opt/homebrew/bin/fish" },
       processes: scriptedProcesses({ which: {} }).processes,
     });
     expect(withShell.loginShell).toBe("/opt/homebrew/bin/fish");
 
     const withNonsense = await resolveShellEnvironment({
+      account: bunAccount,
       // A relative `$SHELL` is not something we can exec, and guessing is worse
       // than the documented default.
       processEnvironment: { SHELL: "fish" },

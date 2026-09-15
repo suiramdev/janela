@@ -60,6 +60,32 @@ function harness(
   };
 }
 
+/**
+ * How long a claim about a real timer gets before it is a failure.
+ *
+ * Generous on purpose: a loaded machine coalesces timers, so counting frames
+ * against a fixed sleep measures the runner, not the loop. Waiting to a deadline
+ * ends as soon as the claim holds — only a loop that genuinely stopped ticking
+ * pays the whole budget.
+ */
+const SETTLE_MS = 2_000;
+
+function eventually(claim: () => boolean): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  if (claim()) {
+    resolve();
+    return promise;
+  }
+
+  const deadline = Date.now() + SETTLE_MS;
+  const poll = setInterval(() => {
+    if (!claim() && Date.now() < deadline) return;
+    clearInterval(poll);
+    resolve();
+  }, 1);
+  return promise;
+}
+
 describe("the frame loop", () => {
   test("the interval is one frame at 120 Hz", () => {
     expect(FRAME_INTERVAL_MS).toBe(8);
@@ -347,7 +373,7 @@ describe("the frame loop", () => {
     // Real time, deliberately: the claim is about `setInterval`, which fake
     // timers would assert about the mock rather than about the loop.
     loop.start(controller.signal);
-    await Bun.sleep(FRAME_INTERVAL_MS * 4);
+    await eventually(() => terminal.drainCalls.count > 1);
     expect(terminal.drainCalls.count).toBeGreaterThan(1);
 
     controller.abort();
@@ -362,13 +388,14 @@ describe("the frame loop", () => {
     const controller = new AbortController();
 
     loop.start(controller.signal);
-    await Bun.sleep(FRAME_INTERVAL_MS * 4);
+    await eventually(() => frames.count > 0);
     // One frame to discover there is nothing to do, then no wakeups at all:
     // forty configured-but-idle terminals cost nothing (non-negotiable #5).
+    await Bun.sleep(FRAME_INTERVAL_MS * 4);
     expect(frames.count).toBe(1);
 
     loop.wake();
-    await Bun.sleep(FRAME_INTERVAL_MS * 2);
+    await eventually(() => frames.count > 1);
     expect(frames.count).toBeGreaterThan(1);
     controller.abort();
   });
@@ -383,7 +410,7 @@ describe("the frame loop", () => {
     expect(deliveries).toEqual([]);
 
     loop.attach("c1", idle.id);
-    await Bun.sleep(FRAME_INTERVAL_MS * 4);
+    await eventually(() => deliveries.length > 0);
     const delivered = deliveries.length;
     expect(delivered).toBeGreaterThan(0);
 
@@ -399,12 +426,12 @@ describe("the frame loop", () => {
 
     loop.start(controller.signal);
     loop.attach("c1", terminal.id);
-    await Bun.sleep(FRAME_INTERVAL_MS * 3);
+    await eventually(() => deliveries.length > 0);
     loop.detach("c1", terminal.id);
     const delivered = deliveries.length;
     const fed = terminal.drainCalls.count;
 
-    await Bun.sleep(FRAME_INTERVAL_MS * 4);
+    await eventually(() => terminal.drainCalls.count > fed);
     expect(deliveries).toHaveLength(delivered);
     // Closing the last window does not stop the terminal consuming.
     expect(terminal.drainCalls.count).toBeGreaterThan(fed);
