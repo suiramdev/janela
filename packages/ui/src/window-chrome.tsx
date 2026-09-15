@@ -198,43 +198,25 @@ export const PANE_REGION = "relative min-h-0 flex-1 overflow-hidden p-1";
 /**
  * What `SidebarInset` is left doing: being the column.
  *
- * Its own surface, radius and shadow move inward to `ContentCard`, because the
- * bar above the card is not part of the card. What stays is what only the
- * primitive can do — the inset margins, and the one that closes when the sidebar
- * collapses.
+ * Its surface, radius and shadow belong to `ContentCard` instead, because the
+ * bar above the card is not part of the card — so the primitive is asked not to
+ * paint (`surface={false}`) rather than overridden from out here. Overriding it
+ * does not work: `shadow-surface-2` is a project token `cn` cannot group with
+ * `shadow-none`, so both survive and the column keeps a hairline around the
+ * whole window. Measured — a 1px ring at rgb(28,28,28) on a rgb(23,23,23)
+ * window, along every edge of the column.
  *
- * Each override names the *same* modifiers as the rule it replaces, so `cn`
- * resolves the pair and only one reaches the DOM. They used to be `md:`-only,
- * which meant that below the drawer breakpoint the primitive won: the column
- * itself became the raised card — full width, full height, rounded, shadowed —
- * with the window bar sitting on top of that surface instead of on the window.
- * There is nothing responsive about which element is the card.
+ * What stays here is the column's own business: no minimum width, the gap
+ * between bar and card, and a clip.
  */
-export const WINDOW_COLUMN =
-  "min-w-0 gap-1.5 overflow-hidden bg-transparent peer-data-[variant=inset]:rounded-none peer-data-[variant=inset]:bg-transparent peer-data-[variant=inset]:shadow-none";
-
-/**
- * The gutter the sidebar is not there to provide.
- *
- * `SidebarInset` closes its sidebar-side margin while the panel is expanded,
- * because the panel's own width is the gutter — and it reopens it when the
- * sidebar collapses. A drawer is neither: `state` says expanded, and the panel
- * is an overlay that occupies no width, so the card was left flush against the
- * window's edge on that one side. Same modifiers as the rule it replaces, for
- * the same reason as above.
- */
-const DRAWER_GUTTER = "peer-data-[variant=inset]:peer-data-[side=left]:ml-2";
+export const WINDOW_COLUMN = "min-w-0 gap-1.5 overflow-hidden bg-transparent";
 
 /**
  * The window's content column: the bar, then the card.
- *
- * A component because two of its three facts are conditional on what the
- * sidebar is doing, and a constant cannot ask.
  */
 export function WindowColumn(props: { readonly children?: ReactNode }): ReactElement {
-  const { isMobile } = useSidebar();
   return (
-    <SidebarInset className={cn(WINDOW_COLUMN, isMobile && DRAWER_GUTTER)}>
+    <SidebarInset className={WINDOW_COLUMN} surface={false}>
       {props.children}
     </SidebarInset>
   );

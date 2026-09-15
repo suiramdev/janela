@@ -1128,33 +1128,57 @@ SidebarRail.displayName = "SidebarRail";
 
 // ─── SidebarInset ────────────────────────────────────────────────────────────
 
-export type SidebarInsetProps = HTMLAttributes<HTMLElement>;
+export interface SidebarInsetProps extends HTMLAttributes<HTMLElement> {
+  /**
+   * Paint the `inset` variant's own surface, radius and shadow. Default true.
+   *
+   * An app whose window bar sits *above* its card needs the column to be only
+   * the margins: the surface belongs to the card below the bar, and a second
+   * one out here is a frame around the whole window. That cannot be done from
+   * the outside. `shadow-surface-2` names a project shadow token, which
+   * `cn`'s tailwind-merge does not know — it files it under a different group
+   * from `shadow-none`, keeps both, and equal specificity leaves the theme's
+   * rule painting a hairline around the column that nothing asked for.
+   */
+  surface?: boolean | undefined;
+}
 
-const SidebarInset = forwardRef<HTMLElement, SidebarInsetProps>(({ className, ...props }, ref) => {
-  const shape = useShape();
-  return (
-    <main
-      ref={ref}
-      data-slot="sidebar-inset"
-      className={cn(
-        "relative flex min-h-0 w-full min-w-0 flex-1 flex-col bg-background",
-        "peer-data-[variant=inset]:m-2 peer-data-[variant=inset]:peer-data-[side=left]:ml-0 peer-data-[variant=inset]:peer-data-[side=right]:mr-0",
-        // With the rail collapsed away, restore the sidebar-side margin so
-        // the card keeps symmetric insets.
-        "peer-data-[variant=inset]:peer-data-[state=collapsed]:peer-data-[side=left]:ml-2 peer-data-[variant=inset]:peer-data-[state=collapsed]:peer-data-[side=right]:mr-2",
-        "transition-[margin] duration-80",
-        // Container radius follows the shape system (literal classes so
-        // Tailwind's scanner emits both).
-        shape.bgRadius >= 20
-          ? "peer-data-[variant=inset]:rounded-3xl"
-          : "peer-data-[variant=inset]:rounded-xl",
-        "peer-data-[variant=inset]:bg-surface-2 peer-data-[variant=inset]:shadow-surface-2",
-        className,
-      )}
-      {...props}
-    />
-  );
-});
+const SidebarInset = forwardRef<HTMLElement, SidebarInsetProps>(
+  ({ className, surface = true, ...props }, ref) => {
+    const shape = useShape();
+    const { isMobile } = useSidebar();
+    return (
+      <main
+        ref={ref}
+        data-slot="sidebar-inset"
+        className={cn(
+          "relative flex min-h-0 w-full min-w-0 flex-1 flex-col bg-background",
+          "peer-data-[variant=inset]:m-2",
+          // The panel's own width is the sidebar-side gutter while it is in the
+          // layout — but a drawer is an overlay, and `state` still says
+          // expanded, so that side has to stay open the way it does when the
+          // sidebar is collapsed.
+          !isMobile &&
+            "peer-data-[variant=inset]:peer-data-[side=left]:ml-0 peer-data-[variant=inset]:peer-data-[side=right]:mr-0",
+          // With the rail collapsed away, restore the sidebar-side margin so
+          // the card keeps symmetric insets.
+          "peer-data-[variant=inset]:peer-data-[state=collapsed]:peer-data-[side=left]:ml-2 peer-data-[variant=inset]:peer-data-[state=collapsed]:peer-data-[side=right]:mr-2",
+          "transition-[margin] duration-80",
+          surface && [
+            // Container radius follows the shape system (literal classes so
+            // Tailwind's scanner emits both).
+            shape.bgRadius >= 20
+              ? "peer-data-[variant=inset]:rounded-3xl"
+              : "peer-data-[variant=inset]:rounded-xl",
+            "peer-data-[variant=inset]:bg-surface-2 peer-data-[variant=inset]:shadow-surface-2",
+          ],
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
 SidebarInset.displayName = "SidebarInset";
 
 // ─── SidebarInput ────────────────────────────────────────────────────────────
