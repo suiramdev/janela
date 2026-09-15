@@ -23,6 +23,7 @@ import { liveEnvironment } from "./environment.ts";
 import { installNativeMenu, tauriCommandSource } from "./menu.ts";
 import { tauriNativeShell } from "./native.ts";
 import { localStorageSettings } from "./settings-storage.ts";
+import { tauriWindowControls } from "./window-controls.ts";
 
 import "./styles.css";
 
@@ -109,6 +110,7 @@ const clientEnvironment: ClientEnvironment = {
   onFocusedTerminalChange: environment.focus.report,
   commands: tauriCommandSource(),
   native: tauriNativeShell(),
+  windowControls: tauriWindowControls(),
   confirmations,
   clipboard: browserClipboard(),
   settings: settingsStore,

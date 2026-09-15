@@ -38,7 +38,11 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AppSidebar } from "./app-sidebar.tsx";
-import { ClientEnvironmentProvider, type ClientEnvironment } from "./client-environment.tsx";
+import {
+  ClientEnvironmentProvider,
+  type ClientEnvironment,
+  type WindowControls,
+} from "./client-environment.tsx";
 import {
   resolveLocalLayout,
   withFocusedTab,
@@ -57,15 +61,17 @@ import {
 import { EMPTY_SETTINGS_DRAFT, withDraftProjectSettings } from "./settings-draft.ts";
 import { sessionStatus, sidebarRows } from "./sidebar-model.ts";
 import {
+  hiddenWindowControls,
   inertClipboard,
   inertNativeShell,
+  overlaidWindowControls,
   recordingConfirmations,
   memorySettingsStore,
   neverCommands,
   recordingService,
 } from "./test-fakes.ts";
 import { createViewState } from "./view-state.ts";
-import { ContentCard } from "./window-chrome.tsx";
+import { ContentCard, WINDOW_CONTROLS_ROOM } from "./window-chrome.tsx";
 
 // ---------------------------------------------------------------------------
 // Values. Built here rather than imported: @janela/client's fakes are not
@@ -147,6 +153,7 @@ function fakeEnvironment(options: {
   readonly states?: Readonly<Record<TerminalID, TerminalState>>;
   readonly selection?: SessionID;
   readonly status?: ConnectionStatus;
+  readonly windowControls?: WindowControls;
 }): ClientEnvironment {
   const sessions = options.sessions ?? [];
   const states = options.states ?? NO_STATES;
@@ -189,6 +196,7 @@ function fakeEnvironment(options: {
     view: createViewState(sessionStore),
     commands: neverCommands(),
     native: inertNativeShell(),
+    windowControls: options.windowControls ?? overlaidWindowControls,
     confirmations: recordingConfirmations(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
@@ -230,6 +238,7 @@ function environmentOver(state: {
     view: createViewState(stores.sessions),
     commands: neverCommands(),
     native: inertNativeShell(),
+    windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
@@ -650,6 +659,24 @@ describe("AppSidebar markup", () => {
     );
     // And the rows are inside a scroller of their own.
     expect(markup).toContain('data-slot="scroll-area-viewport"');
+  });
+
+  test("the window controls get the head of the header row, and fullscreen takes it back", () => {
+    const overlaid = renderSidebar(fakeEnvironment({}));
+    const fullscreen = renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls }));
+
+    // The traffic lights are drawn by macOS over the leading end of this row, so
+    // the room has to come before the first control rather than after it.
+    expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeGreaterThan(-1);
+    expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeLessThan(
+      overlaid.indexOf('aria-label="Search"'),
+    );
+    // And the band is a window handle: without this attribute the app has an
+    // overlay title bar that cannot move the window.
+    expect(overlaid).toContain("data-tauri-drag-region");
+
+    // Fullscreen: no buttons to dodge, so no gap in front of the search button.
+    expect(fullscreen).not.toContain(WINDOW_CONTROLS_ROOM);
   });
 
   test("the Inbox row promises nothing: disabled, and badged as planned", () => {

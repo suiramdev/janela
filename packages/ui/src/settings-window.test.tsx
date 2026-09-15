@@ -5,6 +5,7 @@ import { absolutePath } from "@janela/core";
 import { SidebarProvider } from "@janela/design";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { ClientEnvironmentProvider } from "./client-environment.tsx";
 import { DEFAULT_GLOBAL_SETTINGS, withTerminalFontSize } from "./global-settings.ts";
 import { profileDraft } from "./profile-editing.ts";
 import type { SettingsDraft } from "./settings-draft.ts";
@@ -17,6 +18,7 @@ import {
 import type { SettingsPaneProps } from "./settings-window.tsx";
 import { SETTINGS_TABS, SettingsPane, SettingsSidebar } from "./settings-window.tsx";
 import {
+  fakeClientEnvironment,
   fakeProfile,
   fakeProject,
   fakeSession,
@@ -66,10 +68,15 @@ function sidebar(
   route: SettingsRoute = tabRoute("general"),
   projects: readonly Project[] = PROJECTS,
 ): string {
+  // Under a provider: the navigation's subject is its props, but its first row
+  // is the window's own — it makes room for the traffic lights the same way the
+  // workspace sidebar does, and that fact comes from the environment.
   return renderToStaticMarkup(
-    <SidebarProvider>
-      <SettingsSidebar route={route} projects={projects} onSelect={noop} onBack={noop} />
-    </SidebarProvider>,
+    <ClientEnvironmentProvider environment={fakeClientEnvironment()}>
+      <SidebarProvider>
+        <SettingsSidebar route={route} projects={projects} onSelect={noop} onBack={noop} />
+      </SidebarProvider>
+    </ClientEnvironmentProvider>,
   );
 }
 

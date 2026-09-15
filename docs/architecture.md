@@ -371,6 +371,32 @@ which is a different and much larger promise. It is explicitly not made.
 
 ---
 
+## The window's chrome
+
+The title bar is an **overlay**: `titleBarStyle: "Overlay"` with `hiddenTitle`, so
+the WebView fills the window and macOS draws the traffic lights on top of the
+sidebar's first row. That row used to carry the app's mark and the word "Janela",
+16px below a title bar already saying it; the buttons say it now, and the rest of
+the row is the band that drags the window.
+
+Two consequences worth stating:
+
+- **The position is a contract between two files that cannot import each other.**
+  `TRAFFIC_LIGHT_POSITION` in `@janela/ui` is measured against that row — its
+  height comes from the size ladder — and `tauri.conf.json` has to carry the same
+  numbers. `apps/desktop/src/window-controls.test.ts` holds it to them, because
+  the failure mode is buttons sitting on top of a control rather than anything a
+  compiler or a person reviewing a diff would notice.
+- **Whether the buttons are there is a port, not an assumption.**
+  `WindowControls` answers one boolean, and only the shell can: macOS takes the
+  buttons away in fullscreen, and `titleBarStyle` is a macOS-only key, so any
+  other platform draws its controls in a title bar of its own. In both cases the
+  answer is `false`, nothing is reserved, and the row is simply empty at its
+  leading end — the mark does not come back as a fallback, because a window with
+  its own title bar does not need the sidebar to repeat the app's name.
+
+---
+
 ## What is deliberately absent
 
 - **No dependency-injection container.** Constructor injection from

@@ -66,6 +66,7 @@ import {
   SIDEBAR_SCROLLER,
   ShowSidebarBar,
   WINDOW_COLUMN,
+  WindowControlsRoom,
 } from "./window-chrome.tsx";
 
 /**
@@ -225,8 +226,14 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
     // no reason anyone could name.
     <Sidebar variant="inset" collapsible="offcanvas">
       <SidebarHeader>
+        {/* The window controls land on this row here too — it is the same window
+            and the same first row, holding a different word. */}
         <div className={cn(size.control, "flex items-center gap-0.5")}>
-          <h1 className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium">
+          <WindowControlsRoom />
+          <h1
+            className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium"
+            data-tauri-drag-region
+          >
             Settings
           </h1>
           {/* The primitive's trigger carries its own tooltip, with the ⌘B chip

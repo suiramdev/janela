@@ -58,6 +58,26 @@ export interface NativeShell {
 }
 
 /**
+ * Whether macOS is drawing its window controls over this window's own chrome.
+ *
+ * The title bar is an overlay, so the traffic lights sit *inside* the window at
+ * a fixed point — which is the sidebar's first row (`TRAFFIC_LIGHT_POSITION`).
+ * That row gives up its leading space to them, and takes it back in fullscreen,
+ * where macOS takes the buttons away.
+ *
+ * A port because only the shell can answer it, and it carries the *fact* rather
+ * than a width: how much room three buttons need is the client's business, and a
+ * pixel count crossing this seam would put the window's layout in the shell. A
+ * client with no window controls to dodge — a CLI, a browser — says `false` and
+ * every row is simply flush.
+ */
+export interface WindowControls {
+  /** `false` in fullscreen. */
+  readonly areVisible: boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+/**
  * The system clipboard, as two requests.
  *
  * A seam rather than a direct `navigator.clipboard` call, for the usual reason:
@@ -87,6 +107,9 @@ export interface ClientEnvironment {
 
   /** The directory picker, Finder and Terminal.app. */
   readonly native: NativeShell;
+
+  /** Whether the traffic lights are overlaying the top of this window. */
+  readonly windowControls: WindowControls;
 
   /**
    * Questions with a cost, as a promise. The one dialog that is not a sheet.

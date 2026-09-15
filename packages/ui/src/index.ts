@@ -32,6 +32,9 @@ export * from "./find-surface.tsx";
 export * from "./sheets.tsx";
 export * from "./sidebar-model.ts";
 export * from "./view-state.ts";
+// The window's own shape, including where macOS draws its controls — which
+// `apps/desktop` has to configure to match.
+export * from "./window-chrome.tsx";
 
 // ---- Launch profiles and the settings surface (#38).
 export * from "./argv-editor.tsx";

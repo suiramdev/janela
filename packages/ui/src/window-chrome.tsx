@@ -12,6 +12,71 @@
 import { cn, Elevated, SidebarTrigger, useSidebar, useSize } from "@janela/design";
 import type { ReactElement, ReactNode } from "react";
 
+import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
+
+/**
+ * Where macOS draws this window's controls.
+ *
+ * The title bar is an overlay — `titleBarStyle: "Overlay"` and `hiddenTitle` in
+ * `tauri.conf.json` — so the traffic lights sit *inside* the window rather than
+ * in a strip above it, and the sidebar's first row is what they land on. That is
+ * the row that used to carry the mark and the word "Janela", which were saying
+ * the app's name a second time 16px below a title bar already saying it.
+ *
+ * Two places have to agree and cannot import each other, so these are the
+ * numbers and `apps/desktop`'s `window-controls.test.ts` holds the config to
+ * them. Both are measured against this row rather than chosen: `x` puts the
+ * close button where the mark's left edge was, and `y` centres a 16pt button on
+ * a 28px row whose top is 16px down — the sidebar panel's `py-2`, then the
+ * header's `p-2`.
+ *
+ * `y` is **not** the buttons' top edge. tao resizes the title bar *container* to
+ * `buttonHeight + y` and moves the buttons only horizontally, which leaves their
+ * top at `y - 10`: 10 puts them flush against the window's edge, 32 puts them at
+ * 22. Measured on a running window through the accessibility API, because the
+ * arithmetic is AppKit's and not ours to predict.
+ */
+export const TRAFFIC_LIGHT_POSITION = { x: 12, y: 32 } as const;
+
+/**
+ * The room the three buttons need, at the head of the row they land on.
+ *
+ * 68px, and the row's own leading padding makes up the rest of the 74 the
+ * buttons occupy — so the control after this one clears the zoom button by a
+ * couple of pixels on the sidebar's row and by six on the window bar's, where
+ * the column is already inset. Slack after the last button is room; overlap
+ * would be a bug, which is why this is not the exact remainder.
+ *
+ * It is also the drag handle. An overlay title bar is still a title bar to the
+ * person using it: the band beside the buttons has to move the window, and
+ * nothing else in this row does.
+ */
+export const WINDOW_CONTROLS_ROOM = "w-[68px] shrink-0 self-stretch";
+
+/**
+ * What the window controls take out of the row they overlay, and give back in
+ * fullscreen where macOS takes them away.
+ *
+ * Rendered by exactly two rows, and never both at once: the sidebar's header
+ * while it is open, and the window bar once it is not (`ShowSidebarButton`).
+ * Whichever of them is under the top-left corner is the one that makes room.
+ *
+ * Nothing, wherever the title bar is not an overlay: in fullscreen, and on any
+ * platform that draws its controls above the WebView rather than inside it. The
+ * row is then just empty at its leading end — the mark and the word "Janela"
+ * are not coming back as a fallback, because a window whose own title bar says
+ * the app's name does not need the sidebar to say it again.
+ */
+export function WindowControlsRoom(): ReactElement | null {
+  const { windowControls } = useClientEnvironment();
+  const areVisible = useStoreValue(windowControls, () => windowControls.areVisible);
+  if (!areVisible) return null;
+  // `data-tauri-drag-region` on this element only: a bare attribute drags on a
+  // direct click, so nothing inside the row — a tab, a button — has to opt out
+  // of being a window handle.
+  return <div className={WINDOW_CONTROLS_ROOM} data-tauri-drag-region />;
+}
+
 /**
  * The strip above the content card.
  *
@@ -105,12 +170,19 @@ export const SIDEBAR_SCROLLER = "[&_[data-slot='scroll-area-scrollbar']]:-transl
 export const PANE_COLUMN = "mx-auto max-w-2xl p-6";
 
 /**
- * The "show the sidebar again" control, which exists only while it is hidden.
+ * The head of the window bar while the sidebar is hidden: the room the window
+ * controls need, and the control that brings the sidebar back.
  *
  * Collapsing is offcanvas — the list is names, and a column of initials would be
  * useless — so the button that brings it back cannot live in the sidebar. It
  * sits at the head of the window bar instead, where the space it takes is space
  * the tabs were not using.
+ *
+ * The traffic lights come with it, and for the same reason: with the sidebar
+ * gone this bar is what sits under the window's top-left corner, so it is the
+ * row that has to make room. Both bars — the tab strip and `ShowSidebarBar` —
+ * lead with this one component, which is why neither of them has to know that
+ * the title bar is an overlay.
  *
  * The primitive's trigger brings its own tooltip, which names the action for the
  * state it is in ("Expand sidebar" here) and carries the ⌘B chip. Wrapping it in
@@ -119,7 +191,12 @@ export const PANE_COLUMN = "mx-auto max-w-2xl p-6";
 export function ShowSidebarButton(): ReactElement | null {
   const { state } = useSidebar();
   if (state !== "collapsed") return null;
-  return <SidebarTrigger className="mr-1" />;
+  return (
+    <>
+      <WindowControlsRoom />
+      <SidebarTrigger className="mr-1" />
+    </>
+  );
 }
 
 /**

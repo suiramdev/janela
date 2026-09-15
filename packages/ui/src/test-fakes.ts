@@ -1,3 +1,4 @@
+import { createStores } from "@janela/client";
 import type {
   LaunchProfile,
   LaunchProfileAvailability,
@@ -19,7 +20,13 @@ import {
 } from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
-import type { Clipboard, CommandSource, NativeShell } from "./client-environment.tsx";
+import type {
+  ClientEnvironment,
+  Clipboard,
+  CommandSource,
+  NativeShell,
+  WindowControls,
+} from "./client-environment.tsx";
 import type { ConfirmationQueue, ConfirmationRequest } from "./confirmation.ts";
 import {
   DEFAULT_GLOBAL_SETTINGS,
@@ -27,6 +34,7 @@ import {
   type GlobalSettings,
   type SettingsStoring,
 } from "./global-settings.ts";
+import { createViewState } from "./view-state.ts";
 
 /**
  * Fixtures for this package's own tests.
@@ -277,6 +285,60 @@ export function inertClipboard(): Clipboard {
 /** A command source nothing ever emits from. */
 export function neverCommands(): CommandSource {
   return { subscribe: () => () => {} };
+}
+
+/**
+ * Window controls that are where macOS puts them, and never move.
+ *
+ * `areVisible: false` is the fullscreen case, and it is a `const` rather than a
+ * builder because there is nothing to configure: the whole port is one boolean.
+ */
+export const overlaidWindowControls: WindowControls = {
+  areVisible: true,
+  subscribe: () => () => {},
+};
+
+/** Fullscreen: the buttons are gone and the rows are flush. */
+export const hiddenWindowControls: WindowControls = {
+  areVisible: false,
+  subscribe: () => () => {},
+};
+
+/**
+ * Enough of a `ClientEnvironment` to mount a view that reads one.
+ *
+ * For views whose *subject* is their props — the settings navigation, say — and
+ * which still sit inside the window, so they read the window's own facts from
+ * the environment. It is deliberately not configurable: a test that cares what
+ * is in the mirror builds its own over `createStores()`, and this one exists so
+ * that "mount it under a provider" costs one line rather than thirty.
+ */
+export function fakeClientEnvironment(): ClientEnvironment {
+  const stores = createStores();
+  return {
+    projects: stores.projects,
+    sessions: stores.sessions,
+    connection: {
+      status: { kind: "idle" },
+      isStale: false,
+      connect: () => Promise.resolve(),
+      request: () => Promise.resolve(undefined),
+      sendInput: () => {},
+      onOutput: () => () => {},
+      onAttention: () => () => {},
+      subscribe: () => () => {},
+      disconnect: () => Promise.resolve(),
+    },
+    view: createViewState(stores.sessions),
+    commands: neverCommands(),
+    native: inertNativeShell(),
+    windowControls: overlaidWindowControls,
+    confirmations: recordingConfirmations(),
+    clipboard: inertClipboard(),
+    settings: memorySettingsStore(),
+    service: recordingService(),
+    restartDaemon: () => {},
+  };
 }
 
 /** Settings that survive as long as the fake does. */

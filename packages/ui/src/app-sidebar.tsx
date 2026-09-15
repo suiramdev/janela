@@ -50,7 +50,6 @@ import { useClientEnvironment, useStoreValue } from "./client-environment.tsx";
 import { selectSession } from "./command-dispatch.ts";
 import type { CommandID } from "./commands.ts";
 import { ContextMenuRegion } from "./context-menu-region.tsx";
-import { JanelaMark } from "./janela-mark.tsx";
 import { projectMenuRows, sessionMenuRows } from "./menu-rows.ts";
 import { ProjectIcon } from "./project-icon.tsx";
 import { createSidebarActions, type SidebarActions } from "./sidebar-actions.ts";
@@ -62,14 +61,14 @@ import {
   type SessionFilter,
 } from "./sidebar-filter.ts";
 import { sidebarRows, statusText, type SessionStatus, type SidebarRow } from "./sidebar-model.ts";
-import { SIDEBAR_SCROLLER } from "./window-chrome.tsx";
+import { SIDEBAR_SCROLLER, WindowControlsRoom } from "./window-chrome.tsx";
 
 /**
  * Projects and sessions, and the only navigation there is.
  *
  * ```text
  * ┌──────────────────────────────┐
- * │ Janela            [⌕]  [▤]   │  ← header: never scrolls
+ * │ ● ● ●             [⌕]  [▤]   │  ← header: never scrolls
  * │ ＋ New Session               │
  * │ ⌧ Inbox            Planned   │
  * ├──────────────────────────────┤
@@ -233,13 +232,18 @@ export function AppSidebar(props: {
     // on their own sheet rather than against the window frame.
     <Sidebar variant="inset" collapsible="offcanvas">
       <SidebarHeader>
-        {/* One control tall: the ladder's step, so the title row lines up with
-            the rows beneath it and with the window bar across the card. */}
+        {/* One control tall: the ladder's step, so this row lines up with the
+            rows beneath it and with the window bar across the card — and so the
+            traffic lights, which are positioned against *this* row, land on its
+            centre line (`TRAFFIC_LIGHT_POSITION`).
+
+            What used to be here was the mark and the word "Janela". The window
+            controls say the same thing in the place macOS puts them, and the
+            remainder of the row is the band that drags the window, which is what
+            a title bar was for. */}
         <div className={cn(size.control, "flex items-center gap-0.5")}>
-          <JanelaMark size={size.icon} className="text-foreground mx-1 shrink-0" />
-          <span className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium">
-            Janela
-          </span>
+          <WindowControlsRoom />
+          <div className="flex-1" data-tauri-drag-region />
           <Tooltip>
             <TooltipTrigger render={SEARCH_BUTTON} onClick={search} />
             <TooltipContent>

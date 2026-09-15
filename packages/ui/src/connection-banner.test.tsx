@@ -28,6 +28,7 @@ import {
 import {
   inertClipboard,
   inertNativeShell,
+  overlaidWindowControls,
   recordingConfirmations,
   memorySettingsStore,
   neverCommands,
@@ -111,6 +112,7 @@ function fakeEnvironment(options: {
     view: createViewState(sessionStore),
     commands: neverCommands(),
     native: inertNativeShell(),
+    windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
