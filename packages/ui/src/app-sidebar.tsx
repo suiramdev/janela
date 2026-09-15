@@ -39,7 +39,6 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  useSize,
   type IconComponent,
   type IconComponentProps,
 } from "@janela/design";
@@ -61,7 +60,7 @@ import {
   type SessionFilter,
 } from "./sidebar-filter.ts";
 import { sidebarRows, statusText, type SessionStatus, type SidebarRow } from "./sidebar-model.ts";
-import { SIDEBAR_SCROLLER, WindowControlsRoom } from "./window-chrome.tsx";
+import { SIDEBAR_SCROLLER, SidebarTitleRow } from "./window-chrome.tsx";
 
 /**
  * Projects and sessions, and the only navigation there is.
@@ -143,7 +142,6 @@ export function AppSidebar(props: {
   const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
   const states = useStoreValue(environment.sessions, () => environment.sessions.terminalStates);
 
-  const size = useSize();
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [overrides, setOverrides] = useState(NO_OVERRIDES);
 
@@ -232,18 +230,14 @@ export function AppSidebar(props: {
     // on their own sheet rather than against the window frame.
     <Sidebar variant="inset" collapsible="offcanvas">
       <SidebarHeader>
-        {/* One control tall: the ladder's step, so this row lines up with the
-            rows beneath it and with the window bar across the card — and so the
-            traffic lights, which are positioned against *this* row, land on its
-            centre line (`TRAFFIC_LIGHT_POSITION`).
-
-            What used to be here was the mark and the word "Janela". The window
+        {/* What used to be here was the mark and the word "Janela". The window
             controls say the same thing in the place macOS puts them, and the
-            remainder of the row is the band that drags the window, which is what
-            a title bar was for. */}
-        <div className={cn(size.control, "flex items-center gap-0.5")}>
-          <WindowControlsRoom />
-          <div className="flex-1" data-tauri-drag-region />
+            rest of the row is the band that drags the window, which is what a
+            title bar was for. */}
+        <SidebarTitleRow>
+          {/* `self-stretch`: an empty box in a centred row is 0px tall, and this
+              one is most of the band a window is dragged by. */}
+          <div className="flex-1 self-stretch" />
           <Tooltip>
             <TooltipTrigger render={SEARCH_BUTTON} onClick={search} />
             <TooltipContent>
@@ -253,7 +247,7 @@ export function AppSidebar(props: {
           {/* No wrapping tooltip: the primitive's trigger carries its own, with
               the ⌘B chip in it. */}
           <SidebarTrigger />
-        </div>
+        </SidebarTitleRow>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

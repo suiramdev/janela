@@ -47,19 +47,39 @@ export const TRAFFIC_LIGHT_POSITION = { x: 12, y: 32 } as const;
  * the column is already inset. Slack after the last button is room; overlap
  * would be a bug, which is why this is not the exact remainder.
  *
- * It is also the drag handle. An overlay title bar is still a title bar to the
- * person using it: the band beside the buttons has to move the window, and
- * nothing else in this row does.
+ * `self-stretch` because the row centres its children and this one has none: an
+ * empty box in an `items-center` row is 0px tall, which is invisible until you
+ * try to press it. It is inside a drag region, and a band you cannot hit is a
+ * window you cannot move.
  */
 export const WINDOW_CONTROLS_ROOM = "w-[68px] shrink-0 self-stretch";
+
+/**
+ * What makes a row a title bar: press the band, move the window; press it
+ * twice, zoom it.
+ *
+ * `"deep"` rather than a bare attribute, so the whole row drags rather than only
+ * the exact element carrying it. Tauri's own script walks up from whatever was
+ * pressed and stops at the first clickable thing — a button, a link, anything
+ * with a `tabindex` or an interactive `role` — so a tab, the search control and
+ * the sidebar trigger keep their clicks without opting out of anything. What is
+ * left is the empty band, which is exactly what a title bar is.
+ *
+ * Every row that sits under the window's top edge needs this. Removing the
+ * system title bar took the drag and double-click with it, and getting them back
+ * is not optional: they are how a window is moved and zoomed.
+ */
+export const WINDOW_DRAG_REGION = "deep";
 
 /**
  * What the window controls take out of the row they overlay, and give back in
  * fullscreen where macOS takes them away.
  *
- * Rendered by exactly two rows, and never both at once: the sidebar's header
- * while it is open, and the window bar once it is not (`ShowSidebarButton`).
- * Whichever of them is under the top-left corner is the one that makes room.
+ * Rendered by whichever row is under the window's top-left corner: a sidebar
+ * header, or the window bar when the sidebar is not in the layout
+ * (`ShowSidebarButton`). Below the drawer breakpoint both draw it, because the
+ * drawer is an overlay *above* the bar — and whichever one the user is looking
+ * at is the one the buttons are sitting on.
  *
  * Nothing, wherever the title bar is not an overlay: in fullscreen, and on any
  * platform that draws its controls above the WebView rather than inside it. The
@@ -71,10 +91,35 @@ export function WindowControlsRoom(): ReactElement | null {
   const { windowControls } = useClientEnvironment();
   const areVisible = useStoreValue(windowControls, () => windowControls.areVisible);
   if (!areVisible) return null;
-  // `data-tauri-drag-region` on this element only: a bare attribute drags on a
-  // direct click, so nothing inside the row — a tab, a button — has to opt out
-  // of being a window handle.
-  return <div className={WINDOW_CONTROLS_ROOM} data-tauri-drag-region />;
+  return <div className={WINDOW_CONTROLS_ROOM} />;
+}
+
+/**
+ * The first row of a sidebar header: the one the window controls land on.
+ *
+ * One component for both sidebars, because it is one row in one window with a
+ * different word in it — and because everything it carries is a fact about the
+ * window rather than about projects or settings: the room for the buttons, the
+ * band that drags, and one step of the ladder so the buttons' centre line
+ * (`TRAFFIC_LIGHT_POSITION`) is the row's.
+ *
+ * `mt-2` in the drawer, and this is the one place that has to know it: the
+ * desktop panel is inset 8px from the window's top by the `inset` variant's
+ * `py-2`, the drawer's sheet is inset by nothing, and macOS draws the buttons
+ * at the same point either way. Without it the row is 8px above them.
+ */
+export function SidebarTitleRow(props: { readonly children?: ReactNode }): ReactElement {
+  const size = useSize();
+  const { isMobile } = useSidebar();
+  return (
+    <div
+      className={cn(size.control, "flex items-center gap-0.5", isMobile && "mt-2")}
+      data-tauri-drag-region={WINDOW_DRAG_REGION}
+    >
+      <WindowControlsRoom />
+      {props.children}
+    </div>
+  );
 }
 
 /**
@@ -97,8 +142,20 @@ export function WindowControlsRoom(): ReactElement | null {
  * above the row across the gap from it. Invisible until the window controls
  * moved into that row: they are drawn at a fixed point by macOS, so a tab or a
  * sidebar trigger 4px above them reads as broken rather than as tight.
+ *
+ * A component rather than the class string it used to be, because the bar is
+ * also a title bar now (`WINDOW_DRAG_REGION`) and a second row that forgot to
+ * say so is a band that looks draggable and is not.
  */
-export const WINDOW_BAR = "flex shrink-0 items-center gap-1 px-1 pt-2 pb-1";
+export function WindowBar(props: { readonly children?: ReactNode }): ReactElement {
+  return (
+    <div className={WINDOW_BAR} data-tauri-drag-region={WINDOW_DRAG_REGION}>
+      {props.children}
+    </div>
+  );
+}
+
+const WINDOW_BAR = "flex shrink-0 items-center gap-1 px-1 pt-2 pb-1";
 
 /**
  * The raised surface a screen's content is drawn on.
@@ -177,13 +234,31 @@ export const SIDEBAR_SCROLLER = "[&_[data-slot='scroll-area-scrollbar']]:-transl
 export const PANE_COLUMN = "mx-auto max-w-2xl p-6";
 
 /**
- * The head of the window bar while the sidebar is hidden: the room the window
- * controls need, and the control that brings the sidebar back.
+ * Whether the sidebar is out of the layout, and the window bar is therefore the
+ * row under the window's top-left corner.
+ *
+ * Two ways for that to happen, and the second is easy to miss. `state` is
+ * `"collapsed"` when the user collapsed it — but below the primitive's drawer
+ * breakpoint the panel is an overlay whatever `state` says, so a window narrow
+ * enough reports `"expanded"` while the sidebar is off screen. Reading only
+ * `state` there left the bar with no room and no trigger: the traffic lights
+ * landed on the tabs, and there was no way to open the sidebar at all.
+ */
+function useIsSidebarOutOfLayout(): boolean {
+  const { state, isMobile } = useSidebar();
+  return state === "collapsed" || isMobile;
+}
+
+/**
+ * The head of the window bar while the sidebar is not in the layout: the room
+ * the window controls need, and the control that brings the sidebar back.
  *
  * Collapsing is offcanvas — the list is names, and a column of initials would be
  * useless — so the button that brings it back cannot live in the sidebar. It
  * sits at the head of the window bar instead, where the space it takes is space
- * the tabs were not using.
+ * the tabs were not using. Below the drawer breakpoint the same button opens the
+ * sidebar as a drawer, because that is what the primitive renders there and
+ * `toggleSidebar` already knows it.
  *
  * The traffic lights come with it, and for the same reason: with the sidebar
  * gone this bar is what sits under the window's top-left corner, so it is the
@@ -196,8 +271,8 @@ export const PANE_COLUMN = "mx-auto max-w-2xl p-6";
  * a second tooltip would have stacked two popups on one control.
  */
 export function ShowSidebarButton(): ReactElement | null {
-  const { state } = useSidebar();
-  if (state !== "collapsed") return null;
+  const isOutOfLayout = useIsSidebarOutOfLayout();
+  if (!isOutOfLayout) return null;
   return (
     <>
       <WindowControlsRoom />
@@ -209,23 +284,25 @@ export function ShowSidebarButton(): ReactElement | null {
 /**
  * The window bar on screens that have nothing else to put in it.
  *
- * Nothing, while the sidebar is open: a band above the card holding one absent
- * button is a band of nothing. It appears with the button, because that button
- * is the only way back from an offcanvas sidebar.
+ * Nothing, while the sidebar is in the layout: a band above the card holding one
+ * absent button is a band of nothing. It appears with the button, because that
+ * button is the only way back from a sidebar that is off screen — and on a
+ * narrow window it is also the only thing keeping the window controls off
+ * whatever the card put in its top-left corner.
  *
  * The row inside it is a control tall even though the trigger is smaller, so the
  * bar is the same height here as it is over a tab strip. Otherwise the card
  * would jump 4px between the welcome screen and a session.
  */
 export function ShowSidebarBar(): ReactElement | null {
-  const { state } = useSidebar();
   const size = useSize();
-  if (state !== "collapsed") return null;
+  const isOutOfLayout = useIsSidebarOutOfLayout();
+  if (!isOutOfLayout) return null;
   return (
-    <div className={WINDOW_BAR}>
+    <WindowBar>
       <div className={cn(size.control, "flex items-center")}>
         <ShowSidebarButton />
       </div>
-    </div>
+    </WindowBar>
   );
 }

@@ -92,8 +92,8 @@ import {
   PANE_REGION,
   ShowSidebarBar,
   ShowSidebarButton,
-  WINDOW_BAR,
   WINDOW_COLUMN,
+  WindowBar,
 } from "./window-chrome.tsx";
 
 export * from "./client-environment.tsx";
@@ -508,15 +508,23 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
 
   return (
     <>
-      <TabStrip
-        layout={layout}
-        terminals={terminals}
-        onFocusTab={focusTab}
-        onNewTerminal={newTerminal}
-        onSplitTab={splitTab}
-        onMoveTab={moveTab}
-        onCloseTab={closeTab}
-      />
+      {/* A session with no tabs renders no strip, and something still has to
+          hold the window's top-left corner: the bar the other empty screens
+          use, carrying the room for the window controls and the one way back
+          from a sidebar that is off screen. */}
+      {layout.tabs.length === 0 ? (
+        <ShowSidebarBar />
+      ) : (
+        <TabStrip
+          layout={layout}
+          terminals={terminals}
+          onFocusTab={focusTab}
+          onNewTerminal={newTerminal}
+          onSplitTab={splitTab}
+          onMoveTab={moveTab}
+          onCloseTab={closeTab}
+        />
+      )}
       <div className={PANE_REGION}>
         {tab === undefined ? (
           NO_TERMINALS_IN_SESSION
@@ -547,7 +555,8 @@ const NO_MENU_ROWS: readonly MenuRow[] = [];
 const ROOT_PATH: PanePath = [];
 
 /**
- * Always rendered when the session has a tab, even a single one.
+ * The strip, for a session that has at least one tab — which its caller decides,
+ * because the screen with no tabs needs a bar of its own anyway.
  *
  * Compact rounded tabs on the left, each with its own close button, and on the
  * right the three controls that act on the tab showing: split it vertically,
@@ -575,7 +584,7 @@ function TabStrip(props: {
   readonly onSplitTab: (index: number, axis: Axis) => void;
   readonly onMoveTab: (from: number, to: number) => void;
   readonly onCloseTab: (index: number) => void;
-}): ReactElement | null {
+}): ReactElement {
   const { layout, terminals, onFocusTab, onNewTerminal, onSplitTab, onMoveTab, onCloseTab } = props;
 
   // The tab primitive's value is a string; this strip's is an index into
@@ -600,9 +609,8 @@ function TabStrip(props: {
     onSplitTab(focusedTabIndex, "vertical");
   }, [onSplitTab, focusedTabIndex]);
 
-  if (layout.tabs.length === 0) return null;
   return (
-    <div className={WINDOW_BAR}>
+    <WindowBar>
       <ShowSidebarButton />
       {/* No `TabsContent`: the pane tree below this strip *is* the content of
           every tab, and only the focused tab's panes are ever mounted (that is
@@ -661,7 +669,7 @@ function TabStrip(props: {
           </TooltipContent>
         </Tooltip>
       </div>
-    </div>
+    </WindowBar>
   );
 }
 

@@ -71,7 +71,7 @@ import {
   recordingService,
 } from "./test-fakes.ts";
 import { createViewState } from "./view-state.ts";
-import { ContentCard, WINDOW_CONTROLS_ROOM } from "./window-chrome.tsx";
+import { ContentCard, WINDOW_CONTROLS_ROOM, WINDOW_DRAG_REGION } from "./window-chrome.tsx";
 
 // ---------------------------------------------------------------------------
 // Values. Built here rather than imported: @janela/client's fakes are not
@@ -671,12 +671,26 @@ describe("AppSidebar markup", () => {
     expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeLessThan(
       overlaid.indexOf('aria-label="Search"'),
     );
-    // And the band is a window handle: without this attribute the app has an
-    // overlay title bar that cannot move the window.
-    expect(overlaid).toContain("data-tauri-drag-region");
 
     // Fullscreen: no buttons to dodge, so no gap in front of the search button.
     expect(fullscreen).not.toContain(WINDOW_CONTROLS_ROOM);
+  });
+
+  test("the header row is the band that drags the window, in both states", () => {
+    const region = `data-tauri-drag-region="${WINDOW_DRAG_REGION}"`;
+
+    for (const markup of [
+      renderSidebar(fakeEnvironment({})),
+      // Fullscreen has no buttons in the row and is still a title bar: a window
+      // with no way to be moved or zoomed is what removing the system one cost.
+      renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls })),
+    ]) {
+      // On the row, not on a child of it: the whole band has to drag, and Tauri's
+      // script only walks *up* from what was pressed. A child carrying it drags
+      // exactly its own box, which is how this broke the first time.
+      expect(markup.indexOf(region)).toBeGreaterThan(-1);
+      expect(markup.indexOf(region)).toBeLessThan(markup.indexOf('aria-label="Search"'));
+    }
   });
 
   test("the Inbox row promises nothing: disabled, and badged as planned", () => {

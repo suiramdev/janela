@@ -32,7 +32,6 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
-  useSize,
   type IconComponent,
 } from "@janela/design";
 import type { ReactElement } from "react";
@@ -65,8 +64,8 @@ import {
   PANE_COLUMN,
   SIDEBAR_SCROLLER,
   ShowSidebarBar,
+  SidebarTitleRow,
   WINDOW_COLUMN,
-  WindowControlsRoom,
 } from "./window-chrome.tsx";
 
 /**
@@ -206,7 +205,6 @@ const TAB_ROWS: readonly NavRow[] = SETTINGS_TABS.map((tab) => ({
  */
 export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
   const { route, projects, onSelect, onBack } = props;
-  const size = useSize();
 
   const projectRows = useMemo<readonly NavRow[]>(
     () =>
@@ -226,20 +224,15 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
     // no reason anyone could name.
     <Sidebar variant="inset" collapsible="offcanvas">
       <SidebarHeader>
-        {/* The window controls land on this row here too — it is the same window
-            and the same first row, holding a different word. */}
-        <div className={cn(size.control, "flex items-center gap-0.5")}>
-          <WindowControlsRoom />
-          <h1
-            className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium"
-            data-tauri-drag-region
-          >
+        {/* The same first row of the same window, holding a different word. */}
+        <SidebarTitleRow>
+          <h1 className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium">
             Settings
           </h1>
           {/* The primitive's trigger carries its own tooltip, with the ⌘B chip
               in it — the same control the main window's header has. */}
           <SidebarTrigger />
-        </div>
+        </SidebarTitleRow>
       </SidebarHeader>
 
       <SidebarContent className={SIDEBAR_SCROLLER}>
