@@ -7,6 +7,7 @@ import type {
   Axis,
   Backing,
   LaunchProfileID,
+  PaneDestination,
   Project,
   ProjectID,
   Session,
@@ -21,6 +22,7 @@ import {
   emptyLayout,
   isLive,
   moveTab as moveLayoutTab,
+  moveTerminal as moveLayoutTerminal,
   newSessionID,
   newTerminalID,
   now,
@@ -75,6 +77,12 @@ export interface SessionService {
   branchOverview(projectID: ProjectID): Promise<ProjectBranchOverview>;
 
   moveTab(sessionID: SessionID, from: number, to: number): Promise<void>;
+
+  moveTerminal(
+    sessionID: SessionID,
+    terminalID: TerminalID,
+    destination: PaneDestination,
+  ): Promise<void>;
 
   removalPlan(id: SessionID): Promise<SessionRemovalPlan>;
 
@@ -379,6 +387,33 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     if (session === undefined) throw new UnknownSession(sessionID);
 
     const layout = moveLayoutTab(session.layout, from, to);
+
+    if (layout === session.layout) return;
+
+    session.layout = layout;
+    await this.deps.repository.save(session);
+    await this.publish();
+  }
+
+  async moveTerminal(
+    sessionID: SessionID,
+    terminalID: TerminalID,
+    destination: PaneDestination,
+  ): Promise<void> {
+    const session = this.find(sessionID);
+
+    if (session === undefined) throw new UnknownSession(sessionID);
+
+    const holds = (id: TerminalID): boolean =>
+      session.terminals.some((terminal) => terminal.id === id);
+
+    if (!holds(terminalID)) throw new UnknownTerminal(terminalID);
+
+    if (destination.kind === "beside" && !holds(destination.terminal)) {
+      throw new UnknownTerminal(destination.terminal);
+    }
+
+    const layout = moveLayoutTerminal(session.layout, terminalID, destination);
 
     if (layout === session.layout) return;
 

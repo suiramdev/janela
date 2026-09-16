@@ -177,6 +177,21 @@ const storedTabOrder = async (fixture: Fixture, id: SessionID): Promise<readonly
   return (stored?.layout.tabs ?? []).map((tab) => tab.focusedTerminalID);
 };
 
+const splitSession = async (
+  fixture: Fixture,
+): Promise<{ id: SessionID; first: TerminalID; second: TerminalID }> => {
+  const session = await fixture.sessions.createSession({
+    kind: "inProject",
+    projectID: fixture.project.id,
+  });
+  const first = session.terminals[0]?.id as TerminalID;
+  const added = await fixture.sessions.createTerminal(session.id, {
+    placement: { kind: "split", beside: first, axis: "horizontal" },
+  });
+
+  return { id: session.id, first, second: added.id };
+};
+
 async function withSessions(
   options: WithSessionsOptions,
   work: (fixture: Fixture) => Promise<void>,
@@ -1292,6 +1307,88 @@ describe("moveTab", () => {
       expect(await rejection(fixture.sessions.moveTab(unknown, 0, 1))).toBeInstanceOf(
         UnknownSession,
       );
+    });
+  });
+});
+
+describe("moveTerminal", () => {
+  test("detaching a pane into a new tab persists, so a later read shows two tabs", async () => {
+    await withSessions({}, async (fixture) => {
+      const { id, first, second } = await splitSession(fixture);
+
+      await fixture.sessions.moveTerminal(id, second, { kind: "newTab" });
+
+      const stored = await fixture.database.sessions.find(id);
+
+      expect(stored?.layout.tabs.map((tab) => tab.root)).toEqual([
+        { kind: "terminal", id: first },
+        { kind: "terminal", id: second },
+      ]);
+      expect(stored?.layout.focusedTabIndex).toBe(1);
+      expect(fixture.sessions.find(id)?.layout.focusedTabIndex).toBe(1);
+    });
+  });
+
+  test("announces the move, because every client mirrors the layout", async () => {
+    await withSessions({}, async (fixture) => {
+      const { id, first, second } = await splitSession(fixture);
+      const announcements = fixture.observer.sessionCalls.length;
+
+      await fixture.sessions.moveTerminal(id, second, {
+        kind: "beside",
+        terminal: first,
+        edge: "left",
+      });
+
+      expect(fixture.observer.sessionCalls.length).toBe(announcements + 1);
+      expect(fixture.sessions.find(id)?.layout.tabs[0]?.root).toMatchObject({
+        first: { id: second },
+        second: { id: first },
+      });
+    });
+  });
+
+  test("a move that changes nothing writes nothing and announces nothing", async () => {
+    await withSessions({}, async (fixture) => {
+      const id = await threeTabSession(fixture);
+      const alone = fixture.sessions.find(id)?.terminals[0]?.id as TerminalID;
+      const before = await storedTabOrder(fixture, id);
+      const announcements = fixture.observer.sessionCalls.length;
+
+      await fixture.sessions.moveTerminal(id, alone, { kind: "newTab" });
+      await fixture.sessions.moveTerminal(id, alone, { kind: "tab", index: 0 });
+      await fixture.sessions.moveTerminal(id, alone, { kind: "tab", index: 9 });
+
+      expect(await storedTabOrder(fixture, id)).toEqual(before);
+      expect(fixture.observer.sessionCalls.length).toBe(announcements);
+    });
+  });
+
+  test("an unknown session or terminal is an error, not a silent no-op", async () => {
+    await withSessions({}, async (fixture) => {
+      const { id, first } = await splitSession(fixture);
+      const other = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const elsewhere = other.terminals[0]?.id as TerminalID;
+      const unknown = unknownIdentifier as SessionID;
+
+      expect(
+        await rejection(fixture.sessions.moveTerminal(unknown, first, { kind: "newTab" })),
+      ).toBeInstanceOf(UnknownSession);
+      expect(
+        await rejection(fixture.sessions.moveTerminal(id, elsewhere, { kind: "newTab" })),
+      ).toBeInstanceOf(UnknownTerminal);
+      expect(
+        await rejection(
+          fixture.sessions.moveTerminal(id, first, {
+            kind: "beside",
+            terminal: elsewhere,
+            edge: "right",
+          }),
+        ),
+      ).toBeInstanceOf(UnknownTerminal);
     });
   });
 });

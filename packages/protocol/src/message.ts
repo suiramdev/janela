@@ -7,6 +7,7 @@ import type {
   LaunchProfileID,
   Project,
   ProjectID,
+  PaneDestination,
   ProjectSettings,
   Session,
   SessionID,
@@ -60,6 +61,13 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly from: number;
       readonly to: number;
+    }
+  | {
+      readonly type: "moveTerminal";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly terminalID: TerminalID;
+      readonly destination: PaneDestination;
     }
   | {
       readonly type: "attach";

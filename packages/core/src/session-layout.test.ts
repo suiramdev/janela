@@ -12,6 +12,7 @@ import {
   layoutTerminalIDs,
   layoutViolations,
   moveTab,
+  moveTerminal,
   paneDepth,
   paneTerminalIDs,
   repairLayout,
@@ -373,6 +374,101 @@ describe("moveTab", () => {
 
     expect(after.tabs[0]).toBe(before.tabs[1]);
     expect(after.tabs[0]?.title).toBe("logs");
+  });
+});
+
+describe("moveTerminal", () => {
+  test("docking at a pane's right edge puts the moved terminal second in a horizontal split", () => {
+    const before = layout([tab(split(terminal("a"), terminal("b")), "b")]);
+
+    const after = moveTerminal(before, id("a"), {
+      kind: "beside",
+      terminal: id("b"),
+      edge: "right",
+    });
+
+    expect(tabAt(after).root).toEqual(split(terminal("b"), terminal("a")));
+    expect(tabAt(after).focusedTerminalID).toBe(id("a"));
+  });
+
+  test("docking at the top edge stacks the moved terminal first, vertically", () => {
+    const before = layout([tab(split(terminal("a"), terminal("b")))]);
+
+    const after = moveTerminal(before, id("a"), { kind: "beside", terminal: id("b"), edge: "top" });
+
+    expect(tabAt(after).root).toEqual(split(terminal("a"), terminal("b"), "vertical"));
+  });
+
+  test("docking beside a pane in another tab leaves the emptied tab behind and follows the pane", () => {
+    const before = layout([tab(terminal("a")), tab(terminal("b"))], 0);
+
+    const after = moveTerminal(before, id("a"), {
+      kind: "beside",
+      terminal: id("b"),
+      edge: "left",
+    });
+
+    expect(after.tabs).toHaveLength(1);
+    expect(tabAt(after).root).toEqual(split(terminal("a"), terminal("b")));
+    expect(tabAt(after).focusedTerminalID).toBe(id("a"));
+    expect(after.focusedTabIndex).toBe(0);
+  });
+
+  test("dropping on a tab docks the pane at the right of that tab's whole root", () => {
+    const before = layout([tab(split(terminal("a"), terminal("c"))), tab(terminal("b"))], 0);
+
+    const after = moveTerminal(before, id("a"), { kind: "tab", index: 1 });
+
+    expect(tabAt(after, 0).root).toEqual(terminal("c"));
+    expect(tabAt(after, 1).root).toEqual(split(terminal("b"), terminal("a")));
+    expect(tabAt(after, 1).focusedTerminalID).toBe(id("a"));
+    expect(after.focusedTabIndex).toBe(1);
+  });
+
+  test("a tab index past a vanishing source tab is corrected for the tab that disappeared", () => {
+    const after = moveTerminal(threeTabs(), id("a"), { kind: "tab", index: 2 });
+
+    expect(after.tabs).toHaveLength(2);
+    expect(tabAt(after, 0).root).toEqual(terminal("b"));
+    expect(tabAt(after, 1).root).toEqual(split(terminal("c"), terminal("a")));
+    expect(after.focusedTabIndex).toBe(1);
+  });
+
+  test("detaching into a new tab appends the tab, focuses it, and collapses the source split", () => {
+    const before = layout([tab(split(terminal("a"), terminal("b")), "a"), tab(terminal("c"))], 0);
+
+    const after = moveTerminal(before, id("a"), { kind: "newTab" });
+
+    expect(tabOrder(after)).toEqual(["b", "c", "a"]);
+    expect(tabAt(after, 2).focusedTerminalID).toBe(id("a"));
+    expect(tabAt(after, 0).focusedTerminalID).toBe(id("b"));
+    expect(after.focusedTabIndex).toBe(2);
+  });
+
+  test("a move that changes nothing returns the layout by reference", () => {
+    const before = layout([tab(split(terminal("a"), terminal("b"))), tab(terminal("c"))]);
+
+    expect(moveTerminal(before, id("nobody"), { kind: "newTab" })).toBe(before);
+    expect(moveTerminal(before, id("a"), { kind: "beside", terminal: id("a"), edge: "left" })).toBe(
+      before,
+    );
+    expect(
+      moveTerminal(before, id("a"), { kind: "beside", terminal: id("nobody"), edge: "left" }),
+    ).toBe(before);
+    expect(moveTerminal(before, id("c"), { kind: "newTab" })).toBe(before);
+    expect(moveTerminal(before, id("c"), { kind: "tab", index: 1 })).toBe(before);
+    expect(moveTerminal(before, id("a"), { kind: "tab", index: -1 })).toBe(before);
+    expect(moveTerminal(before, id("a"), { kind: "tab", index: 1.5 })).toBe(before);
+    expect(moveTerminal(before, id("a"), { kind: "tab", index: 2 })).toBe(before);
+  });
+
+  test("a dock that would exceed the depth bound is refused by reference", () => {
+    const before = layout([tab(deepTree(MAXIMUM_PANE_DEPTH)), tab(terminal("x"))], 1);
+
+    expect(
+      moveTerminal(before, id("x"), { kind: "beside", terminal: id("deep"), edge: "left" }),
+    ).toBe(before);
+    expect(moveTerminal(before, id("x"), { kind: "tab", index: 0 })).toBe(before);
   });
 });
 

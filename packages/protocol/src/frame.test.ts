@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("a directory listing is a new request, so it is a wire change: version 8, speaking 8 only", () => {
-    expect(PROTOCOL_VERSION).toBe(8);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(8);
+  test("moving a pane is a new request, so it is a wire change: version 9, speaking 9 only", () => {
+    expect(PROTOCOL_VERSION).toBe(9);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(9);
   });
 });
 

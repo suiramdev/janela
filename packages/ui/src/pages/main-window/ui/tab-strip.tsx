@@ -5,7 +5,14 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { type Axis, type SessionLayout, type TerminalDescriptor } from "@janela/core";
+import {
+  paneTerminalIDs,
+  type Axis,
+  type PaneDestination,
+  type SessionLayout,
+  type TerminalDescriptor,
+  type TerminalID,
+} from "@janela/core";
 import {
   Button,
   Kbd,
@@ -67,9 +74,27 @@ export function TabStrip(props: {
   readonly onSplitTab: (index: number, axis: Axis) => void;
   readonly onMoveTab: (from: number, to: number) => void;
   readonly onCloseTabs: (index: number, scope: TabCloseScope) => void;
+  readonly draggedTerminalID: TerminalID | undefined;
+  readonly onDropTerminal: (destination: PaneDestination) => void;
 }): ReactElement {
-  const { layout, terminals, onFocusTab, onNewTerminal, onSplitTab, onMoveTab, onCloseTabs } =
-    props;
+  const {
+    layout,
+    terminals,
+    onFocusTab,
+    onNewTerminal,
+    onSplitTab,
+    onMoveTab,
+    onCloseTabs,
+    draggedTerminalID,
+    onDropTerminal,
+  } = props;
+
+  const isTerminalDragging = draggedTerminalID !== undefined;
+  const canDetach =
+    draggedTerminalID !== undefined &&
+    layout.tabs.some(
+      (tab) => tab.root.kind === "split" && paneTerminalIDs(tab.root).includes(draggedTerminalID),
+    );
 
   const handleValueChange = useCallback<TabChangeHandler>(
     (value) => {
@@ -116,14 +141,17 @@ export function TabStrip(props: {
               tabCount={layout.tabs.length}
               label={tabLabel(tab, terminals)}
               drag={drag}
+              isTerminalDragging={isTerminalDragging}
               onDrag={setDrag}
               onDrop={onMoveTab}
+              onDropTerminal={onDropTerminal}
               onDragEnd={endDrag}
               onClose={onCloseTabs}
               onNewTerminal={onNewTerminal}
               onSplit={onSplitTab}
             />
           ))}
+          {canDetach ? <NewTabSlot onDropTerminal={onDropTerminal} /> : null}
         </TabsList>
       </Tabs>
       <div className="flex shrink-0 items-center gap-0.5">
@@ -168,8 +196,10 @@ function TabItem(props: {
   readonly tabCount: number;
   readonly label: string;
   readonly drag: TabDrag | undefined;
+  readonly isTerminalDragging: boolean;
   readonly onDrag: (drag: TabDrag | undefined) => void;
   readonly onDrop: (from: number, to: number) => void;
+  readonly onDropTerminal: (destination: PaneDestination) => void;
   readonly onDragEnd: () => void;
   readonly onClose: (index: number, scope: TabCloseScope) => void;
   readonly onNewTerminal: () => void;
@@ -180,8 +210,10 @@ function TabItem(props: {
     tabCount,
     label,
     drag,
+    isTerminalDragging,
     onDrag,
     onDrop,
+    onDropTerminal,
     onDragEnd,
     onClose,
     onNewTerminal,
@@ -222,8 +254,19 @@ function TabItem(props: {
     [index, onDrag],
   );
 
+  const [isTerminalOver, setTerminalOver] = useState(false);
+
   const handleDragOver = useCallback(
     (event: DragEvent<HTMLElement>) => {
+      if (isTerminalDragging) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+
+        if (!isTerminalOver) setTerminalOver(true);
+
+        return;
+      }
+
       if (drag === undefined) return;
 
       event.preventDefault();
@@ -233,11 +276,27 @@ function TabItem(props: {
 
       if (to !== drag.to) onDrag({ from: drag.from, to });
     },
-    [drag, index, onDrag],
+    [drag, index, isTerminalDragging, isTerminalOver, onDrag],
   );
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+
+    setTerminalOver(false);
+  }, []);
 
   const handleDrop = useCallback(
     (event: DragEvent<HTMLElement>) => {
+      if (isTerminalDragging) {
+        event.preventDefault();
+        setTerminalOver(false);
+        onDropTerminal({ kind: "tab", index });
+
+        return;
+      }
+
       if (drag === undefined) return;
 
       event.preventDefault();
@@ -253,7 +312,7 @@ function TabItem(props: {
 
       if (to !== drag.from) onDrop(drag.from, to);
     },
-    [drag, index, onDrop, onDragEnd],
+    [drag, index, isTerminalDragging, onDrop, onDropTerminal, onDragEnd],
   );
 
   const indicator = drag === undefined || drag.to === undefined ? undefined : dropEdge(drag, index);
@@ -263,12 +322,14 @@ function TabItem(props: {
       label={`Tab: ${label}`}
       rows={menuRows}
       className={cn(
-        "relative flex h-full min-w-0 shrink-0 items-center",
+        "relative flex h-full min-w-0 shrink-0 items-center rounded-md",
         indicator === "before" && "shadow-[inset_2px_0_0_0_var(--color-foreground)]",
         indicator === "after" && "shadow-[inset_-2px_0_0_0_var(--color-foreground)]",
         drag?.from === index && "opacity-50",
+        isTerminalOver && "bg-accent",
       )}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <TabsTrigger
@@ -290,6 +351,56 @@ function TabItem(props: {
         <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
       </Button>
     </ContextMenuRegion>
+  );
+}
+
+function NewTabSlot(props: {
+  readonly onDropTerminal: (destination: PaneDestination) => void;
+}): ReactElement {
+  const { onDropTerminal } = props;
+  const [isOver, setOver] = useState(false);
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+
+      if (!isOver) setOver(true);
+    },
+    [isOver],
+  );
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+
+    setOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setOver(false);
+      onDropTerminal({ kind: "newTab" });
+    },
+    [onDropTerminal],
+  );
+
+  return (
+    <div
+      aria-hidden
+      data-slot="new-tab-drop"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        "text-muted-foreground/70 ml-1 flex h-full shrink-0 items-center rounded-md border border-dashed px-2 text-xs",
+        isOver && "bg-accent text-foreground",
+      )}
+    >
+      New tab
+    </div>
   );
 }
 

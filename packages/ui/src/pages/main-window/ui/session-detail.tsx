@@ -2,12 +2,13 @@ import {
   emptyLayout,
   focusedTab,
   type Axis,
+  type PaneDestination,
   type SessionID,
   type TerminalDescriptor,
   type TerminalID,
 } from "@janela/core";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@janela/design";
-import { useCallback, useEffect, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import {
   type PanePath,
@@ -21,7 +22,12 @@ import {
   withSplitFraction,
 } from "../../../shared/model/index.ts";
 import { ContentCard, PANE_REGION, ShowSidebarBar } from "../../../shared/ui/index.ts";
-import { closeTerminals, createTerminal, splitTerminal } from "../model/command-dispatch.ts";
+import {
+  closeTerminals,
+  createTerminal,
+  moveTerminal,
+  splitTerminal,
+} from "../model/command-dispatch.ts";
 import { closeQuestionScope, tabTerminals } from "../model/tab-rows.ts";
 import { PaneView } from "./pane-view.tsx";
 import { TabStrip } from "./tab-strip.tsx";
@@ -118,6 +124,20 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
     [connection, sessionID],
   );
 
+  const [draggedTerminalID, setDraggedTerminalID] = useState<TerminalID | undefined>(undefined);
+
+  const dropTerminal = useCallback(
+    (destination: PaneDestination) => {
+      if (draggedTerminalID === undefined) return;
+
+      setDraggedTerminalID(undefined);
+      void moveTerminal(connection, sessionID, draggedTerminalID, destination).catch(
+        swallowRequestFailure,
+      );
+    },
+    [connection, draggedTerminalID, sessionID],
+  );
+
   const closeTabs = useCallback(
     (index: number, scope: TabCloseScope) => {
       const indices = tabsInCloseScope(layout.tabs.length, index, scope);
@@ -185,6 +205,8 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
           onSplitTab={splitTab}
           onMoveTab={moveTab}
           onCloseTabs={closeTabs}
+          draggedTerminalID={draggedTerminalID}
+          onDropTerminal={dropTerminal}
         />
       )}
       <div className={PANE_REGION}>
@@ -204,6 +226,9 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
             onClosePane={closePane}
             onSplitPane={splitPane}
             onNewTerminal={newTerminal}
+            draggedTerminalID={draggedTerminalID}
+            onDragTerminal={setDraggedTerminalID}
+            onDropTerminal={dropTerminal}
           />
         )}
       </div>

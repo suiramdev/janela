@@ -3,22 +3,32 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { DaemonConnection } from "@janela/client";
 import {
   type Axis,
+  type DockEdge,
   type GridSize,
+  type PaneDestination,
   type TerminalDescriptor,
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
 import { Badge, Button, useSize, cn } from "@janela/design";
 import { TerminalSurface, type TerminalSurfaceHandle } from "@janela/terminal-ui";
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactElement } from "react";
 
 import { useClientEnvironment } from "../../../shared/model/index.ts";
 import { ContextMenuRegion, type MenuRow } from "../../../shared/ui/index.ts";
 import { terminalMenuRows } from "../model/menu-rows.ts";
+import { TERMINAL_DRAG_TYPE, dockEdge } from "../model/pane-drag.ts";
 import { isFailureState, terminalStateText } from "../model/tab-rows.ts";
 import { attachPane, shouldStartOnAttach } from "../model/terminal-attach.ts";
 
 const NO_MENU_ROWS: readonly MenuRow[] = [];
+
+const EDGE_CLASSES = {
+  left: "inset-y-0 left-0 w-1/2",
+  right: "inset-y-0 right-0 w-1/2",
+  top: "inset-x-0 top-0 h-1/2",
+  bottom: "inset-x-0 bottom-0 h-1/2",
+} satisfies Record<DockEdge, string>;
 
 export function TerminalPane(props: {
   readonly terminalID: TerminalID;
@@ -31,6 +41,9 @@ export function TerminalPane(props: {
   readonly onClose: (id: TerminalID) => void;
   readonly onSplit: (id: TerminalID, axis: Axis) => void;
   readonly onNewTerminal: () => void;
+  readonly draggedTerminalID: TerminalID | undefined;
+  readonly onDragTerminal: (id: TerminalID | undefined) => void;
+  readonly onDropTerminal: (destination: PaneDestination) => void;
 }): ReactElement {
   const {
     terminalID,
@@ -43,6 +56,9 @@ export function TerminalPane(props: {
     onClose,
     onSplit,
     onNewTerminal,
+    draggedTerminalID,
+    onDragTerminal,
+    onDropTerminal,
   } = props;
 
   const environment = useClientEnvironment();
@@ -156,6 +172,65 @@ export function TerminalPane(props: {
     );
   }, [clipboard, handleClose, onNewTerminal, onSplit, terminalID]);
 
+  const isDragSource = draggedTerminalID === terminalID;
+  const acceptsDrop = draggedTerminalID !== undefined && !isDragSource;
+  const [edge, setEdge] = useState<DockEdge | undefined>(undefined);
+
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      event.dataTransfer.setData(TERMINAL_DRAG_TYPE, terminalID);
+      event.dataTransfer.effectAllowed = "move";
+      onDragTerminal(terminalID);
+    },
+    [onDragTerminal, terminalID],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    onDragTerminal(undefined);
+  }, [onDragTerminal]);
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!acceptsDrop) return;
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+
+      const next = dockEdge(
+        { x: event.clientX, y: event.clientY },
+        event.currentTarget.getBoundingClientRect(),
+      );
+
+      if (next !== edge) setEdge(next);
+    },
+    [acceptsDrop, edge],
+  );
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+
+    setEdge(undefined);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLElement>) => {
+      if (!acceptsDrop) return;
+
+      event.preventDefault();
+
+      const at = dockEdge(
+        { x: event.clientX, y: event.clientY },
+        event.currentTarget.getBoundingClientRect(),
+      );
+
+      setEdge(undefined);
+      onDropTerminal({ kind: "beside", terminal: terminalID, edge: at });
+    },
+    [acceptsDrop, onDropTerminal, terminalID],
+  );
+
   const title = descriptor?.title ?? "Terminal";
   const stateText = terminalStateText(state);
   const size = useSize();
@@ -163,13 +238,23 @@ export function TerminalPane(props: {
   return (
     <div
       data-slot="terminal-pane"
+      {...(edge === undefined ? {} : { "data-drop-edge": edge })}
       onFocusCapture={handleFocusCapture}
-      className="bg-terminal-background shadow-surface-2 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 flex h-full w-full flex-col overflow-hidden rounded-lg transition-none motion-safe:duration-(--spring-slow)"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        "bg-terminal-background shadow-surface-2 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 relative flex h-full w-full flex-col overflow-hidden rounded-lg transition-none motion-safe:duration-(--spring-slow)",
+        isDragSource && "opacity-50",
+      )}
     >
       <div
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         className={cn(
           size.control,
-          "flex shrink-0 items-center gap-1.5 border-b border-[oklch(0_0_0/0.08)] pr-0.5 pl-2 dark:border-[oklch(1_0_0/0.08)]",
+          "flex shrink-0 cursor-grab items-center gap-1.5 border-b border-[oklch(0_0_0/0.08)] pr-0.5 pl-2 active:cursor-grabbing dark:border-[oklch(1_0_0/0.08)]",
         )}
       >
         <span className="text-foreground/70 min-w-0 flex-1 truncate text-xs font-medium">
@@ -202,6 +287,15 @@ export function TerminalPane(props: {
           onViewportChange={handleViewportChange}
         />
       </ContextMenuRegion>
+      {edge === undefined ? null : (
+        <div
+          aria-hidden
+          className={cn(
+            "bg-ring/15 ring-ring pointer-events-none absolute z-10 rounded-lg ring-2 ring-inset",
+            EDGE_CLASSES[edge],
+          )}
+        />
+      )}
     </div>
   );
 }

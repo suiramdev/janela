@@ -244,6 +244,12 @@ snapshot. A move that changes nothing — including an index off the end — wri
 nothing and announces nothing, which `moveTab` in `@janela/core` signals by
 returning the same layout by identity.
 
+`moveTerminal` is the same shape: both terminals named must belong to the
+session (`UnknownTerminal` otherwise), the layout operation in `@janela/core`
+decides, and identity means nothing is written or announced — including a dock
+the depth bound refused, which the strip and the pane swallow as they swallow a
+failed split.
+
 `projectRemoving` stops the project's terminals and forgets its sessions without
 a `repository.remove` per session: the rows cascade with the project, and
 deleting them twice would be two round trips to say the same thing.

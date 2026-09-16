@@ -3,6 +3,7 @@ import {
   FRACTION_RANGE,
   type Axis,
   type Pane,
+  type PaneDestination,
   type TerminalDescriptor,
   type TerminalID,
   type TerminalState,
@@ -35,6 +36,9 @@ interface PaneViewProps {
   readonly onClosePane: (id: TerminalID) => void;
   readonly onSplitPane: (id: TerminalID, axis: Axis) => void;
   readonly onNewTerminal: () => void;
+  readonly draggedTerminalID: TerminalID | undefined;
+  readonly onDragTerminal: (id: TerminalID | undefined) => void;
+  readonly onDropTerminal: (destination: PaneDestination) => void;
 }
 
 const DIVIDER_STEP = 2;
@@ -59,6 +63,7 @@ export function PaneView(props: PaneViewProps): ReactElement {
   if (pane.kind === "terminal") {
     return (
       <TerminalPane
+        key={pane.id}
         terminalID={pane.id}
         descriptor={props.terminals.find((terminal) => terminal.id === pane.id)}
         state={props.states[pane.id]}
@@ -69,6 +74,9 @@ export function PaneView(props: PaneViewProps): ReactElement {
         onClose={props.onClosePane}
         onSplit={props.onSplitPane}
         onNewTerminal={props.onNewTerminal}
+        draggedTerminalID={props.draggedTerminalID}
+        onDragTerminal={props.onDragTerminal}
+        onDropTerminal={props.onDropTerminal}
       />
     );
   }

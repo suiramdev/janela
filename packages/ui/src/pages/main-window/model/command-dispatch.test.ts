@@ -37,6 +37,7 @@ import {
   closeTerminals,
   createCommandDispatch,
   createSessionAndSelect,
+  moveTerminal,
   sessionOrder,
 } from "./command-dispatch.ts";
 
@@ -344,6 +345,35 @@ describe("splits", () => {
         type: "createTerminal",
         sessionID: session.id,
         placement: { kind: "split", beside: terminal.id, axis: "vertical" },
+      },
+    ]);
+  });
+
+  test("a pane drop is a request naming the terminal and where it lands", async () => {
+    const terminal = fakeTerminal();
+    const other = fakeTerminal();
+    const session = fakeSession({ terminals: [terminal, other] });
+    const context = harness({ sessions: [session], selection: session.id });
+
+    await moveTerminal(context.target.connection, session.id, terminal.id, {
+      kind: "beside",
+      terminal: other.id,
+      edge: "bottom",
+    });
+    await moveTerminal(context.target.connection, session.id, terminal.id, { kind: "newTab" });
+
+    expect(context.sent).toEqual([
+      {
+        type: "moveTerminal",
+        sessionID: session.id,
+        terminalID: terminal.id,
+        destination: { kind: "beside", terminal: other.id, edge: "bottom" },
+      },
+      {
+        type: "moveTerminal",
+        sessionID: session.id,
+        terminalID: terminal.id,
+        destination: { kind: "newTab" },
       },
     ]);
   });

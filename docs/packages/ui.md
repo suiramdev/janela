@@ -156,6 +156,12 @@ opening over them.
   pointed at cannot be found by someone who does not know it is there.
 - A drop slot that puts the tab back where it is draws nothing: there is no move to
   preview. `TAB_DRAG_TYPE` is private so a file dropped on the strip is not a tab.
+- A tab is also a drop target for a *pane*: while a terminal bar is being dragged
+  (`draggedTerminalID`, held by `SessionDetail` because the strip and the pane
+  tree both need it) a tab accepts the drop as `{ kind: "tab" }` ahead of its own
+  reorder logic, and a dashed "New tab" slot appears after the last tab — only
+  when the dragged pane has a sibling, since detaching a lone pane is a no-op the
+  slot would misrepresent.
 
 ### `ui/terminal-pane.tsx`
 
@@ -166,6 +172,12 @@ nothing (§ Non-negotiables 5).
   terminal is meant to be draggable into a different one without stopping, which is
   only coherent if the thing being moved is visible and named where it lives. It
   costs a row of the grid, which is why it says as little as possible.
+- The bar is the drag handle (`draggable`, `TERMINAL_DRAG_TYPE`), and the whole
+  pane is the target: `dockEdge` in `model/pane-drag.ts` picks the nearest edge in
+  the pane's own proportions, `data-drop-edge` names it, and a half-pane overlay
+  previews the split. The source pane refuses its own drop and dims instead.
+  `dragleave` is ignored while the pointer is still inside the pane — moving over
+  the surface fires a leave for the bar — or the overlay would flicker.
 - The surface registers through a ref callback, not an effect: the handle exists
   when React hands it over, and React's cleanup is the unregistration.
 - Before the attach the measurement *is* the attach viewport; afterwards it is a

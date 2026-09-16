@@ -86,6 +86,21 @@ const decodeTerminalPlacement = Schema.decodeUnknownOption(
   }),
 );
 
+const decodePaneDestination = Schema.decodeUnknownOption(
+  Schema.Union([
+    Schema.Struct({
+      kind: Schema.Literal("beside"),
+      terminal: Schema.String.check(Schema.isGUID()),
+      edge: Schema.Literals(["left", "right", "top", "bottom"]),
+    }),
+    Schema.Struct({
+      kind: Schema.Literal("tab"),
+      index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+    Schema.Struct({ kind: Schema.Literal("newTab") }),
+  ]),
+);
+
 const decodeLaunchProfile = Schema.decodeUnknownOption(
   Schema.Struct({
     id: Schema.String.check(Schema.isNonEmpty()),
@@ -236,6 +251,16 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           }
 
           await sessions.moveTab(request.sessionID, from, to);
+
+          return acknowledged(id);
+        },
+
+        moveTerminal: async (request) => {
+          if (Option.isNone(decodePaneDestination(request.destination))) {
+            throw new TypeError("moveTerminal with an impossible destination");
+          }
+
+          await sessions.moveTerminal(request.sessionID, request.terminalID, request.destination);
 
           return acknowledged(id);
         },

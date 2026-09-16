@@ -98,6 +98,29 @@ describe("SessionDetail markup", () => {
     expect(markup).toContain('aria-label="Close terminal: bash"');
   });
 
+  test("each terminal's bar is a drag handle, and nothing is a drop target until a drag begins", () => {
+    const split = session("s", {
+      terminals: [terminal("t1", "zsh"), terminal("t2", "bash")],
+      layout: splitFocusing(terminalID("t2")),
+    });
+
+    const environment = fakeEnvironment({
+      sessions: [split],
+      states: {
+        [terminalID("t1")]: { kind: "running" },
+        [terminalID("t2")]: { kind: "running" },
+      },
+      status: { kind: "connected" },
+    });
+
+    const markup = renderDetail(environment, "s");
+
+    expect(paneMarkup(markup, "zsh")).toContain('draggable="true"');
+    expect(paneMarkup(markup, "bash")).toContain('draggable="true"');
+    expect(markup).not.toContain("data-drop-edge");
+    expect(markup).not.toContain('data-slot="new-tab-drop"');
+  });
+
   test("the shells are what is raised, not the region that holds them", () => {
     const split = session("s", {
       terminals: [terminal("t1", "zsh"), terminal("t2", "bash")],

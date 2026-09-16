@@ -23,6 +23,13 @@ export type Pane =
 
 export type Axis = "horizontal" | "vertical";
 
+export type DockEdge = "left" | "right" | "top" | "bottom";
+
+export type PaneDestination =
+  | { readonly kind: "beside"; readonly terminal: TerminalID; readonly edge: DockEdge }
+  | { readonly kind: "tab"; readonly index: number }
+  | { readonly kind: "newTab" };
+
 export const MAXIMUM_PANE_DEPTH = 6;
 
 export const FRACTION_RANGE = { minimum: 0.05, maximum: 0.95 } as const;
@@ -334,6 +341,93 @@ export function moveTab(layout: SessionLayout, from: number, to: number): Sessio
   }
 
   return { tabs, focusedTabIndex };
+}
+
+function dockedSplit(moved: Pane, target: Pane, edge: DockEdge): Pane {
+  const leads = edge === "left" || edge === "top";
+
+  return {
+    kind: "split",
+    axis: edge === "left" || edge === "right" ? "horizontal" : "vertical",
+    fraction: 0.5,
+    first: leads ? moved : target,
+    second: leads ? target : moved,
+  };
+}
+
+function withDockedRoot(
+  layout: SessionLayout,
+  index: number,
+  root: Pane,
+  terminal: TerminalID,
+): SessionLayout | undefined {
+  const tab = layout.tabs[index];
+
+  if (tab === undefined || paneDepth(root) > MAXIMUM_PANE_DEPTH) return undefined;
+
+  const tabs = layout.tabs.map((existing, at) =>
+    at === index ? { ...tab, root, focusedTerminalID: terminal } : existing,
+  );
+
+  return { tabs, focusedTabIndex: index };
+}
+
+export function moveTerminal(
+  layout: SessionLayout,
+  terminal: TerminalID,
+  destination: PaneDestination,
+): SessionLayout {
+  const sourceIndex = tabIndexContaining(layout, terminal);
+  const source = layout.tabs[sourceIndex];
+
+  if (source === undefined) return layout;
+
+  const moved: Pane = { kind: "terminal", id: terminal };
+
+  if (destination.kind === "newTab") {
+    if (source.root.kind === "terminal") return layout;
+
+    const stripped = closeTerminal(layout, terminal);
+    const tabs = [...stripped.tabs, { root: moved, focusedTerminalID: terminal }];
+
+    return { tabs, focusedTabIndex: tabs.length - 1 };
+  }
+
+  if (destination.kind === "beside") {
+    const target = destination.terminal;
+
+    if (target === terminal || tabIndexContaining(layout, target) === -1) return layout;
+
+    const stripped = closeTerminal(layout, terminal);
+    const index = tabIndexContaining(stripped, target);
+    const tab = stripped.tabs[index];
+
+    if (tab === undefined) return layout;
+
+    const split = dockedSplit(moved, { kind: "terminal", id: target }, destination.edge);
+    const root = replaceTerminal(tab.root, target, split);
+
+    return withDockedRoot(stripped, index, root, terminal) ?? layout;
+  }
+
+  const last = layout.tabs.length - 1;
+  const requested = destination.index;
+
+  if (!Number.isInteger(requested) || requested < 0 || requested > last) return layout;
+
+  const stripped = closeTerminal(layout, terminal);
+  const sourceTabRemoved = stripped.tabs.length < layout.tabs.length;
+
+  if (sourceTabRemoved && sourceIndex === requested) return layout;
+
+  const index = sourceTabRemoved && sourceIndex < requested ? requested - 1 : requested;
+  const tab = stripped.tabs[index];
+
+  if (tab === undefined) return layout;
+
+  const root = dockedSplit(moved, tab.root, "right");
+
+  return withDockedRoot(stripped, index, root, terminal) ?? layout;
 }
 
 export function resizeSplit(

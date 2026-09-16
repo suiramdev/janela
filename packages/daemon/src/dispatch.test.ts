@@ -4,6 +4,7 @@ import type {
   GridSize,
   LaunchProfile,
   LaunchProfileID,
+  PaneDestination,
   Project,
   Session,
   SessionID,
@@ -888,6 +889,76 @@ describe("sessions", () => {
       const id = (index + 1) as RequestID;
       // oxlint-disable-next-line no-await-in-loop
       await peer.send(wireControl({ type: "moveTab", id, sessionID: "s1", ...indices }));
+      // oxlint-disable-next-line no-await-in-loop
+      expect((await peer.reply(id)).type).toBe("failed");
+    }
+
+    expect(moves).toEqual([]);
+  });
+
+  test("moveTerminal reaches the brain and is acknowledged", async () => {
+    const moves: { id: SessionID; terminal: TerminalID; destination: PaneDestination }[] = [];
+    const daemon = fixture({
+      sessionOverrides: {
+        moveTerminal: (id, terminal, destination) => {
+          moves.push({ id, terminal, destination });
+
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    const sessionID = "s1" as SessionID;
+    const moved = terminalID();
+    const destination: PaneDestination = { kind: "beside", terminal: terminalID(), edge: "left" };
+
+    await peer.send(
+      request({
+        type: "moveTerminal",
+        id: 1 as RequestID,
+        sessionID,
+        terminalID: moved,
+        destination,
+      }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(moves).toEqual([{ id: sessionID, terminal: moved, destination }]);
+  });
+
+  test("an impossible destination is refused, and the brain is not called", async () => {
+    const moves: number[] = [];
+    const daemon = fixture({
+      sessionOverrides: {
+        moveTerminal: () => {
+          moves.push(1);
+
+          return Promise.resolve();
+        },
+      },
+    });
+    const peer = await daemon.connect();
+    const impossible: readonly WireValue[] = [
+      { kind: "beside", terminal: "t1", edge: "left" },
+      { kind: "beside", terminal: terminalID(), edge: "middle" },
+      { kind: "tab", index: -1 },
+      { kind: "tab", index: "0" },
+      { kind: "sideways" },
+      null,
+    ];
+
+    for (const [index, destination] of impossible.entries()) {
+      const id = (index + 1) as RequestID;
+      // oxlint-disable-next-line no-await-in-loop
+      await peer.send(
+        wireControl({
+          type: "moveTerminal",
+          id,
+          sessionID: "s1",
+          terminalID: terminalID(),
+          destination,
+        }),
+      );
       // oxlint-disable-next-line no-await-in-loop
       expect((await peer.reply(id)).type).toBe("failed");
     }

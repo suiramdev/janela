@@ -233,6 +233,13 @@ the pane they touch and reuse every untouched subtree by reference.
   daemon decides a drag that ended where it started needs no write.
   `focusedTabIndex` keeps naming the tab it named before the move, so dragging
   some *other* tab never switches the user's view.
+- `moveTerminal` — a pane leaves its place (`closeTerminal` does the removal, so
+  an emptied tab vanishes and the tab left behind refocuses) and docks: beside a
+  named pane at one of four edges, at the right of a whole tab, or in a new tab
+  appended last. Focus follows the moved pane. Unchanged **and by reference** — the
+  same contract as `moveTab` — when the terminal or target is absent, the target is
+  itself, a lone pane is detached or dropped on its own tab, a tab index is off the
+  end, or the dock would exceed `MAXIMUM_PANE_DEPTH`.
 - `repairLayout` — called on every load. A corrupt layout must degrade, never
   throw: the alternative is a session the user cannot open. `seen` is shared
   across every tab, so "exactly once" holds layout-wide and the first occurrence

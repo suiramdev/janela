@@ -4,6 +4,7 @@ import {
   focusNeighbour,
   isLive,
   type Axis,
+  type PaneDestination,
   type Project,
   type Session,
   type SessionID,
@@ -103,6 +104,15 @@ export function splitTerminal(
     sessionID,
     placement: { kind: "split", beside, axis },
   });
+}
+
+export function moveTerminal(
+  connection: Pick<DaemonConnection, "request">,
+  sessionID: SessionID,
+  terminalID: TerminalID,
+  destination: PaneDestination,
+): Promise<string | undefined> {
+  return connection.request({ type: "moveTerminal", sessionID, terminalID, destination });
 }
 
 export async function closeTerminals(

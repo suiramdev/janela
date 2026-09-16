@@ -203,8 +203,9 @@ no number, or it is not.
 | 6 | `projectBranches` and `moveTab` join `ClientMessage`, and `SessionCreationIntent`'s `inProject` case gains an optional `branch` to check out in the project's own directory. |
 | 7 | `SessionCreationIntent`'s `newWorktree` case gains `shareBranch`, which asks the daemon for `git worktree add --force` so a branch already checked out somewhere can have a second worktree; its `name` now also names the directory the daemon places that worktree in, which is what keeps two worktrees of one branch off the same path. |
 | 8 | `listDirectory` joins `ClientMessage`: a client that has no folder picker of its own — a browser page — asks the daemon to read one folder of the Mac's filesystem, and gets a `DirectoryListing` back as `text`. |
+| 9 | `moveTerminal` joins `ClientMessage`: a terminal pane leaves its place in the layout and docks beside another pane (`beside`, at one of four edges), at the right of a whole tab (`tab`), or in a new tab of its own (`newTab`). The daemon applies it and persists the result, so every client mirrors the drop. |
 
-`MINIMUM_SUPPORTED_VERSION` is 8: it moved with the version, as it did up to 6.
+`MINIMUM_SUPPORTED_VERSION` is 9: it moved with the version, as it did up to 6 and again at 8 — a v8 daemon's discriminant table does not know `moveTerminal`, and the first pane a user dragged would close its connection, so the handshake refuses instead.
 
 A v5 peer does not degrade, it *disconnects*: its `decodeClientMessage` matches
 the discriminant against an exhaustive table and refuses anything absent from it,
@@ -228,10 +229,11 @@ background service is older", whose only button is "Restart the background
 service" — rather than reporting a handshake failure. Nothing after `hello` is
 decoded from a refused peer.
 
-v8 is a new discriminant again, so the rule of v6 applies: a v7 daemon meeting a
-v8 client would close the socket the moment a browser user pressed ⌘O, with no
-reply to correlate. Refusing the handshake instead costs the user one restart of
-the background service — which the skew banner offers, and which never touches a
+v8 and v9 are new discriminants again, so the rule of v6 applies: a v7 daemon
+meeting a v8 client would close the socket the moment a browser user pressed ⌘O,
+and a v8 daemon meeting a v9 client the moment a pane was dropped, with no reply
+to correlate. Refusing the handshake instead costs the user one restart of the
+background service — which the skew banner offers, and which never touches a
 terminal.
 
 ## removal-plan.ts, branch-overview.ts, directory-listing.ts
