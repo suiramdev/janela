@@ -13,5 +13,6 @@ export const COLOR = {
   failure: "--janela-failure",
 } as const;
 
-export const TERMINAL_FONT_STACK =
-  '"SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", ui-monospace, monospace';
+export const TERMINAL_SYMBOL_FONT = "Symbols Nerd Font Mono";
+
+export const TERMINAL_FONT_STACK = `"SF Mono", "Menlo", "DejaVu Sans Mono", "${TERMINAL_SYMBOL_FONT}", ui-monospace, monospace`;

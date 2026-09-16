@@ -41,7 +41,7 @@ export function SettingsTerminal(props: SettingsTerminalProps): ReactElement {
           onChange={changeFamily}
           placeholder={TERMINAL_FONT_STACK}
           isMonospaced
-          hint="Leave it empty for the default stack, which draws icons from Symbols Nerd Font Mono when it is installed. Name a Nerd Font here to use one for text as well. A font Janela cannot find falls back through the stack, so a typo degrades rather than breaks."
+          hint="Leave it empty for the default stack, which draws icons from the Symbols Nerd Font Mono Janela ships. Name a Nerd Font here to draw text in one too. A font Janela cannot find falls back through the stack, so a typo degrades rather than breaks."
         />
         <NumberField
           label="Font size"

@@ -657,13 +657,16 @@ positional shape is deliberate — a sidebar test reads better as
 
 One setting, deliberately: colours come from the appearance the system declares, size
 comes from the window, behaviour belongs to the program. The font is the one thing a
-developer has an opinion about that we cannot infer — and the one that decides whether
-an agent's icons draw at all, because Nerd Font glyphs live in the font and nothing in
-macOS has them.
+developer has an opinion about that we cannot infer.
 
 - Both fields reach every attached terminal through `TerminalPane`, which reads
   `view.settings` and hands the surface a `TerminalFont`. A save re-applies the font
   in place: the grid is re-measured and re-voted, and no scrollback is lost.
+- The hint says where icons come from, because the field is the one place a user
+  who wants their prompt's glyphs in the text font too will look. Leaving it empty
+  is not a compromise: the default stack ends in the symbols font the application
+  ships (`packages/design/src/tokens.ts` § `TERMINAL_SYMBOL_FONT`), so the icons
+  are there either way.
 
 ### `ui/notification-settings.tsx`
 

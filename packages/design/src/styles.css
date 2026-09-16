@@ -37,6 +37,25 @@
 @source "../../ui/src";
 
 /*
+ * The icons an agent CLI, a prompt or `eza` prints are private-use codepoints,
+ * and macOS ships no font that covers them: without this face every one of them
+ * is a tofu box, and the user has to go and find a patched font before their
+ * terminal reads correctly. Symbols Nerd Font Mono (Nerd Fonts v3.5.1, MIT —
+ * fonts/SymbolsNerdFont-LICENSE.txt) carries the icon ranges and nothing else,
+ * so it lands *after* the text fonts in `TERMINAL_FONT_STACK` and only answers
+ * for the codepoints they do not have. A user who names their own patched font
+ * in Settings never reaches it.
+ *
+ * `font-display: block` keeps the terminal from painting a frame of tofu it
+ * would then have to cache: the WebGL renderer rasterises each glyph once.
+ */
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  src: url("./fonts/SymbolsNerdFontMono-Regular.woff2") format("woff2");
+  font-display: block;
+}
+
+/*
  * Reduce Motion is the user's word (packages/design/src/tokens.ts § Motion). The
  * primitives above do not check it themselves, so it is enforced once, here:
  * every animation and transition collapses to a frame, and a dialog that would
@@ -360,8 +379,7 @@
   --radius-small: 6px;
   --radius-medium: 10px;
   --font-mono:
-    "SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font",
-    ui-monospace, monospace;
+    "SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

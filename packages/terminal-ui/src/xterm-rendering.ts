@@ -1,9 +1,9 @@
 import type { GridSize } from "@janela/core";
-import { TERMINAL_FONT_STACK, TERMINAL_INSETS } from "@janela/design";
+import { TERMINAL_FONT_STACK, TERMINAL_INSETS, TERMINAL_SYMBOL_FONT } from "@janela/design";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { Option } from "effect";
+import { Effect, Option } from "effect";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -34,6 +34,8 @@ export interface XtermRendering extends TerminalRendering {
 }
 
 export const CLIENT_SCROLLBACK_LINES = 10_000;
+
+const SYMBOL_PROBE = "\u{F055}";
 
 const APPEARANCE_QUERIES = ["(prefers-color-scheme: dark)", "(prefers-contrast: more)"];
 
@@ -100,6 +102,19 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
       webgl = undefined;
     });
   }
+
+  Effect.runFork(
+    Effect.tryPromise(() =>
+      document.fonts.load(`${options.font.size}px "${TERMINAL_SYMBOL_FONT}"`, SYMBOL_PROBE),
+    ).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          webgl?.clearTextureAtlas();
+        }),
+      ),
+      Effect.ignore,
+    ),
+  );
 
   const scroller = host.querySelector<HTMLElement>(".xterm-viewport");
 
@@ -168,6 +183,7 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
       for (const subscription of subscriptions) subscription.dispose();
 
       webgl?.dispose();
+      webgl = undefined;
       fit.dispose();
       terminal.dispose();
       host.remove();

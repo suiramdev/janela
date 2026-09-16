@@ -60,13 +60,21 @@ system became custom properties that adapt through `prefers-color-scheme` and
   `xtermRendering` is what applies either one. SF Mono first because it ships with
   macOS, has the coverage agents need and hints well at small sizes; then a stack,
   because a WebView on another platform has to render something.
-- The stack ends in `Symbols Nerd Font Mono` before the generics because agent CLIs,
-  starship prompts and `eza` draw from the Nerd Font private-use ranges, and no font
-  that ships with macOS carries them — the browser falls back per glyph, so naming
-  the symbols-only font gives a user who installed it icons in every terminal
-  without giving up SF Mono for text. Absent, it costs a lookup that fails. Powerline
-  separators are the exception: xterm draws `U+E0B0`–`U+E0B7` itself, which is why
-  those alone survive a stack with no icon coverage.
+- The stack names `TERMINAL_SYMBOL_FONT` — `Symbols Nerd Font Mono` — before the
+  generics because agent CLIs, starship prompts and `eza` draw from the Nerd Font
+  private-use ranges, and no font that ships with macOS carries them. Naming a font
+  the user may not have is a coin toss, so the application **ships** it:
+  `src/fonts/SymbolsNerdFontMono-Regular.woff2` (Nerd Fonts v3.5.1, MIT, licence
+  beside it) is declared as an `@font-face` in `styles.css`, which is why the
+  family in this token always resolves. It lives in this package rather than in a
+  client because `styles.css` does, and both the app and the web client import
+  that: an icon is a property of the design, not of the shell around it. It
+  carries the icon ranges and nothing else, so per-glyph fallback keeps SF Mono
+  for text and asks it only for the codepoints the text fonts do not have. A user
+  who names their own patched font in Settings never reaches it.
+- Powerline separators are the exception that made this look like a font problem
+  rather than a wiring one: xterm draws `U+E0B0`–`U+E0B7` itself, so those alone
+  survive a stack with no icon coverage.
 - Motion is **not** here. It lives in `lib/springs.ts`, because the tier says how big
   the thing that moves is and the number follows from that; a two-value `MOTION`
   constant here was a second, unused vocabulary for the same decision. A CSS

@@ -108,9 +108,17 @@ interprets no input, and binds no keys.
   settings value reaches the renderer or the build fails; the fallback to
   `TERMINAL_FONT_STACK` happens here and nowhere else, because two defaults are two
   answers to "what font is this terminal in". This is where Nerd Font icons come
-  from: the glyphs live in the user's font, so a family that has them is the whole
-  feature, and a stack that has none renders `U+F07B` as tofu no matter what the
-  emulator does.
+  from: the glyphs live in a font, so a stack that has none renders `U+F07B` as
+  tofu no matter what the emulator does.
+- **A webfont has to be asked for.** The icons come from the `Symbols Nerd Font
+  Mono` face `apps/desktop/src/styles.css` declares, and a face nothing in the DOM
+  uses is never loaded — a canvas asking for the family does not trigger the
+  download. So the renderer loads it explicitly, naming a codepoint the font
+  actually has, because `FontFaceSet.load` matches on the text it is given and the
+  symbols font has no space glyph. The atlas is then cleared: the WebGL renderer
+  rasterises each glyph once and caches it, so a frame drawn before the face
+  arrived would keep its tofu for the life of the terminal. Removing either half
+  puts the boxes back — the load, and the clear.
 - `setFont` assigns the two options and re-measures rather than rebuilding: xterm
   re-measures the cell synchronously on an option change, so `remeasure()` reads the
   new metric and votes the new grid in the same turn — the `ResizeObserver` never
