@@ -231,6 +231,38 @@
  *    nothing else rendered them. `DialogFooter`'s `showCloseButton` went with
  *    them — no footer in the app used it.
  *
+ * 14. The **combobox** is Fluid Functionalism's
+ *    (`npx shadcn@latest add …/r/base/combobox.json`):
+ *    `components/ui/combobox.tsx` over `hooks/use-merge-split.tsx`, and it is
+ *    the one field in the window that both picks from a list and accepts a name
+ *    the list does not have — which is what "the branch, or a new branch" is
+ *    (`new-session-sheet.tsx`). Every other file it names was already here: it
+ *    is the ninth consumer of the same `lib/` context system, `lib/popup.ts`
+ *    and `ScrollArea` that items 7–13 installed.
+ *
+ *    It was **not installed with the CLI.** Its `registryDependencies` are
+ *    thirteen items, twelve of which are already vendored and adapted —
+ *    `icon-context` to Hugeicons, `scroll-area` with its CSS payload,
+ *    `tokens`, `size-context` — and `shadcn add` offers to overwrite each one
+ *    with the registry's copy. The two files were taken from the item's JSON
+ *    (`jq -r '.files[0].content'`) with the usual two edits, paths and
+ *    `"use client"`.
+ *
+ *    Three notes:
+ *
+ *    - **`use-merge-split` came with it, and item 12 had refused it.** There it
+ *      was a *separate* registry file the dropdown could be vendored without;
+ *      here the list imports it directly to paint one background across a run
+ *      of adjacent picks, and `multiple` is threaded through the root's value
+ *      generic. Pruning it would be a rewrite of the primitive rather than an
+ *      omission, so the file is vendored whole and `ComboboxChips` — the
+ *      multiple-selection *field* — is simply not exported.
+ *    - **`plus` joined the icon table**, for the create row. Same contract as
+ *      `x` in item 13: the component asks by the Lucide name.
+ *    - **Two strict-index reads are fixed in place**, as in item 11: the first
+ *      checked row's rect, and the pair `bridgePair` destructures after
+ *      checking its length. `noUncheckedIndexedAccess` does not narrow either.
+ *
  * `@base-ui/react` is gated to this package in `scripts/layers.ts`, for the same
  * reason `@xterm/*` is gated to the two terminal seams: a view that names the
  * primitive library directly is a view that has to be rewritten when it changes.
@@ -259,6 +291,18 @@ export {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
+// The combobox: a field that filters a list and can create what was typed.
+// `ComboboxChips` — the multiple-selection field — is deliberately unexported:
+// nothing in this window picks more than one of anything. See item 14.
+export {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  type ComboboxItemData,
+} from "./components/ui/combobox.tsx";
 // One menu system, two roots. The popup — surface, fluid hover, spring,
 // dismissal — is `DropdownContent` either way; `ContextMenu` anchors it to the
 // pointer and `DropdownMenu` to a trigger. `MenuItem` is the row in both.

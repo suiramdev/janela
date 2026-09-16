@@ -1,6 +1,7 @@
 import {
   ArrowRight01Icon,
   Cancel01Icon,
+  PlusSignIcon,
   Search01Icon,
   SidebarLeftIcon,
   SidebarRightIcon,
@@ -25,7 +26,7 @@ export type IconComponent = ComponentType<IconComponentProps>;
  * actually looks up — an unused name would be an icon import that ships in the
  * bundle to be a table row.
  */
-export type IconName = "chevron-right" | "panel-left" | "panel-right" | "search" | "x";
+export type IconName = "chevron-right" | "panel-left" | "panel-right" | "plus" | "search" | "x";
 
 /**
  * Hugeicons takes its glyph as data on one component; the registry's contract is
@@ -46,6 +47,8 @@ export const defaultIcons: Record<IconName, IconComponent> = {
   "panel-left": hugeicon(SidebarLeftIcon),
   "panel-right": hugeicon(SidebarRightIcon),
   search: hugeicon(Search01Icon),
+  // The combobox's create row, which offers the query as a new item.
+  plus: hugeicon(PlusSignIcon),
   // The dialog's corner close. Hugeicons calls it Cancel01; the registry's
   // components ask for it by the Lucide name, which is the table's contract.
   x: hugeicon(Cancel01Icon),
