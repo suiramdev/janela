@@ -1,4 +1,12 @@
-import { cn, Elevated, SidebarInset, SidebarTrigger, useSidebar, useSize } from "@janela/design";
+import {
+  cn,
+  Elevated,
+  SidebarHeader,
+  SidebarInset,
+  SidebarTrigger,
+  useSidebar,
+  useSize,
+} from "@janela/design";
 import type { ReactElement, ReactNode } from "react";
 
 import { useClientEnvironment, useStoreValue } from "../model/index.ts";
@@ -8,6 +16,8 @@ export const TRAFFIC_LIGHT_POSITION = { x: 12, y: 32 } as const;
 export const WINDOW_CONTROLS_ROOM = "w-[68px] shrink-0 self-stretch";
 
 export const WINDOW_DRAG_REGION = "deep";
+
+export const WINDOW_GUTTER_REGION = "true";
 
 const WINDOW_BAR = "flex shrink-0 items-center gap-1 px-1 pt-2 pb-1";
 
@@ -67,9 +77,26 @@ export function ContentCard(props: {
 
 export function WindowColumn(props: { readonly children?: ReactNode }): ReactElement {
   return (
-    <SidebarInset className={WINDOW_COLUMN} surface={false}>
+    <SidebarInset
+      className={WINDOW_COLUMN}
+      surface={false}
+      data-tauri-drag-region={WINDOW_GUTTER_REGION}
+    >
       {props.children}
     </SidebarInset>
+  );
+}
+
+export function SidebarChromeHeader(props: { readonly children?: ReactNode }): ReactElement {
+  const { isMobile } = useSidebar();
+
+  return (
+    <SidebarHeader
+      className={cn(!isMobile && "-mt-2 pt-4")}
+      data-tauri-drag-region={WINDOW_GUTTER_REGION}
+    >
+      {props.children}
+    </SidebarHeader>
   );
 }
 

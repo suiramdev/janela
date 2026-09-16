@@ -10,6 +10,7 @@ import {
   type ClientEnvironment,
   type SettingsRoute,
 } from "../../../shared/model/index.ts";
+import { WINDOW_GUTTER_REGION } from "../../../shared/ui/index.ts";
 import { projectID, session, terminal, terminalID } from "../model/session-fixture.ts";
 import { MainWindow } from "./main-window.tsx";
 import { fakeEnvironment } from "./window-fixture.ts";
@@ -68,6 +69,20 @@ describe("MainWindow markup", () => {
 
   test("an empty mirror still renders the empty state: there is nothing to select", () => {
     expect(draw(environmentOver({ sessions: [] }))).toContain("No session open");
+  });
+
+  test("the window's own chrome drags it, not only the rows inside it", () => {
+    const environment = fakeEnvironment({ sessions: [session("s")] });
+    const workspace = draw(environment);
+    environment.view.showSettings({ kind: "tab", tab: "general" });
+    const settings = draw(environment);
+    const gutter = `data-tauri-drag-region="${WINDOW_GUTTER_REGION}"`;
+
+    for (const markup of [workspace, settings]) {
+      expect(markup).toMatch(new RegExp(`data-slot="sidebar-wrapper"[^>]*${gutter}`, "u"));
+    }
+
+    expect(workspace).toMatch(new RegExp(`data-slot="sidebar-inset"[^>]*${gutter}`, "u"));
   });
 });
 

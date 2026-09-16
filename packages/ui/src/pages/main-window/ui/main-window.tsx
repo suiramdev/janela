@@ -7,7 +7,7 @@ import {
   useClientEnvironment,
   useStoreValue,
 } from "../../../shared/model/index.ts";
-import { ContextMenuRegion, WindowColumn } from "../../../shared/ui/index.ts";
+import { ContextMenuRegion, WINDOW_GUTTER_REGION, WindowColumn } from "../../../shared/ui/index.ts";
 import { createCommandDispatch } from "../model/command-dispatch.ts";
 import { windowMenuRows } from "../model/menu-rows.ts";
 import { AppSidebar } from "./app-sidebar.tsx";
@@ -70,7 +70,10 @@ export function MainWindow(props: MainWindowProps): ReactElement {
     <TooltipProvider delay={400}>
       <SizeProvider size="compact">
         <ContextMenuRegion label="Janela" rows={windowRows} className="contents">
-          <SidebarProvider className="relative h-full min-h-0 overflow-hidden">
+          <SidebarProvider
+            className="relative h-full min-h-0 overflow-hidden"
+            data-tauri-drag-region={WINDOW_GUTTER_REGION}
+          >
             {screen.kind === "settings" ? (
               props.renderSettings(screen.route)
             ) : (
