@@ -10,6 +10,7 @@ import {
 
 import type { CommandID } from "../config/index.ts";
 import type { ConfirmationQueue } from "./confirmation.ts";
+import type { DirectoryPicking } from "./directory-picker.ts";
 import type { SettingsStoring } from "./global-settings.ts";
 import type { ViewState } from "./view-state.ts";
 
@@ -18,8 +19,6 @@ export interface CommandSource {
 }
 
 export interface NativeShell {
-  pickDirectory(options: { readonly title: string }): Promise<AbsolutePath | undefined>;
-
   revealInFinder(path: AbsolutePath): Promise<void>;
   openInTerminal(path: AbsolutePath): Promise<void>;
 }
@@ -57,6 +56,8 @@ export interface ClientEnvironment {
   readonly windowControls: WindowControls;
 
   readonly confirmations: ConfirmationQueue;
+
+  readonly directories: DirectoryPicking;
 
   readonly clipboard: Clipboard;
 

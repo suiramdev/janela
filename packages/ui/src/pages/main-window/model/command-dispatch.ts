@@ -15,6 +15,7 @@ import type { CommandID } from "../../../shared/config/index.ts";
 import {
   type ConfirmationRequest,
   type Confirming,
+  type DirectoryPicking,
   type LocalShell,
   type ViewState,
   resolveLocalLayout,
@@ -27,6 +28,7 @@ export interface CommandTarget {
   readonly connection: Pick<DaemonConnection, "request">;
   readonly view: ViewState;
   readonly local: LocalShell | undefined;
+  readonly directories: DirectoryPicking;
   readonly confirmations: Confirming;
 }
 
@@ -148,7 +150,7 @@ function closingCost(
 }
 
 export function createCommandDispatch(target: CommandTarget): (id: CommandID) => Promise<void> {
-  const { projects, sessions, connection, view, local } = target;
+  const { projects, sessions, connection, view, local, directories } = target;
 
   const currentSession = (): Session | undefined =>
     sessions.sessions.find((session) => session.id === sessions.selection);
@@ -156,9 +158,7 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
   const focusedIn = (session: Session): TerminalID | undefined => focusedTerminalOf(view, session);
 
   const openFolder = async (): Promise<void> => {
-    if (local === undefined) return;
-
-    const directory = await local.native.pickDirectory({ title: "Open Folder" });
+    const directory = await directories.pickDirectory({ title: "Open Folder" });
 
     if (directory === undefined) return;
 
@@ -258,9 +258,7 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     openFolder,
 
     addProject: async () => {
-      if (local === undefined) return;
-
-      const directory = await local.native.pickDirectory({ title: "Add Project" });
+      const directory = await directories.pickDirectory({ title: "Add Project" });
 
       if (directory === undefined) return;
 

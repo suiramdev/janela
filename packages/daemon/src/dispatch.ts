@@ -3,6 +3,7 @@ import {
   FrameError,
   frameErrorLabel,
   serializeBranchOverview,
+  serializeDirectoryListing,
   serializeRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -12,6 +13,7 @@ import {
   type UserFacingFailure,
 } from "@janela/protocol";
 import type {
+  DirectoryBrowsing,
   LaunchProfileService,
   NewTerminalOptions,
   ProjectService,
@@ -46,6 +48,7 @@ export interface RequestDispatchOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
   readonly launchProfiles: LaunchProfileService;
+  readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly log: Logger;
   readonly announce: () => Promise<void>;
@@ -96,6 +99,10 @@ const decodeLaunchProfile = Schema.decodeUnknownOption(
 
 const decodeTitle = Schema.decodeUnknownOption(Schema.String);
 
+const decodeDirectory = Schema.decodeUnknownOption(
+  Schema.UndefinedOr(Schema.String.check(Schema.isStartsWith("/"))),
+);
+
 const acknowledged = (id: RequestID): DaemonMessage => ({ type: "acknowledged", id });
 
 const textReply = (id: RequestID, text: string): DaemonMessage => ({ type: "text", id, text });
@@ -126,7 +133,7 @@ export function fullStateSnapshot(world: StateWorld): StateUpdate {
 }
 
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const { sessions, projects, launchProfiles, terminals, log, announce } = options;
+  const { sessions, projects, launchProfiles, directories, terminals, log, announce } = options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
     const terminal = terminals.get(terminalID);
@@ -204,6 +211,18 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           const overview = await sessions.branchOverview(request.projectID);
 
           return textReply(id, serializeBranchOverview(overview));
+        },
+
+        listDirectory: async (request) => {
+          const { directory } = request;
+
+          if (Option.isNone(decodeDirectory(directory))) {
+            throw new TypeError("listDirectory with a directory that is not absolute");
+          }
+
+          const listing = await directories.list(directory);
+
+          return textReply(id, serializeDirectoryListing(listing));
         },
 
         moveTab: async (request) => {

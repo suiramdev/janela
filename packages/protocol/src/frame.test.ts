@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("a shared-branch worktree is a wire change: version 7, still speaking 6", () => {
-    expect(PROTOCOL_VERSION).toBe(7);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(6);
+  test("a directory listing is a new request, so it is a wire change: version 8, speaking 8 only", () => {
+    expect(PROTOCOL_VERSION).toBe(8);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(8);
   });
 });
 

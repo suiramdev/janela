@@ -122,6 +122,7 @@ export function commandForChord(
 export function keyboardCommandSource(
   target: ChordTarget,
   commands: readonly Command[],
+  held: () => boolean,
 ): CommandSource {
   return {
     subscribe(listener: (id: CommandID) => void): () => void {
@@ -132,7 +133,8 @@ export function keyboardCommandSource(
 
         event.preventDefault();
         event.stopPropagation();
-        listener(id);
+
+        if (!held()) listener(id);
       };
 
       target.addEventListener("keydown", onKeyDown, CAPTURE);

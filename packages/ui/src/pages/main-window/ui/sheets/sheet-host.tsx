@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, cn } from "@janela/de
 import type { SessionCreationIntent } from "@janela/protocol";
 import { Match } from "effect";
 import type { ReactElement } from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { type CommandID, availableCommands } from "../../../../shared/config/index.ts";
 import { type Sheet, useClientEnvironment, useStoreValue } from "../../../../shared/model/index.ts";
@@ -197,7 +197,7 @@ function ConnectedNewSessionSheet(props: {
   readonly onCreate: (intent: SessionCreationIntent) => void;
   readonly onCancel: () => void;
 }): ReactElement {
-  const { connection, local } = useClientEnvironment();
+  const { connection, directories } = useClientEnvironment();
   const [projectID, setProjectID] = useState(props.initialProjectID);
   const project = props.projects.find((candidate) => candidate.id === projectID);
 
@@ -206,12 +206,9 @@ function ConnectedNewSessionSheet(props: {
     project !== undefined && supportsWorktrees(project) ? project.id : undefined,
   );
 
-  const pickDirectory = useMemo(
-    () =>
-      local === undefined
-        ? undefined
-        : () => local.native.pickDirectory({ title: "Choose Folder" }),
-    [local],
+  const pickDirectory = useCallback(
+    () => directories.pickDirectory({ title: "Choose Folder" }),
+    [directories],
   );
 
   return (

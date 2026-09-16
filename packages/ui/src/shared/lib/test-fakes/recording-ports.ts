@@ -1,3 +1,4 @@
+import type { AbsolutePath } from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
 import {
@@ -7,6 +8,7 @@ import {
   type ConfirmationQueue,
   type ConfirmationRequest,
   DEFAULT_GLOBAL_SETTINGS,
+  type DirectoryPicking,
   type GlobalSettings,
   type NativeShell,
   type SettingsStoring,
@@ -25,6 +27,10 @@ export interface RecordingConfirmations extends ConfirmationQueue {
 }
 
 export interface RecordingNativeShell extends NativeShell {
+  readonly calls: string[];
+}
+
+export interface RecordingDirectoryPicker extends DirectoryPicking {
   readonly calls: string[];
 }
 
@@ -65,11 +71,6 @@ export function inertNativeShell(): RecordingNativeShell {
 
   return {
     calls,
-    pickDirectory(options) {
-      calls.push(`pickDirectory:${options.title}`);
-
-      return Promise.resolve(undefined);
-    },
     revealInFinder(path) {
       calls.push(`revealInFinder:${path}`);
 
@@ -79,6 +80,21 @@ export function inertNativeShell(): RecordingNativeShell {
       calls.push(`openInTerminal:${path}`);
 
       return Promise.resolve();
+    },
+  };
+}
+
+export function recordingDirectoryPicker(
+  picks: AbsolutePath | undefined = undefined,
+): RecordingDirectoryPicker {
+  const calls: string[] = [];
+
+  return {
+    calls,
+    pickDirectory(request) {
+      calls.push(`pickDirectory:${request.title}`);
+
+      return Promise.resolve(picks);
     },
   };
 }

@@ -26,6 +26,8 @@ import {
   type MessageTransport,
 } from "@janela/protocol";
 import type {
+  DirectoryBrowsing,
+  DirectoryListing,
   LaunchProfileService,
   ProjectService,
   SessionCreationRequest,
@@ -447,6 +449,25 @@ export function fakeProjects(
     addProject: () => Promise.reject(new Error(NOT_CALLED)),
     removeProject: () => Promise.reject(new Error(NOT_CALLED)),
     updateSettings: () => Promise.reject(new Error(NOT_CALLED)),
+    ...overrides,
+  };
+}
+
+export function fakeDirectories(
+  list: DirectoryBrowsing["list"] = () => Promise.reject(new Error(NOT_CALLED)),
+): DirectoryBrowsing {
+  return { list };
+}
+
+export function fakeListing(overrides: Partial<DirectoryListing> = {}): DirectoryListing {
+  return {
+    directory: absolutePath("/Users/ada"),
+    home: absolutePath("/Users/ada"),
+    entries: [
+      { name: "code", kind: "directory" },
+      { name: "notes.md", kind: "file" },
+    ],
+    truncated: false,
     ...overrides,
   };
 }

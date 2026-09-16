@@ -202,8 +202,9 @@ no number, or it is not.
 | 5 | A repaint carries the negotiated grid: `fullRepaint` emits `CSI 8 ; rows ; cols t` between its RIS and the screen, and a client is re-sent one whenever the negotiation moves or overrules its viewport. The size travels in the raw output frame rather than as a control message because it belongs to the same ordered stream as the bytes it describes — a size arriving out of band would paint one geometry's screen into another's grid. |
 | 6 | `projectBranches` and `moveTab` join `ClientMessage`, and `SessionCreationIntent`'s `inProject` case gains an optional `branch` to check out in the project's own directory. |
 | 7 | `SessionCreationIntent`'s `newWorktree` case gains `shareBranch`, which asks the daemon for `git worktree add --force` so a branch already checked out somewhere can have a second worktree; its `name` now also names the directory the daemon places that worktree in, which is what keeps two worktrees of one branch off the same path. |
+| 8 | `listDirectory` joins `ClientMessage`: a client that has no folder picker of its own — a browser page — asks the daemon to read one folder of the Mac's filesystem, and gets a `DirectoryListing` back as `text`. |
 
-`MINIMUM_SUPPORTED_VERSION` is 6, and stays there at v7.
+`MINIMUM_SUPPORTED_VERSION` is 8: it moved with the version, as it did up to 6.
 
 A v5 peer does not degrade, it *disconnects*: its `decodeClientMessage` matches
 the discriminant against an exhaustive table and refuses anything absent from it,
@@ -227,20 +228,26 @@ background service is older", whose only button is "Restart the background
 service" — rather than reporting a handshake failure. Nothing after `hello` is
 decoded from a refused peer.
 
-## removal-plan.ts, branch-overview.ts
+v8 is a new discriminant again, so the rule of v6 applies: a v7 daemon meeting a
+v8 client would close the socket the moment a browser user pressed ⌘O, with no
+reply to correlate. Refusing the handshake instead costs the user one restart of
+the background service — which the skew banner offers, and which never touches a
+terminal.
 
-Both are wire mirrors of daemon-side types (`SessionRemovalPlan` in
-`@janela/session`, `GitWorktree` in `@janela/git`), mirrored rather than shared
-because the shape is frozen by the protocol version and this package may not
-depend on the daemon side at all.
+## removal-plan.ts, branch-overview.ts, directory-listing.ts
+
+All three are wire mirrors of daemon-side types (`SessionRemovalPlan` and
+`DirectoryListing` in `@janela/session`, `GitWorktree` in `@janela/git`),
+mirrored rather than shared because the shape is frozen by the protocol version
+and this package may not depend on the daemon side at all.
 
 They travel as the `text` reply to a request rather than as their own
 `DaemonMessage`, because a reply has to be correlated by `RequestID` and the
 three reply variants are what a client's `request()` settles on.
 
-Both `serialize*` functions copy field by field, so a caller's wider object — the
+The `serialize*` functions copy field by field, so a caller's wider object — the
 daemon passes its own structurally-wider type — contributes nothing but the wire
-fields. Both `parse*` functions decode with `Schema.fromJsonString`, which
+fields. The `parse*` functions decode with `Schema.fromJsonString`, which
 rejects non-JSON, a non-object, a missing field and a wrong-typed field alike,
 and strips anything extra. Failure is a `TypeError`: a peer that sends a plan
 with a string count is not speaking this protocol, and a half-checked plan is how
@@ -257,6 +264,16 @@ way back in, and `Schema.optionalKey` preserves it in both directions.
 through `absolutePath()`, which is the one place that decides what an absolute
 path is. It becomes a session's working directory, so a half-checked overview is
 how "check this branch out here" becomes a session pointing at `undefined`.
+
+`DirectoryListing` names the folder it lists, its parent (omitted at `/`, the
+same `optionalKey` discipline as a detached worktree's branch), the daemon's home
+so a client can offer it without a second request, and a `truncated` flag: the
+daemon never sends more than `DIRECTORY_ENTRY_LIMIT` entries, and the client
+says so rather than pretending the folder ends there. Every path is validated
+absolute and branded, because the one a client chooses becomes a session's
+working directory or a project's root. Entries carry a name and one of two
+kinds; a symlink already took its target's kind on the daemon, so the wire has
+no third one.
 
 ## transport.ts
 

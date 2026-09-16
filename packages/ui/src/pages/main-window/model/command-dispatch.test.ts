@@ -14,6 +14,7 @@ import {
 import { COMMANDS } from "../../../shared/config/index.ts";
 import {
   type RecordingConfirmations,
+  type RecordingDirectoryPicker,
   type RecordingNativeShell,
   fakeProfile,
   fakeProject,
@@ -22,6 +23,7 @@ import {
   fakeTerminal,
   inertNativeShell,
   recordingConfirmations,
+  recordingDirectoryPicker,
   recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
@@ -44,6 +46,7 @@ interface Harness {
   readonly sessions: SessionStore;
   readonly sent: ClientRequest[];
   readonly native: RecordingNativeShell;
+  readonly directories: RecordingDirectoryPicker;
   readonly confirmations: RecordingConfirmations;
   appears: Session | undefined;
 }
@@ -92,17 +95,9 @@ function harness(options: {
 
   let appearing: Session | undefined;
   const native = inertNativeShell();
-
-  const recording: RecordingNativeShell = {
-    calls: native.calls,
-    pickDirectory: async (request) => {
-      await native.pickDirectory(request);
-
-      return options.picks === undefined ? undefined : absolutePath(options.picks);
-    },
-    revealInFinder: native.revealInFinder,
-    openInTerminal: native.openInTerminal,
-  };
+  const directories = recordingDirectoryPicker(
+    options.picks === undefined ? undefined : absolutePath(options.picks),
+  );
 
   const view = createViewState(sessionStore);
 
@@ -118,7 +113,8 @@ function harness(options: {
     local:
       options.local === false
         ? undefined
-        : { native: recording, service: recordingService(), restartDaemon: () => {} },
+        : { native, service: recordingService(), restartDaemon: () => {} },
+    directories,
     confirmations,
     connection: {
       request: (message) => {
@@ -138,7 +134,8 @@ function harness(options: {
     view,
     sessions: sessionStore,
     sent,
-    native: recording,
+    native,
+    directories,
     confirmations,
     get appears(): Session | undefined {
       return appearing;
@@ -295,7 +292,7 @@ describe("creation", () => {
     const context = harness({});
     await createCommandDispatch(context.target)("openFolder");
 
-    expect(context.native.calls).toEqual(["pickDirectory:Open Folder"]);
+    expect(context.directories.calls).toEqual(["pickDirectory:Open Folder"]);
     expect(context.sent).toEqual([]);
   });
 
@@ -315,7 +312,7 @@ describe("creation", () => {
     const context = harness({ picks: "/repos/janela" });
     await createCommandDispatch(context.target)("addProject");
 
-    expect(context.native.calls).toEqual(["pickDirectory:Add Project"]);
+    expect(context.directories.calls).toEqual(["pickDirectory:Add Project"]);
     expect(context.sent).toEqual([
       { type: "addProject", directory: absolutePath("/repos/janela") },
     ]);
@@ -649,12 +646,26 @@ describe("no target", () => {
     expect(context.native.calls).toEqual([]);
   });
 
+  test("Open Folder and Add Project ask the picker even without a local shell", async () => {
+    const context = harness({ local: false, picks: "/repos/janela" });
+    const dispatch = createCommandDispatch(context.target);
+
+    await dispatch("addProject");
+    await dispatch("openFolder");
+
+    expect(context.directories.calls).toEqual([
+      "pickDirectory:Add Project",
+      "pickDirectory:Open Folder",
+    ]);
+    expect(context.sent.map((message) => message.type)).toEqual(["addProject", "createSession"]);
+  });
+
   test("host-only commands do nothing without a local shell", async () => {
     const session = fakeSession({ directory: absolutePath("/tmp/here") });
     const context = harness({ sessions: [session], selection: session.id, local: false });
     const dispatch = createCommandDispatch(context.target);
 
-    for (const id of ["addProject", "openFolder", "revealInFinder", "openInTerminal"] as const) {
+    for (const id of ["revealInFinder", "openInTerminal"] as const) {
       // oxlint-disable-next-line no-await-in-loop
       await dispatch(id);
     }

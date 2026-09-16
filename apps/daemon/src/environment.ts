@@ -1,4 +1,5 @@
 import { createServer, type Socket } from "node:net";
+import { homedir } from "node:os";
 
 import { absolutePath } from "@janela/core";
 import {
@@ -12,6 +13,7 @@ import { openDatabase, type JanelaDatabase } from "@janela/db";
 import { gitRunner, worktreeService } from "@janela/git";
 import { readPeerCredential } from "@janela/pty";
 import {
+  createDirectoryBrowser,
   createLaunchProfileService,
   createProjectService,
   createSessionService,
@@ -119,6 +121,7 @@ export async function daemonEnvironment(
     sessions,
     projects,
     launchProfiles,
+    directories: createDirectoryBrowser({ home: absolutePath(homedir()) }),
     terminals,
     log: log("protocol"),
   });

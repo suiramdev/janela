@@ -183,15 +183,19 @@ row should have its leading space back. Only the shell can answer that.
 
 ## `src/adapters/{native,menu}.ts`
 
-- **Native shell:** the app performs file selection and the daemon is handed paths.
-  That keeps macOS permission prompts attributed to the app the user just clicked
-  rather than to a background binary they have never heard of. A `null` from the
-  dialog is a cancellation, which is an answer rather than a failure.
-  `openPath(path, "Terminal")` names Terminal.app explicitly, which the capability
-  scopes to exactly that — the user's *default* handler would be Finder again.
-  Confirmations used to live here as the plugin's `ask()`; they are the application's
-  own dialog now. Together with `stop`/`stopAndUnregister` and `restartDaemon`, this
-  is `ClientEnvironment.local`: the ports only a client on the daemon's own Mac can
+- **Native shell and directory picker:** the app performs file selection and the
+  daemon is handed paths. That keeps macOS permission prompts attributed to the app
+  the user just clicked rather than to a background binary they have never heard of.
+  A `null` from the dialog is a cancellation, which is an answer rather than a
+  failure. The picker is `ClientEnvironment.directories`, a port every client has —
+  the browser client answers it with the daemon's listing and its own column view —
+  and this one is the real `NSOpenPanel` because the machine that has Finder should
+  not be shown a lesser one. `openPath(path, "Terminal")` names Terminal.app
+  explicitly, which the capability scopes to exactly that — the user's *default*
+  handler would be Finder again. Confirmations used to live here as the plugin's
+  `ask()`; they are the application's own dialog now. Finder and Terminal.app,
+  together with `stop`/`stopAndUnregister` and `restartDaemon`, are
+  `ClientEnvironment.local`: the ports only a client on the daemon's own Mac can
   answer. The browser client leaves `local` undefined and the views hide what needs
   it.
 - **Menu:** the command table is handed to the shell once at startup, so adding a row

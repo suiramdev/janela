@@ -22,6 +22,7 @@ import { OUTPUT_QUEUE_CAPACITY, createDaemonServer, type DaemonServer } from "./
 import {
   clientHello,
   fakeDispatch,
+  fakeDirectories,
   fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
@@ -182,6 +183,7 @@ async function fixture(
     sessions: fakeSessions(),
     projects: fakeProjects(),
     launchProfiles: fakeLaunchProfiles(),
+    directories: fakeDirectories(),
     terminals: registry,
     log: logger,
     dispatch,
@@ -259,6 +261,7 @@ async function coldStartedListener(): Promise<ColdStart> {
     sessions: fakeSessions(),
     projects: fakeProjects(),
     launchProfiles: fakeLaunchProfiles(),
+    directories: fakeDirectories(),
     terminals: registry,
     log: logger,
     dispatch,
