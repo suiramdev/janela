@@ -629,7 +629,16 @@ function TabStrip(props: {
           // tabs past it dissolves instead of clipping one mid-word, and the
           // fade is a third of a tab rather than the registry's 48px, which on a
           // 28px strip would have swallowed a whole one.
-          className="scroll-fade-x max-w-full justify-start gap-0.5 overflow-x-auto [--scroll-fade-size:20px]"
+          //
+          // `scrollbar-hide` for the same reason the command menu's filter row
+          // has it: the bars are *classic* here (styles.css restyles
+          // `::-webkit-scrollbar` under `@media (pointer: fine)`, which opts out
+          // of the overlay ones), so each reserves 10px of a 28px strip. And
+          // `overflow-x: auto` makes the other axis a scroller too, which the
+          // trigger's `after:` underline — `bottom-[-5px]`, invisible in this
+          // variant — overflows by 3px: enough for a vertical bar nobody asked
+          // for, whose gutter drew 11px of `bg-muted` past the last tab.
+          className="scroll-fade-x scrollbar-hide max-w-full justify-start gap-0.5 overflow-x-auto [--scroll-fade-size:20px]"
         >
           {layout.tabs.map((tab, index) => (
             <TabItem
