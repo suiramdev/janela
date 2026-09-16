@@ -177,10 +177,7 @@ const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
             return (
               <motion.div
                 {...rest}
-                className={cn(
-                  container ? "absolute" : "fixed",
-                  "inset-0 z-50 bg-black/40 dark:bg-black/80",
-                )}
+                className={cn(container ? "absolute" : "fixed", "inset-0 z-50 bg-scrim")}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: exiting ? 0 : 1 }}
                 transition={exiting ? spring.slow.exit : spring.slow}

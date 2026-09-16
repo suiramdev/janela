@@ -160,6 +160,21 @@
      new alpha that way. Black over a light appearance, white over a dark one. */
   --overlay: 0 0 0;
 
+  /* The scrim a modal lays over the window: dialogs, sheets, the command
+     palette, the narrow-window sidebar drawer. One value for both appearances,
+     because a black scrim is a *dimmer* — it multiplies what is behind it, so
+     40% takes 40% of the window's luminance whether that window is paper or
+     near-black.
+
+     The registry shipped `bg-black/40 dark:bg-black/80`, and `dark:` here is
+     `prefers-color-scheme` (there is no `.dark` class, per the rule at the top
+     of this file), so every dark user got the 80%: a level-1 window (#171717)
+     composites to #050505, blacker than the desktop behind it, with the whole
+     surface ladder crushed flat. Dark wants *less* scrim than light, not more —
+     a dark panel rises by lightness and shadow on its own, while a white panel
+     on white paper has nothing but the scrim to separate it. */
+  --scrim: oklch(0 0 0 / 40%);
+
   /* The registry's radius scale. The preset's "small" radius, which lands the
      primitives between CORNER_RADIUS.small and .medium. */
   --radius: 0.45rem;
@@ -297,6 +312,10 @@
     --active: oklch(0 0 0 / 14%);
     --selected: oklch(0.708 0 0);
     --shadow-color: oklch(0 0 0 / 20%);
+    /* A scrim is separation, so it deepens with them. Both dark appearances
+       inherit this one: how much a modal dims the window does not depend on
+       which appearance it dimmed. */
+    --scrim: oklch(0 0 0 / 55%);
   }
 }
 
@@ -362,6 +381,9 @@
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-selected: var(--selected);
+  /* `bg-scrim` is the class every modal's backdrop paints. One token, so no
+     overlay can hold its own opinion about how much the window dims. */
+  --color-scrim: var(--scrim);
 
   /* The surface ladder, as utilities. `surfaceClasses(n)` in
      packages/design/src/lib/surface-classes.ts emits `bg-surface-N

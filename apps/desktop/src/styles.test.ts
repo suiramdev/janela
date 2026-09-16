@@ -46,6 +46,34 @@ const APPEARANCES = [
   "@media (prefers-color-scheme: dark) and (prefers-contrast: more) {",
 ];
 
+/**
+ * Which blocks of `APPEARANCES` a user in each appearance matches, in document
+ * order. Custom properties inherit and the four blocks have equal specificity,
+ * so the value that wins is the one the *last* matching block declared — which
+ * is how an appearance can leave a token alone and still have one.
+ */
+const MATCHING_BLOCKS: readonly (readonly number[])[] = [[0], [0, 1], [0, 2], [0, 1, 2, 3]];
+
+/** The value of `property` a user in `APPEARANCES[appearance]` actually gets. */
+function resolved(property: string, appearance: number): string {
+  let value: string | null = null;
+  for (const index of MATCHING_BLOCKS[appearance] ?? []) {
+    const header = APPEARANCES[index];
+    if (header === undefined) continue;
+    const declaration = new RegExp(`${property}:\\s*([^;]+);`).exec(block(header));
+    if (declaration?.[1] !== undefined) value = declaration[1].trim();
+  }
+  if (value === null) throw new Error(`no appearance declares ${property} for ${appearance}`);
+  return value;
+}
+
+/** The alpha of a `<color>` written with a percentage alpha, as a fraction. */
+function alphaOf(value: string): number {
+  const alpha = /\/\s*([\d.]+)%/.exec(value);
+  if (!alpha?.[1]) throw new Error(`${value} has no percentage alpha`);
+  return Number(alpha[1]) / 100;
+}
+
 describe("styles.css", () => {
   test("every colour token is defined for every appearance", () => {
     const missing: string[] = [];
@@ -151,6 +179,27 @@ describe("styles.css", () => {
     for (const header of [":root {", "@media (prefers-color-scheme: dark) {"]) {
       expect(block(header)).toMatch(/--overlay:\s*\d{1,3} \d{1,3} \d{1,3};/);
     }
+  });
+
+  test("the scrim dims equally in both appearances, and more under Increase Contrast", () => {
+    // The defect this replaces: the vendored backdrops carried the registry's
+    // `bg-black/40 dark:bg-black/80`, and `dark:` is `prefers-color-scheme`
+    // here, so every dark user got 80% black over a window that is already
+    // #171717 — #050505, with the surface ladder behind it crushed flat. A
+    // black scrim is a dimmer: the same alpha removes the same fraction of
+    // whatever is behind it, so the two appearances must agree, and it is
+    // Increase Contrast — not darkness — that asks for more separation.
+    const [light, dark, contrast, darkContrast] = APPEARANCES.map((_, index) =>
+      alphaOf(resolved("--scrim", index)),
+    ) as [number, number, number, number];
+
+    expect(dark).toBe(light);
+    expect(darkContrast).toBe(contrast);
+    expect(contrast).toBeGreaterThan(light);
+    // A scrim that dims more than this stops being a scrim: level 1 of the dark
+    // ladder is #171717, and past ~60% the window it covers is indistinguishable
+    // from the black outside the window.
+    expect(Math.max(light, contrast)).toBeLessThanOrEqual(0.6);
   });
 
   test("the scroll-fade defaults are layered, so a utility can retune them", () => {

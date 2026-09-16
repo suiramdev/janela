@@ -199,7 +199,7 @@
  *    Tailwind class, and `position="top"` replaced a `top-24 translate-y-0`
  *    that had to fight the panel's own transform.
  *
- *    Two adaptations, and both are props the primitive owns:
+ *    Three adaptations, and two of them are props the primitive owns:
  *
  *    - **`initialFocus` and `finalFocus` are named and forwarded.** The
  *      registry's panel spreads its remaining props onto the `motion.div`, so
@@ -214,6 +214,16 @@
  *      base-mira dialog carried. The cast is `exactOptionalPropertyTypes`
  *      against framer-motion's `MotionStyle`, which declares its properties
  *      without `| undefined`; no value is narrowed by it.
+ *    - **The backdrop paints `bg-scrim`, not the registry's
+ *      `bg-black/40 dark:bg-black/80`.** That `dark:` is Tailwind's own
+ *      `prefers-color-scheme` variant — this application has no `.dark` class
+ *      to gate it (apps/desktop/src/styles.css § There is no `.dark` class) —
+ *      so the 80% was what every dark user saw: a level-1 window (#171717)
+ *      composited to #050505, and the surface ladder the item above installs
+ *      crushed flat behind it. A black scrim is a dimmer, so one alpha serves
+ *      both appearances, and it is Increase Contrast that asks for more of it.
+ *      `--scrim` is the token; `sheet.tsx` and the sidebar's drawer paint the
+ *      same class, so a fourth overlay cannot arrive with its own opinion.
  *
  *    `x` joined the icon table for its corner close (item 5's table is the
  *    registry's contract, so the glyph is looked up by the Lucide name).
