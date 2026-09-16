@@ -39,6 +39,10 @@ apps/daemon/main.js.map
 .pi/
 .claude/
 .aider*
+# Skills an agent installed for itself, and the lockfile that pins them. A
+# third-party skill is someone else's methodology, not this repository's.
+.agents/
+skills-lock.json
 *.log
 
 # ---- Databases ----------------------------------------------------------------
