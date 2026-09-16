@@ -1,19 +1,14 @@
-import type { WindowControls } from "@janela/ui";
+import { NO_WINDOW_CONTROLS, type WindowControls } from "@janela/ui";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface WindowControlsDeps {
   readonly isMacOS?: boolean | undefined;
 }
 
-const NO_OVERLAID_CONTROLS: WindowControls = {
-  areVisible: false,
-  subscribe: () => () => {},
-};
-
 export function tauriWindowControls(deps: WindowControlsDeps = {}): WindowControls {
   const isMacOS = deps.isMacOS ?? navigator.userAgent.includes("Mac OS X");
 
-  if (!isMacOS) return NO_OVERLAID_CONTROLS;
+  if (!isMacOS) return NO_WINDOW_CONTROLS;
 
   const listeners = new Set<() => void>();
   const appWindow = getCurrentWindow();

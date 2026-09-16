@@ -143,7 +143,7 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
         sessions: environment.sessions,
         connection: environment.connection,
         view: environment.view,
-        native: environment.native,
+        local: environment.local,
         confirmations: environment.confirmations,
       }),
     [environment],

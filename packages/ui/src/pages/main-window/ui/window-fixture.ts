@@ -77,12 +77,10 @@ export function fakeEnvironment(options: {
     connection,
     view: createViewState(sessionStore),
     commands: neverCommands(),
-    native: inertNativeShell(),
     windowControls: options.windowControls ?? overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    service: recordingService(),
-    restartDaemon: () => {},
+    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
   };
 }

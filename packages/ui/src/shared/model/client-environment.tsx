@@ -39,6 +39,12 @@ export interface BackgroundServiceControlling {
   stopAndUnregister(): void;
 }
 
+export interface LocalShell {
+  readonly native: NativeShell;
+  readonly service: BackgroundServiceControlling;
+  readonly restartDaemon: () => void;
+}
+
 export interface ClientEnvironment {
   readonly projects: ProjectStore;
   readonly sessions: SessionStore;
@@ -48,8 +54,6 @@ export interface ClientEnvironment {
 
   readonly commands: CommandSource;
 
-  readonly native: NativeShell;
-
   readonly windowControls: WindowControls;
 
   readonly confirmations: ConfirmationQueue;
@@ -58,12 +62,14 @@ export interface ClientEnvironment {
 
   readonly settings: SettingsStoring;
 
-  readonly service: BackgroundServiceControlling;
-
-  readonly restartDaemon: () => void;
+  readonly local: LocalShell | undefined;
 
   readonly onFocusedTerminalChange?: (id: TerminalID | undefined) => void;
 }
+export const NO_WINDOW_CONTROLS: WindowControls = {
+  areVisible: false,
+  subscribe: () => () => {},
+};
 
 const ClientEnvironmentContext = createContext<ClientEnvironment | undefined>(undefined);
 

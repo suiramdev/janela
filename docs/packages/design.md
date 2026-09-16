@@ -31,7 +31,7 @@ omissions:
   this window and the next one.
 - `spring` / `exitFallbackMs` are the motion ladder; `exitFallbackMs` is derived from
   the tier so a deferred unmount's guard cannot drift from its exit. The CSS half of
-  the same ladder is `--spring-*` in `apps/desktop/src/styles.css`.
+  the same ladder is `--spring-*` in `src/styles.css`.
 
 ## `tokens.ts`
 
@@ -66,6 +66,56 @@ system became custom properties that adapt through `prefers-color-scheme` and
   milliseconds and `styles.test.ts` fails if the two drift. Either way the transition
   must respect `prefers-reduced-motion`, enforced once in `styles.css` for everything.
   A component that animates unconditionally is a bug, not a flourish.
+
+## `styles.css` and `styles.test.ts`
+
+The stylesheet lives here rather than in an app because two apps mount the same
+views: `apps/desktop` and `apps/web` both `import "@janela/design/styles.css"`
+(the package's second export), and Tailwind's `@source` lines name the three
+client packages relative to this file. It holds the tokens as custom properties,
+the four appearance blocks (`prefers-color-scheme` and `prefers-contrast`, never a
+`.dark` class), the shadcn token set the vendored primitives read, the scroll
+restyling, and the reduced-motion collapse. The token names are `tokens.ts`'s and
+`styles.test.ts` pins the file to them.
+
+The tokens are declared in TypeScript and consumed as CSS custom properties, and
+nothing notices when the two disagree: a component reading an undefined property
+paints transparent, and an appearance missing a token falls back to the light one.
+
+- Custom properties inherit and the four appearance blocks have equal specificity, so
+  the winning value is the one the *last* matching block declared — which is how an
+  appearance can leave a token alone and still have one. `MATCHING_BLOCKS` encodes
+  which blocks each appearance matches.
+- The dark block must redefine **all eight** surface levels: `surfaceClasses` hands
+  out `bg-surface-N shadow-surface-N` as literal strings, and a missing level paints
+  transparent — which, since the window itself is level 1, is a black-on-black window
+  rather than an obvious mistake.
+- The shadows are a **ladder**: `shadow-5` is `shadow-4` plus one more, further,
+  softer drop. That is what makes a dialog read as further from the page than a menu,
+  and it is the part that is easy to lose by hand — the dark ladder once carried a
+  single drop per level, so level 7 cast less than level 3.
+- `bg-hover` is painted by the sidebar's travelling highlight *and* by rows that draw
+  their own hover, so an appearance missing it makes one of the two invisible.
+- `--overlay` must be an `R G B` triplet, because the scroll thumb composes it at
+  three opacities: a missing or `oklch()` value makes the declaration invalid and the
+  thumb invisible. Light inks black, dark inks white; Increase Contrast inherits,
+  because contrast does not change which way the overlay tints.
+- The scrim alphas must agree across light and dark and stay at or below 0.6. A black
+  scrim is a dimmer — the same alpha removes the same fraction of whatever is behind
+  it — and past ~60% the dark window (#171717) is indistinguishable from the black
+  outside the window. It is Increase Contrast, not darkness, that asks for more. The
+  defect this replaced: the vendored backdrops carried
+  `bg-black/40 dark:bg-black/80`, and `dark:` is `prefers-color-scheme` here, so every
+  dark user got 80% black composited to #050505 with the surface ladder crushed flat.
+- The scroll-fade default must live in `@layer base`: an unlayered rule beats every
+  `[--scroll-fade-size:…]` utility on source order alone, and the override would be
+  silently ignored — nothing would look broken, it would just fade far too much. A
+  48px fade is two rows of a 28px list, which is why the quick list and the tab strip
+  both pass their own size. The file has two `@layer base` blocks; this is the second,
+  the first being the border/font reset.
+- The springs are the source and `--spring-*` is derived: a
+  `duration-(--spring-moderate)` transition and a `spring.moderate` animation are the
+  same decision, so re-tiering one and not the other is the drift this catches.
 
 ## The vendoring ledger
 
@@ -116,7 +166,7 @@ Vendored files are edited on the way in, and only in ways worth the drift.
    whole thing is its CSS payload: it restyles the **native** scrollbar under
    `@media (pointer: fine)`, reaching scrollers no component of ours owns — including
    xterm's own viewport, which no `ScrollArea` will ever wrap. It lives in
-   `apps/desktop/src/styles.css`, verbatim except for `--overlay`, an `R G B` triplet
+   `src/styles.css`, verbatim except for `--overlay`, an `R G B` triplet
    so the thumb can compose it at three opacities. On a touch-primary device the
    component drops the Base UI machinery for native overflow scrolling, which is why
    `use-touch-primary` exists and why `ScrollBar` renders nothing there.

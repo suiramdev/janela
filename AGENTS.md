@@ -53,6 +53,9 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
 | `bun run dev` | A `janelad` **and** the app, in one terminal | When you need to see it |
 | `bun run app` | The app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
+| `bun run web` | A `janelad`, the gateway **and** the browser client's Vite server, in one terminal | When you want the window in a browser at `http://localhost:1421` |
+| `bun run web:build` | Build the browser client into `apps/web/dist` | Before `bun run gateway` |
+| `bun run gateway` | The gateway alone, serving `apps/web/dist` and `/ws` on `127.0.0.1:7411` | To reach the window from another device: `tailscale serve --bg 7411` |
 | `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
 
 **Prefer `bun run check` over building the app.** It covers everything except the
@@ -80,6 +83,8 @@ Three things that will bite you once each:
 apps/desktop/          The Tauri app. src-tauri/ is a THIN Rust shell; src/ is React.
 apps/desktop/src/      The FSD `app` layer: entry, the object graph, adapters/ for the ports.
 apps/daemon/           janelad. Process plumbing only — nothing testable.
+apps/gateway/          The browser's shell: serves apps/web/dist, relays each WebSocket onto the socket.
+apps/web/              The browser client. Same window, a WebSocket transport, no macOS ports.
 packages/              All logic, as layered packages. Your work goes here.
 packages/ui/src/       Feature-Sliced: pages/{main-window,settings}/ + shared/{model,config,ui,lib}/.
 scripts/layers.ts      The module graph, as data. The architecture, enforced.
@@ -118,6 +123,8 @@ import resolves and runs.
     daemon                     ui            views
          ↓                        ↓
     apps/daemon → janelad      apps/desktop  Tauri shell + composition root
+    apps/gateway → the         apps/web      the browser client: same views,
+      browser's shell                        a WebSocket transport, no macOS ports
 ```
 
 **If you need an upward reference, you need an interface in the lower package

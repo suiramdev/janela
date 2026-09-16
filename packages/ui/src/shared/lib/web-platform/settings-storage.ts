@@ -1,12 +1,13 @@
 import { identifier } from "@janela/core";
+import { Effect, Option, Result, Schema } from "effect";
+
 import {
   CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
   withTerminalFontSize,
   type GlobalSettings,
   type SettingsStoring,
-} from "@janela/ui";
-import { Effect, Option, Result, Schema } from "effect";
+} from "../../model/index.ts";
 
 const KEY = "janela.settings";
 

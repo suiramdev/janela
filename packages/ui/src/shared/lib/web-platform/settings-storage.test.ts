@@ -4,8 +4,7 @@ import {
   DEFAULT_GLOBAL_SETTINGS,
   TERMINAL_FONT_SIZE_BOUNDS,
   withSilencedConfirmation,
-} from "@janela/ui";
-
+} from "../../model/index.ts";
 import { localStorageSettings, parseSettings } from "./settings-storage.ts";
 
 function memoryStorage(initial: string | undefined = undefined): Storage {

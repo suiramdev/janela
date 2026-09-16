@@ -1,6 +1,7 @@
 import { log } from "@janela/support";
-import type { Clipboard } from "@janela/ui";
 import { Effect, Option } from "effect";
+
+import type { Clipboard } from "../../model/index.ts";
 
 export function browserClipboard(): Clipboard {
   const clipboardLog = log("app");

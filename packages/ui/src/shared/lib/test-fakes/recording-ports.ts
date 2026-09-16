@@ -46,11 +46,6 @@ export const overlaidWindowControls: WindowControls = {
   subscribe: () => () => {},
 };
 
-export const hiddenWindowControls: WindowControls = {
-  areVisible: false,
-  subscribe: () => () => {},
-};
-
 export function recordingService(): RecordingService {
   const calls: string[] = [];
 

@@ -1,0 +1,26 @@
+{
+  "name": "@janela/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The network face of janelad: serves the browser client and relays each WebSocket onto the daemon's Unix socket.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "bun run src/main.ts",
+    "start": "bun run src/main.ts --web-root ../web/dist",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/daemon": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*",
+    "effect": "4.0.0-rc.115"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { COLOR, CORNER_RADIUS, spring, surfaceClasses, TERMINAL_FONT_STACK } from "@janela/design";
+import { COLOR, CORNER_RADIUS, spring, surfaceClasses, TERMINAL_FONT_STACK } from "./index.ts";
 
 const source = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 

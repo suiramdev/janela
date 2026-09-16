@@ -5,7 +5,8 @@
   "description": "Tokens, semantic colours, and the registry primitives every screen builds on.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
   },
   "scripts": {
     "clean": "rm -rf dist *.tsbuildinfo",
@@ -14,12 +15,15 @@
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
+    "@fontsource-variable/geist": "5.3.0",
     "@hugeicons/core-free-icons": "4.3.2",
     "@hugeicons/react": "1.1.10",
     "@janela/support": "workspace:*",
     "class-variance-authority": "0.7.1",
     "cn": "0.2.6",
-    "framer-motion": "13.2.0"
+    "framer-motion": "13.2.0",
+    "shadcn": "4.21.0",
+    "tw-animate-css": "1.4.0"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",

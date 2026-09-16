@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 
 import {
   COMMANDS,
+  type Command,
   type CommandID,
   acceleratorCaps,
   isCommandID,
@@ -16,6 +17,7 @@ export interface CommandPaletteProps {
   readonly projects: readonly Project[];
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
+  readonly commands: readonly Command[];
   readonly onPick: (id: CommandID) => void;
   readonly onPickSession: (id: SessionID) => void;
   readonly onCancel: () => void;
@@ -31,13 +33,16 @@ function sessionRowID(id: SessionID): string {
   return `session:${id}`;
 }
 
-export function rankedCommands(query: string): readonly FindRow[] {
+export function rankedCommands(
+  query: string,
+  commands: readonly Command[] = COMMANDS,
+): readonly FindRow[] {
   const ranked =
     query.length === 0
-      ? COMMANDS
+      ? commands
       : rankBy(
           query,
-          COMMANDS,
+          commands,
           (command) => command.title,
           () => 0,
         );
@@ -81,14 +86,14 @@ export function rankedSessionRows(
 }
 
 export function CommandPalette(props: CommandPaletteProps): ReactElement {
-  const { projects, sessions, terminalStates, onPick, onPickSession, onCancel } = props;
+  const { projects, sessions, terminalStates, commands, onPick, onPickSession, onCancel } = props;
 
   const rank = useCallback(
     (query: string): readonly FindRow[] => [
-      ...rankedCommands(query),
+      ...rankedCommands(query, commands),
       ...rankedSessionRows(query, projects, sessions, terminalStates),
     ],
-    [projects, sessions, terminalStates],
+    [commands, projects, sessions, terminalStates],
   );
 
   const pick = useCallback(

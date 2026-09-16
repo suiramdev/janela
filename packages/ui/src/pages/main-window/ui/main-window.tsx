@@ -36,7 +36,7 @@ export function MainWindow(props: MainWindowProps): ReactElement {
         sessions: environment.sessions,
         connection: environment.connection,
         view,
-        native: environment.native,
+        local: environment.local,
         confirmations: environment.confirmations,
       }),
     [environment, view],

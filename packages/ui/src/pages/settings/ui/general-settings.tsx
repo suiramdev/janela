@@ -37,7 +37,7 @@ export interface SettingsGeneralProps {
   readonly availability: LaunchProfileAvailability;
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
-  readonly service: BackgroundServiceControlling;
+  readonly service: BackgroundServiceControlling | undefined;
 }
 
 export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
@@ -81,7 +81,9 @@ export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
         />
       </Section>
 
-      <BackgroundServiceSection cost={cost} service={service} />
+      {service === undefined ? undefined : (
+        <BackgroundServiceSection cost={cost} service={service} />
+      )}
     </div>
   );
 }

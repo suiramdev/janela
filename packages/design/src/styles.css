@@ -32,9 +32,9 @@
 
 /* Workspace packages are symlinked under node_modules, which Tailwind's source
    detection ignores; name the client view packages explicitly. */
-@source "../../../packages/design/src";
-@source "../../../packages/terminal-ui/src";
-@source "../../../packages/ui/src";
+@source "./";
+@source "../../terminal-ui/src";
+@source "../../ui/src";
 
 /*
  * Reduce Motion is the user's word (packages/design/src/tokens.ts § Motion). The

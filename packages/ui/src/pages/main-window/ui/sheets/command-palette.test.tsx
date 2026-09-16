@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProjectID, SessionID, TerminalID, TerminalState } from "@janela/core";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { COMMANDS } from "../../../../shared/config/index.ts";
+import { COMMANDS, availableCommands } from "../../../../shared/config/index.ts";
 import {
   fakeProject,
   fakeSession,
@@ -57,6 +57,16 @@ describe("rankedCommands", () => {
 
     expect(reveal?.value).toBe("revealInFinder");
     expect(reveal?.shortcut).toBeUndefined();
+  });
+
+  test("a client without a local shell is offered no host-only command", () => {
+    const offered = rankedCommands("", availableCommands(false)).map((item) => item.value);
+
+    expect(offered).not.toContain("revealInFinder");
+    expect(offered).not.toContain("openInTerminal");
+    expect(offered).not.toContain("addProject");
+    expect(offered).not.toContain("openFolder");
+    expect(offered).toContain("newSession");
   });
 });
 
@@ -115,6 +125,7 @@ describe("CommandPalette markup", () => {
         projects={PROJECTS}
         sessions={SESSIONS}
         terminalStates={NO_STATES}
+        commands={COMMANDS}
         onPick={noop}
         onPickSession={noop}
         onCancel={noop}

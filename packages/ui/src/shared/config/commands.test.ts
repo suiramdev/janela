@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { COMMANDS, acceleratorCaps, isCommandID } from "./commands.ts";
+import { COMMANDS, acceleratorCaps, availableCommands, isCommandID } from "./commands.ts";
 
 const chordOf = (id: string): string | undefined =>
   COMMANDS.find((command) => command.id === id)?.accelerator;
@@ -41,6 +41,20 @@ describe("isCommandID", () => {
     expect(isCommandID("nope")).toBe(false);
     expect(isCommandID("constructor")).toBe(false);
     expect(isCommandID("toString")).toBe(false);
+  });
+});
+
+describe("availableCommands", () => {
+  test("a local shell unlocks exactly the four commands that need the Mac", () => {
+    const missing = COMMANDS.filter((command) => !availableCommands(false).includes(command));
+
+    expect(missing.map((command) => command.id)).toEqual([
+      "openFolder",
+      "addProject",
+      "revealInFinder",
+      "openInTerminal",
+    ]);
+    expect(availableCommands(true)).toBe(COMMANDS);
   });
 });
 

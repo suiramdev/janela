@@ -51,12 +51,14 @@ export function runningSummary(
 
 export function ConnectionBanner(): ReactElement | null {
   const environment = useClientEnvironment();
-  const { connection, confirmations, restartDaemon } = environment;
+  const { connection, confirmations, local } = environment;
   const status = useStoreValue(connection, () => connection.status);
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
   const cost = runningSummary(sessions, (id) => environment.sessions.isRunning(id));
 
   const restart = useCallback(() => {
+    if (local === undefined) return;
+
     void confirmations
       .confirm({
         title: "Restart the background service?",
@@ -64,11 +66,11 @@ export function ConnectionBanner(): ReactElement | null {
         confirmLabel: "Restart and Close Terminals",
       })
       .then((agreed) => {
-        if (agreed) restartDaemon();
+        if (agreed) local.restartDaemon();
 
         return undefined;
       }, swallowRefusal);
-  }, [confirmations, cost, restartDaemon]);
+  }, [confirmations, cost, local]);
 
   const model = bannerModel(status);
 
@@ -93,11 +95,13 @@ export function ConnectionBanner(): ReactElement | null {
     >
       <AlertTitle>{VERSION_SKEW_COPY}</AlertTitle>
       <AlertDescription>{cost}</AlertDescription>
-      <AlertAction className="static mt-2">
-        <Button variant="outline" size="sm" onClick={restart}>
-          Restart the background service
-        </Button>
-      </AlertAction>
+      {local === undefined ? undefined : (
+        <AlertAction className="static mt-2">
+          <Button variant="outline" size="sm" onClick={restart}>
+            Restart the background service
+          </Button>
+        </AlertAction>
+      )}
     </Alert>
   );
 }

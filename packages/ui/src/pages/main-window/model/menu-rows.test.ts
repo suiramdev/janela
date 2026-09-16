@@ -32,7 +32,9 @@ const row = (rows: readonly MenuRow[], label: string): MenuActionRow => {
   return found;
 };
 
-function recordingActions(): SidebarActions & { readonly calls: string[] } {
+function recordingActions(
+  options: { readonly local?: false } = {},
+): SidebarActions & { readonly calls: string[] } {
   const calls: string[] = [];
 
   return {
@@ -42,8 +44,13 @@ function recordingActions(): SidebarActions & { readonly calls: string[] } {
     openProjectSettings: (id: ProjectID) => calls.push(`openProjectSettings:${id}`),
     removeProject: (project) => calls.push(`removeProject:${project.id}`),
     removeSession: (session) => calls.push(`removeSession:${session.id}`),
-    revealInFinder: (path) => calls.push(`revealInFinder:${path}`),
-    openInTerminal: (path) => calls.push(`openInTerminal:${path}`),
+    local:
+      options.local === false
+        ? undefined
+        : {
+            revealInFinder: (path) => calls.push(`revealInFinder:${path}`),
+            openInTerminal: (path) => calls.push(`openInTerminal:${path}`),
+          },
   };
 }
 
@@ -112,6 +119,21 @@ describe("projectMenuRows", () => {
     expect(destructive).toHaveLength(1);
     expect(labels(rows).at(-1)).toBe("Remove Project…");
   });
+
+  test("without a local shell there is no Finder and no Terminal, and the rest stays", () => {
+    const actions = recordingActions({ local: false });
+    const rows = projectMenuRows(project, actions);
+
+    expect(labels(rows)).toEqual(["New Session…", "Project Settings", "Remove Project…"]);
+
+    for (const label of labels(rows)) row(rows, label).onSelect();
+
+    expect(actions.calls).toEqual([
+      `newSession:${project.id}`,
+      `openProjectSettings:${project.id}`,
+      `removeProject:${project.id}`,
+    ]);
+  });
 });
 
 describe("sessionMenuRows", () => {
@@ -129,6 +151,14 @@ describe("sessionMenuRows", () => {
       `removeSession:${session.id}`,
     ]);
     expect(row(rows, "Remove Session…").destructive).toBe(true);
+  });
+
+  test("without a local shell the session menu is new terminal and remove, separated", () => {
+    const session = fakeSession({ name: "fix/pty", directory: absolutePath("/src/janela-pty") });
+    const rows = sessionMenuRows(session, recordingActions({ local: false }));
+
+    expect(labels(rows)).toEqual(["New Terminal", "Remove Session…"]);
+    expect(rows.map((entry) => entry.kind)).toEqual(["label", "item", "separator", "item"]);
   });
 });
 

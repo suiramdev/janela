@@ -87,7 +87,7 @@ export interface NewSessionSheetProps {
   readonly onProjectChange: (projectID: ProjectID | undefined) => void;
   readonly overview: BranchOverviewState;
   readonly sessions: readonly Session[];
-  readonly onPickDirectory: () => Promise<AbsolutePath | undefined>;
+  readonly onPickDirectory: (() => Promise<AbsolutePath | undefined>) | undefined;
   readonly onCreate: (intent: SessionCreationIntent) => void;
   readonly onCancel: () => void;
 }
@@ -408,7 +408,7 @@ export function NewSessionSheet(props: NewSessionSheetProps): ReactElement {
 function FolderField(props: {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  readonly onPick: () => Promise<AbsolutePath | undefined>;
+  readonly onPick: (() => Promise<AbsolutePath | undefined>) | undefined;
 }): ReactElement {
   const { value, onChange, onPick } = props;
   const id = useId();
@@ -421,6 +421,8 @@ function FolderField(props: {
   );
 
   const pick = useCallback(() => {
+    if (onPick === undefined) return;
+
     void onPick().then((picked) => {
       if (picked !== undefined) onChange(picked);
 
@@ -443,9 +445,11 @@ function FolderField(props: {
           spellCheck={false}
           data-autofocus
         />
-        <Button variant="outline" type="button" onClick={pick}>
-          Choose…
-        </Button>
+        {onPick === undefined ? undefined : (
+          <Button variant="outline" type="button" onClick={pick}>
+            Choose…
+          </Button>
+        )}
       </div>
       <FieldDescription>The session's working directory.</FieldDescription>
     </Field>

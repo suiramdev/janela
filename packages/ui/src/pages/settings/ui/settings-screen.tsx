@@ -100,7 +100,7 @@ export interface SettingsPaneProps {
   readonly availability: LaunchProfileAvailability;
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
-  readonly service: BackgroundServiceControlling;
+  readonly service: BackgroundServiceControlling | undefined;
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
   readonly onChangeDraft: (draft: SettingsDraft) => void;
@@ -482,7 +482,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             availability={availability}
             sessions={sessions}
             terminalStates={terminalStates}
-            service={environment.service}
+            service={environment.local?.service}
             projects={projects}
             draft={draft}
             onChangeDraft={changeDraft}

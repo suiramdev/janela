@@ -32,13 +32,11 @@ export function fakeClientEnvironment(): ClientEnvironment {
     },
     view: createViewState(stores.sessions),
     commands: neverCommands(),
-    native: inertNativeShell(),
     windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    service: recordingService(),
-    restartDaemon: () => {},
+    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
   };
 }
 
@@ -66,12 +64,10 @@ export function environmentOver(state: {
     connection: fakeClientEnvironment().connection,
     view: createViewState(stores.sessions),
     commands: neverCommands(),
-    native: inertNativeShell(),
     windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    service: recordingService(),
-    restartDaemon: () => {},
+    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
   };
 }

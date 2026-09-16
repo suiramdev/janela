@@ -3,8 +3,10 @@ import {
   ClientEnvironmentProvider,
   MainWindow,
   SettingsScreen,
+  browserClipboard,
   createConfirmationQueue,
   createViewState,
+  localStorageSettings,
   type ClientEnvironment,
   type SettingsRoute,
 } from "@janela/ui";
@@ -14,14 +16,12 @@ import { Match } from "effect";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import { browserClipboard } from "./adapters/clipboard.ts";
 import { installNativeMenu, tauriCommandSource } from "./adapters/menu.ts";
 import { tauriNativeShell } from "./adapters/native.ts";
-import { localStorageSettings } from "./adapters/settings-storage.ts";
 import { tauriWindowControls } from "./adapters/window-controls.ts";
 import { liveEnvironment } from "./environment.ts";
 
-import "./styles.css";
+import "@janela/design/styles.css";
 
 const environment = liveEnvironment();
 
@@ -38,21 +38,23 @@ const clientEnvironment: ClientEnvironment = {
   view,
   onFocusedTerminalChange: environment.focus.report,
   commands: tauriCommandSource(),
-  native: tauriNativeShell(),
   windowControls: tauriWindowControls(),
   confirmations,
   clipboard: browserClipboard(),
   settings: settingsStore,
-  service: {
-    stop: () => void environment.stopBackgroundService(),
-    stopAndUnregister: () =>
-      void invoke<void>("unregister_launch_agent").then(
-        () => environment.stopBackgroundService(),
-        () => environment.stopBackgroundService(),
-      ),
+  local: {
+    native: tauriNativeShell(),
+    service: {
+      stop: () => void environment.stopBackgroundService(),
+      stopAndUnregister: () =>
+        void invoke<void>("unregister_launch_agent").then(
+          () => environment.stopBackgroundService(),
+          () => environment.stopBackgroundService(),
+        ),
+    },
+    restartDaemon: () =>
+      void environment.stopBackgroundService().then(() => environment.connection.connect()),
   },
-  restartDaemon: () =>
-    void environment.stopBackgroundService().then(() => environment.connection.connect()),
 };
 
 const renderSettings = (route: SettingsRoute): ReactElement => <SettingsScreen route={route} />;

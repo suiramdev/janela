@@ -65,6 +65,30 @@ const ICON = {
   closeRight: hugeicon(ArrowRightDoubleIcon),
 } as const;
 
+const SEPARATOR: MenuRow = { kind: "separator" };
+
+function localRows(
+  directory: Project["directory"],
+  local: SidebarActions["local"],
+): readonly MenuRow[] {
+  if (local === undefined) return [];
+
+  return [
+    {
+      kind: "item",
+      label: "Reveal in Finder",
+      icon: ICON.reveal,
+      onSelect: () => local.revealInFinder(directory),
+    },
+    {
+      kind: "item",
+      label: "Open in Terminal",
+      icon: ICON.terminal,
+      onSelect: () => local.openInTerminal(directory),
+    },
+  ];
+}
+
 export function projectMenuRows(project: Project, actions: SidebarActions): readonly MenuRow[] {
   return [
     { kind: "label", label: project.name },
@@ -75,18 +99,7 @@ export function projectMenuRows(project: Project, actions: SidebarActions): read
       onSelect: () => actions.newSession(project.id),
     },
     { kind: "separator" },
-    {
-      kind: "item",
-      label: "Reveal in Finder",
-      icon: ICON.reveal,
-      onSelect: () => actions.revealInFinder(project.directory),
-    },
-    {
-      kind: "item",
-      label: "Open in Terminal",
-      icon: ICON.terminal,
-      onSelect: () => actions.openInTerminal(project.directory),
-    },
+    ...localRows(project.directory, actions.local),
     {
       kind: "item",
       label: "Project Settings",
@@ -113,19 +126,8 @@ export function sessionMenuRows(session: Session, actions: SidebarActions): read
       icon: ICON.newTerminal,
       onSelect: () => actions.newTerminal(session.id),
     },
-    { kind: "separator" },
-    {
-      kind: "item",
-      label: "Reveal in Finder",
-      icon: ICON.reveal,
-      onSelect: () => actions.revealInFinder(session.directory),
-    },
-    {
-      kind: "item",
-      label: "Open in Terminal",
-      icon: ICON.terminal,
-      onSelect: () => actions.openInTerminal(session.directory),
-    },
+    ...(actions.local === undefined ? [] : [SEPARATOR]),
+    ...localRows(session.directory, actions.local),
     { kind: "separator" },
     {
       kind: "item",

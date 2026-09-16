@@ -117,6 +117,13 @@ export const PACKAGES: readonly PackageSpec[] = [
       "@janela/daemon",
     ],
   },
+  {
+    name: "@janela/gateway",
+    dir: "apps/gateway",
+    layer: 7,
+    side: "daemon",
+    deps: ["@janela/support", "@janela/protocol", "@janela/daemon"],
+  },
 
   {
     name: "@janela/client",
@@ -145,6 +152,7 @@ export const PACKAGES: readonly PackageSpec[] = [
     layer: 9,
     side: "client",
     deps: [
+      "@janela/support",
       "@janela/core",
       "@janela/protocol",
       "@janela/client",
@@ -166,6 +174,13 @@ export const PACKAGES: readonly PackageSpec[] = [
       "@janela/terminal-ui",
       "@janela/ui",
     ],
+  },
+  {
+    name: "@janela/web",
+    dir: "apps/web",
+    layer: 10,
+    side: "client",
+    deps: ["@janela/support", "@janela/protocol", "@janela/client", "@janela/design", "@janela/ui"],
   },
 
   {
@@ -233,13 +248,19 @@ export const GATED_MODULES: readonly GatedModule[] = [
   },
   {
     pattern: "node:net",
-    allowed: ["@janela/daemon", "@janela/janelad"],
+    allowed: ["@janela/daemon", "@janela/janelad", "@janela/gateway"],
     reason:
-      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket. `apps/daemon` binds the path and hands the bound server down, because socket activation was given up and there is no descriptor to inherit (#39, 2026-09-08) — `@janela/daemon` still never binds and never chooses a path.",
+      "The daemon owns the listener. A client reaches the socket through the Tauri shell, because a WebView cannot open a Unix socket. `apps/daemon` binds the path and hands the bound server down, because socket activation was given up and there is no descriptor to inherit (#39, 2026-09-08) — `@janela/daemon` still never binds and never chooses a path. `apps/gateway` is the browser's Tauri shell: it opens the socket because a browser cannot, and relays bytes it never reads.",
   },
   {
     pattern: "react",
-    allowed: ["@janela/design", "@janela/terminal-ui", "@janela/ui", "@janela/desktop"],
+    allowed: [
+      "@janela/design",
+      "@janela/terminal-ui",
+      "@janela/ui",
+      "@janela/desktop",
+      "@janela/web",
+    ],
     reason:
       "Nothing in @janela/session or below may import a view layer. The daemon detects, the client decides, the app delivers.",
   },
@@ -263,7 +284,7 @@ export const GATED_MODULES: readonly GatedModule[] = [
   },
   {
     pattern: "react-dom",
-    allowed: ["@janela/ui", "@janela/desktop"],
+    allowed: ["@janela/ui", "@janela/desktop", "@janela/web"],
     reason:
       "Mounting is the composition root's job, and @janela/ui's own tests. Nothing lower renders itself.",
   },
@@ -275,7 +296,14 @@ export const GATED_MODULES: readonly GatedModule[] = [
   },
   {
     pattern: "@janela/support/process",
-    allowed: ["@janela/git", "@janela/forge", "@janela/pty", "@janela/session", "@janela/janelad"],
+    allowed: [
+      "@janela/git",
+      "@janela/forge",
+      "@janela/pty",
+      "@janela/session",
+      "@janela/janelad",
+      "@janela/gateway",
+    ],
     reason:
       "@janela/support is isomorphic so a browser client can link it; its subprocess half is daemon-only and lives behind this subpath.",
   },

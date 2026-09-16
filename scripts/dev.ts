@@ -125,6 +125,7 @@ async function waitForDaemon(daemon: Piped): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  const target = process.argv.includes("--web") ? "web:dev" : "app";
   let started: Piped | undefined;
 
   if (await daemonIsListening(SOCKET_PATH)) {
@@ -153,7 +154,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const app = Bun.spawn(["bun", "run", "app"], {
+  const app = Bun.spawn(["bun", "run", target], {
     cwd: REPO_ROOT,
     stdin: "inherit",
     stdout: "inherit",

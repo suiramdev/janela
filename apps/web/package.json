@@ -1,0 +1,31 @@
+{
+  "name": "@janela/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The browser client: the same window, over a WebSocket to the gateway.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "vite",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/client": "workspace:*",
+    "@janela/design": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*",
+    "@janela/ui": "workspace:*",
+    "effect": "4.0.0-rc.115",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*",
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-react": "6.1.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.2"
+  }
+}

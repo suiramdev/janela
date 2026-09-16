@@ -3,8 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { SidebarProvider } from "@janela/design";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { hiddenWindowControls } from "../../../shared/lib/test-fakes/index.ts";
-import { ClientEnvironmentProvider, type ClientEnvironment } from "../../../shared/model/index.ts";
+import {
+  ClientEnvironmentProvider,
+  NO_WINDOW_CONTROLS,
+  type ClientEnvironment,
+} from "../../../shared/model/index.ts";
 import {
   WINDOW_CONTROLS_ROOM,
   WINDOW_DRAG_REGION,
@@ -70,7 +73,7 @@ describe("AppSidebar markup", () => {
 
   test("the window controls get the head of the header row, and fullscreen takes it back", () => {
     const overlaid = renderSidebar(fakeEnvironment({}));
-    const fullscreen = renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls }));
+    const fullscreen = renderSidebar(fakeEnvironment({ windowControls: NO_WINDOW_CONTROLS }));
 
     expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeGreaterThan(-1);
     expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeLessThan(
@@ -85,7 +88,7 @@ describe("AppSidebar markup", () => {
 
     for (const markup of [
       renderSidebar(fakeEnvironment({})),
-      renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls })),
+      renderSidebar(fakeEnvironment({ windowControls: NO_WINDOW_CONTROLS })),
     ]) {
       expect(markup.indexOf(region)).toBeGreaterThan(-1);
       expect(markup.indexOf(region)).toBeLessThan(markup.indexOf('aria-label="Search"'));

@@ -19,12 +19,14 @@
     { "path": "packages/session" },
     { "path": "packages/daemon" },
     { "path": "apps/daemon" },
+    { "path": "apps/gateway" },
 
     { "path": "packages/client" },
     { "path": "packages/design" },
     { "path": "packages/terminal-ui" },
     { "path": "packages/ui" },
     { "path": "apps/desktop" },
+    { "path": "apps/web" },
 
     { "path": "packages/test-support" }
   ]

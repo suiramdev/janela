@@ -127,6 +127,24 @@ describe("the background service controls", () => {
 
     expect(SERVICE.calls).toEqual([]);
   });
+
+  test("are absent when no local shell can stop the service", () => {
+    const markup = renderToStaticMarkup(
+      <SettingsGeneral
+        settings={DEFAULT_GLOBAL_SETTINGS}
+        onChange={noop}
+        profiles={SHELL_AND_CLAUDE}
+        availability={BOTH_AVAILABLE}
+        sessions={BUSY_SESSIONS}
+        terminalStates={BUSY_STATES}
+        service={undefined}
+      />,
+    );
+
+    expect(markup).not.toContain("Background service");
+    expect(markup).not.toContain(SERVICE_REQUEST_TITLE.stop);
+    expect(markup).toContain("Confirmations");
+  });
 });
 
 describe("the confirmation", () => {

@@ -15,7 +15,7 @@ import type { CommandID } from "../../../shared/config/index.ts";
 import {
   type ConfirmationRequest,
   type Confirming,
-  type NativeShell,
+  type LocalShell,
   type ViewState,
   resolveLocalLayout,
   withFocusedTab,
@@ -26,7 +26,7 @@ export interface CommandTarget {
   readonly sessions: SessionStore;
   readonly connection: Pick<DaemonConnection, "request">;
   readonly view: ViewState;
-  readonly native: NativeShell;
+  readonly local: LocalShell | undefined;
   readonly confirmations: Confirming;
 }
 
@@ -148,7 +148,7 @@ function closingCost(
 }
 
 export function createCommandDispatch(target: CommandTarget): (id: CommandID) => Promise<void> {
-  const { projects, sessions, connection, view, native } = target;
+  const { projects, sessions, connection, view, local } = target;
 
   const currentSession = (): Session | undefined =>
     sessions.sessions.find((session) => session.id === sessions.selection);
@@ -156,7 +156,9 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
   const focusedIn = (session: Session): TerminalID | undefined => focusedTerminalOf(view, session);
 
   const openFolder = async (): Promise<void> => {
-    const directory = await native.pickDirectory({ title: "Open Folder" });
+    if (local === undefined) return;
+
+    const directory = await local.native.pickDirectory({ title: "Open Folder" });
 
     if (directory === undefined) return;
 
@@ -256,7 +258,9 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     openFolder,
 
     addProject: async () => {
-      const directory = await native.pickDirectory({ title: "Add Project" });
+      if (local === undefined) return;
+
+      const directory = await local.native.pickDirectory({ title: "Add Project" });
 
       if (directory === undefined) return;
 
@@ -280,19 +284,23 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     },
 
     revealInFinder: async () => {
+      if (local === undefined) return;
+
       const session = currentSession();
 
       if (session === undefined) return;
 
-      await native.revealInFinder(session.directory);
+      await local.native.revealInFinder(session.directory);
     },
 
     openInTerminal: async () => {
+      if (local === undefined) return;
+
       const session = currentSession();
 
       if (session === undefined) return;
 
-      await native.openInTerminal(session.directory);
+      await local.native.openInTerminal(session.directory);
     },
 
     splitRight: () => split("horizontal"),
