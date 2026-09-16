@@ -633,12 +633,17 @@ function TabStrip(props: {
           // `scrollbar-hide` for the same reason the command menu's filter row
           // has it: the bars are *classic* here (styles.css restyles
           // `::-webkit-scrollbar` under `@media (pointer: fine)`, which opts out
-          // of the overlay ones), so each reserves 10px of a 28px strip. And
-          // `overflow-x: auto` makes the other axis a scroller too, which the
-          // trigger's `after:` underline — `bottom-[-5px]`, invisible in this
-          // variant — overflows by 3px: enough for a vertical bar nobody asked
-          // for, whose gutter drew 11px of `bg-muted` past the last tab.
-          className="scroll-fade-x scrollbar-hide max-w-full justify-start gap-0.5 overflow-x-auto [--scroll-fade-size:20px]"
+          // of the overlay ones), so each reserves 10px of a 28px strip.
+          //
+          // `overflow-y-hidden` because the strip scrolls one way, and
+          // `overflow-x: auto` alone does not say so: CSS computes the other
+          // axis' `visible` to `auto`, so anything that pokes out of the strip
+          // vertically — the trigger's `line`-variant underline used to, by 2px —
+          // becomes a vertical scroll range a trackpad can drag the tabs into.
+          // (`clip` is not available here: paired with a scrolling axis it
+          // computes back to `hidden`.) Nothing overflows now, so the axis has no
+          // range at all; this keeps it that way when a tab grows a badge.
+          className="scroll-fade-x scrollbar-hide max-w-full justify-start gap-0.5 overflow-x-auto overflow-y-hidden [--scroll-fade-size:20px]"
         >
           {layout.tabs.map((tab, index) => (
             <TabItem
