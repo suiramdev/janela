@@ -25,7 +25,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -58,6 +57,7 @@ import {
   ProjectIcon,
   SIDEBAR_SCROLLER,
   ShowSidebarBar,
+  SidebarChromeHeader,
   SidebarTitleRow,
   WindowColumn,
 } from "../../../shared/ui/index.ts";
@@ -145,14 +145,14 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
 
   return (
     <Sidebar variant="inset" collapsible="offcanvas">
-      <SidebarHeader>
+      <SidebarChromeHeader>
         <SidebarTitleRow>
           <h1 className="text-muted-foreground flex-1 truncate px-1 text-xs font-medium">
             Settings
           </h1>
           <SidebarTrigger />
         </SidebarTitleRow>
-      </SidebarHeader>
+      </SidebarChromeHeader>
 
       <SidebarContent className={SIDEBAR_SCROLLER}>
         <SidebarMenu role="tablist" aria-orientation="vertical" aria-label="Settings">

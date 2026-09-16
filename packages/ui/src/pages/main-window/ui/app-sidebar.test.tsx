@@ -5,7 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { hiddenWindowControls } from "../../../shared/lib/test-fakes/index.ts";
 import { ClientEnvironmentProvider, type ClientEnvironment } from "../../../shared/model/index.ts";
-import { WINDOW_CONTROLS_ROOM, WINDOW_DRAG_REGION } from "../../../shared/ui/index.ts";
+import {
+  WINDOW_CONTROLS_ROOM,
+  WINDOW_DRAG_REGION,
+  WINDOW_GUTTER_REGION,
+} from "../../../shared/ui/index.ts";
 import { project, session, sessionID, terminal, terminalID } from "../model/session-fixture.ts";
 import { AppSidebar } from "./app-sidebar.tsx";
 import { fakeEnvironment, ignoreCommand } from "./window-fixture.ts";
@@ -77,6 +81,7 @@ describe("AppSidebar markup", () => {
 
   test("the header row is the band that drags the window, in both states", () => {
     const region = `data-tauri-drag-region="${WINDOW_DRAG_REGION}"`;
+    const gutter = `data-tauri-drag-region="${WINDOW_GUTTER_REGION}"`;
 
     for (const markup of [
       renderSidebar(fakeEnvironment({})),
@@ -84,6 +89,7 @@ describe("AppSidebar markup", () => {
     ]) {
       expect(markup.indexOf(region)).toBeGreaterThan(-1);
       expect(markup.indexOf(region)).toBeLessThan(markup.indexOf('aria-label="Search"'));
+      expect(markup).toMatch(new RegExp(`data-sidebar="header"[^>]*${gutter}`, "u"));
     }
   });
 

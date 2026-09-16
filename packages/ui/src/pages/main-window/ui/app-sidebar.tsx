@@ -28,7 +28,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuBadge,
@@ -51,6 +50,7 @@ import {
   ContextMenuRegion,
   ProjectIcon,
   SIDEBAR_SCROLLER,
+  SidebarChromeHeader,
   SidebarTitleRow,
 } from "../../../shared/ui/index.ts";
 import { selectSession } from "../model/command-dispatch.ts";
@@ -206,7 +206,7 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
 
   return (
     <Sidebar variant="inset" collapsible="offcanvas">
-      <SidebarHeader>
+      <SidebarChromeHeader>
         <SidebarTitleRow>
           <div className="flex-1 self-stretch" />
           <Tooltip>
@@ -243,7 +243,7 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
             </SidebarMenuBadge>
           </SidebarMenuItem>
         </SidebarMenu>
-      </SidebarHeader>
+      </SidebarChromeHeader>
 
       <SidebarContent className={SIDEBAR_SCROLLER}>
         <SidebarGroup className="py-1">

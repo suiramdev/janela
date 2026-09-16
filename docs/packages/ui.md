@@ -1169,6 +1169,22 @@ sidebar, no way back from a collapsed one, and its form against the window frame
   clickable thing, so buttons keep their clicks without opting out. Every row under the
   window's top edge needs it, because removing the system title bar took drag and
   double-click with it.
+- **`WINDOW_GUTTER_REGION`** is `"true"` — a *bare* region, which Tauri's script honours only
+  on a direct hit — and it goes on the three elements that own the chrome pixels no row
+  covers: the sidebar wrapper (the strip above the column, left by the inset variant's `m-2`),
+  the column itself (the gap between the window bar and the card, and the gutters around it)
+  and the sidebar's header (its `p-2`, and the panel's `py-2` band once the header is pulled
+  into it). Bare, not `"deep"`, because these elements are the whole window: `deep` would make
+  a press on a terminal drag the window. Measured before the fix, presses in the window's top
+  8px — 16px on the sidebar side — reached the WebView and matched no region at all: no drag,
+  no double-click zoom, and a click the drag script had already swallowed. A row that stops
+  short of the window's edge is a title bar with a dead strip along its top, which is exactly
+  what a user reaches for first.
+- **`SidebarChromeHeader`** is `SidebarHeader` pulled up into the panel's inset (`-mt-2`) with
+  the 8px given back as padding (`pt-4`), so its box reaches the window's top edge while
+  everything inside it — including the traffic lights' row — stays where macOS draws the
+  buttons. Not in the drawer: a sheet has no inset to reclaim, and `-mt-2` there would hang the
+  header above the sheet's own top.
 - **`WindowControlsRoom`** renders nothing wherever the title bar is not an overlay — in
   fullscreen, and on any platform drawing controls above the WebView. The row is then simply
   empty at its leading end; the mark and the word "Janela" are not coming back as a fallback.
