@@ -104,6 +104,19 @@ interprets no input, and binds no keys.
   authoritative scrollback is the daemon's, and an attach replies with a full
   repaint, so losing the oldest lines here loses nothing that cannot be asked for
   again.
+- **The font is a parameter, not a constant.** `TerminalFont` is required, so the
+  settings value reaches the renderer or the build fails; the fallback to
+  `TERMINAL_FONT_STACK` happens here and nowhere else, because two defaults are two
+  answers to "what font is this terminal in". This is where Nerd Font icons come
+  from: the glyphs live in the user's font, so a family that has them is the whole
+  feature, and a stack that has none renders `U+F07B` as tofu no matter what the
+  emulator does.
+- `setFont` assigns the two options and re-measures rather than rebuilding: xterm
+  re-measures the cell synchronously on an option change, so `remeasure()` reads the
+  new metric and votes the new grid in the same turn — the `ResizeObserver` never
+  fires, because the container did not move. Recreating the renderer would have been
+  simpler and would have thrown away the scrollback of every attached terminal to
+  change a font size.
 - **Background.** xterm fills the cells it owns and defaults to black, while the
   letterbox deliberately shows the container through; unless the two agree, every
   pane is drawn with a frame around it. The colour is read from the computed style
@@ -169,6 +182,11 @@ interprets no input, and binds no keys.
   did.
 - Handlers are read through refs so a parent re-rendering with fresh closures does
   not tear down a terminal and lose its scrollback.
+- `font` is held in a ref and kept out of the create effect's dependencies for the
+  same reason: a new font is applied through `setFont`, while a *new renderer* is
+  something only `screenReaderMode` asks for. The ref is what that recreation reads,
+  so the terminal it builds is in the font the user is looking at rather than the one
+  they had when the pane mounted.
 - The renderer is created and disposed in pairs, which makes StrictMode's double
   mount a non-event rather than a leaked emulator.
 - The container is a labelled `<section>` rather than a bare div: xterm builds its

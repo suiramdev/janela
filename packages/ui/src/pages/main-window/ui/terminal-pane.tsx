@@ -12,9 +12,17 @@ import {
 } from "@janela/core";
 import { Badge, Button, useSize, cn } from "@janela/design";
 import { TerminalSurface, type TerminalSurfaceHandle } from "@janela/terminal-ui";
-import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactElement,
+} from "react";
 
-import { useClientEnvironment } from "../../../shared/model/index.ts";
+import { useClientEnvironment, useStoreValue } from "../../../shared/model/index.ts";
 import { ContextMenuRegion, type MenuRow } from "../../../shared/ui/index.ts";
 import { terminalMenuRows } from "../model/menu-rows.ts";
 import { TERMINAL_DRAG_TYPE, dockEdge } from "../model/pane-drag.ts";
@@ -64,6 +72,12 @@ export function TerminalPane(props: {
   const environment = useClientEnvironment();
   const view = environment.view;
   const store = environment.sessions;
+
+  const settings = useStoreValue(view, () => view.settings);
+  const font = useMemo(
+    () => ({ family: settings.terminalFontFamily, size: settings.terminalFontSize }),
+    [settings.terminalFontFamily, settings.terminalFontSize],
+  );
 
   const handleRef = useRef<TerminalSurfaceHandle | null>(null);
   const isAttachedRef = useRef(false);
@@ -283,6 +297,7 @@ export function TerminalPane(props: {
           ref={registerSurface}
           label={`Terminal: ${title} — ${stateText}`}
           focused={isFocused}
+          font={font}
           onInput={handleInput}
           onViewportChange={handleViewportChange}
         />

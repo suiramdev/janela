@@ -657,7 +657,13 @@ positional shape is deliberate — a sidebar test reads better as
 
 One setting, deliberately: colours come from the appearance the system declares, size
 comes from the window, behaviour belongs to the program. The font is the one thing a
-developer has an opinion about that we cannot infer.
+developer has an opinion about that we cannot infer — and the one that decides whether
+an agent's icons draw at all, because Nerd Font glyphs live in the font and nothing in
+macOS has them.
+
+- Both fields reach every attached terminal through `TerminalPane`, which reads
+  `view.settings` and hands the surface a `TerminalFont`. A save re-applies the font
+  in place: the grid is re-measured and re-voted, and no scrollback is lost.
 
 ### `ui/notification-settings.tsx`
 

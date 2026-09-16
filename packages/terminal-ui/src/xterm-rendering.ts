@@ -11,8 +11,16 @@ import { MINIMUM_GRID, gridThatFits, letterboxMargins, type PixelSize } from "./
 import { mediaQueryLists } from "./media-queries.ts";
 import type { TerminalRendering } from "./terminal-rendering.ts";
 
+export interface TerminalFont {
+  readonly family: string | undefined;
+
+  readonly size: number;
+}
+
 export interface XtermRenderingOptions {
   readonly container: HTMLElement;
+
+  readonly font: TerminalFont;
 
   readonly screenReaderMode?: boolean;
 
@@ -21,6 +29,8 @@ export interface XtermRenderingOptions {
 
 export interface XtermRendering extends TerminalRendering {
   focus(): void;
+
+  setFont(font: TerminalFont): void;
 }
 
 export const CLIENT_SCROLLBACK_LINES = 10_000;
@@ -60,7 +70,8 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
   const background = backgroundBehind();
 
   const terminal = new Terminal({
-    fontFamily: TERMINAL_FONT_STACK,
+    fontFamily: options.font.family ?? TERMINAL_FONT_STACK,
+    fontSize: options.font.size,
     scrollback: CLIENT_SCROLLBACK_LINES,
     cursorBlink: options.reducedMotion !== true,
     screenReaderMode: options.screenReaderMode === true,
@@ -132,6 +143,19 @@ export function xtermRendering(options: XtermRenderingOptions): XtermRendering {
 
     focus(): void {
       terminal.focus();
+    },
+
+    setFont(font: TerminalFont): void {
+      const family = font.family ?? TERMINAL_FONT_STACK;
+
+      if (terminal.options.fontFamily === family && terminal.options.fontSize === font.size) {
+        return;
+      }
+
+      terminal.options.fontFamily = family;
+      terminal.options.fontSize = font.size;
+
+      remeasure();
     },
 
     dispose(): void {

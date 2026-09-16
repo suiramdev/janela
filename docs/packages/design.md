@@ -56,9 +56,17 @@ system became custom properties that adapt through `prefers-color-scheme` and
   the window edge without making the first column look indented.
 - `failure` is text and glyphs for a terminal that exited non-zero, including a failed
   automation command, whose terminal stays open showing exactly why.
-- `TERMINAL_FONT_STACK` is only the default — Settings overrides it. SF Mono first
-  because it ships with macOS, has the coverage agents need and hints well at small
-  sizes; then a stack, because a WebView on another platform has to render something.
+- `TERMINAL_FONT_STACK` is only the default — Settings overrides it, and
+  `xtermRendering` is what applies either one. SF Mono first because it ships with
+  macOS, has the coverage agents need and hints well at small sizes; then a stack,
+  because a WebView on another platform has to render something.
+- The stack ends in `Symbols Nerd Font Mono` before the generics because agent CLIs,
+  starship prompts and `eza` draw from the Nerd Font private-use ranges, and no font
+  that ships with macOS carries them — the browser falls back per glyph, so naming
+  the symbols-only font gives a user who installed it icons in every terminal
+  without giving up SF Mono for text. Absent, it costs a lookup that fails. Powerline
+  separators are the exception: xterm draws `U+E0B0`–`U+E0B7` itself, which is why
+  those alone survive a stack with no icon coverage.
 - Motion is **not** here. It lives in `lib/springs.ts`, because the tier says how big
   the thing that moves is and the number follows from that; a two-value `MOTION`
   constant here was a second, unused vocabulary for the same decision. A CSS
