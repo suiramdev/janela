@@ -1067,10 +1067,51 @@ were written again rather than reached for.
   copy, though copy is tested where it is written.
 - `recordingClipboard` starts empty, so `paste` answers `undefined`: the refusal a real
   clipboard gives, and the case a terminal must survive without sending a stray byte.
-- `overlaidWindowControls`/`hiddenWindowControls` are constants because the whole port is
-  one boolean.
+- `overlaidWindowControls` is a constant because the whole port is one boolean; its
+  opposite is `NO_WINDOW_CONTROLS` in `shared/model`, which the browser client uses
+  for real.
 - `window-fixture`'s `subscribe` does nothing, because markup rendering never notifies —
   which is also the limit of what those fakes can prove.
+
+### `web-platform/`
+
+The ports a standards-compliant browser implements on its own, so the desktop app and
+the browser client share one implementation rather than two drifting copies. They are
+exported from the package index; the Tauri-only ports (the directory picker, Finder,
+Terminal.app, `launchctl`) stay in `apps/desktop/src/adapters/` under
+`ClientEnvironment.local`.
+
+- `clipboard.ts` — `navigator.clipboard`, no plugin: available to a WKWebView in a
+  secure context, which `tauri://` is, and to a browser page over `https:` or
+  `localhost`. Writing is allowed from a user gesture, which every call is; reading is
+  the one WebKit can refuse, and a rejection answers `undefined` so the terminal
+  receives nothing rather than a dialog. Never logged: the text, in either direction.
+  Over plain `http://` on a tailnet IP the clipboard API is absent and every call is
+  the refusal path — which is one reason the gateway is published through
+  `tailscale serve` rather than by IP.
+- `settings-storage.ts` — `localStorage` rather than a file: it is the page's own
+  store, it survives an app update, and reaching for the filesystem would mean a
+  Rust command, a permission and a path — for two numbers and a boolean. Nothing
+  here is on the wire, because every field is about rendering or interrupting.
+  Anything unreadable is the defaults, by the port's contract: settings that refuse
+  to load must not stop the window from painting. Parsing is **field by field**:
+  this is data an older build wrote, and one bad field must cost that field rather
+  than every setting; the font size goes through `withTerminalFontSize`, so the
+  bounds are enforced in one place. A silenced-confirmation key this build does not
+  know is dropped rather than carried — a question that no longer exists must not
+  silence the one that replaced it.
+- `keyboard-commands.ts` — a `CommandSource` over `keydown`, for a client with no
+  native menu bar to own the accelerators. `commandForChord` matches
+  `Command.accelerator` against `KeyboardEvent.code` (layout-independent: `⌘⇧]` is
+  `BracketRight` with shift, whatever `key` says) and **only ⌘**: `Ctrl-anything`
+  belongs to the program in the terminal (AGENTS.md non-negotiable 4), so a chord
+  with `ctrlKey` is nobody's command. The listener runs in the capture phase on
+  `window`, ahead of xterm's own handler, and claims a match with `preventDefault`
+  + `stopPropagation`. Chords the browser reserves for itself (⌘W, ⌘N, ⌘T, ⌘Q,
+  ⌘,) never reach the page; the palette (⌘⇧P) lists every available command, so
+  nothing is unreachable, only slower. It takes the command list as a parameter so
+  the browser passes `availableCommands(false)` and never claims a chord for a
+  command it cannot run.
 
 ---
 

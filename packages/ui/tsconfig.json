@@ -11,6 +11,9 @@
   "exclude": ["node_modules", "dist", "generated", "native/target", "src-tauri"],
   "references": [
     {
+      "path": "../../packages/support"
+    },
+    {
       "path": "../../packages/core"
     },
     {

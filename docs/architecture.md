@@ -64,6 +64,43 @@ talk to.
 - One more boundary on the keystroke path, budgeted in
   [`performance.md`](performance.md).
 
+### The gateway
+
+A browser cannot open a Unix socket either, and unlike the WebView it has no Rust
+shell beside it. `apps/gateway` (`janela-gateway`, layer 7, daemon side) is the
+browser's shell: a Bun process on the same Mac that serves the built browser
+client (`apps/web/dist`) and, for every WebSocket a page opens at `/ws`, opens one
+connection to `~/.janela/run/janelad.sock` and relays bytes in both directions
+without reading them. It is the exact shape of `bridge.rs` with a network on the
+outside instead of Tauri IPC.
+
+Three consequences fall out of "one WebSocket = one daemon connection":
+
+- **The daemon is untouched.** It still has no network listener; the peer it sees
+  is the gateway, running as the user, so the peer-uid check and the 0600 socket
+  hold unchanged. A gateway crash kills no terminal.
+- **Idle exit keeps working.** The gateway holds no connection of its own, so a
+  Mac with no page open looks to `janelad` exactly as it did before.
+- **Back-pressure composes.** A slow page fills its WebSocket buffer; the gateway
+  pauses that one Unix socket; the daemon's per-client output queue then drops
+  oldest and re-arms a full repaint, as it does for a slow app. No frame is
+  parsed and no new buffer is introduced beyond the bounds in
+  [`packages/gateway.md`](packages/gateway.md).
+
+Who may connect is decided at the network, not in the protocol — the decision of
+2026-09-16. The gateway binds `127.0.0.1` only, refuses a WebSocket upgrade whose
+`Origin` is not the page it served (so a cross-site page cannot drive the user's
+terminals), and is published to the user's other devices with
+`tailscale serve --bg 7411`, which terminates TLS on the tailnet and vouches for
+the remote identity. The accepted cost: the loopback interface is shared by every
+account on the Mac, so a second local user can reach the gateway while it runs —
+the Unix socket alone refuses them. `Hello.credential` stays unused; if that cost
+becomes unacceptable, a gateway-minted bearer token on the upgrade is the next
+step, and it changes nothing above the transport.
+
+A phone client is another WebSocket peer of the gateway. It speaks the same frames,
+gets the same repaints, and needs nothing server-side that does not already exist.
+
 ---
 
 ## Packages
@@ -90,6 +127,8 @@ compiler stopped doing it.
     daemon                     ui            views
          ↓                        ↓
     apps/daemon → janelad      apps/desktop  Tauri shell + composition root
+    apps/gateway → the         apps/web      the browser client: same views,
+      browser's shell                        a WebSocket transport, no macOS ports
 ```
 
 The two halves meet **only** at `@janela/core` and `@janela/protocol`. That is what
@@ -116,6 +155,7 @@ by accident.
 | `@janela/session` | Project and session lifecycle, automation, `ShellEnvironment`, removal planning | Import a view layer, or know a socket exists |
 | `@janela/daemon` | Listener, connections, subscriptions, peer-credential checks, the frame loop | Contain product logic that belongs in `@janela/session` |
 | `apps/daemon` → `janelad` | Socket bind, signals, idle exit | Contain anything testable |
+| `apps/gateway` → `janela-gateway` | Serving `apps/web/dist`; one WebSocket ↔ one Unix-socket connection, bytes relayed unread; the origin check; `launchctl kickstart` when the socket is gone | Read a frame, hold a daemon connection of its own, or bind anything but loopback |
 
 ### Client side
 
@@ -126,6 +166,7 @@ by accident.
 | `@janela/terminal-ui` | `TerminalRendering`, the surface that draws | Own a PTY or a child process |
 | `@janela/ui` | Views and presentation state, internally Feature-Sliced (below) | Reach past `@janela/client` |
 | `apps/desktop` | The Tauri shell, the object graph, the port adapters, menus, notifications, the socket bridge | Contain logic worth testing |
+| `apps/web` | The browser client: the object graph over a WebSocket transport, the console log sink | Name a port only the Mac can answer — `ClientEnvironment.local` is `undefined` here |
 
 *Planned* means designed and documented but not yet implemented.
 
@@ -290,11 +331,12 @@ were real boundaries rather than artefacts of the old stack.
 
 ### 1. `MessageTransport` — how bytes reach the daemon
 
-An interface over "deliver these frames, give me those frames". Two implementations
-today, both local: the daemon's socket listener, and the app's bridge through the
-Tauri shell (`apps/desktop/src/adapters/transport.ts`). A WebSocket implementation
-later makes a browser client a transport rather than a rewrite. Nothing above it
-knows which.
+An interface over "deliver these frames, give me those frames". Three
+implementations today: the daemon's socket listener, the app's bridge through the
+Tauri shell (`apps/desktop/src/adapters/transport.ts`), and the browser client's
+WebSocket to the gateway (`apps/web/src/adapters/transport.ts`). Nothing above it
+knows which — `@janela/client` runs the same reconnect, handshake and mirror over
+all three.
 
 ### 2. `TerminalEmulating` — the VT parser and the grid (daemon)
 
@@ -330,8 +372,15 @@ app-level capability.
 The rest of what only an app can do — the clipboard, the directory picker, the
 window controls, the menu bar, settings storage — is the same shape and is not a
 sixth seam: the ports are declared in `packages/ui/src/shared/model/client-environment.tsx`,
-beside the views that consume them, and implemented once each in
-`apps/desktop/src/adapters/`.
+beside the views that consume them. The ones a standards-compliant browser can
+implement on its own — the clipboard, `localStorage` settings, keyboard chords —
+are implemented once in `packages/ui/src/shared/lib/web-platform/` and used by
+both apps; the ones only the Mac can answer — the directory picker, Finder,
+Terminal.app, `launchctl` — are grouped as `ClientEnvironment.local`, which the
+desktop app implements in `apps/desktop/src/adapters/` and the browser client
+leaves `undefined`. A view that needs `local` does not render its affordance
+without it, which is how "Reveal in Finder" and the background-service controls
+disappear in a browser rather than fail there.
 
 ---
 
@@ -569,8 +618,8 @@ Two consequences worth stating:
 - **No job scheduler.** Automation is a command bound to a lifecycle event, run in a
   terminal.
 - **No forge API client.** We shell out to the user's `gh`/`glab`.
-- **No network listener in v1.** The protocol is transport-agnostic; only the local
-  transports are built.
+- **No network listener in the daemon.** The protocol is transport-agnostic; the
+  daemon binds only its Unix socket, and the network face is the gateway (above).
 - **No second FFI surface.** `@janela/pty` owns the only one, and a future need —
   `launch_activate_socket` is the known candidate — should go through it rather than
   opening another.

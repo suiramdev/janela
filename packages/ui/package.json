@@ -20,6 +20,7 @@
     "@janela/core": "workspace:*",
     "@janela/design": "workspace:*",
     "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*",
     "@janela/terminal-ui": "workspace:*",
     "effect": "4.0.0-rc.115"
   },

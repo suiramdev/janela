@@ -222,11 +222,13 @@ connecting to your own Mac from a phone. Both are clients of the same protocol, 
 neither needs an architecture change to add, which is precisely why the daemon
 arrived now rather than later.
 
-Since the client became a WebView, the second one is closer than it was: the phone
-client is a browser page that supplies a different transport, sharing the mirror, the
-attention policy and the terminal surface with the desktop app rather than
-reimplementing them. Still not v1, and still nothing built for it beyond not
-closing the door.
+Since the client became a WebView, the second one has arrived in its first form: the
+same views run as a browser page (`apps/web`) over a WebSocket to a gateway on the
+Mac (`apps/gateway`), sharing the mirror and the terminal surface with the desktop
+app rather than reimplementing them, and reached from another device through your
+own tailnet. The phone client proper is that page on a phone, and the affordances
+only the Mac can offer — the folder picker, Finder, `launchctl` — simply are not
+drawn there. Still nothing runs anywhere but your machine.
 
 ---
 

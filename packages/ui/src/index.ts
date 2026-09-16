@@ -8,6 +8,7 @@ export {
   createViewState,
   CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
+  NO_WINDOW_CONTROLS,
   TERMINAL_FONT_SIZE_BOUNDS,
   withSilencedConfirmation,
   withTerminalFontSize,
@@ -16,12 +17,20 @@ export {
   type CommandSource,
   type ConfirmationKey,
   type GlobalSettings,
+  type LocalShell,
   type NativeShell,
   type SettingsRoute,
   type SettingsStoring,
   type WindowControls,
 } from "./shared/model/index.ts";
 
-export { COMMANDS, isCommandID, type CommandID } from "./shared/config/index.ts";
+export { COMMANDS, availableCommands, isCommandID, type CommandID } from "./shared/config/index.ts";
+
+export {
+  browserClipboard,
+  keyboardCommandSource,
+  localStorageSettings,
+  type ChordTarget,
+} from "./shared/lib/web-platform/index.ts";
 
 export { TRAFFIC_LIGHT_POSITION } from "./shared/ui/index.ts";

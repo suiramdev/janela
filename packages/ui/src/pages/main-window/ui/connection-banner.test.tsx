@@ -77,6 +77,7 @@ function fakeEnvironment(options: {
   readonly sessions?: readonly Session[];
   readonly states?: Readonly<Record<TerminalID, TerminalState>>;
   readonly onRestart?: () => void;
+  readonly local?: false;
 }): ClientEnvironment {
   const sessions = options.sessions ?? [];
   const states = options.states ?? {};
@@ -117,13 +118,18 @@ function fakeEnvironment(options: {
     connection,
     view: createViewState(sessionStore),
     commands: neverCommands(),
-    native: inertNativeShell(),
     windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    service: recordingService(),
-    restartDaemon: options.onRestart ?? (() => {}),
+    local:
+      options.local === false
+        ? undefined
+        : {
+            native: inertNativeShell(),
+            service: recordingService(),
+            restartDaemon: options.onRestart ?? (() => {}),
+          },
   };
 }
 
@@ -209,6 +215,23 @@ describe("ConnectionBanner markup", () => {
     expect(markup).toContain("Restart the background service");
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("absolute");
+  });
+
+  test("without a local shell the alert states the cost but offers no restart", () => {
+    const markup = markupFor(
+      fakeEnvironment({
+        status: {
+          kind: "refused",
+          refusal: { kind: "incompatibleVersion", daemonMinimum: 1, daemonCurrent: 1 },
+        },
+        sessions: [session("a")],
+        local: false,
+      }),
+    );
+
+    expect(markup).toContain(VERSION_SKEW_COPY);
+    expect(markup).toContain("1 session, 0 with live terminals");
+    expect(markup).not.toContain("Restart the background service");
   });
 
   test("the copy says what happened, what is still running, and what it costs", () => {

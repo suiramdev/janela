@@ -10,6 +10,7 @@ import {
   fakeSession,
   inertNativeShell,
   recordingConfirmations,
+  recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import { createViewState } from "../../../shared/model/index.ts";
 import {
@@ -83,7 +84,7 @@ function harness(options: {
       },
     },
     view: createViewState(sessions),
-    native: inertNativeShell(),
+    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: noop },
     confirmations,
   };
 

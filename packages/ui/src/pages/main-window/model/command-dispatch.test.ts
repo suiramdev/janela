@@ -22,6 +22,7 @@ import {
   fakeTerminal,
   inertNativeShell,
   recordingConfirmations,
+  recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
   type ConfirmationKey,
@@ -58,6 +59,7 @@ function harness(options: {
   readonly confirms?: boolean;
   readonly silenced?: readonly ConfirmationKey[];
   readonly picks?: string;
+  readonly local?: false;
 }): Harness {
   let sessions = options.sessions ?? [];
   let selection = options.selection;
@@ -113,7 +115,10 @@ function harness(options: {
     projects: projectStore,
     sessions: sessionStore,
     view,
-    native: recording,
+    local:
+      options.local === false
+        ? undefined
+        : { native: recording, service: recordingService(), restartDaemon: () => {} },
     confirmations,
     connection: {
       request: (message) => {
@@ -641,6 +646,21 @@ describe("no target", () => {
     }
 
     expect(context.sent).toEqual([]);
+    expect(context.native.calls).toEqual([]);
+  });
+
+  test("host-only commands do nothing without a local shell", async () => {
+    const session = fakeSession({ directory: absolutePath("/tmp/here") });
+    const context = harness({ sessions: [session], selection: session.id, local: false });
+    const dispatch = createCommandDispatch(context.target);
+
+    for (const id of ["addProject", "openFolder", "revealInFinder", "openInTerminal"] as const) {
+      // oxlint-disable-next-line no-await-in-loop
+      await dispatch(id);
+    }
+
+    expect(context.sent).toEqual([]);
+    expect(context.view.sheet).toBeUndefined();
     expect(context.native.calls).toEqual([]);
   });
 });

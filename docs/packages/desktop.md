@@ -153,24 +153,6 @@ happened.
   title, which is the user's output too. It also asserts something *was* logged and
   that the content did travel, so it cannot pass vacuously.
 
-## `src/adapters/settings-storage.ts`
-
-`localStorage` rather than a file: it is the WebView's own store, it survives an app
-update, and reaching for the filesystem would mean a Rust command, a permission and
-a path — for two numbers and a boolean. Nothing here is on the wire, because every
-field is about rendering or interrupting.
-
-- Anything unreadable is the defaults, by the port's contract: settings that refuse to
-  load must not stop the window from painting. A full or disabled store loses a
-  preference, not the session.
-- Parsing is **field by field**: this is data an older build wrote, and one bad field
-  must cost that field rather than every setting. The font size goes through
-  `withTerminalFontSize`, so the bounds are enforced in one place.
-- A silenced-confirmation key this build does not know is dropped rather than
-  carried: the list is the *policy* (`ConfirmationKey`), and a question that no longer
-  exists must not silence the one that replaced it. A value that is not a list at all
-  is the same as nothing.
-
 ## `src/adapters/window-controls.ts`
 
 The title bar is an overlay, so the traffic lights sit inside the window on the
@@ -199,14 +181,8 @@ row should have its leading space back. Only the shell can answer that.
   under the buttons (`Transparent` would leave a 28px strip), and `decorations` must
   stay on: the buttons need the frame, only the *title* goes.
 
-## `src/adapters/{clipboard,native,menu}.ts`
+## `src/adapters/{native,menu}.ts`
 
-- **Clipboard:** `navigator.clipboard`, no Tauri plugin — it is available to a
-  WKWebView in a secure context, which `tauri://` is, and a plugin would put the
-  user's copied text through a Rust command for nothing. Writing is allowed from a
-  user gesture, which every call is; reading is the one WebKit can refuse, and a
-  rejection answers `undefined` so the terminal receives nothing rather than a dialog.
-  Never logged: the text, in either direction.
 - **Native shell:** the app performs file selection and the daemon is handed paths.
   That keeps macOS permission prompts attributed to the app the user just clicked
   rather than to a background binary they have never heard of. A `null` from the
@@ -214,54 +190,20 @@ row should have its leading space back. Only the shell can answer that.
   `openPath(path, "Terminal")` names Terminal.app explicitly, which the capability
   scopes to exactly that — the user's *default* handler would be Finder again.
   Confirmations used to live here as the plugin's `ask()`; they are the application's
-  own dialog now.
+  own dialog now. Together with `stop`/`stopAndUnregister` and `restartDaemon`, this
+  is `ClientEnvironment.local`: the ports only a client on the daemon's own Mac can
+  answer. The browser client leaves `local` undefined and the views hide what needs
+  it.
 - **Menu:** the command table is handed to the shell once at startup, so adding a row
   to `COMMANDS` adds a menu item with no Rust change and no second list. An id this
   build does not know is a version skew between the menu and the table, and dropping
   it beats dispatching a guess. A failed install is logged and nothing else: every
   command is still reachable from ⌘⇧P. `COMMAND_EVENT` is paired with the Rust
   constant of the same name.
-
-## `src/styles.test.ts`
-
-The tokens are declared in TypeScript and consumed as CSS custom properties, and
-nothing notices when the two disagree: a component reading an undefined property
-paints transparent, and an appearance missing a token falls back to the light one.
-
-- Custom properties inherit and the four appearance blocks have equal specificity, so
-  the winning value is the one the *last* matching block declared — which is how an
-  appearance can leave a token alone and still have one. `MATCHING_BLOCKS` encodes
-  which blocks each appearance matches.
-- The dark block must redefine **all eight** surface levels: `surfaceClasses` hands
-  out `bg-surface-N shadow-surface-N` as literal strings, and a missing level paints
-  transparent — which, since the window itself is level 1, is a black-on-black window
-  rather than an obvious mistake.
-- The shadows are a **ladder**: `shadow-5` is `shadow-4` plus one more, further,
-  softer drop. That is what makes a dialog read as further from the page than a menu,
-  and it is the part that is easy to lose by hand — the dark ladder once carried a
-  single drop per level, so level 7 cast less than level 3.
-- `bg-hover` is painted by the sidebar's travelling highlight *and* by rows that draw
-  their own hover, so an appearance missing it makes one of the two invisible.
-- `--overlay` must be an `R G B` triplet, because the scroll thumb composes it at
-  three opacities: a missing or `oklch()` value makes the declaration invalid and the
-  thumb invisible. Light inks black, dark inks white; Increase Contrast inherits,
-  because contrast does not change which way the overlay tints.
-- The scrim alphas must agree across light and dark and stay at or below 0.6. A black
-  scrim is a dimmer — the same alpha removes the same fraction of whatever is behind
-  it — and past ~60% the dark window (#171717) is indistinguishable from the black
-  outside the window. It is Increase Contrast, not darkness, that asks for more. The
-  defect this replaced: the vendored backdrops carried
-  `bg-black/40 dark:bg-black/80`, and `dark:` is `prefers-color-scheme` here, so every
-  dark user got 80% black composited to #050505 with the surface ladder crushed flat.
-- The scroll-fade default must live in `@layer base`: an unlayered rule beats every
-  `[--scroll-fade-size:…]` utility on source order alone, and the override would be
-  silently ignored — nothing would look broken, it would just fade far too much. A
-  48px fade is two rows of a 28px list, which is why the quick list and the tab strip
-  both pass their own size. The file has two `@layer base` blocks; this is the second,
-  the first being the border/font reset.
-- The springs are the source and `--spring-*` is derived: a
-  `duration-(--spring-moderate)` transition and a `spring.moderate` animation are the
-  same decision, so re-tiering one and not the other is the drift this catches.
+- **Clipboard and settings storage** are not Tauri's: they are web-platform ports,
+  implemented once in `@janela/ui`'s `shared/lib/web-platform/` and shared with the
+  browser client ([`ui.md`](ui.md) § web-platform). The stylesheet and its token
+  test live in `@janela/design` for the same reason ([`design.md`](design.md)).
 
 ## `scripts/` — the bundle gate
 

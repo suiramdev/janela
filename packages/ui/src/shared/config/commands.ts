@@ -4,6 +4,7 @@ export interface Command {
   readonly accelerator?: string;
   readonly menu: CommandMenu;
   readonly section?: number;
+  readonly localOnly?: true;
 }
 
 export type CommandMenu = "app" | "file" | "view" | "session" | "terminal";
@@ -37,13 +38,21 @@ export const COMMANDS: readonly Command[] = [
 
   { id: "newSession", title: "New Session", accelerator: "CmdOrCtrl+N", menu: "file" },
   { id: "newTerminal", title: "New Terminal", accelerator: "CmdOrCtrl+T", menu: "file" },
-  { id: "openFolder", title: "Open Folder…", accelerator: "CmdOrCtrl+O", menu: "file", section: 1 },
+  {
+    id: "openFolder",
+    title: "Open Folder…",
+    accelerator: "CmdOrCtrl+O",
+    menu: "file",
+    section: 1,
+    localOnly: true,
+  },
   {
     id: "addProject",
     title: "Add Project…",
     accelerator: "CmdOrCtrl+Alt+O",
     menu: "file",
     section: 1,
+    localOnly: true,
   },
 
   { id: "showCommands", title: "Command Palette…", accelerator: "CmdOrCtrl+Shift+P", menu: "view" },
@@ -63,8 +72,20 @@ export const COMMANDS: readonly Command[] = [
     menu: "session",
     section: 1,
   },
-  { id: "revealInFinder", title: "Reveal in Finder", menu: "session", section: 2 },
-  { id: "openInTerminal", title: "Open in Terminal", menu: "session", section: 2 },
+  {
+    id: "revealInFinder",
+    title: "Reveal in Finder",
+    menu: "session",
+    section: 2,
+    localOnly: true,
+  },
+  {
+    id: "openInTerminal",
+    title: "Open in Terminal",
+    menu: "session",
+    section: 2,
+    localOnly: true,
+  },
 
   { id: "splitRight", title: "Split Vertically", accelerator: "CmdOrCtrl+D", menu: "terminal" },
   {
@@ -161,4 +182,7 @@ export function acceleratorCaps(accelerator: string): string {
     .split("+")
     .map((part) => (isAcceleratorToken(part) ? ACCELERATOR_SYMBOLS[part] : part))
     .join("+");
+}
+export function availableCommands(hasLocalShell: boolean): readonly Command[] {
+  return hasLocalShell ? COMMANDS : COMMANDS.filter((command) => command.localOnly !== true);
 }

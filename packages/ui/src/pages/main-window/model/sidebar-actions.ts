@@ -5,7 +5,7 @@ import { parseRemovalPlan, type SessionRemovalPreview } from "@janela/protocol";
 import type {
   ConfirmationRequest,
   Confirming,
-  NativeShell,
+  LocalShell,
   ViewState,
 } from "../../../shared/model/index.ts";
 import { createTerminal } from "./command-dispatch.ts";
@@ -14,8 +14,13 @@ export interface SidebarActionTarget {
   readonly sessions: SessionStore;
   readonly connection: Pick<DaemonConnection, "request">;
   readonly view: ViewState;
-  readonly native: NativeShell;
+  readonly local: LocalShell | undefined;
   readonly confirmations: Confirming;
+}
+
+export interface SidebarLocalActions {
+  revealInFinder(path: AbsolutePath): void;
+  openInTerminal(path: AbsolutePath): void;
 }
 
 export interface SidebarActions {
@@ -24,8 +29,7 @@ export interface SidebarActions {
   openProjectSettings(projectID: ProjectID): void;
   removeProject(project: Project): void;
   removeSession(session: Session): void;
-  revealInFinder(path: AbsolutePath): void;
-  openInTerminal(path: AbsolutePath): void;
+  readonly local: SidebarLocalActions | undefined;
 }
 
 function swallowRequestFailure(): undefined {
@@ -33,7 +37,7 @@ function swallowRequestFailure(): undefined {
 }
 
 export function createSidebarActions(target: SidebarActionTarget): SidebarActions {
-  const { sessions, connection, view, native, confirmations } = target;
+  const { sessions, connection, view, local, confirmations } = target;
 
   const removeSession = async (session: Session): Promise<void> => {
     const reply = await connection.request({ type: "removalPlan", sessionID: session.id });
@@ -62,6 +66,19 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
     await connection.request({ type: "removeProject", projectID: project.id });
   };
 
+  const localActions: SidebarLocalActions | undefined =
+    local === undefined
+      ? undefined
+      : {
+          revealInFinder(path: AbsolutePath): void {
+            void local.native.revealInFinder(path).catch(swallowRequestFailure);
+          },
+
+          openInTerminal(path: AbsolutePath): void {
+            void local.native.openInTerminal(path).catch(swallowRequestFailure);
+          },
+        };
+
   return {
     newSession(projectID: ProjectID): void {
       view.openSheet({ kind: "newSession", projectID });
@@ -83,13 +100,7 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
       void removeSession(session).catch(swallowRequestFailure);
     },
 
-    revealInFinder(path: AbsolutePath): void {
-      void native.revealInFinder(path).catch(swallowRequestFailure);
-    },
-
-    openInTerminal(path: AbsolutePath): void {
-      void native.openInTerminal(path).catch(swallowRequestFailure);
-    },
+    local: localActions,
   };
 }
 

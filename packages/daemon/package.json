@@ -5,7 +5,8 @@
   "description": "Listener, connections, subscriptions, peer-credential checks.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./endpoint": "./src/endpoint.ts"
   },
   "scripts": {
     "clean": "rm -rf dist *.tsbuildinfo",
