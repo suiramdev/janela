@@ -637,6 +637,14 @@ a contract (`docs/packages/pty.md` § Tests, where it is measured). The exit tes
 therefore releases the child *after* seeing its output, and asserts a non-zero
 status — 7, which only a real `WEXITSTATUS` produces.
 
+Two tests in `headless-emulator.test.ts` carry an explicit 30 s timeout: the
+flood and the 300 seeded steps push roughly ten megabytes through two emulators
+and dump a grid per step, so their wall time is the machine's and not this
+code's. Neither asserts a duration — the flood's claims are that the delta stays
+inside a byte budget, reuses one buffer and settles to a constant length — and a
+loaded CI runner measured 5.1 s against `bun test`'s 5 s default, against 0.5 s
+on an idle M4. A timing assertion would be the wrong fix for a size claim.
+
 Two seams exist for tests and are worth keeping honest. The scripted
 `PseudoTerminal` covers a read *failure*, which a real terminal cannot produce on
 Darwin at all: a child exiting and `revoke(2)` on the replica both make `read`

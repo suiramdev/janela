@@ -857,7 +857,7 @@ describe("damage encoder", () => {
     expect(new Set(buffers).size).toBe(1);
     expect(lengths[9]).toBe(lengths[8]);
     expect(source.repaintSince(seen)).toHaveLength(0);
-  });
+  }, 30_000);
 
   test("the fallback that diffs every row is just as correct", async () => {
     const source = new HeadlessEmulator({ columns: 20, rows: 8 }, 100, { rowHints: false });
@@ -938,5 +938,5 @@ describe("damage encoder", () => {
 
       seen = source.revision;
     }
-  });
+  }, 30_000);
 });
