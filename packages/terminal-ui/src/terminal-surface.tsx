@@ -4,7 +4,7 @@ import { useEffect, useImperativeHandle, useRef, type ReactElement, type Ref } f
 import { animationFrameScheduler } from "./coalesce.ts";
 import { mediaMatches } from "./media-queries.ts";
 import { createSurfaceController, type SurfaceController } from "./surface-controller.ts";
-import { xtermRendering, type XtermRendering } from "./xterm-rendering.ts";
+import { xtermRendering, type TerminalFont, type XtermRendering } from "./xterm-rendering.ts";
 
 export interface TerminalSurfaceHandle {
   feed(bytes: Uint8Array): void;
@@ -31,6 +31,8 @@ export interface TerminalSurfaceProps {
 
   readonly label: string;
 
+  readonly font: TerminalFont;
+
   readonly screenReaderMode?: boolean;
 }
 
@@ -40,6 +42,7 @@ export function TerminalSurface({
   onViewportChange,
   focused,
   label,
+  font,
   screenReaderMode: screenReaderModeProp,
 }: TerminalSurfaceProps): ReactElement {
   const screenReaderMode = screenReaderModeProp === true;
@@ -49,6 +52,7 @@ export function TerminalSurface({
   const controllerRef = useRef<SurfaceController | undefined>(undefined);
   const viewportRef = useRef<GridSize | undefined>(undefined);
 
+  const fontRef = useRef(font);
   const onInputRef = useRef(onInput);
   const onViewportChangeRef = useRef(onViewportChange);
   useEffect(() => {
@@ -63,7 +67,12 @@ export function TerminalSurface({
 
     const reducedMotion = mediaMatches("(prefers-reduced-motion: reduce)");
 
-    const rendering = xtermRendering({ container, screenReaderMode, reducedMotion });
+    const rendering = xtermRendering({
+      container,
+      font: fontRef.current,
+      screenReaderMode,
+      reducedMotion,
+    });
 
     const controller = createSurfaceController(
       rendering,
@@ -88,6 +97,11 @@ export function TerminalSurface({
       viewportRef.current = undefined;
     };
   }, [screenReaderMode]);
+
+  useEffect(() => {
+    fontRef.current = font;
+    renderingRef.current?.setFont(font);
+  }, [font]);
 
   useEffect(() => {
     if (focused === true) renderingRef.current?.focus();

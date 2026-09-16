@@ -90,7 +90,10 @@ describe("styles.css", () => {
 
     expect(theme).toContain(`--radius-small: ${CORNER_RADIUS.small}px;`);
     expect(theme).toContain(`--radius-medium: ${CORNER_RADIUS.medium}px;`);
-    expect(theme).toContain(`--font-mono: ${TERMINAL_FONT_STACK};`);
+
+    const mono = /--font-mono:\s*([^;]+);/.exec(theme)?.[1];
+
+    expect(mono?.replace(/\s+/gu, " ")).toBe(TERMINAL_FONT_STACK);
   });
 
   test("the CSS motion ladder is the spring ladder, in milliseconds", () => {

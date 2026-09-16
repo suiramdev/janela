@@ -359,7 +359,9 @@
   --color-failure: var(--janela-failure);
   --radius-small: 6px;
   --radius-medium: 10px;
-  --font-mono: "SF Mono", "Menlo", "DejaVu Sans Mono", ui-monospace, monospace;
+  --font-mono:
+    "SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font",
+    ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

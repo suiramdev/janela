@@ -14,4 +14,4 @@ export const COLOR = {
 } as const;
 
 export const TERMINAL_FONT_STACK =
-  '"SF Mono", "Menlo", "DejaVu Sans Mono", ui-monospace, monospace';
+  '"SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", ui-monospace, monospace';
