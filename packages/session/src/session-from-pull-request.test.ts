@@ -7,11 +7,12 @@ import { temporaryDatabase } from "@janela/db";
 import type { ForgeServing, ForgeState } from "@janela/forge";
 import { PullRequestUnavailable } from "@janela/forge";
 import { createTerminalRegistry } from "@janela/terminal";
+import { Effect } from "effect";
 
 import { WorktreesUnsupported } from "./errors.ts";
 import { createProjectService } from "./project-service.ts";
 import { createSessionService, defaultWorktreeDirectory } from "./session-service.ts";
-import type { SessionService } from "./session-service.ts";
+import type { SessionService, SessionServiceDependencies } from "./session-service.ts";
 import type { ShellEnvironment } from "./shell-environment.ts";
 import {
   eventLog,
@@ -25,17 +26,32 @@ import {
   type RecordingObserver,
 } from "./test-fakes.ts";
 
-/**
- * `fromPullRequest`, which is the only creation kind that asks something outside
- * the daemon a question first.
- *
- * A separate file from `session-service.test.ts` on purpose: what is under test
- * here is the *seam* — that the head branch feeds the ordinary worktree path with
- * a start point, and that a pull request we could not resolve writes nothing.
- * `@janela/forge` owns whether `gh` answers.
- */
+interface PullRequestQuestion {
+  readonly project: Project;
+  readonly number: number;
+}
+
+interface RecordedForge {
+  readonly forge: ForgeServing;
+  readonly asked: readonly PullRequestQuestion[];
+}
+
+interface Fixture {
+  readonly sessions: SessionService;
+  readonly database: TemporaryDatabase;
+  readonly observer: RecordingObserver;
+  readonly worktrees: FakeWorktrees;
+  readonly project: Project;
+  readonly folder: Project;
+  readonly asked: readonly PullRequestQuestion[];
+}
+
+type MutableSessionDependencies = {
+  -readonly [Key in keyof SessionServiceDependencies]: SessionServiceDependencies[Key];
+};
 
 const repositoryDirectory = absolutePath("/Users/x/code/janela");
+
 const folderDirectory = absolutePath("/Users/x/notes");
 
 const shell: ShellEnvironment = {
@@ -47,7 +63,7 @@ const shell: ShellEnvironment = {
 const canonicalise = (directory: AbsolutePath): AbsolutePath =>
   absolutePath(`/private${directory}`);
 
-const projectRecord = (overrides?: Partial<Project>): Project => ({
+const projectRecord = (overrides: Partial<Project> = {}): Project => ({
   id: newProjectID(),
   name: "janela",
   directory: repositoryDirectory,
@@ -59,14 +75,17 @@ const projectRecord = (overrides?: Partial<Project>): Project => ({
   ...overrides,
 });
 
-interface RecordedForge {
-  readonly forge: ForgeServing;
-  readonly asked: readonly { readonly project: Project; readonly number: number }[];
-}
+const rejection = (work: Promise<unknown>): Promise<Error> =>
+  work.then(
+    () => {
+      throw new Error("the call resolved instead of rejecting");
+    },
+    (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))),
+  );
 
-/** A `ForgeServing` that answers one branch, or nothing, and records the question. */
 function recordingForge(branch: string | undefined): RecordedForge {
-  const asked: { project: Project; number: number }[] = [];
+  const asked: PullRequestQuestion[] = [];
+
   return {
     forge: {
       async isAvailable(): Promise<boolean> {
@@ -77,21 +96,12 @@ function recordingForge(branch: string | undefined): RecordedForge {
       },
       async pullRequestBranch(request): Promise<string | undefined> {
         asked.push({ project: request.project, number: request.number });
+
         return branch;
       },
     },
     asked,
   };
-}
-
-interface Fixture {
-  readonly sessions: SessionService;
-  readonly database: TemporaryDatabase;
-  readonly observer: RecordingObserver;
-  readonly worktrees: FakeWorktrees;
-  readonly project: Project;
-  readonly folder: Project;
-  readonly asked: readonly { readonly project: Project; readonly number: number }[];
 }
 
 async function withSessions(
@@ -104,57 +114,61 @@ async function withSessions(
   const { logger } = recordingLogger();
   const forge = recordingForge(options.branch);
 
-  try {
-    const project = projectRecord();
-    const folder = projectRecord({ name: "notes", directory: folderDirectory });
-    delete folder.git;
-    await database.projects.save(project);
-    await database.projects.save(folder);
+  await Effect.runPromise(
+    Effect.ensuring(
+      Effect.tryPromise({
+        try: async () => {
+          const project = projectRecord();
+          const folder = projectRecord({ name: "notes", directory: folderDirectory });
+          delete folder.git;
 
-    const worktrees = fakeWorktrees({ canonicalise, events });
-    const projects = createProjectService({
-      repository: database.projects,
-      git: failingGit(),
-      observer: observer.observer,
-      sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
-      log: logger,
-    });
-    await projects.load();
+          await database.projects.save(project);
+          await database.projects.save(folder);
 
-    const sessions = createSessionService({
-      repository: database.sessions,
-      profiles: database.launchProfiles,
-      projects,
-      worktrees: worktrees.worktrees,
-      terminals: createTerminalRegistry(),
-      shell,
-      observer: observer.observer,
-      processes: scriptedProcesses().processes,
-      createTerminal: fakeCreateTerminal(events).create,
-      log: logger,
-      ...(options.forge === false ? {} : { forge: forge.forge }),
-    });
-    await sessions.load();
+          const worktrees = fakeWorktrees({ canonicalise, events });
+          const projects = createProjectService({
+            repository: database.projects,
+            git: failingGit(),
+            observer: observer.observer,
+            sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
+            log: logger,
+          });
+          await projects.load();
 
-    await work({
-      sessions,
-      database,
-      observer,
-      worktrees,
-      project,
-      folder,
-      asked: forge.asked,
-    });
-  } finally {
-    await database.dispose();
-  }
-}
+          const dependencies: MutableSessionDependencies = {
+            repository: database.sessions,
+            profiles: database.launchProfiles,
+            projects,
+            worktrees: worktrees.worktrees,
+            terminals: createTerminalRegistry(),
+            shell,
+            observer: observer.observer,
+            processes: scriptedProcesses().processes,
+            createTerminal: fakeCreateTerminal(events).create,
+            log: logger,
+          };
 
-const rejection = (work: Promise<unknown>): Promise<unknown> =>
-  work.then(
-    () => undefined,
-    (error: unknown) => error,
+          if (options.forge !== false) dependencies.forge = forge.forge;
+
+          const sessions = createSessionService(dependencies);
+          await sessions.load();
+
+          await work({
+            sessions,
+            database,
+            observer,
+            worktrees,
+            project,
+            folder,
+            asked: forge.asked,
+          });
+        },
+        catch: (cause: unknown) => cause,
+      }),
+      Effect.promise(() => database.dispose()),
+    ),
   );
+}
 
 describe("createSession: fromPullRequest", () => {
   test("the head branch becomes an ordinary worktree session", async () => {
@@ -189,8 +203,6 @@ describe("createSession: fromPullRequest", () => {
         number: 42,
       });
 
-      // Without a start point `git worktree add -b` branches off whatever HEAD
-      // is, which would look like the pull request and contain none of it.
       expect(fixture.worktrees.created).toEqual([
         {
           repository: repositoryDirectory,
@@ -203,7 +215,6 @@ describe("createSession: fromPullRequest", () => {
   });
 
   test("a pull request that resolved to nothing writes nothing", async () => {
-    // No branch configured: the forge answers `undefined`.
     await withSessions({}, async (fixture) => {
       const thrown = await rejection(
         fixture.sessions.createSession({
@@ -214,7 +225,10 @@ describe("createSession: fromPullRequest", () => {
       );
 
       expect(thrown).toBeInstanceOf(PullRequestUnavailable);
-      expect((thrown as PullRequestUnavailable).number).toBe(42);
+
+      if (!(thrown instanceof PullRequestUnavailable)) throw thrown;
+
+      expect(thrown.number).toBe(42);
       expect(await fixture.database.sessions.all()).toEqual([]);
       expect(fixture.observer.sessionCalls).toEqual([]);
       expect(fixture.worktrees.created).toEqual([]);

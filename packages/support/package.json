@@ -13,6 +13,9 @@
     "test": "bun test",
     "typecheck": "tsc --build"
   },
+  "dependencies": {
+    "effect": "4.0.0-rc.115"
+  },
   "devDependencies": {
     "@janela/test-support": "workspace:*"
   }

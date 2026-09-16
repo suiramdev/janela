@@ -13,10 +13,11 @@
     "generate": "turbo run generate",
     "typecheck": "tsc --build",
     "test": "turbo run test -- --pass-with-no-tests && bun test scripts",
-    "lint": "oxlint --deny-warnings && oxfmt --check . && bun run check:layers",
+    "lint": "oxlint --deny-warnings && oxfmt --check . && bun run check:layers && bun run check:fsd",
     "format": "oxfmt . && oxlint --fix",
     "check": "bun run lint && bun run typecheck && bun run test",
     "check:layers": "bun run scripts/check-layers.ts",
+    "check:fsd": "bun run --cwd packages/ui lint:fsd",
     "dev": "bun run scripts/dev.ts",
     "app": "turbo run dev --filter=@janela/desktop",
     "app:build": "turbo run bundle --filter=@janela/desktop",
@@ -25,8 +26,12 @@
     "daemon:status": "bun run scripts/daemon-status.ts",
     "clean": "turbo run clean && rm -rf node_modules .turbo"
   },
+  "dependencies": {
+    "effect": "4.0.0-rc.115"
+  },
   "devDependencies": {
     "@janela/protocol": "workspace:*",
+    "@jliocsar/begone-slop": "0.1.4",
     "@shadcn/lint": "^0.1.0",
     "@types/bun": "^1.3.0",
     "@types/react": "^19.0.0",
@@ -36,9 +41,13 @@
     "turbo": "^2.5.0",
     "typescript": "^5.9.0"
   },
+  "overrides": {
+    "effect": "4.0.0-rc.115"
+  },
   "engines": {
     "bun": ">=1.3.0",
     "node": ">=22.12.0"
   },
-  "packageManager": "bun@1.3.14"
+  "packageManager": "bun@1.3.14",
+  "//": "overrides.effect: @jliocsar/begone-slop pins effect@4.0.0-beta.100 while its own effect-oxlint dependency declares a peer of ^4.0.0-rc.112. Two copies make the oxlint plugin throw on every file (a beta SchemaAST read by an rc SchemaParser). One copy, at the version the workspace itself uses."
 }

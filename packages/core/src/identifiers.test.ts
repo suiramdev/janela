@@ -18,11 +18,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 describe("identifier", () => {
   test("a UUID passes through unchanged", () => {
     const raw = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+
     expect(identifier<"Session">(raw) as string).toBe(raw);
   });
 
   test("mixed case is accepted — a row written by another tool is still an id", () => {
     const raw = "3F2504E0-4F89-41D3-9A0C-0305E82C3301";
+
     expect(identifier<"Session">(raw) as string).toBe(raw);
   });
 
@@ -46,12 +48,15 @@ describe("identifier", () => {
       newAutomationID(),
       newSessionID(),
     ];
+
     for (const value of minted) expect(value).toMatch(UUID);
+
     expect(new Set(minted).size).toBe(minted.length);
   });
 
   test("a minted id survives a re-brand, so it can be written and read back", () => {
     const minted = newSessionID();
+
     expect(identifier(minted)).toBe(minted);
   });
 });
@@ -82,6 +87,7 @@ describe("instant", () => {
 
   test("a Date and the string it renders as are one value", () => {
     const date = new Date("2026-01-02T03:04:05.678Z");
+
     expect(instant(date)).toBe(instant("2026-01-02T03:04:05.678Z"));
   });
 
@@ -95,12 +101,14 @@ describe("instant", () => {
 
   test("toDate round-trips to the same moment", () => {
     const date = new Date("2026-01-02T03:04:05.678Z");
+
     expect(toDate(instant(date)).getTime()).toBe(date.getTime());
   });
 
   test("now is an instant in canonical form", () => {
     const before = Date.now();
     const value = now();
+
     expect(value).toBe(instant(value));
     expect(toDate(value).getTime()).toBeGreaterThanOrEqual(before - 1);
   });

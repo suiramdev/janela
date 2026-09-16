@@ -15,14 +15,25 @@ describe("the shown-or-logged rule", () => {
 
     expect(isUserFacing(failure)).toBe(true);
     expect(failure.summary).toBe("Couldn't create the worktree.");
-    // The raw error never reaches the headline. That is the whole rule.
     expect(failure.summary).not.toContain("EPERM");
     expect(failure.underlying).toBe(underlying);
     expect(failure.recoverySuggestion).toBeDefined();
   });
 
+  test("a subclass that passes no presentation has neither a reason nor a suggestion", () => {
+    class Plain extends UserFacingError {
+      override readonly summary = "Couldn't do the thing.";
+    }
+
+    const failure = new Plain("plain failure for the log");
+
+    expect(failure.reason).toBeUndefined();
+    expect(failure.recoverySuggestion).toBeUndefined();
+  });
+
   test("the class name survives subclassing, so a log line names the real failure", () => {
     const failure = new UnexpectedFailure("Nope.", new Error("x"));
+
     expect(failure.name).toBe("UnexpectedFailure");
     expect(failure instanceof UserFacingError).toBe(true);
     expect(failure instanceof Error).toBe(true);

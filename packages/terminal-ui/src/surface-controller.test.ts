@@ -13,8 +13,6 @@ describe("createSurfaceController", () => {
     const buffer = new Uint8Array([1, 2, 3, 4, 5, 6]);
     const view = buffer.subarray(2, 5);
     controller.feed(view);
-    // Exactly what the connection does with the frame buffer after the handler
-    // returns, and what xterm's asynchronous write queue would otherwise read.
     buffer.fill(0);
 
     expect(rendering.fed).toHaveLength(1);
@@ -48,6 +46,7 @@ describe("createSurfaceController", () => {
     rendering.onViewportChange?.({ columns: 100, rows: 30 });
 
     expect(votes).toEqual([]);
+
     scheduler.fire();
 
     expect(votes).toEqual([{ columns: 100, rows: 30 }]);
@@ -76,6 +75,7 @@ describe("createSurfaceController", () => {
     const rendering = new FakeRendering();
     const scheduler = fakeScheduler();
     const votes: GridSize[] = [];
+
     const controller = createSurfaceController(
       rendering,
       { onInput: () => {}, onViewportChange: (size) => votes.push(size) },

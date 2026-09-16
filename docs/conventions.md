@@ -166,41 +166,59 @@ This is what makes `SessionStore` testable with an in-memory database and a fake
 
 ## Documentation comments
 
-Explain **why**. The signature already says what.
+There are none. `begone-slop/no-comments` rejects every comment in a `.ts` or
+`.tsx` file except the five kinds below, and a doc comment is not among them.
 
-```swift
-// Useless:
-/// Creates a worktree.
-func createWorktree(...)
+What a doc comment used to carry now lives somewhere a reader can find it and a
+refactor cannot silently invalidate:
 
-// Useful:
-/// Creates a worktree. `branch` is created if it does not exist, checked out if
-/// it does. When `branch` is nil the worktree is detached at `startPoint`.
-```
+| Was a comment about | Now lives in |
+| --- | --- |
+| What a function does | its name and signature |
+| What a value may be | its type, or the `Schema` that parses it |
+| An invariant a caller must hold | a type that makes the wrong call unrepresentable, or a test named after it |
+| Why a package is shaped as it is | `docs/packages/<name>.md` |
+| Why an architectural edge exists | `docs/architecture.md` |
+| A performance budget | `docs/performance.md` |
 
-`swift-format`'s `ValidateDocumentationComments` rule is on, so a doc comment that
-documents parameters must document *all* of them, and must use plural
-`- Parameters:` when there is more than one. It also requires `- Returns:` and
-`- Throws:` where applicable. This is checked by `make lint`.
+A per-package note is terse and keyed by module: a heading per file, then the
+facts the code cannot state. It is not narration, and it does not restate
+signatures.
 
-Where a decision is non-obvious, say why in the doc comment, or link the document
-that owns it. That is how a reader gets from code to reasoning.
+A fact that lives on a seam belongs to one side by name: if you move it to the
+other package's note, tell whoever owns that note and confirm it landed — two
+packages each deferring to the other is how a fact a comment kept badly gets kept
+nowhere.
 
 ---
 
 ## Comments in code
 
-Comment the surprising, not the obvious. Good candidates:
+Five kinds survive, because the linter exempts them:
 
-- A constraint from outside (`argv[0]` must start with `-` or zsh skips
-  `.zprofile`; `git ls-files -i` requires an exclude option).
-- A performance reason (`ContiguousArray` rather than `Data`; `clonefile` rather
-  than a recursive copy).
-- A deliberate omission (why there is no `.agentThinking` state; why automation
-  commands are not read from the repository).
+| Kind | Example |
+| --- | --- |
+| A safety justification | `// SAFETY: the UUID form was checked on the line above; the brand is nominal.` |
+| A compiler directive | `// @ts-expect-error the fixture is deliberately the wrong shape` |
+| A tooling directive | `// oxlint-disable-next-line no-await-in-loop` |
+| A triple-slash reference | `/// <reference types="bun" />` |
+| A shebang | `#!/usr/bin/env bun` |
 
-`// TODO:` is allowed and is used throughout the current scaffold to mark the
-seams. Each one sits under a doc comment describing what belongs there.
+`SAFETY:` is the only one that is a judgement call, and it earns its place only
+when the invariant is real and the type system cannot state it — branding a
+string that was just validated, or indexing a slot the line above proved
+occupied. It must name the evidence. "SAFETY: this is fine" is a rule violation
+with extra steps, and so is a `SAFETY:` added to silence
+`require-safety-comment-for-type-assertion` on an assertion that should have
+been a `Schema` decode.
+
+The exemption test is applied to each comment's own text, so a multi-line
+justification must be one `/* … */` block. A second `//` line is a separate
+comment, it does not start with `SAFETY:`, and it fails the build.
+
+`oxlint-disable` for anything else is not allowed. If a rule is wrong for a
+whole class of file, that is an override in `.oxlintrc.json` with a reason next
+to it, which is a decision somebody can find and argue with.
 
 ---
 
@@ -208,10 +226,18 @@ seams. Each one sits under a doc comment describing what belongs there.
 
 | Thing | Why | Instead |
 | --- | --- | --- |
-| `try!` | Crashes on a recoverable condition | `do`/`catch`, or `preconditionFailure` with a message if truly impossible |
-| Force unwrap | Same | `guard let`, `if let` |
-| `print()` | Invisible in release | `Log.*` |
-| `DispatchQueue.main.async` in new code | Use structured concurrency | `@MainActor`, `await` |
-| `NSLog` | Superseded | `Logger` |
-| Implicitly unwrapped optionals | Deferred crash | Real optionals or `let` |
-| Fixed paths in tests | Breaks parallel runs | `TemporaryDirectory` |
+| `any` | A promise to the compiler with no evidence behind it | A real type, or `Schema` at the boundary that produces one |
+| Non-null `!` | Same | A narrowing check, or a type that cannot be absent |
+| `as T` without `SAFETY:` | An assertion is a claim; a claim needs evidence | A `Schema` decode, or a precise type |
+| `x as unknown as T` | Two assertions hide what one would have shown | Parse the value |
+| `console.log` | Unlevelled, unsearchable, and in the daemon nobody reads it | The `log` categories in `@janela/support` |
+| `switch` | Falls through silently, never reports a missing case | `Match`, with `Match.exhaustive` |
+| `try`/`catch`/`finally` | Erases the error type and catches failures you did not mean to handle | `Effect.try`, `Effect.tryPromise`, `Effect.ensuring` |
+| `typeof` / `in` as a shape check | Narrows a representation without establishing a contract | Parse at the boundary, branch on the domain value |
+| `error._tag === "…"` | Reads a discriminant the library owns | `Match.tag`, `Effect.catchTag`, `Predicate.isTagged` |
+| `...(x ? {} : { k: v })` | Hides an omission behind an empty object | Build the object in steps, or type the field `T \| undefined` |
+| `{ k: undefined }` under `exactOptionalPropertyTypes` | Present-and-undefined is not absent | Omit the key |
+| An optional parameter `x?: T` | A caller cannot tell absence from a value never passed | A default, or an explicit `T \| undefined` |
+| A comment that is not `SAFETY:` or a directive | Drifts out of step with the code beneath it | A name, a type, a test, or `docs/packages/<name>.md` |
+| Fixed paths in tests | Files share one process, so leftovers outlive the file that made them — and `--parallel` must stay possible | `temporaryDirectory` from `@janela/test-support` |
+| An undeclared third-party import | Bun's hoisting resolves it anyway, and the graph becomes a lie | Declare it in that package's `package.json` |

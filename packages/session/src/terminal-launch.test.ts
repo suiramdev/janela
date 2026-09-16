@@ -50,7 +50,7 @@ const project: Project = {
   addedAt: now(),
 };
 
-const descriptor = (overrides?: Partial<TerminalDescriptor>): TerminalDescriptor => ({
+const descriptor = (overrides: Partial<TerminalDescriptor> = {}): TerminalDescriptor => ({
   id: "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901" as TerminalID,
   title: "Shell",
   startsAutomatically: true,
@@ -59,7 +59,7 @@ const descriptor = (overrides?: Partial<TerminalDescriptor>): TerminalDescriptor
   ...overrides,
 });
 
-const profile = (overrides?: Partial<LaunchProfile>): LaunchProfile => ({
+const profile = (overrides: Partial<LaunchProfile> = {}): LaunchProfile => ({
   id: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f" as LaunchProfileID,
   name: "Claude Code",
   iconName: "sparkles",
@@ -69,6 +69,14 @@ const profile = (overrides?: Partial<LaunchProfile>): LaunchProfile => ({
   isBuiltIn: true,
   ...overrides,
 });
+
+const rejection = (work: Promise<unknown>): Promise<Error> =>
+  work.then(
+    () => {
+      throw new Error("the call resolved instead of rejecting");
+    },
+    (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))),
+  );
 
 describe("resolveTerminalLaunch", () => {
   test("no profile means the login shell, with a dash-prefixed argv[0]", async () => {
@@ -80,7 +88,6 @@ describe("resolveTerminalLaunch", () => {
     });
 
     expect(launch.executable).toBe("/opt/homebrew/bin/fish");
-    // The leading `-` is what makes the shell source `.zprofile`/`config.fish`.
     expect(launch.arguments).toEqual(["-fish"]);
     expect(launch.workingDirectory).toBe("/Users/x/code/.worktrees/feature");
     expect(launch.initialSize).toEqual(DEFAULT_INITIAL_SIZE);
@@ -97,11 +104,8 @@ describe("resolveTerminalLaunch", () => {
       processes: fake.processes,
     });
 
-    // The whole reason the capture exists: `claude` is on the user's `PATH`, not
-    // on the impoverished one a launchd daemon inherits.
     expect(fake.whichCalls).toEqual([{ executable: "claude", path: "/opt/homebrew/bin:/usr/bin" }]);
     expect(launch.executable).toBe("/opt/homebrew/bin/claude");
-    // argv[0] stays as the user wrote it, so `claude --help` prints "claude".
     expect(launch.arguments).toEqual(["claude"]);
   });
 
@@ -122,20 +126,21 @@ describe("resolveTerminalLaunch", () => {
   });
 
   test("a profile whose tool is not installed names the profile, not the binary", async () => {
-    const thrown = await resolveTerminalLaunch({
-      session,
-      terminal: descriptor(),
-      profile: profile(),
-      shell,
-      processes: scriptedProcesses({ which: {} }).processes,
-    }).then(
-      () => undefined,
-      (error: unknown) => error,
+    const thrown = await rejection(
+      resolveTerminalLaunch({
+        session,
+        terminal: descriptor(),
+        profile: profile(),
+        shell,
+        processes: scriptedProcesses({ which: {} }).processes,
+      }),
     );
 
     expect(thrown).toBeInstanceOf(LaunchProfileUnavailable);
-    // The user configured "Claude Code"; `claude` is our word for it.
-    expect((thrown as LaunchProfileUnavailable).summary).toBe("Claude Code isn't installed.");
+
+    if (!(thrown instanceof LaunchProfileUnavailable)) throw thrown;
+
+    expect(thrown.summary).toBe("Claude Code isn't installed.");
   });
 
   test("TERM and the JANELA namespace win over a profile that sets them", async () => {
@@ -155,13 +160,9 @@ describe("resolveTerminalLaunch", () => {
       processes: scriptedProcesses().processes,
     });
 
-    // Facts about the terminal we created; a profile overriding them would be
-    // describing a terminal that does not exist.
     expect(launch.environment["TERM"]).toBe("xterm-256color");
     expect(launch.environment["JANELA_SESSION_NAME"]).toBe("feature");
     expect(launch.environment["JANELA_PROJECT"]).toBe("janela");
-    // Everything else the profile asked for still arrives, and so does the
-    // captured environment.
     expect(launch.environment["ANTHROPIC_LOG"]).toBe("debug");
     expect(launch.environment["EDITOR"]).toBe("hx");
   });

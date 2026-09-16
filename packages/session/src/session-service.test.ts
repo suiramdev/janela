@@ -14,13 +14,14 @@ import { temporaryDatabase } from "@janela/db";
 import { GitFailure, type GitWorktree, type WorktreeServing } from "@janela/git";
 import type { TerminalRegistry } from "@janela/terminal";
 import { createTerminalRegistry } from "@janela/terminal";
+import { Effect } from "effect";
 
 import {
   LayoutTooDeep,
   NotAWorktree,
   PullRequestsNotSupported,
-  UnknownProject,
   UnknownLaunchProfile,
+  UnknownProject,
   UnknownSession,
   UnknownTerminal,
   WorktreesUnsupported,
@@ -31,6 +32,7 @@ import {
   defaultWorktreeDirectory,
   worktreeSlug,
   type SessionService,
+  type SessionServiceDependencies,
 } from "./session-service.ts";
 import type { ShellEnvironment } from "./shell-environment.ts";
 import {
@@ -45,17 +47,69 @@ import {
   scriptedProcesses,
   type EventLog,
   type FakeAutomation,
+  type FakeAutomationOptions,
   type FakeInclude,
+  type FakeIncludeOptions,
   type FakeTerminalFactory,
+  type FakeWorktreeOptions,
   type FakeWorktrees,
   type RecordedLog,
   type RecordingObserver,
 } from "./test-fakes.ts";
 
+interface Fixture {
+  readonly database: TemporaryDatabase;
+  readonly sessions: SessionService & ProjectRemovalObserving;
+  readonly removeProject: (id: ProjectID) => Promise<void>;
+  readonly observer: RecordingObserver;
+  readonly events: EventLog;
+  readonly worktrees: FakeWorktrees;
+  readonly include: FakeInclude | undefined;
+  readonly automation: FakeAutomation;
+  readonly terminals: TerminalRegistry;
+  readonly factory: FakeTerminalFactory;
+  readonly records: readonly RecordedLog[];
+  readonly project: Project;
+  readonly folder: Project;
+}
+
+interface WithSessionsOptions {
+  readonly include?: {
+    readonly paths: readonly string[];
+    readonly copied?: readonly string[];
+    readonly failCopy?: Error;
+  };
+  readonly automation?: boolean;
+  readonly automationAttaches?: boolean;
+  readonly failCreate?: Error;
+  readonly safety?: FakeWorktreeOptions["safety"];
+  readonly listed?: readonly GitWorktree[];
+  readonly project?: Partial<Project>;
+  readonly profiles?: readonly LaunchProfile[];
+}
+
+type MutableWorktreeOptions = {
+  -readonly [Key in keyof FakeWorktreeOptions]: FakeWorktreeOptions[Key];
+};
+
+type MutableIncludeOptions = {
+  -readonly [Key in keyof FakeIncludeOptions]: FakeIncludeOptions[Key];
+};
+
+type MutableAutomationOptions = {
+  -readonly [Key in keyof FakeAutomationOptions]: FakeAutomationOptions[Key];
+};
+
+type MutableSessionDependencies = {
+  -readonly [Key in keyof SessionServiceDependencies]: SessionServiceDependencies[Key];
+};
+
 const repositoryDirectory = absolutePath("/Users/x/code/janela");
+
 const folderDirectory = absolutePath("/Users/x/notes");
 
-/** git's canonical path differs from the one we asked with, exactly as on macOS. */
+const unknownIdentifier = "00000000-0000-4000-8000-000000000000";
+
 const canonicalise = (directory: AbsolutePath): AbsolutePath =>
   absolutePath(`/private${directory}`);
 
@@ -86,25 +140,7 @@ const refusingWorktrees: WorktreeServing = {
   },
 };
 
-interface Fixture {
-  readonly database: TemporaryDatabase;
-  readonly sessions: SessionService & ProjectRemovalObserving;
-  readonly removeProject: (id: ProjectID) => Promise<void>;
-  readonly observer: RecordingObserver;
-  readonly events: EventLog;
-  readonly worktrees: FakeWorktrees;
-  readonly include: FakeInclude | undefined;
-  readonly automation: FakeAutomation;
-  readonly terminals: TerminalRegistry;
-  readonly factory: FakeTerminalFactory;
-  readonly records: readonly RecordedLog[];
-  /** A git repository project. */
-  readonly project: Project;
-  /** A plain-folder project, for the cases worktrees are refused. */
-  readonly folder: Project;
-}
-
-const projectRecord = (overrides?: Partial<Project>): Project => ({
+const projectRecord = (overrides: Partial<Project> = {}): Project => ({
   id: newProjectID(),
   name: "janela",
   directory: repositoryDirectory,
@@ -116,31 +152,33 @@ const projectRecord = (overrides?: Partial<Project>): Project => ({
   ...overrides,
 });
 
-/**
- * A fixture over a real database with git faked at the `WorktreeServing` seam.
- *
- * The projects go in through the repository rather than `addProject`, so no git
- * runs in this file at all: what is under test is the creation *order* and what
- * gets persisted, and `@janela/git` owns whether `worktree add` works.
- */
+const rejection = (work: Promise<unknown>): Promise<Error> =>
+  work.then(
+    () => {
+      throw new Error("the call resolved instead of rejecting");
+    },
+    (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))),
+  );
+
+const threeTabSession = async (fixture: Fixture): Promise<SessionID> => {
+  const session = await fixture.sessions.createSession({
+    kind: "inProject",
+    projectID: fixture.project.id,
+  });
+  await fixture.sessions.createTerminal(session.id);
+  await fixture.sessions.createTerminal(session.id);
+
+  return session.id;
+};
+
+const storedTabOrder = async (fixture: Fixture, id: SessionID): Promise<readonly TerminalID[]> => {
+  const stored = await fixture.database.sessions.find(id);
+
+  return (stored?.layout.tabs ?? []).map((tab) => tab.focusedTerminalID);
+};
+
 async function withSessions(
-  options: {
-    readonly include?: {
-      readonly paths: readonly string[];
-      readonly copied?: readonly string[];
-      readonly failCopy?: Error;
-    };
-    readonly automation?: boolean;
-    /** The automation fake attaches a terminal per run, as a real runner does. */
-    readonly automationAttaches?: boolean;
-    readonly failCreate?: Error;
-    readonly safety?: Parameters<typeof fakeWorktrees>[0] extends undefined
-      ? never
-      : NonNullable<Parameters<typeof fakeWorktrees>[0]>["safety"];
-    readonly listed?: readonly GitWorktree[];
-    readonly project?: Partial<Project>;
-    readonly profiles?: readonly LaunchProfile[];
-  },
+  options: WithSessionsOptions,
   work: (fixture: Fixture) => Promise<void>,
 ): Promise<void> {
   const database = await temporaryDatabase();
@@ -148,95 +186,107 @@ async function withSessions(
   const observer = recordingObserver(events);
   const { logger, records } = recordingLogger();
 
-  try {
-    const project = projectRecord(options.project);
-    const folder = projectRecord({ name: "notes", directory: folderDirectory });
-    delete folder.git;
-    // Profiles first: a project naming a `defaultProfileID` that does not exist
-    // yet is a foreign-key violation, and the repository is right to refuse it.
-    await Promise.all(
-      (options.profiles ?? []).map((profile) => database.launchProfiles.save(profile)),
-    );
-    await database.projects.save(project);
-    await database.projects.save(folder);
+  await Effect.runPromise(
+    Effect.ensuring(
+      Effect.tryPromise({
+        try: async () => {
+          const project = projectRecord(options.project);
+          const folder = projectRecord({ name: "notes", directory: folderDirectory });
+          delete folder.git;
 
-    const worktrees = fakeWorktrees({
-      canonicalise,
-      events,
-      ...(options.listed === undefined ? {} : { listed: options.listed }),
-      ...(options.failCreate === undefined ? {} : { failCreate: options.failCreate }),
-      ...(options.safety === undefined ? {} : { safety: options.safety }),
-    });
-    const include =
-      options.include === undefined
-        ? undefined
-        : fakeInclude({
-            paths: options.include.paths,
-            events,
-            ...(options.include.copied === undefined ? {} : { copied: options.include.copied }),
-            ...(options.include.failCopy === undefined
-              ? {}
-              : { failCopy: options.include.failCopy }),
+          await Promise.all(
+            (options.profiles ?? []).map((profile) => database.launchProfiles.save(profile)),
+          );
+          await database.projects.save(project);
+          await database.projects.save(folder);
+
+          const worktreeOptions: MutableWorktreeOptions = { canonicalise, events };
+
+          if (options.listed !== undefined) worktreeOptions.listed = options.listed;
+
+          if (options.failCreate !== undefined) worktreeOptions.failCreate = options.failCreate;
+
+          if (options.safety !== undefined) worktreeOptions.safety = options.safety;
+
+          const worktrees = fakeWorktrees(worktreeOptions);
+
+          let include: FakeInclude | undefined;
+
+          if (options.include !== undefined) {
+            const includeOptions: MutableIncludeOptions = { paths: options.include.paths, events };
+
+            if (options.include.copied !== undefined) {
+              includeOptions.copied = options.include.copied;
+            }
+
+            if (options.include.failCopy !== undefined) {
+              includeOptions.failCopy = options.include.failCopy;
+            }
+
+            include = fakeInclude(includeOptions);
+          }
+
+          const automationOptions: MutableAutomationOptions = { events };
+
+          if (options.automationAttaches === true) automationOptions.attaches = true;
+
+          const automation = fakeAutomation(automationOptions);
+
+          const factory = fakeCreateTerminal(events);
+          const terminals = createTerminalRegistry();
+
+          const projects = createProjectService({
+            repository: database.projects,
+            git: failingGit(),
+            observer: observer.observer,
+            sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
+            log: logger,
           });
-    const automation = fakeAutomation({
-      events,
-      ...(options.automationAttaches === true ? { attaches: true } : {}),
-    });
-    const factory = fakeCreateTerminal(events);
-    const terminals = createTerminalRegistry();
+          await projects.load();
 
-    const projects = createProjectService({
-      repository: database.projects,
-      git: failingGit(),
-      observer: observer.observer,
-      // The arrow defers the reference, which is how the two services compose
-      // without a construction cycle.
-      sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
-      log: logger,
-    });
-    await projects.load();
+          const dependencies: MutableSessionDependencies = {
+            repository: database.sessions,
+            profiles: database.launchProfiles,
+            projects,
+            worktrees: worktrees.worktrees,
+            terminals,
+            shell,
+            observer: observer.observer,
+            processes: scriptedProcesses({ which: { claude: "/opt/homebrew/bin/claude" } })
+              .processes,
+            createTerminal: factory.create,
+            log: logger,
+          };
 
-    const sessions = createSessionService({
-      repository: database.sessions,
-      profiles: database.launchProfiles,
-      projects,
-      worktrees: worktrees.worktrees,
-      terminals,
-      shell,
-      observer: observer.observer,
-      processes: scriptedProcesses({ which: { claude: "/opt/homebrew/bin/claude" } }).processes,
-      createTerminal: factory.create,
-      log: logger,
-      ...(include === undefined ? {} : { include: include.include }),
-      ...(options.automation === true ? { automation: automation.automation } : {}),
-    });
-    await sessions.load();
+          if (include !== undefined) dependencies.include = include.include;
 
-    await work({
-      database,
-      sessions,
-      removeProject: (id) => projects.removeProject(id),
-      observer,
-      events,
-      worktrees,
-      include,
-      automation,
-      terminals,
-      factory,
-      records,
-      project,
-      folder,
-    });
-  } finally {
-    await database.dispose();
-  }
-}
+          if (options.automation === true) dependencies.automation = automation.automation;
 
-const rejection = (work: Promise<unknown>): Promise<unknown> =>
-  work.then(
-    () => undefined,
-    (error: unknown) => error,
+          const sessions = createSessionService(dependencies);
+          await sessions.load();
+
+          await work({
+            database,
+            sessions,
+            removeProject: (id) => projects.removeProject(id),
+            observer,
+            events,
+            worktrees,
+            include,
+            automation,
+            terminals,
+            factory,
+            records,
+            project,
+            folder,
+          });
+        },
+        catch: (cause: unknown) => cause,
+      }),
+      Effect.promise(() => database.dispose()),
+    ),
   );
+}
 
 describe("createSession", () => {
   test("standalone: a folder, a name, and one terminal that is not running", async () => {
@@ -250,22 +300,16 @@ describe("createSession", () => {
       expect(session.backing.kind).toBe("folder");
       expect(session.name).toBe("notes");
       expect(session.terminals).toHaveLength(1);
-      // Configured, not started: laziness is a feature, and this is what tells
-      // the opening client to ask for it.
       expect(session.terminals[0]?.startsAutomatically).toBe(true);
       expect(session.terminals[0]?.role).toEqual({ kind: "user" });
       expect(fixture.terminals.inSession(session.id)).toEqual([]);
       expect(session.layout.tabs).toHaveLength(1);
-
-      // The first announcement carried no terminals: the session was visible and
-      // selectable before anything else happened.
       expect(fixture.observer.sessionCalls[0]?.[0]?.terminals).toEqual([]);
 
       const stored = await fixture.database.sessions.find(session.id);
+
       expect(stored?.terminals).toHaveLength(1);
       expect(stored?.layout).toEqual(session.layout);
-
-      // No project, so no automation and no git.
       expect(fixture.automation.runs).toEqual([]);
       expect(fixture.worktrees.created).toEqual([]);
     });
@@ -283,7 +327,6 @@ describe("createSession", () => {
       expect(session.name).toBe("janela");
       expect(fixture.automation.runs.map((run) => run.event)).toEqual(["sessionStart"]);
       expect(fixture.worktrees.created).toEqual([]);
-      // No branch named, so the user's own checkout is left exactly where it is.
       expect(fixture.worktrees.checkedOut).toEqual([]);
     });
   });
@@ -299,16 +342,14 @@ describe("createSession", () => {
       expect(fixture.worktrees.created).toEqual([
         {
           repository: repositoryDirectory,
-          // Beside the repository, with the branch's slashes flattened.
           directory: absolutePath("/Users/x/code/.worktrees/feature-x"),
           branch: "feature/x",
         },
       ]);
-
-      // git's canonical path, not the one we asked with: the session compares its
-      // directory against git's output forever after.
       expect(session.directory).toBe(absolutePath("/private/Users/x/code/.worktrees/feature-x"));
+
       const backing = session.backing;
+
       expect(backing.kind === "worktree" && backing.binding.path).toBe(session.directory);
       expect(backing.kind === "worktree" && backing.binding.ownership).toBe("managed");
       expect(backing.kind === "worktree" && backing.binding.branch).toBe("feature/x");
@@ -316,8 +357,8 @@ describe("createSession", () => {
         "9f2a1c4e5b6d7a8091b2c3d4e5f60718293a4b5c",
       );
 
-      // The row is writable only because directory and binding path agree.
       const stored = await fixture.database.sessions.find(session.id);
+
       expect(stored?.directory).toBe(session.directory);
     });
   });
@@ -351,13 +392,13 @@ describe("createSession", () => {
         name: "review 2",
       });
 
-      // Named, not numbered: this is what lets a second worktree of one branch
-      // exist without us inventing a path for it.
       expect(fixture.worktrees.created[0]?.directory).toBe(
         absolutePath("/Users/x/code/.worktrees/review-2"),
       );
       expect(session.name).toBe("review 2");
+
       const backing = session.backing;
+
       expect(backing.kind === "worktree" && backing.binding.branch).toBe("feature/x");
     });
   });
@@ -377,8 +418,6 @@ describe("createSession", () => {
         shareBranch: true,
       });
 
-      // git's safeguard is overridden for exactly the request that said so, and
-      // never on the daemon's own initiative.
       expect(fixture.worktrees.created.map((request) => request.force)).toEqual([undefined, true]);
     });
   });
@@ -393,11 +432,6 @@ describe("createSession", () => {
           branch: "feature/x",
         });
 
-        // The whole contract in one assertion. `t=` is how many terminals the
-        // announcement carried, which is what proves the terminal came last — and
-        // `publish[t=0]` first is what proves the session was selectable before any
-        // of it. docs/domain-model.md § AutomationCommand fixes this order because
-        // scripts depend on their `.env` already being present.
         expect(fixture.events.entries).toEqual([
           "publish[t=0]",
           "worktree.create",
@@ -461,41 +495,52 @@ describe("createSession", () => {
     const events = eventLog();
     const automation = fakeAutomation({ events, fail: new Error("no such command") });
     const database = await temporaryDatabase();
-    try {
-      const project = projectRecord();
-      await database.projects.save(project);
-      const observer = recordingObserver(events);
-      const { logger, records } = recordingLogger();
-      const projects = createProjectService({
-        repository: database.projects,
-        git: failingGit(),
-        observer: observer.observer,
-        sessions: { projectRemoving: async () => {} },
-      });
-      await projects.load();
-      const sessions = createSessionService({
-        repository: database.sessions,
-        profiles: database.launchProfiles,
-        projects,
-        worktrees: fakeWorktrees({ canonicalise, events }).worktrees,
-        terminals: createTerminalRegistry(),
-        shell,
-        observer: observer.observer,
-        automation: automation.automation,
-        createTerminal: fakeCreateTerminal(events).create,
-        log: logger,
-      });
 
-      const session = await sessions.createSession({
-        kind: "inProject",
-        projectID: project.id,
-      });
+    await Effect.runPromise(
+      Effect.ensuring(
+        Effect.tryPromise({
+          try: async () => {
+            const project = projectRecord();
+            await database.projects.save(project);
 
-      expect(session.terminals).toHaveLength(1);
-      expect(records.filter((record) => record.message === "automation failed")).toHaveLength(1);
-    } finally {
-      await database.dispose();
-    }
+            const observer = recordingObserver(events);
+            const { logger, records } = recordingLogger();
+            const projects = createProjectService({
+              repository: database.projects,
+              git: failingGit(),
+              observer: observer.observer,
+              sessions: { projectRemoving: async () => {} },
+            });
+            await projects.load();
+
+            const sessions = createSessionService({
+              repository: database.sessions,
+              profiles: database.launchProfiles,
+              projects,
+              worktrees: fakeWorktrees({ canonicalise, events }).worktrees,
+              terminals: createTerminalRegistry(),
+              shell,
+              observer: observer.observer,
+              automation: automation.automation,
+              createTerminal: fakeCreateTerminal(events).create,
+              log: logger,
+            });
+
+            const session = await sessions.createSession({
+              kind: "inProject",
+              projectID: project.id,
+            });
+
+            expect(session.terminals).toHaveLength(1);
+            expect(records.filter((record) => record.message === "automation failed")).toHaveLength(
+              1,
+            );
+          },
+          catch: (cause: unknown) => cause,
+        }),
+        Effect.promise(() => database.dispose()),
+      ),
+    );
   });
 
   test("an automation terminal lands in the session before the user's, and persists", async () => {
@@ -505,9 +550,6 @@ describe("createSession", () => {
         projectID: fixture.project.id,
       });
 
-      // The automation terminal first, because it was created first; the user's
-      // terminal after it, and focused — a `pnpm dev` starting must not take the
-      // tab the user is about to type in.
       expect(session.terminals.map((terminal) => terminal.role)).toEqual([
         { kind: "automation", event: "sessionStart" },
         { kind: "user" },
@@ -516,10 +558,9 @@ describe("createSession", () => {
       expect(session.layout.focusedTabIndex).toBe(1);
       expect(session.layout.tabs[0]?.focusedTerminalID).toBe(fixture.automation.attached[0]?.id);
 
-      // Reloaded from the same database: the descriptor is the record that
-      // `sessionStart` has already fired, so it has to survive a restart.
       await fixture.sessions.load();
       const restored = fixture.sessions.find(session.id);
+
       expect(restored?.terminals.map((terminal) => terminal.role)).toEqual([
         { kind: "automation", event: "sessionStart" },
         { kind: "user" },
@@ -548,7 +589,6 @@ describe("createSession", () => {
       expect(thrown).toBe(failure);
       expect(fixture.sessions.sessions).toEqual([]);
       expect(await fixture.database.sessions.all()).toEqual([]);
-      // Announced twice: once with the optimistic session, once without it.
       expect(fixture.observer.sessionCalls.map((call) => call.length)).toEqual([1, 0]);
       expect(fixture.automation.runs).toEqual([]);
     });
@@ -572,14 +612,16 @@ describe("createSession", () => {
       });
 
       expect(session.name).toBe("spike");
+
       const backing = session.backing;
+
       expect(backing.kind === "worktree" && backing.binding.ownership).toBe("adopted");
       expect(backing.kind === "worktree" && backing.binding.branch).toBe("spike");
       expect(backing.kind === "worktree" && backing.binding.baseCommit).toBe(adopted.head);
       expect(fixture.worktrees.created).toEqual([]);
 
-      // It existed before us, so it is never ours to delete.
       const plan = await fixture.sessions.removalPlan(session.id);
+
       expect(plan.canDeleteDirectory).toBe(false);
     });
   });
@@ -704,12 +746,9 @@ describe("removalPlan", () => {
         });
 
         const plan = await fixture.sessions.removalPlan(session.id);
+
         expect(plan.canDeleteDirectory).toBe(true);
-        // Never true by default: a plan that deletes unless told otherwise is a
-        // plan that deletes by accident.
         expect(plan.deletesDirectory).toBe(false);
-        // An `.env` that exists nowhere else is not recoverable from git, so the
-        // dialog gets to name it.
         expect(plan.includedPaths).toEqual([".env"]);
         expect(plan.runsTeardownAutomation).toBe(true);
         expect(plan.safety.hasUncommittedChanges).toBe(true);
@@ -730,13 +769,13 @@ describe("removalPlan", () => {
       await fixture.sessions.startTerminal(terminal);
 
       const running = await fixture.sessions.removalPlan(session.id);
-      // git reports `hasRunningSessions: false` always — it cannot know. This
-      // layer overwrites it, and it is the only one that can.
+
       expect(running.safety.hasRunningSessions).toBe(true);
       expect(running.liveTerminalCount).toBe(1);
 
       fixture.factory.created[0]?.setState({ kind: "exited", code: 0 });
       const finished = await fixture.sessions.removalPlan(session.id);
+
       expect(finished.safety.hasRunningSessions).toBe(false);
       expect(finished.liveTerminalCount).toBe(0);
     });
@@ -750,6 +789,7 @@ describe("removalPlan", () => {
       });
 
       const plan = await fixture.sessions.removalPlan(session.id);
+
       expect(plan.canDeleteDirectory).toBe(false);
       expect(plan.includedPaths).toEqual([]);
       expect(plan.runsTeardownAutomation).toBe(false);
@@ -759,9 +799,8 @@ describe("removalPlan", () => {
 
   test("an unknown session is a user-facing error", async () => {
     await withSessions({}, async (fixture) => {
-      const thrown = await rejection(
-        fixture.sessions.removalPlan("00000000-0000-4000-8000-000000000000" as SessionID),
-      );
+      const thrown = await rejection(fixture.sessions.removalPlan(unknownIdentifier as SessionID));
+
       expect(thrown).toBeInstanceOf(UnknownSession);
     });
   });
@@ -788,8 +827,6 @@ describe("removeSession", () => {
           {
             directory: absolutePath("/private/Users/x/code/.worktrees/feature-x"),
             repository: repositoryDirectory,
-            // Uncommitted work is what the user was shown and accepted; without
-            // `--force` git refuses and the tick would have done nothing.
             force: true,
           },
         ]);
@@ -821,11 +858,9 @@ describe("removeSession", () => {
       });
 
       const plan = await fixture.sessions.removalPlan(session.id);
-      // A client that ticks the box anyway — or a stale plan from another window.
       plan.deletesDirectory = true;
       await fixture.sessions.removeSession(session.id, plan);
 
-      // `canDeleteDirectory` is the guard, not the tick. It existed before us.
       expect(fixture.worktrees.removed).toEqual([]);
       expect(await fixture.database.sessions.all()).toEqual([]);
     });
@@ -836,67 +871,73 @@ describe("removeSession", () => {
     const automation = fakeAutomation({ events, fail: new Error("compose exploded") });
     const database = await temporaryDatabase();
 
-    try {
-      const project = projectRecord({
-        settings: {
-          ...projectRecord().settings,
-          automation: [
-            {
-              id: newAutomationID(),
-              event: "sessionTeardown",
-              command: ["docker", "compose", "down"],
-              isEnabled: true,
-              timeoutSeconds: 30,
-            },
-          ],
-        },
-      });
-      await database.projects.save(project);
+    await Effect.runPromise(
+      Effect.ensuring(
+        Effect.tryPromise({
+          try: async () => {
+            const project = projectRecord({
+              settings: {
+                ...projectRecord().settings,
+                automation: [
+                  {
+                    id: newAutomationID(),
+                    event: "sessionTeardown",
+                    command: ["docker", "compose", "down"],
+                    isEnabled: true,
+                    timeoutSeconds: 30,
+                  },
+                ],
+              },
+            });
+            await database.projects.save(project);
 
-      const observer = recordingObserver(events);
-      const worktrees = fakeWorktrees({ canonicalise, events });
-      const projects = createProjectService({
-        repository: database.projects,
-        git: failingGit(),
-        observer: observer.observer,
-        sessions: { projectRemoving: async () => {} },
-      });
-      await projects.load();
-      const sessions = createSessionService({
-        repository: database.sessions,
-        profiles: database.launchProfiles,
-        projects,
-        worktrees: worktrees.worktrees,
-        terminals: createTerminalRegistry(),
-        shell,
-        observer: observer.observer,
-        automation: automation.automation,
-        createTerminal: fakeCreateTerminal(events).create,
-      });
+            const observer = recordingObserver(events);
+            const worktrees = fakeWorktrees({ canonicalise, events });
+            const projects = createProjectService({
+              repository: database.projects,
+              git: failingGit(),
+              observer: observer.observer,
+              sessions: { projectRemoving: async () => {} },
+            });
+            await projects.load();
 
-      const session = await sessions.createSession({
-        kind: "newWorktree",
-        projectID: project.id,
-        branch: "feature/x",
-      });
-      const plan = await sessions.removalPlan(session.id);
-      expect(plan.runsTeardownAutomation).toBe(true);
-      plan.deletesDirectory = true;
+            const sessions = createSessionService({
+              repository: database.sessions,
+              profiles: database.launchProfiles,
+              projects,
+              worktrees: worktrees.worktrees,
+              terminals: createTerminalRegistry(),
+              shell,
+              observer: observer.observer,
+              automation: automation.automation,
+              createTerminal: fakeCreateTerminal(events).create,
+            });
 
-      await sessions.removeSession(session.id, plan);
+            const session = await sessions.createSession({
+              kind: "newWorktree",
+              projectID: project.id,
+              branch: "feature/x",
+            });
+            const plan = await sessions.removalPlan(session.id);
 
-      const teardown = events.entries.indexOf("automation.sessionTeardown");
-      const removal = events.entries.indexOf("worktree.remove");
-      expect(teardown).toBeGreaterThanOrEqual(0);
-      // Blocking, and first: it exists to clean up what the directory is about to
-      // take with it.
-      expect(teardown).toBeLessThan(removal);
-      // Refusing removal because a cleanup script exited non-zero would trap the
-      // user with a session they asked to delete.
-      expect(await database.sessions.all()).toEqual([]);
-    } finally {
-      await database.dispose();
-    }
+            expect(plan.runsTeardownAutomation).toBe(true);
+
+            plan.deletesDirectory = true;
+
+            await sessions.removeSession(session.id, plan);
+
+            const teardown = events.entries.indexOf("automation.sessionTeardown");
+            const removal = events.entries.indexOf("worktree.remove");
+
+            expect(teardown).toBeGreaterThanOrEqual(0);
+            expect(teardown).toBeLessThan(removal);
+            expect(await database.sessions.all()).toEqual([]);
+          },
+          catch: (cause: unknown) => cause,
+        }),
+        Effect.promise(() => database.dispose()),
+      ),
+    );
   });
 });
 
@@ -918,7 +959,6 @@ describe("projectRemoving", () => {
       expect(fixture.sessions.sessions.map((session) => session.id)).toEqual([standalone.id]);
       expect(fixture.factory.created[0]?.stops()).toBe(1);
       expect(fixture.terminals.liveCount).toBe(0);
-      // The rows cascade with the project; the standalone session is untouched.
       expect((await fixture.database.sessions.all()).map((session) => session.id)).toEqual([
         standalone.id,
       ]);
@@ -938,31 +978,28 @@ describe("startTerminal", () => {
       await fixture.sessions.startTerminal(terminal);
       await fixture.sessions.startTerminal(terminal);
 
-      // One terminal, whatever the client clicks: a second registration would
-      // orphan the first child process.
       expect(fixture.factory.created).toHaveLength(1);
       expect(fixture.factory.created[0]?.starts()).toBe(2);
       expect(fixture.terminals.get(terminal)).toBeDefined();
-
-      // No profile, so the login shell with a dash-prefixed argv[0].
       expect(fixture.factory.created[0]?.launch.executable).toBe("/opt/homebrew/bin/fish");
       expect(fixture.factory.created[0]?.launch.arguments).toEqual(["-fish"]);
       expect(fixture.factory.created[0]?.launch.workingDirectory).toBe(repositoryDirectory);
       expect(fixture.factory.created[0]?.launch.environment["JANELA_PROJECT"]).toBe("janela");
 
       const stored = await fixture.database.sessions.find(session.id);
+
       expect(Date.parse(stored?.lastActiveAt ?? "") > Date.parse(session.createdAt)).toBe(true);
     });
   });
 
   test("an unknown terminal is an error; stopping one that never ran is not", async () => {
     await withSessions({}, async (fixture) => {
-      const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
+      const unknown = unknownIdentifier as TerminalID;
 
       expect(await rejection(fixture.sessions.startTerminal(unknown))).toBeInstanceOf(
         UnknownTerminal,
       );
-      // The second click on "stop" must not be an error.
+
       await fixture.sessions.stopTerminal(unknown);
     });
   });
@@ -978,8 +1015,6 @@ describe("startTerminal", () => {
 
       await fixture.sessions.restartTerminal(terminal);
 
-      // One `LiveTerminal`, restarted in place: a stop followed by a start would
-      // find a terminal whose child has not been reaped yet and do nothing.
       expect(fixture.factory.created).toHaveLength(1);
       expect(fixture.factory.created[0]?.starts()).toBe(2);
       expect(fixture.factory.created[0]?.stops()).toBe(1);
@@ -1004,7 +1039,8 @@ describe("startTerminal", () => {
 
   test("restarting an unknown terminal is an error", async () => {
     await withSessions({}, async (fixture) => {
-      const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
+      const unknown = unknownIdentifier as TerminalID;
+
       expect(await rejection(fixture.sessions.restartTerminal(unknown))).toBeInstanceOf(
         UnknownTerminal,
       );
@@ -1032,8 +1068,6 @@ describe("createTerminal", () => {
 
       const added = await fixture.sessions.createTerminal(session.id, { profileID: profile.id });
 
-      // Nothing spawned: a terminal the user asked for still costs nothing until
-      // `startTerminal`, which is what makes opening a session free.
       expect(fixture.factory.created).toHaveLength(0);
       expect(fixture.terminals.get(added.id)).toBeUndefined();
       expect(added.title).toBe("Claude Code");
@@ -1041,10 +1075,10 @@ describe("createTerminal", () => {
 
       const stored = await fixture.database.sessions.find(session.id);
       const first = session.terminals[0];
+
       if (first === undefined) throw new Error("the session has no first terminal");
+
       expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first.id, added.id]);
-      // A tab, not a split: where a split goes is a question only the user
-      // looking at the panes can answer.
       expect(stored?.layout.tabs).toHaveLength(2);
       expect(stored?.layout.focusedTabIndex).toBe(1);
       expect(stored?.layout.tabs[1]?.focusedTerminalID).toBe(added.id);
@@ -1057,14 +1091,12 @@ describe("createTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
-      const unknownSession = "00000000-0000-4000-8000-000000000000" as SessionID;
+      const unknownSession = unknownIdentifier as SessionID;
       const goneProfile = newLaunchProfileID();
 
       expect(await rejection(fixture.sessions.createTerminal(unknownSession))).toBeInstanceOf(
         UnknownSession,
       );
-      // Silently starting a login shell instead would answer a question the user
-      // did not ask.
       expect(
         await rejection(fixture.sessions.createTerminal(session.id, { profileID: goneProfile })),
       ).toBeInstanceOf(UnknownLaunchProfile);
@@ -1085,8 +1117,9 @@ describe("createTerminal", () => {
       });
 
       expect(fixture.factory.created).toHaveLength(0);
+
       const stored = await fixture.database.sessions.find(session.id);
-      // One tab: a split is a division of the pane, not another tab.
+
       expect(stored?.layout.tabs).toHaveLength(1);
       expect(stored?.layout.tabs[0]?.root).toMatchObject({
         kind: "split",
@@ -1130,7 +1163,7 @@ describe("createTerminal", () => {
       });
 
       let beside = session.terminals[0]?.id as TerminalID;
-      // A bare terminal is depth 1, so five splits reach MAXIMUM_PANE_DEPTH of 6.
+
       for (let index = 0; index < 5; index += 1) {
         // oxlint-disable-next-line no-await-in-loop
         const added = await fixture.sessions.createTerminal(session.id, {
@@ -1138,8 +1171,8 @@ describe("createTerminal", () => {
         });
         beside = added.id;
       }
-      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
 
+      expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
       expect(
         await rejection(
           fixture.sessions.createTerminal(session.id, {
@@ -1147,7 +1180,6 @@ describe("createTerminal", () => {
           }),
         ),
       ).toBeInstanceOf(LayoutTooDeep);
-      // Refused means nothing was added, not "added somewhere else".
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
     });
   });
@@ -1171,7 +1203,9 @@ describe("removeTerminal", () => {
 
       expect(live?.stops()).toBe(1);
       expect(fixture.terminals.get(added.id)).toBeUndefined();
+
       const stored = await fixture.database.sessions.find(session.id);
+
       expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first]);
       expect(stored?.layout.tabs).toHaveLength(1);
       expect(stored?.layout.tabs[0]?.root).toEqual({ kind: "terminal", id: first });
@@ -1189,9 +1223,8 @@ describe("removeTerminal", () => {
       await fixture.sessions.removeTerminal(only);
 
       const stored = await fixture.database.sessions.find(session.id);
+
       expect(stored?.terminals).toHaveLength(1);
-      // A different terminal: a session never has zero, and it never keeps the
-      // one the user just closed either.
       expect(stored?.terminals[0]?.id).not.toBe(only);
       expect(stored?.layout.tabs).toHaveLength(1);
       expect(fixture.terminals.liveCount).toBe(0);
@@ -1200,30 +1233,14 @@ describe("removeTerminal", () => {
 
   test("an unknown terminal is an error", async () => {
     await withSessions({}, async (fixture) => {
-      const unknown = "00000000-0000-4000-8000-000000000000" as TerminalID;
+      const unknown = unknownIdentifier as TerminalID;
+
       expect(await rejection(fixture.sessions.removeTerminal(unknown))).toBeInstanceOf(
         UnknownTerminal,
       );
     });
   });
 });
-
-/** A session with three tabs, one terminal each, in creation order. */
-const threeTabSession = async (fixture: Fixture): Promise<SessionID> => {
-  const session = await fixture.sessions.createSession({
-    kind: "inProject",
-    projectID: fixture.project.id,
-  });
-  await fixture.sessions.createTerminal(session.id);
-  await fixture.sessions.createTerminal(session.id);
-  return session.id;
-};
-
-/** The persisted tab order, as terminal ids. */
-const storedTabOrder = async (fixture: Fixture, id: SessionID): Promise<readonly TerminalID[]> => {
-  const stored = await fixture.database.sessions.find(id);
-  return (stored?.layout.tabs ?? []).map((tab) => tab.focusedTerminalID);
-};
 
 describe("moveTab", () => {
   test("persists the new order, so a later read of the session shows it", async () => {
@@ -1234,10 +1251,8 @@ describe("moveTab", () => {
       await fixture.sessions.moveTab(id, 0, 2);
 
       const after = await storedTabOrder(fixture, id);
-      // Rotated left by one: the first tab went to the end and the rest closed up.
+
       expect(after).toEqual([...before.slice(1), ...before.slice(0, 1)]);
-      // Tab order is part of the layout the daemon owns, so the in-memory
-      // session and the row agree.
       expect(fixture.sessions.find(id)?.layout.tabs.map((tab) => tab.focusedTerminalID)).toEqual([
         ...after,
       ]);
@@ -1272,7 +1287,7 @@ describe("moveTab", () => {
 
   test("an unknown session is an error, not a silent no-op", async () => {
     await withSessions({}, async (fixture) => {
-      const unknown = "00000000-0000-4000-8000-000000000000" as SessionID;
+      const unknown = unknownIdentifier as SessionID;
 
       expect(await rejection(fixture.sessions.moveTab(unknown, 0, 1))).toBeInstanceOf(
         UnknownSession,
@@ -1291,8 +1306,6 @@ describe("load", () => {
       });
       await fixture.sessions.startTerminal(created.terminals[0]?.id as TerminalID);
 
-      // A daemon start with git and the process runner refusing to run: nothing
-      // in `load` may consult either.
       const registry = createTerminalRegistry();
       const restarted = createSessionService({
         repository: fixture.database.sessions,
@@ -1307,8 +1320,6 @@ describe("load", () => {
       await restarted.load();
 
       expect(restarted.sessions.map((session) => session.id)).toEqual([created.id]);
-      // Restored terminals are idle by construction: nothing is registered until
-      // something asks for it.
       expect(registry.liveCount).toBe(0);
       expect(restarted.find(created.id)?.terminals).toHaveLength(1);
     });
@@ -1332,9 +1343,8 @@ describe("rename", () => {
 
   test("an unknown session is refused", async () => {
     await withSessions({}, async (fixture) => {
-      const thrown = await rejection(
-        fixture.sessions.rename("00000000-0000-4000-8000-000000000000" as SessionID, "x"),
-      );
+      const thrown = await rejection(fixture.sessions.rename(unknownIdentifier as SessionID, "x"));
+
       expect(thrown).toBeInstanceOf(UnknownSession);
     });
   });
@@ -1361,8 +1371,6 @@ describe("inProject and standaloneSessions", () => {
 describe("worktreeSlug", () => {
   test("keeps a branch readable and keeps it one path component", () => {
     expect(worktreeSlug("feature/x")).toBe("feature-x");
-    // Case survives: branch names are case-sensitive and the user reads this in
-    // a shell prompt.
     expect(worktreeSlug("Feature/JAN-42_fix")).toBe("Feature-JAN-42_fix");
     expect(worktreeSlug("release/1.2.3")).toBe("release-1.2.3");
     expect(worktreeSlug("feature//x")).toBe("feature-x");
@@ -1374,6 +1382,7 @@ describe("worktreeSlug", () => {
 describe("defaultWorktreeDirectory", () => {
   test("sits beside the repository, or under a chosen root", () => {
     const sibling = projectRecord();
+
     expect(defaultWorktreeDirectory(sibling, "feature/x")).toBe(
       absolutePath("/Users/x/code/.worktrees/feature-x"),
     );
@@ -1384,6 +1393,7 @@ describe("defaultWorktreeDirectory", () => {
         worktreeRoot: { kind: "custom", directory: absolutePath("/Volumes/fast/trees") },
       },
     });
+
     expect(defaultWorktreeDirectory(custom, "feature/x")).toBe(
       absolutePath("/Volumes/fast/trees/feature-x"),
     );

@@ -2,28 +2,25 @@ import { describe, expect, test } from "bun:test";
 
 import { boundedQueue } from "./bounded.ts";
 
-/** Takes `count` items, which is what a consumer's `for await` does one at a time. */
 async function drain<T>(queue: AsyncIterable<T>, count: number): Promise<T[]> {
   const taken: T[] = [];
+
   for await (const item of queue) {
     taken.push(item);
+
     if (taken.length === count) break;
   }
+
   return taken;
 }
 
-/**
- * Whether a promise has settled, without awaiting it.
- *
- * Microtask flushes rather than a timer: every resolution in this queue happens
- * synchronously inside `push`, `next` or `finish`, so two drains of the
- * microtask queue are enough and nothing here depends on the wall clock.
- */
 async function settled(promise: Promise<unknown>): Promise<boolean> {
   let done = false;
+
   void promise.then(() => (done = true));
   await Promise.resolve();
   await Promise.resolve();
+
   return done;
 }
 
@@ -38,7 +35,9 @@ describe("boundedQueue with dropOldest", () => {
 
     await queue.push(1);
     await queue.push(2);
+
     expect(queue.size).toBe(2);
+
     await queue.push(3);
     await queue.push(4);
 
@@ -51,8 +50,6 @@ describe("boundedQueue with dropOldest", () => {
     const queue = boundedQueue<number>({ capacity: 1, onOverflow: "dropOldest" });
 
     for (let index = 0; index < 100; index += 1) {
-      // Sequential on purpose: the claim is that *each* push settles while the
-      // consumer is still behind, which a batched `Promise.all` would hide.
       // oxlint-disable-next-line no-await-in-loop
       expect(await settled(queue.push(index))).toBe(true);
     }
@@ -67,13 +64,15 @@ describe("boundedQueue with block", () => {
     const queue = boundedQueue<string>({ capacity: 1, onOverflow: "block" });
 
     await queue.push("first");
+
     const blocked = queue.push("second");
+
     expect(await settled(blocked)).toBe(false);
     expect(queue.size).toBe(1);
 
     const iterator = queue[Symbol.asyncIterator]();
-    expect((await iterator.next()).value).toBe("first");
 
+    expect((await iterator.next()).value).toBe("first");
     expect(await settled(blocked)).toBe(true);
     expect((await iterator.next()).value).toBe("second");
   });
@@ -83,6 +82,7 @@ describe("boundedQueue with block", () => {
     const resolved: number[] = [];
 
     await queue.push(0);
+
     for (const item of [1, 2, 3]) {
       void queue.push(item).then(() => resolved.push(item));
     }
@@ -101,7 +101,9 @@ describe("boundedQueue lifecycle", () => {
     queue.finish();
 
     const taken: number[] = [];
+
     for await (const item of queue) taken.push(item);
+
     expect(taken).toEqual([1, 2]);
   });
 
@@ -117,7 +119,9 @@ describe("boundedQueue lifecycle", () => {
 
   test("finish releases a blocked producer rather than leaving it waiting", async () => {
     const queue = boundedQueue<number>({ capacity: 1, onOverflow: "block" });
+
     await queue.push(1);
+
     const blocked = queue.push(2);
 
     queue.finish();
@@ -127,23 +131,29 @@ describe("boundedQueue lifecycle", () => {
 
   test("a push after finish resolves and delivers nothing", async () => {
     const queue = boundedQueue<number>({ capacity: 2, onOverflow: "block" });
+
     queue.finish();
 
     expect(await settled(queue.push(1))).toBe(true);
     expect(queue.size).toBe(0);
 
     const taken: number[] = [];
+
     for await (const item of queue) taken.push(item);
+
     expect(taken).toEqual([]);
   });
 
   test("breaking out of a for await finishes the queue and frees its producers", async () => {
     const queue = boundedQueue<number>({ capacity: 1, onOverflow: "block" });
+
     await queue.push(1);
+
     const blocked = queue.push(2);
 
     for await (const item of queue) {
       expect(item).toBe(1);
+
       break;
     }
 
@@ -154,6 +164,7 @@ describe("boundedQueue lifecycle", () => {
   test("two concurrent consumers are a caller bug, not an interleaving", async () => {
     const queue = boundedQueue<number>({ capacity: 2, onOverflow: "block" });
     const iterator = queue[Symbol.asyncIterator]();
+
     void iterator.next();
 
     expect(() => iterator.next()).toThrow("one consumer");

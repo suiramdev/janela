@@ -125,7 +125,7 @@ reasoning and the seam were carried across* — not that a body was translated.
 | `MainWindow`, `Sidebar`, `SessionDetail`, `ConnectionBanner` | unchanged | SwiftUI views → React components |
 | `JanelaCommands` (SwiftUI `Commands`) | `COMMANDS` table in `@janela/ui` | Data, not a view: the native menu bar is built from it in the Rust shell, so the menu and the in-app palette cannot drift apart |
 | `SettingsWindow` | `SettingsScreen` in `@janela/ui` | Not a window: a screen that replaces the workspace, with the tabs in the sidebar and Back where Settings was |
-| `JanelaMain`, `AppEnvironment`, `PlaceholderTransport` | `apps/desktop/src/environment.ts`, `transport.ts` | `PlaceholderTransport` is gone: the real transport is a bridge to the Rust shell, and a placeholder that silently drops frames is worse than a connection that reports itself down |
+| `JanelaMain`, `AppEnvironment`, `PlaceholderTransport` | `apps/desktop/src/environment.ts`, `adapters/transport.ts` | `PlaceholderTransport` is gone: the real transport is a bridge to the Rust shell, and a placeholder that silently drops frames is worse than a connection that reports itself down |
 | `JanelaAppMain.swift` | `apps/desktop/src/main.tsx` + `src-tauri/src/main.rs` | |
 
 ### Test support
@@ -165,10 +165,10 @@ Every `TODO:` in the Swift tree, and where it now lives. None was dropped.
 | 19 | `JanelaClient/ClientStores.swift:80` | `packages/client/src/stores.ts` | `SessionStore` partial-update merge, keeping selection |
 | 20 | `JanelaClient/AttentionPolicy.swift:87` | `packages/client/src/attention-policy.ts` | Expire delivered entries; clear a removed session's |
 | 21 | `JanelaTerminalUI/TerminalSurface.swift:56` | `packages/terminal-ui/src/index.ts` | The terminal surface component; must not own a PTY or interpret input |
-| 22 | `JanelaUI/MainWindow.swift:86` | `packages/ui/src/main-window.tsx` | The sidebar: standalone sessions, then collapsible projects |
-| 23 | `JanelaUI/MainWindow.swift:103` | `packages/ui/src/main-window.tsx` | Tab strip, recursive pane view, a surface per pane |
-| 24 | `JanelaUI/MainWindow.swift:127` | `packages/ui/src/connection-banner.tsx` | The reconnecting strip: thin and quiet |
-| 25 | `JanelaUI/MainWindow.swift:132` | `packages/ui/src/connection-banner.tsx` | The version-skew banner; never restart the daemon automatically |
+| 22 | `JanelaUI/MainWindow.swift:86` | `packages/ui/src/pages/main-window/ui/app-sidebar.tsx` | The sidebar: standalone sessions, then collapsible projects |
+| 23 | `JanelaUI/MainWindow.swift:103` | `packages/ui/src/pages/main-window/ui/{tab-strip,pane-view,terminal-pane}.tsx` | Tab strip, recursive pane view, a surface per pane |
+| 24 | `JanelaUI/MainWindow.swift:127` | `packages/ui/src/pages/main-window/ui/connection-banner.tsx` | The reconnecting strip: thin and quiet |
+| 25 | `JanelaUI/MainWindow.swift:132` | `packages/ui/src/pages/main-window/ui/connection-banner.tsx` | The version-skew banner; never restart the daemon automatically |
 | 26 | `JanelaApp/JanelaMain.swift:89` | `apps/desktop/src/environment.ts` | Build the transport; register the launch agent, handling approval |
 
 Seams **added** by the migration, which are not in the 26 and are marked as new where

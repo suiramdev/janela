@@ -1,0 +1,126 @@
+import { describe, expect, test } from "bun:test";
+
+import { SidebarProvider } from "@janela/design";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { hiddenWindowControls } from "../../../shared/lib/test-fakes/index.ts";
+import { ClientEnvironmentProvider, type ClientEnvironment } from "../../../shared/model/index.ts";
+import { WINDOW_CONTROLS_ROOM, WINDOW_DRAG_REGION } from "../../../shared/ui/index.ts";
+import { project, session, sessionID, terminal, terminalID } from "../model/session-fixture.ts";
+import { AppSidebar } from "./app-sidebar.tsx";
+import { fakeEnvironment, ignoreCommand } from "./window-fixture.ts";
+
+function renderSidebar(environment: ClientEnvironment): string {
+  return renderToStaticMarkup(
+    <ClientEnvironmentProvider environment={environment}>
+      <SidebarProvider>
+        <AppSidebar dispatch={ignoreCommand} />
+      </SidebarProvider>
+    </ClientEnvironmentProvider>,
+  );
+}
+
+describe("AppSidebar markup", () => {
+  test("a session needing attention says so in its name", () => {
+    const withAttention = session("fix/pty", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [withAttention],
+      states: { [terminalID("t1")]: { kind: "needsAttention" } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="fix/pty — needs attention"');
+    expect(markup).toContain("text-attention");
+  });
+
+  test("project rows are disclosures and the selected session is current", () => {
+    const member = session("main", { project: "p" });
+
+    const environment = fakeEnvironment({
+      projects: [project("p", true)],
+      sessions: [member],
+      selection: sessionID("main"),
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-current="true"');
+  });
+
+  test("the header offers search, collapsing and creation, above the scroller", () => {
+    const markup = renderSidebar(fakeEnvironment({ projects: [project("p", false)] }));
+
+    expect(markup).toContain('aria-label="Search"');
+    expect(markup).toContain("Toggle Sidebar");
+    expect(markup).toContain("New Session");
+    expect(markup).toContain('aria-label="New Project"');
+    expect(markup).toContain('aria-label="Filter: All Sessions"');
+    expect(markup.indexOf('data-sidebar="header"')).toBeLessThan(
+      markup.indexOf('data-sidebar="content"'),
+    );
+    expect(markup).toContain('data-slot="scroll-area-viewport"');
+  });
+
+  test("the window controls get the head of the header row, and fullscreen takes it back", () => {
+    const overlaid = renderSidebar(fakeEnvironment({}));
+    const fullscreen = renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls }));
+
+    expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeGreaterThan(-1);
+    expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeLessThan(
+      overlaid.indexOf('aria-label="Search"'),
+    );
+    expect(fullscreen).not.toContain(WINDOW_CONTROLS_ROOM);
+  });
+
+  test("the header row is the band that drags the window, in both states", () => {
+    const region = `data-tauri-drag-region="${WINDOW_DRAG_REGION}"`;
+
+    for (const markup of [
+      renderSidebar(fakeEnvironment({})),
+      renderSidebar(fakeEnvironment({ windowControls: hiddenWindowControls })),
+    ]) {
+      expect(markup.indexOf(region)).toBeGreaterThan(-1);
+      expect(markup.indexOf(region)).toBeLessThan(markup.indexOf('aria-label="Search"'));
+    }
+  });
+
+  test("the Inbox row promises nothing: disabled, and badged as planned", () => {
+    const markup = renderSidebar(fakeEnvironment({}));
+
+    expect(markup).toContain("Inbox");
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Planned");
+  });
+
+  test("each project offers a new session on hover, named after the project", () => {
+    const markup = renderSidebar(fakeEnvironment({ projects: [project("janela", false)] }));
+
+    expect(markup).toContain('aria-label="New Session in janela"');
+    expect(markup).toContain('data-sidebar="menu-action"');
+  });
+
+  test("an empty sidebar says which nothing it is", () => {
+    expect(renderSidebar(fakeEnvironment({}))).toContain("No sessions yet");
+  });
+
+  test("every session sits under one Sessions heading, standalone or not", () => {
+    const markup = renderSidebar(
+      fakeEnvironment({
+        projects: [project("janela", true)],
+        sessions: [session("loose"), session("inside", { project: "janela" })],
+      }),
+    );
+
+    expect(markup.split('data-sidebar="group-label"')).toHaveLength(2);
+
+    const label = markup.indexOf('data-sidebar="group-label"');
+
+    expect(markup.slice(label, markup.indexOf("loose"))).toContain("Sessions");
+    expect(markup).not.toContain(">Projects<");
+    expect(markup.indexOf("loose")).toBeLessThan(markup.indexOf("janela"));
+    expect(markup.indexOf("janela")).toBeLessThan(markup.indexOf("inside"));
+  });
+});

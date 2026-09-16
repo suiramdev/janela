@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { SessionID } from "@janela/core";
+import { instant, type SessionID } from "@janela/core";
 import {
   FrameKind,
   MINIMUM_SUPPORTED_VERSION,
@@ -30,6 +30,7 @@ import {
   fakeDelay,
   fakeProject,
   fakeSession,
+  fixtureID,
   partial,
   recordingLogger,
   snapshot,
@@ -42,9 +43,6 @@ import {
   type RecordingLogger,
 } from "./test-fakes.ts";
 
-const id = (name: string): SessionID => name as SessionID;
-const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
-
 interface Harness {
   readonly daemon: FakeDaemon;
   readonly connection: DaemonConnection;
@@ -53,17 +51,19 @@ interface Harness {
   readonly sessions: SessionStore;
   readonly projects: ProjectStore;
   readonly mirror: MirrorApplying;
-  /** Completes the handshake on connection `index` and returns it. */
   handshake(index?: number): Promise<FakeConnection>;
 }
 
-let live: DaemonConnection | undefined;
+const id = (name: string): SessionID => name as SessionID;
+
+const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 function harness(options: { readonly handshakeDeadlineMs?: number } = {}): Harness {
   const daemon = fakeDaemon();
   const stores = createStores();
   const delays = fakeDelay();
   const logger = recordingLogger();
+
   const connection = createConnection({
     openTransport: daemon.openTransport,
     clientName: "test",
@@ -72,6 +72,7 @@ function harness(options: { readonly handshakeDeadlineMs?: number } = {}): Harne
     delay: delays.delay,
     ...options,
   });
+
   live = connection;
 
   return {
@@ -84,20 +85,23 @@ function harness(options: { readonly handshakeDeadlineMs?: number } = {}): Harne
     mirror: stores.mirror,
 
     async handshake(index = 0): Promise<FakeConnection> {
-      // Idempotent while a loop is running, so this both starts the first
-      // attempt and re-arms one after a deliberate `disconnect()`.
       void connection.connect();
       await until(() => daemon.connections.length > index, `connection ${index}`);
       const peer = daemon.connections[index];
+
       if (peer === undefined) throw new Error(`no connection ${index}`);
+
       await until(() => peer.controls().length > 0, "the client's hello");
       peer.say(daemonHello());
       await until(() => connection.status.kind === "connected", "connected");
       await until(() => peer.controls().length > 1, "the subscribe");
+
       return peer;
     },
   };
 }
+
+let live: DaemonConnection | undefined;
 
 afterEach(async () => {
   await live?.disconnect();
@@ -111,9 +115,11 @@ describe("the handshake", () => {
     const started = connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
 
     await until(() => peer.controls().length > 0, "the hello");
+
     expect(peer.controls()[0]).toEqual({
       type: "hello",
       hello: {
@@ -122,7 +128,6 @@ describe("the handshake", () => {
         clientName: "test",
       },
     });
-    // Nothing before the daemon answers: no subscribe, no requests.
     expect(peer.controls()).toHaveLength(1);
     expect(connection.status.kind).toBe("connecting");
 
@@ -135,6 +140,7 @@ describe("the handshake", () => {
       scope: { kind: "state" },
     });
     expect(connection.status.kind).toBe("connected");
+
     await started;
 
     peer.say({ type: "acknowledged", id: 1 as RequestID });
@@ -152,7 +158,9 @@ describe("the handshake", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
+
     await until(() => peer.controls().length > 0, "the hello");
 
     peer.say({
@@ -165,7 +173,9 @@ describe("the handshake", () => {
       kind: "refused",
       refusal: { kind: "incompatibleVersion", daemonMinimum: 2, daemonCurrent: 3 },
     });
+
     await Bun.sleep(5);
+
     expect(daemon.connections).toHaveLength(1);
     expect(delays.calls).toEqual([]);
     expect(peer.closed).toBe(true);
@@ -177,13 +187,16 @@ describe("the handshake", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
+
     await until(() => peer.controls().length > 0, "the hello");
 
     peer.say({ type: "refused", refusal: { kind: "unauthorized" } });
     await until(() => connection.status.kind === "refused", "the refusal");
 
     await Bun.sleep(5);
+
     expect(connection.status).toEqual({ kind: "refused", refusal: { kind: "unauthorized" } });
     expect(daemon.connections).toHaveLength(1);
     expect(delays.calls).toEqual([]);
@@ -195,11 +208,11 @@ describe("the handshake", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
+
     await until(() => peer.controls().length > 0, "the hello");
 
-    // One version past ours, whatever ours is: the assertion is about a range
-    // that does not overlap, not about a particular number.
     const newer = PROTOCOL_VERSION + 1;
     peer.say(daemonHello({ protocolVersion: newer, minimumSupported: newer }));
     await until(() => connection.status.kind === "refused", "the refusal");
@@ -208,7 +221,9 @@ describe("the handshake", () => {
       kind: "refused",
       refusal: { kind: "incompatibleVersion", daemonMinimum: newer, daemonCurrent: newer },
     });
+
     await Bun.sleep(5);
+
     expect(daemon.connections).toHaveLength(1);
     expect(logger.with("daemon version incompatible")[0]?.fields).toEqual({
       daemonMinimum: newer,
@@ -222,7 +237,9 @@ describe("the handshake", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
+
     await until(() => peer.controls().length > 0, "the hello");
 
     peer.say({ type: "acknowledged", id: 7 as RequestID });
@@ -235,8 +252,6 @@ describe("the handshake", () => {
     const { connection, handshake, logger } = harness({ handshakeDeadlineMs: 30 });
     const peer = await handshake();
 
-    // A real wait, deliberately: the thing under test is a real `setTimeout` that
-    // must not fire, and "did not happen" is only observable by outliving it.
     await Bun.sleep(80);
 
     expect(connection.status.kind).toBe("connected");
@@ -264,14 +279,16 @@ describe("reconnecting", () => {
     expect(seen).toContain("reconnecting:3");
 
     const peer = daemon.connections[0];
+
     if (peer === undefined) throw new Error("no connection");
+
     await until(() => peer.controls().length > 0, "the hello");
     peer.say(daemonHello());
     await until(() => connection.status.kind === "connected", "connected");
 
-    // The next loss is attempt 1 again, not attempt 4.
     peer.end();
     await until(() => connection.status.kind === "reconnecting", "the reconnect");
+
     expect(connection.status).toEqual({ kind: "reconnecting", attempt: 1 });
   });
 
@@ -283,17 +300,16 @@ describe("reconnecting", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 2, "a second attempt");
 
-    // One failed attempt under #28's schedule, not a refusal: a silence says
-    // nothing about whether the next attempt will be answered.
     expect(delays.calls).toEqual([250]);
     expect(daemon.connections[0]?.closed).toBe(true);
     expect(logger.with("handshake timed out")[0]?.fields).toEqual({ attempt: 0 });
     expect(seen).toContain("reconnecting");
     expect(seen).not.toContain("refused");
 
-    // And the silence does not poison what follows.
     const second = daemon.connections[1];
+
     if (second === undefined) throw new Error("no second connection");
+
     await until(() => second.controls().length > 0, "the second hello");
     second.say(daemonHello());
     await until(() => connection.status.kind === "connected", "connected");
@@ -313,13 +329,16 @@ describe("reconnecting", () => {
     first.end();
     await until(() => daemon.connections.length === 2, "a second connection");
     const second = daemon.connections[1];
+
     if (second === undefined) throw new Error("no second connection");
+
     await until(() => second.controls().length > 0, "the second hello");
 
-    // Every connection begins with a hello, and nothing precedes it.
     expect(second.controls()[0]).toMatchObject({ type: "hello" });
+
     second.say(daemonHello());
     await until(() => second.controls().length > 1, "the second subscribe");
+
     expect(second.controls()[1]).toMatchObject({ type: "subscribe", scope: { kind: "state" } });
   });
 
@@ -331,25 +350,22 @@ describe("reconnecting", () => {
     await until(() => sessions.sessions.length === 2, "the first snapshot");
     sessions.selection = id("s1");
 
-    // The rejection is captured now, not awaited later: an in-flight request that
-    // fails during the reconnect must not look like an unhandled rejection.
     const rejection = connection
       .request({ type: "renameSession", sessionID: id("s1"), name: "renamed" })
       .then(
         () => undefined,
-        (error: unknown) => error,
+        (cause: unknown) => cause,
       );
 
-    // Half a `state` frame, then the daemon dies holding the other half.
     const remainder = first.pushHalf(
       stateMessage(partial([{ ...fakeSession("s2"), name: "half" }])),
     );
+
     first.end();
     await until(() => connection.status.kind === "reconnecting", "the reconnect");
 
     expect(await rejection).toBeInstanceOf(ConnectionUnavailable);
     expect(connection.isStale).toBe(true);
-    // Rendered, not discarded: the sidebar keeps showing what it last knew.
     expect(sessions.sessions.map((session) => session.id)).toEqual([id("s1"), id("s2")]);
     expect(sessions.sessions[1]?.name).toBe("s2");
     expect(logger.with("connection lost")[0]?.fields).toEqual({ error: "truncated" });
@@ -365,8 +381,6 @@ describe("reconnecting", () => {
     expect(sessions.selection).toBe(id("s2"));
     expect(connection.isStale).toBe(false);
 
-    // The dead connection's leftover bytes, arriving late. The old decoder went
-    // with the old connection, and the old transport is closed.
     first.push(remainder);
     first.say(stateMessage(partial([fakeSession("s1")])));
     await Bun.sleep(5);
@@ -383,8 +397,6 @@ describe("reconnecting", () => {
     first.say(stateMessage(snapshot([fakeSession("s1")])));
     await until(() => sessions.sessions.length === 1, "the snapshot");
 
-    // A transport that has frames in flight when we close it. The generation tag
-    // is what stops one of them landing.
     const stopped = connection.disconnect();
     first.say(stateMessage(partial([fakeSession("s2")])));
     await Bun.sleep(2);
@@ -395,6 +407,7 @@ describe("reconnecting", () => {
 
     first.end();
     await stopped;
+
     expect(connection.status.kind).toBe("idle");
   });
 });
@@ -410,14 +423,15 @@ describe("requests", () => {
       sessionID: id("s1"),
       name: "new",
     });
+
     const text = connection.request({
       type: "snapshotText",
       terminalID: terminal,
       includeScrollback: false,
     });
+
     await until(() => peer.controls().length === 4, "both requests");
 
-    // Distinct, increasing, and never reused: 1 was the subscribe.
     expect(peer.controls()[2]).toMatchObject({ type: "renameSession", id: 2 });
     expect(peer.controls()[3]).toMatchObject({ type: "snapshotText", id: 3 });
 
@@ -427,7 +441,10 @@ describe("requests", () => {
     expect(await renamed).toBeUndefined();
     expect(await text).toBe("on screen");
 
-    const failing = connection.request({ type: "removeProject", projectID: "p" as never });
+    const failing = connection.request({
+      type: "removeProject",
+      projectID: fixtureID<"Project">("p"),
+    });
     await until(() => peer.controls().length === 5, "the third request");
     peer.say({
       type: "failed",
@@ -437,8 +454,9 @@ describe("requests", () => {
 
     const error = await failing.then(
       () => undefined,
-      (thrown: unknown) => thrown,
+      (cause: unknown) => cause,
     );
+
     expect(error).toBeInstanceOf(RequestFailed);
     expect(error).toMatchObject({
       summary: "Couldn't remove the project.",
@@ -459,8 +477,8 @@ describe("requests", () => {
       }),
     ).toBeUndefined();
 
-    // [0] is the hello and [1] the subscribe; this is the third thing we said.
     const message = peer.controls()[2];
+
     expect(message).toMatchObject({ type: "resize" });
     expect(Object.hasOwn(message ?? {}, "id")).toBe(false);
   });
@@ -495,6 +513,7 @@ describe("terminal traffic", () => {
     await until(() => peer.inputs().length === 1, "the input frame");
 
     const sent = peer.inputs()[0];
+
     expect(sent?.terminalID).toBe(terminal);
     expect(Array.from(sent?.bytes ?? [])).toEqual(Array.from(invalid));
     expect(peer.sent.at(-1)?.kind).toBe(FrameKind.Input);
@@ -528,16 +547,16 @@ describe("terminal traffic", () => {
 
     const received: string[] = [];
     const decoder = new TextDecoder();
+
     const stop = connection.onOutput(one, (chunk) => {
       received.push(decoder.decode(chunk));
     });
 
     peer.output(one, bytes("hello"));
     await until(() => received.length === 1, "the output");
+
     expect(received).toEqual(["hello"]);
 
-    // Output for a terminal nobody is watching. A detach race, not a violation:
-    // dropped, and the connection survives.
     peer.output(two, bytes("nobody"));
     await until(
       () => logger.with("output for unwatched terminal").length === 1,
@@ -571,8 +590,8 @@ describe("terminal traffic", () => {
       error: "unknownTerminal",
       terminalID: stranger,
     });
-    // Never created, and the reconnect is the only recovery.
     expect(sessions.sessions[0]?.terminals.map((terminal) => terminal.id)).not.toContain(stranger);
+
     await until(() => daemon.connections.length === 2, "the reconnect");
   });
 
@@ -600,6 +619,7 @@ describe("terminal traffic", () => {
       ),
     );
     await until(() => sessions.sessions.length === 1, "the snapshot");
+
     expect(sessions.isRunning(id("s1"))).toBe(true);
 
     peer.say({ type: "terminalExited", terminalID: terminal, code: 3 });
@@ -630,20 +650,21 @@ describe("attention", () => {
         terminalID: terminal,
         sessionID: id("s1"),
         id: "signal-1",
-        occurredAt: "2026-01-01T00:00:00.000Z" as never,
+        occurredAt: instant("2026-01-01T00:00:00.000Z"),
       },
     });
     await until(() => delivered.length === 1, "the signal");
 
     expect(delivered).toEqual(["signal-1"]);
-    // Non-negotiable 11: not the body, not the title, not even a count.
     expect(logger.text()).not.toContain(body);
     expect(logger.text()).not.toContain("SECRET-TITLE");
+
     const mirrored = JSON.stringify([
       sessions.sessions,
       projects.projects,
       sessions.terminalStates,
     ]);
+
     expect(mirrored).not.toContain(body);
   });
 
@@ -651,6 +672,7 @@ describe("attention", () => {
     const { connection, handshake } = harness();
     const peer = await handshake();
     let count = 0;
+
     const stop = connection.onAttention(() => {
       count += 1;
     });
@@ -662,15 +684,17 @@ describe("attention", () => {
         terminalID: terminalID(),
         sessionID: id("s1"),
         id: "signal-1",
-        occurredAt: "2026-01-01T00:00:00.000Z" as never,
+        occurredAt: instant("2026-01-01T00:00:00.000Z"),
       },
     };
+
     peer.say(signal);
     await until(() => count === 1, "the first signal");
 
     stop();
     peer.say(signal);
     await Bun.sleep(2);
+
     expect(count).toBe(1);
   });
 });
@@ -689,6 +713,7 @@ describe("disconnect", () => {
     expect(daemon.connections).toHaveLength(1);
 
     const second = await handshake(1);
+
     expect(connection.status.kind).toBe("connected");
     expect(second.controls()[0]).toMatchObject({ type: "hello" });
   });
@@ -699,14 +724,16 @@ describe("disconnect", () => {
     void connection.connect();
     await until(() => daemon.connections.length === 1, "a connection");
     const first = daemon.connections[0];
+
     if (first === undefined) throw new Error("no connection");
+
     await until(() => first.controls().length > 0, "the hello");
     first.say({ type: "refused", refusal: { kind: "protocolViolation" } });
     await until(() => connection.status.kind === "refused", "the refusal");
 
-    // Idempotent while refused: `connect()` alone does not re-arm it.
     await connection.connect();
     await Bun.sleep(5);
+
     expect(daemon.connections).toHaveLength(1);
 
     await connection.disconnect();
@@ -722,8 +749,9 @@ describe("disconnect", () => {
       .request({ type: "removeSession", sessionID: id("s1"), deletesDirectory: false })
       .then(
         () => undefined,
-        (error: unknown) => error,
+        (cause: unknown) => cause,
       );
+
     await connection.disconnect();
 
     expect(await rejection).toBeInstanceOf(ConnectionUnavailable);
@@ -740,9 +768,8 @@ describe("disconnect", () => {
     peer.end();
     await until(() => connection.status.kind === "reconnecting", "the reconnect");
 
-    // Consecutive duplicates dropped: `isStale` flipping is also a change, and a
-    // listener is told about that too.
     const transitions = seen.filter((kind, index) => kind !== seen[index - 1]);
+
     expect(transitions.slice(0, 3)).toEqual(["connecting", "connected", "reconnecting"]);
   });
 });
@@ -767,8 +794,10 @@ describe("a transport that will not open", () => {
     const pending = connection.request({ type: "renameSession", sessionID: id("s1"), name: "x" });
 
     await expect(pending).rejects.toBeInstanceOf(ConnectionUnavailable);
+
     await until(() => daemon.connections.length === 2, "exactly one reconnect");
     await Bun.sleep(5);
+
     expect(daemon.connections).toHaveLength(2);
   });
 });

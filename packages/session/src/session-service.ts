@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 
 import type {
   AbsolutePath,
+  AutomationEvent,
   Axis,
   Backing,
   LaunchProfileID,
@@ -40,6 +41,7 @@ import type { Logger } from "@janela/support";
 import { processRunner, type ProcessRunning } from "@janela/support/process";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 import { createLiveTerminal } from "@janela/terminal";
+import { Effect, Exit, Match } from "effect";
 
 import type { AutomationRunning } from "./automation-runner.ts";
 import {
@@ -56,141 +58,43 @@ import type { ProjectRemovalObserving, ProjectService } from "./project-service.
 import type { ShellEnvironment } from "./shell-environment.ts";
 import { silentLogger } from "./silent-logger.ts";
 import type { StateObserving } from "./state-observing.ts";
-import { resolveTerminalLaunch } from "./terminal-launch.ts";
+import { resolveTerminalLaunch, type TerminalLaunchInput } from "./terminal-launch.ts";
 
-/**
- * The application's brain: sessions, and the operations that change them.
- *
- * ## Where this runs
- *
- * **In the daemon.** It owns the truth; clients hold mirrors of it and ask for
- * changes over the protocol. Nothing here knows a socket exists, and that is the
- * test of whether the layering is right — `@janela/session` must stay usable with
- * no networking at all, which is exactly how its tests use it.
- */
 export interface SessionService {
-  /** Every session, both grouped and standalone. */
   readonly sessions: readonly Session[];
 
-  /** Loads persisted state. Called once, early in daemon startup. */
   load(): Promise<void>;
 
   find(id: SessionID): Session | undefined;
   inProject(id: ProjectID): readonly Session[];
 
-  /** Sessions belonging to no project. A first-class case, not a leftover bucket. */
   readonly standaloneSessions: readonly Session[];
 
-  /**
-   * The single entry point for session creation.
-   *
-   * Worktree creation is *one case of this function*, not a separate feature with
-   * its own screen. If this ever grows a second public creation method, something
-   * has gone wrong — see docs/product.md § The thesis.
-   *
-   * Nothing here blocks on a client. The session is persisted and announced before
-   * `.worktreeinclude` copying and automation finish, and the client that asked may
-   * disconnect mid-flight without changing the outcome.
-   */
   createSession(request: SessionCreationRequest): Promise<Session>;
 
-  /**
-   * What a client needs to offer "which branch, and where": the project's local
-   * branches, plus every checkout of its repository — so the dialog can offer
-   * checking a branch out in the project's own directory, adopting the worktree
-   * that already holds it, or creating a new one.
-   *
-   * One question rather than three, because the three placements are answered
-   * by the same two lists and a client that asked separately could show a
-   * branch as free while another window checked it out.
-   *
-   * @throws {UnknownProject} @throws {WorktreesUnsupported} for a project that
-   *   is not a repository: "no branches" and "not a repository" are different
-   *   things to tell a person, and an empty list says the wrong one.
-   */
   branchOverview(projectID: ProjectID): Promise<ProjectBranchOverview>;
 
-  /**
-   * Reorders a session's tabs: the tab at `from` moves to index `to`.
-   *
-   * Here rather than in the client because tab order lives in `SessionLayout`,
-   * which the daemon owns — a client that rearranged its mirror would lose the
-   * drag on the next state snapshot. Persisted and announced exactly as a split
-   * is. A move that changes nothing persists nothing.
-   *
-   * @throws {UnknownSession}
-   */
   moveTab(sessionID: SessionID, from: number, to: number): Promise<void>;
 
-  /** Checks what would be lost, so a client can describe it before asking. */
   removalPlan(id: SessionID): Promise<SessionRemovalPlan>;
 
-  /**
-   * Removes a session. Only deletes files when `plan.deletesDirectory` is true
-   * *and* the caller explicitly opted in.
-   *
-   * Runs `sessionTeardown` automation first, bounded by its timeout, and **runs it
-   * to completion even if the requesting client disconnects**. A teardown abandoned
-   * halfway because a window closed would leave exactly the containers and
-   * databases it exists to clean up.
-   */
   removeSession(id: SessionID, plan: SessionRemovalPlan): Promise<void>;
 
   rename(id: SessionID, name: string): Promise<void>;
 
-  /**
-   * A new terminal in a session that already exists — ⌘T, with a profile the user
-   * picked. It arrives as a new tab, focused, and it is *configured, not started*:
-   * nothing spawns until `startTerminal`, which is what keeps opening a session
-   * free (AGENTS.md § Laziness is a feature).
-   *
-   * @throws {UnknownSession} @throws {UnknownLaunchProfile}
-   */
   createTerminal(id: SessionID, options?: NewTerminalOptions): Promise<TerminalDescriptor>;
 
-  /** Starts a configured-but-idle terminal. Attaching never starts anything. */
   startTerminal(id: TerminalID): Promise<void>;
   stopTerminal(id: TerminalID): Promise<void>;
 
-  /**
-   * Stop and start again, as one operation.
-   *
-   * The daemon owns the ordering: `stop()` closes the pty but the terminal stays
-   * `running` until its reader thread reaps the child, so a `startTerminal` that
-   * followed a `stopTerminal` over the wire would find a terminal it believes is
-   * already running and do nothing at all.
-   *
-   * @throws {UnknownTerminal}
-   */
   restartTerminal(id: TerminalID): Promise<void>;
 
-  /**
-   * Closes one terminal — the ⌘W path, and the only path that both stops a
-   * terminal and forgets it.
-   *
-   * The layout collapses around it, promoting the sibling. Closing the last
-   * terminal of a session leaves one fresh idle shell behind: a session never has
-   * zero terminals.
-   *
-   * @throws {UnknownTerminal}
-   */
   removeTerminal(id: TerminalID): Promise<void>;
 }
 
-/** What the user chose in the ⌘T picker. Both fields absent is a plain shell. */
 export interface NewTerminalOptions {
   readonly profileID?: LaunchProfileID;
-  /** Overrides the tab title, which otherwise follows the profile's name. */
   readonly title?: string;
-  /**
-   * Where the terminal goes. Absent is a new focused tab — ⌘T. `split` is ⌘D:
-   * the pane holding `beside` divides along `axis` and the new terminal takes
-   * the other half.
-   *
-   * Shaped like the wire field of the same name without importing it: the brain
-   * does not depend on the protocol, exactly as `SessionCreationRequest` mirrors
-   * `SessionCreationIntent`.
-   */
   readonly placement?: {
     readonly kind: "split";
     readonly beside: TerminalID;
@@ -198,64 +102,25 @@ export interface NewTerminalOptions {
   };
 }
 
-/** One checkout of a project's repository. Reduced from git's `GitWorktree`. */
 export interface ProjectBranchWorktree {
   readonly directory: AbsolutePath;
-  /** Absent when detached. */
   readonly branch?: string;
-  /** The repository's own checkout, as opposed to a linked worktree. */
   readonly isMain: boolean;
 }
 
-/**
- * The project's branches and the checkouts that exist, as one answer.
- *
- * Shaped like `BranchOverview` on the wire without importing it: the brain does
- * not depend on the protocol, exactly as `SessionCreationRequest` mirrors
- * `SessionCreationIntent` and `SessionRemovalPlan` mirrors
- * `SessionRemovalPreview`. The wire shape is frozen by the protocol version and
- * this one is free to grow a field.
- *
- * Both lists rather than a branch-to-worktree map: a worktree may be detached
- * and name no branch, and a branch may be checked out nowhere. A map would have
- * to invent a key for the first and lose the second.
- */
 export interface ProjectBranchOverview {
   readonly branches: readonly string[];
   readonly worktrees: readonly ProjectBranchWorktree[];
 }
 
-/**
- * How the user asked for a session to come into being.
- *
- * One union, five cases, all ending in the same place: a directory with a name and
- * some terminals.
- */
 export type SessionCreationRequest =
-  /** "Just give me a terminal in this folder." No project, no git, no ceremony. */
   | { readonly kind: "standalone"; readonly directory: AbsolutePath; readonly name?: string }
-  /**
-   * A simple session running in the project's own directory.
-   *
-   * `branch` moves that directory onto the branch first — "work on this branch,
-   * in place", the third answer to the dialog `branchOverview` feeds, next to
-   * adopting a worktree and creating one. A checkout git refuses creates no
-   * session, because the alternative is a session on a branch it does not name.
-   */
   | {
       readonly kind: "inProject";
       readonly projectID: ProjectID;
       readonly branch?: string;
       readonly name?: string;
     }
-  /**
-   * "Give me a new branch to work on." Creates a worktree behind the scenes, placed
-   * according to the project's `worktreeRoot` unless told otherwise.
-   *
-   * `name` is the session's name *and* the leaf of the directory the worktree
-   * lands in, so two worktrees of one branch are told apart by the name the user
-   * gave them rather than by a number we invented.
-   */
   | {
       readonly kind: "newWorktree";
       readonly projectID: ProjectID;
@@ -263,89 +128,104 @@ export type SessionCreationRequest =
       readonly startPoint?: string;
       readonly directory?: AbsolutePath;
       readonly name?: string;
-      /**
-       * Check the branch out even though another worktree holds it. git refuses
-       * that by default and we do not override it on the user's behalf: this is
-       * set only when they chose a new worktree for a branch already checked
-       * out, having been told the branch will be shared.
-       */
       readonly shareBranch?: boolean;
     }
-  /** "I already have this worktree, manage it too." Adopted, never deletable. */
   | {
       readonly kind: "adoptWorktree";
       readonly projectID: ProjectID;
       readonly directory: AbsolutePath;
       readonly name?: string;
     }
-  /**
-   * "Work on this pull request." Resolves the head branch through the forge CLI,
-   * then creates a worktree — never `gh pr checkout`, which would mutate the user's
-   * own checkout.
-   */
   | { readonly kind: "fromPullRequest"; readonly projectID: ProjectID; readonly number: number };
 
-/**
- * What removing a session will actually do.
- *
- * Specifics rather than a bool, so the confirmation can name what is about to be
- * lost. "Are you sure?" is not a warning.
- */
 export interface SessionRemovalPlan {
-  /** Terminals that will be killed, across every tab and split. */
   readonly liveTerminalCount: number;
 
-  /**
-   * True when Janela created the directory and can therefore offer to delete it.
-   * False for a project directory and for an adopted worktree, always.
-   */
   readonly canDeleteDirectory: boolean;
 
-  /** Set by the client when the user ticks "also delete the worktree". */
   deletesDirectory: boolean;
 
-  /**
-   * Files `.worktreeinclude` copied in, which would go with the directory. Worth
-   * naming: an `.env` that exists nowhere else is not recoverable from git.
-   */
   readonly includedPaths: readonly string[];
 
-  /** A `sessionTeardown` command will run first, and deletion waits for it. */
   readonly runsTeardownAutomation: boolean;
 
-  /** Reasons deleting would lose work. */
   readonly safety: WorktreeRemovalSafety;
 }
 
 export interface SessionServiceDependencies {
   readonly repository: SessionRepository;
   readonly profiles: LaunchProfileRepository;
-  /** Only `find` is used: the session side never mutates a project. */
   readonly projects: Pick<ProjectService, "find">;
   readonly worktrees: WorktreeServing;
   readonly terminals: TerminalRegistry;
-  /** Captured once at startup; every terminal is launched from it. */
   readonly shell: ShellEnvironment;
   readonly observer: StateObserving;
-  /** Resolves a profile's executable on the captured `PATH`. */
   readonly processes?: ProcessRunning;
-  /** Where shapes go: an id, a count, an event name. Absent means silent. */
   readonly log?: Logger;
-  /**
-   * `.worktreeinclude` copying. Absent means the step is skipped, which is what a
-   * repository with no such file amounts to anyway.
-   */
   readonly include?: WorktreeIncluding;
-  /**
-   * Project automation. Absent means no automation runs — a project with no
-   * enabled commands is the same thing from the user's side.
-   */
   readonly automation?: AutomationRunning;
-  /** The terminal-creation seam. Production passes nothing. */
   readonly createTerminal?: typeof createLiveTerminal;
-  /** Pull-request lookups. Absent means `fromPullRequest` is refused. */
   readonly forge?: ForgeServing;
 }
+
+interface WorktreePlan {
+  readonly branch: string;
+  readonly startPoint?: string;
+  readonly shareBranch?: boolean;
+}
+
+interface ResolvedRequest {
+  readonly project?: Project;
+  readonly name: string;
+  readonly directory: AbsolutePath;
+  readonly backing: Backing;
+  readonly worktreePlan?: WorktreePlan;
+  readonly checkoutBranch?: string;
+}
+
+type CreateWorktreeRequest = Parameters<WorktreeServing["createWorktree"]>[0];
+
+type MutableBranchWorktree = {
+  -readonly [Key in keyof ProjectBranchWorktree]: ProjectBranchWorktree[Key];
+};
+
+type MutableResolvedRequest = {
+  -readonly [Key in keyof ResolvedRequest]: ResolvedRequest[Key];
+};
+
+type MutableWorktreePlan = {
+  -readonly [Key in keyof WorktreePlan]: WorktreePlan[Key];
+};
+
+type MutableCreateWorktreeRequest = {
+  -readonly [Key in keyof CreateWorktreeRequest]: CreateWorktreeRequest[Key];
+};
+
+type MutableLaunchInput = {
+  -readonly [Key in keyof TerminalLaunchInput]: TerminalLaunchInput[Key];
+};
+
+type StandaloneRequest = Extract<SessionCreationRequest, { kind: "standalone" }>;
+
+type InProjectRequest = Extract<SessionCreationRequest, { kind: "inProject" }>;
+
+type NewWorktreeRequest = Extract<SessionCreationRequest, { kind: "newWorktree" }>;
+
+type AdoptWorktreeRequest = Extract<SessionCreationRequest, { kind: "adoptWorktree" }>;
+
+type PullRequestRequest = Extract<SessionCreationRequest, { kind: "fromPullRequest" }>;
+
+const SIBLING_WORKTREE_DIRECTORY = ".worktrees";
+
+const FALLBACK_WORKTREE_SLUG = "worktree";
+
+const AWKWARD_IN_A_PATH = /[^A-Za-z0-9._-]/g;
+
+const REPEATED_SEPARATOR = /-+/g;
+
+const LEADING_SEPARATORS = /^[-.]+/;
+
+const TRAILING_SEPARATORS = /[-.]+$/;
 
 export function createSessionService(
   deps: SessionServiceDependencies,
@@ -353,61 +233,39 @@ export function createSessionService(
   return new BrainSessionService(deps);
 }
 
-/**
- * A session's name as a directory name.
- *
- * Case is preserved: branch names are case-sensitive, and the user is going to
- * read this path in a shell prompt and in build output. Only characters that make
- * a path awkward are replaced.
- */
 export function worktreeSlug(name: string): string {
-  const replaced = name.replace(/[^A-Za-z0-9._-]/g, "-").replace(/-+/g, "-");
-  const trimmed = replaced.replace(/^[-.]+/, "").replace(/[-.]+$/, "");
-  // A name of only separators (`///`) would otherwise produce "", and a
-  // worktree at the parent directory itself.
-  return trimmed === "" ? "worktree" : trimmed;
+  const replaced = name.replace(AWKWARD_IN_A_PATH, "-").replace(REPEATED_SEPARATOR, "-");
+  const trimmed = replaced.replace(LEADING_SEPARATORS, "").replace(TRAILING_SEPARATORS, "");
+
+  return trimmed === "" ? FALLBACK_WORKTREE_SLUG : trimmed;
 }
 
-/**
- * Where a project's worktree goes when the caller did not choose.
- *
- * `name` is the session's name, which is the branch when the user did not say
- * otherwise. Naming the directory after it rather than after the branch is what
- * lets a second worktree of one branch exist: the user renames the session and
- * the path follows, instead of us appending a `-2` nobody asked for.
- */
 export function defaultWorktreeDirectory(project: Project, name: string): AbsolutePath {
   const root = project.settings.worktreeRoot;
   const slug = worktreeSlug(name);
+
   return absolutePath(
     root.kind === "custom"
       ? join(root.directory, slug)
-      : // Beside the repository rather than under it: a worktree inside the
-        // repository is a directory git has to be told to ignore, forever.
-        join(dirname(project.directory), ".worktrees", slug),
+      : join(dirname(project.directory), SIBLING_WORKTREE_DIRECTORY, slug),
   );
 }
 
-/** A creation request, reduced to the record we are about to write. */
-interface ResolvedRequest {
-  readonly project?: Project;
-  readonly name: string;
-  readonly directory: AbsolutePath;
-  readonly backing: Backing;
-  /** Set only when a worktree still has to be created. */
-  readonly worktreePlan?: {
-    readonly branch: string;
-    readonly startPoint?: string;
-    /** Carried from the request: git's one-place-per-branch rule, overridden. */
-    readonly shareBranch?: boolean;
-  };
-  /**
-   * Set only when the project's own directory must be moved onto a branch
-   * first. Carried out of `resolve` rather than done there, so resolution stays
-   * a read: the checkout is the one step that changes the user's checkout, and
-   * it runs where the ordering is visible.
-   */
-  readonly checkoutBranch?: string;
+function branchWorktree(entry: GitWorktree, isMain: boolean): ProjectBranchWorktree {
+  const reduced: MutableBranchWorktree = { directory: entry.path, isMain };
+
+  if (entry.branch !== undefined) reduced.branch = entry.branch;
+
+  return reduced;
+}
+
+function canonicalPath(directory: AbsolutePath): Promise<string> {
+  return Effect.runPromise(
+    Effect.tryPromise({
+      try: () => realpath(directory),
+      catch: (cause: unknown) => cause,
+    }).pipe(Effect.orElseSucceed((): string => directory)),
+  );
 }
 
 class BrainSessionService implements SessionService, ProjectRemovalObserving {
@@ -431,8 +289,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
   }
 
   async load(): Promise<void> {
-    // Database only, and nothing is started: a restored session's terminals are
-    // idle by construction, because the registry is empty until `startTerminal`.
     this.known = [...(await this.deps.repository.all())];
   }
 
@@ -448,22 +304,15 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     const resolved = await this.resolve(request);
 
     if (resolved.checkoutBranch !== undefined && resolved.project !== undefined) {
-      // Before the record exists, and before anything is announced: a checkout
-      // git refuses must leave no session behind, and `GitFailure` already says
-      // which subcommand refused and why. This moves the *user's own* checkout,
-      // which is why nothing else in creation runs first.
       await this.deps.worktrees.checkoutBranch(resolved.project.directory, resolved.checkoutBranch);
     }
 
     const created = now();
     const session: Session = {
       id: newSessionID(),
-      ...(resolved.project === undefined ? {} : { projectID: resolved.project.id }),
       name: resolved.name,
       directory: resolved.directory,
       backing: resolved.backing,
-      // No terminals and an empty layout, in that order of importance: the
-      // database refuses a layout naming a terminal that does not exist yet.
       terminals: [],
       layout: emptyLayout,
       accent: "none",
@@ -472,18 +321,16 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       isPinned: false,
     };
 
+    if (resolved.project !== undefined) session.projectID = resolved.project.id;
+
     await this.deps.repository.save(session);
     this.known.push(session);
-    // Visible and selectable from here. Everything below can take seconds, and a
-    // user watching an empty sidebar would reasonably conclude nothing happened.
     await this.publish();
 
     if (resolved.worktreePlan !== undefined && resolved.project !== undefined) {
       await this.addWorktree(session, resolved.project, resolved.worktreePlan);
     }
 
-    // Before automation, always: a `worktreeCreated` command that runs before the
-    // copy finds no `.env`.
     if (worktreeOf(session) !== undefined && resolved.project !== undefined) {
       await this.copyIncludedPaths(session, resolved.project);
     }
@@ -492,6 +339,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       if (resolved.worktreePlan !== undefined) {
         await this.runAutomation("worktreeCreated", resolved.project, session);
       }
+
       await this.runAutomation("sessionStart", resolved.project, session);
     }
 
@@ -502,15 +350,15 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       kind: request.kind,
       backing: session.backing.kind,
     });
+
     return session;
   }
 
   async branchOverview(projectID: ProjectID): Promise<ProjectBranchOverview> {
     const project = this.requireProject(projectID);
+
     if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
 
-    // Both reads at once: they are independent, and the dialog waits on the
-    // slower of the two rather than their sum.
     const [branches, listed] = await Promise.all([
       this.deps.worktrees.branches(project.directory),
       this.deps.worktrees.worktrees(project.directory),
@@ -519,31 +367,19 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     return {
       branches,
       worktrees: listed
-        // git lists the main worktree first, then each linked one. Taken from
-        // the order rather than by comparing paths to the project's directory,
-        // because a project may itself have been added at a linked worktree —
-        // and then a path comparison would call that one main.
         .map((entry, index) => ({ entry, isMain: index === 0 }))
-        // A bare repository has no working directory a session could run in, so
-        // it is not a placement the dialog may offer. Filtered after the index
-        // is taken, so a bare main worktree does not promote a linked one.
         .filter(({ entry }) => !entry.isBare)
-        .map(({ entry, isMain }) => ({
-          directory: entry.path,
-          ...(entry.branch === undefined ? {} : { branch: entry.branch }),
-          isMain,
-        })),
+        .map(({ entry, isMain }) => branchWorktree(entry, isMain)),
     };
   }
 
   async moveTab(sessionID: SessionID, from: number, to: number): Promise<void> {
     const session = this.find(sessionID);
+
     if (session === undefined) throw new UnknownSession(sessionID);
 
     const layout = moveLayoutTab(session.layout, from, to);
-    // Identity is `moveTab`'s answer for a move that changes nothing, including
-    // an index off the end: no write, and no announcement to make every other
-    // client re-render the order it already has.
+
     if (layout === session.layout) return;
 
     session.layout = layout;
@@ -553,6 +389,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   async removalPlan(id: SessionID): Promise<SessionRemovalPlan> {
     const session = this.find(id);
+
     if (session === undefined) throw new UnknownSession(id);
 
     const live = this.deps.terminals
@@ -564,9 +401,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     return {
       liveTerminalCount: live,
       canDeleteDirectory: ownsItsDirectory(session),
-      // The client sets this when the user ticks the box. Defaulting to false is
-      // the whole safety story: a plan that deletes by default is a bug that
-      // deletes by default.
       deletesDirectory: false,
       includedPaths: binding?.includedPaths ?? [],
       runsTeardownAutomation:
@@ -579,58 +413,38 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   async removeSession(id: SessionID, plan: SessionRemovalPlan): Promise<void> {
     const session = this.find(id);
+
     if (session === undefined) throw new UnknownSession(id);
+
     const project = this.projectOf(session);
 
     if (plan.runsTeardownAutomation && project !== undefined) {
-      // First, and blocking: this is what the timeout in `AutomationCommand`
-      // exists for. A failure is logged and removal continues — refusing to
-      // remove a session because a cleanup script exited 1 traps the user.
       await this.runAutomation("sessionTeardown", project, session);
     }
 
-    for (const terminal of this.deps.terminals.inSession(id)) {
-      // oxlint-disable-next-line no-await-in-loop
-      await terminal.stop();
-      this.deps.terminals.remove(terminal.id);
-    }
+    await this.stopTerminalsOf(id);
 
-    // `canDeleteDirectory` is the guard, not the client's tick: an adopted
-    // worktree or a project checkout is never ours to delete, whatever a plan
-    // that reached us says.
     if (plan.deletesDirectory && plan.canDeleteDirectory && project !== undefined) {
       await this.deps.worktrees.removeWorktree({
         directory: session.directory,
         repository: project.directory,
-        // Uncommitted or untracked work is exactly what the user was shown and
-        // accepted; without `--force` git refuses and the tick did nothing.
         force: plan.safety.hasUncommittedChanges || plan.safety.hasUntrackedFiles,
       });
     }
 
-    await this.deps.repository.remove(id);
-    this.known = this.known.filter((candidate) => candidate.id !== id);
-    await this.publish();
+    await this.forgetSession(id);
     this.log.info("session removed", {
       session: id,
       deletedDirectory: plan.deletesDirectory && plan.canDeleteDirectory,
     });
   }
 
-  /**
-   * The project is going. Stop its terminals and forget its sessions.
-   *
-   * No `repository.remove` per session: the rows cascade with the project, and
-   * deleting them twice would be two round trips to say the same thing.
-   */
   async projectRemoving(id: ProjectID): Promise<void> {
     const going = this.inProject(id);
+
     for (const session of going) {
-      for (const terminal of this.deps.terminals.inSession(session.id)) {
-        // oxlint-disable-next-line no-await-in-loop
-        await terminal.stop();
-        this.deps.terminals.remove(terminal.id);
-      }
+      // oxlint-disable-next-line no-await-in-loop
+      await this.stopTerminalsOf(session.id);
     }
 
     this.known = this.known.filter((session) => session.projectID !== id);
@@ -640,6 +454,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   async rename(id: SessionID, name: string): Promise<void> {
     const session = this.find(id);
+
     if (session === undefined) throw new UnknownSession(id);
 
     session.name = name;
@@ -652,38 +467,35 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     options: NewTerminalOptions = {},
   ): Promise<TerminalDescriptor> {
     const session = this.find(id);
+
     if (session === undefined) throw new UnknownSession(id);
 
     const profileID = options.profileID;
     const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
-    // Absent is a plain shell; named-but-missing is the settings window that
-    // deleted the profile while the picker was open, and silently starting a
-    // shell instead would be answering a different question.
+
     if (profileID !== undefined && profile === undefined) throw new UnknownLaunchProfile(profileID);
 
     const descriptor: TerminalDescriptor = {
       id: newTerminalID(),
       title: options.title ?? profile?.name ?? "Shell",
-      ...(profile === undefined ? {} : { profileID: profile.id }),
       startsAutomatically: true,
       role: { kind: "user" },
       createdAt: now(),
     };
 
+    if (profile !== undefined) descriptor.profileID = profile.id;
+
     const placement = options.placement;
+
     if (placement === undefined) {
-      // A new tab rather than a split, focused: ⌘T is "another terminal", and
-      // where a split goes is a question only the user looking at the panes can
-      // answer. Focused, unlike an automation terminal, because the user just
-      // asked for it.
       this.appendTerminalTab(session, descriptor, { focus: true });
     } else {
-      // Membership first, so the only refusal `splitPane` has left to express by
-      // returning the same layout is depth.
       if (!session.terminals.some((terminal) => terminal.id === placement.beside)) {
         throw new UnknownTerminal(placement.beside);
       }
+
       const layout = splitPane(session.layout, placement.beside, descriptor.id, placement.axis);
+
       if (layout === session.layout) throw new LayoutTooDeep(session.id);
 
       session.terminals = [...session.terminals, descriptor];
@@ -692,21 +504,24 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
     await this.deps.repository.save(session);
     await this.publish();
+
     return descriptor;
   }
 
   async startTerminal(id: TerminalID): Promise<void> {
     const located = this.locate(id);
+
     if (located === undefined) throw new UnknownTerminal(id);
+
     const { session, descriptor } = located;
 
     let live = this.deps.terminals.get(id);
+
     if (live === undefined) {
       live = await this.liveTerminalFor(session, descriptor);
       this.deps.terminals.register(live);
     }
 
-    // Idempotent in `LiveTerminal`, so a second click is not a second process.
     await live.start();
     await this.deps.repository.touch(session.id);
     session.lastActiveAt = now();
@@ -714,26 +529,22 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
   }
 
   async stopTerminal(id: TerminalID): Promise<void> {
-    // An unknown id is a no-op: the second click on "stop" must not be an error,
-    // and a terminal that already exited is not registered.
     await this.deps.terminals.get(id)?.stop();
   }
 
   async restartTerminal(id: TerminalID): Promise<void> {
     const located = this.locate(id);
+
     if (located === undefined) throw new UnknownTerminal(id);
 
     const live = this.deps.terminals.get(id);
-    // Never started, or exited and unregistered: restarting it is starting it,
-    // and `startTerminal` is where the launch is resolved.
+
     if (live === undefined) {
       await this.startTerminal(id);
+
       return;
     }
 
-    // `LiveTerminal.restart` is the one place that knows the old child's status
-    // need not be awaited: its reader thread reaps it, and `start()` clears the
-    // exit that would otherwise be reported.
     await live.restart();
     await this.deps.repository.touch(located.session.id);
     located.session.lastActiveAt = now();
@@ -742,10 +553,13 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   async removeTerminal(id: TerminalID): Promise<void> {
     const located = this.locate(id);
+
     if (located === undefined) throw new UnknownTerminal(id);
+
     const { session } = located;
 
     const live = this.deps.terminals.get(id);
+
     if (live !== undefined) {
       await live.stop();
       this.deps.terminals.remove(id);
@@ -754,10 +568,9 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     session.terminals = session.terminals.filter((terminal) => terminal.id !== id);
     session.layout = closeTerminal(session.layout, id);
 
-    // Never zero: the last close leaves a fresh idle shell, honouring the
-    // project's default profile, saved and announced by `addFirstTerminal`.
     if (session.layout.tabs.length === 0) {
       await this.addFirstTerminal(session, this.projectOf(session));
+
       return;
     }
 
@@ -766,10 +579,21 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
   }
 
   private async publish(): Promise<void> {
-    // The whole list, every time. `StateUpdate` merges by id and cannot express a
-    // deletion, so a delta would leave removed sessions in every mirror; the
-    // brain's list is the truth and this is how it says so.
     await this.deps.observer.sessionsChanged(this.known);
+  }
+
+  private async stopTerminalsOf(id: SessionID): Promise<void> {
+    for (const terminal of this.deps.terminals.inSession(id)) {
+      // oxlint-disable-next-line no-await-in-loop
+      await terminal.stop();
+      this.deps.terminals.remove(terminal.id);
+    }
+  }
+
+  private async forgetSession(id: SessionID): Promise<void> {
+    this.known = this.known.filter((candidate) => candidate.id !== id);
+    await this.deps.repository.remove(id);
+    await this.publish();
   }
 
   private projectOf(session: Session): Project | undefined {
@@ -778,264 +602,274 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
   private requireProject(id: ProjectID): Project {
     const project = this.deps.projects.find(id);
+
     if (project === undefined) throw new UnknownProject(id);
+
     return project;
   }
 
-  /** The session and descriptor a terminal id belongs to. */
   private locate(id: TerminalID): { session: Session; descriptor: TerminalDescriptor } | undefined {
     for (const session of this.known) {
       const descriptor = session.terminals.find((terminal) => terminal.id === id);
+
       if (descriptor !== undefined) return { session, descriptor };
     }
+
     return undefined;
   }
 
-  private async resolve(request: SessionCreationRequest): Promise<ResolvedRequest> {
-    switch (request.kind) {
-      case "standalone": {
-        return {
-          name: request.name ?? basename(request.directory),
-          directory: request.directory,
-          backing: { kind: "folder" },
-        };
-      }
-
-      case "inProject": {
-        const project = this.requireProject(request.projectID);
-        // A folder project has no branch to check out, and running git against
-        // a directory that is not a repository would report git's confusion
-        // instead of ours.
-        if (request.branch !== undefined && !supportsWorktrees(project)) {
-          throw new WorktreesUnsupported(project.id);
-        }
-
-        return {
-          project,
-          // The branch, when there is one: it is what the user picked and what
-          // they will look for in the sidebar. The project's name otherwise.
-          name: request.name ?? request.branch ?? project.name,
-          directory: project.directory,
-          backing: { kind: "projectDirectory" },
-          ...(request.branch === undefined ? {} : { checkoutBranch: request.branch }),
-        };
-      }
-
-      case "newWorktree": {
-        const project = this.requireProject(request.projectID);
-        if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
-
-        // The name first, the branch second: the directory is named after what
-        // the user called the session, and the branch is only its default.
-        const name = request.name ?? request.branch;
-        const directory = request.directory ?? defaultWorktreeDirectory(project, name);
-        return {
-          project,
-          name,
-          directory,
-          backing: {
-            kind: "worktree",
-            binding: {
-              branch: request.branch,
-              // Equal to `directory` because the database refuses anything else,
-              // and re-pointed to git's own path once the worktree exists.
-              path: directory,
-              ownership: "managed",
-              includedPaths: [],
-            },
-          },
-          worktreePlan: {
-            branch: request.branch,
-            ...(request.startPoint === undefined ? {} : { startPoint: request.startPoint }),
-            ...(request.shareBranch === true ? { shareBranch: true } : {}),
-          },
-        };
-      }
-
-      case "adoptWorktree": {
-        const project = this.requireProject(request.projectID);
-        if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
-
-        const listed = await this.findWorktree(project.directory, request.directory);
-        if (listed === undefined) throw new NotAWorktree(request.directory);
-
-        return {
-          project,
-          // git's canonical path, not the one the dialog produced: on macOS those
-          // differ (`/var` against `/private/var`) and the session compares equal
-          // to neither if we keep the wrong one.
-          name: request.name ?? basename(listed.path),
-          directory: listed.path,
-          backing: {
-            kind: "worktree",
-            binding: {
-              ...(listed.branch === undefined ? {} : { branch: listed.branch }),
-              ...(listed.head === undefined ? {} : { baseCommit: listed.head }),
-              path: listed.path,
-              // Adopted, and therefore never deletable by us. It existed before
-              // Janela and we do not get to destroy it on a hunch.
-              ownership: "adopted",
-              includedPaths: [],
-            },
-          },
-        };
-      }
-
-      case "fromPullRequest": {
-        const project = this.requireProject(request.projectID);
-        if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
-        // An absent forge is this daemon having been composed without one, which
-        // from the user's side is the same thing as the integration not existing.
-        if (this.deps.forge === undefined) throw new PullRequestsNotSupported();
-
-        // Read-only, and never `gh pr checkout`: that would move the user's own
-        // checkout onto the pull request's branch. The branch feeds the ordinary
-        // worktree path instead.
-        const branch = await this.deps.forge.pullRequestBranch({
-          project,
-          number: request.number,
-        });
-        if (branch === undefined) throw new PullRequestUnavailable(request.number);
-
-        return this.resolve({
-          kind: "newWorktree",
-          projectID: project.id,
-          branch,
-          // `worktree add -b <branch> <dir>` with no start point silently
-          // branches off HEAD when the pull request's branch was never fetched;
-          // the remote-tracking ref fails honestly instead, with git's reason.
-          startPoint: `origin/${branch}`,
-        });
-      }
-    }
+  private resolve(request: SessionCreationRequest): Promise<ResolvedRequest> {
+    return Promise.resolve(
+      Match.value(request).pipe(
+        Match.discriminatorsExhaustive("kind")({
+          standalone: (standalone) => this.resolveStandalone(standalone),
+          inProject: (inProject) => this.resolveInProject(inProject),
+          newWorktree: (newWorktree) => this.resolveNewWorktree(newWorktree),
+          adoptWorktree: (adoptWorktree) => this.resolveAdoptWorktree(adoptWorktree),
+          fromPullRequest: (pullRequest) => this.resolveFromPullRequest(pullRequest),
+        }),
+      ),
+    );
   }
 
-  /** The listed worktree at `directory`, matched on git's canonical path too. */
+  private resolveStandalone(request: StandaloneRequest): ResolvedRequest {
+    return {
+      name: request.name ?? basename(request.directory),
+      directory: request.directory,
+      backing: { kind: "folder" },
+    };
+  }
+
+  private resolveInProject(request: InProjectRequest): ResolvedRequest {
+    const project = this.requireProject(request.projectID);
+
+    if (request.branch !== undefined && !supportsWorktrees(project)) {
+      throw new WorktreesUnsupported(project.id);
+    }
+
+    const resolved: MutableResolvedRequest = {
+      project,
+      name: request.name ?? request.branch ?? project.name,
+      directory: project.directory,
+      backing: { kind: "projectDirectory" },
+    };
+
+    if (request.branch !== undefined) resolved.checkoutBranch = request.branch;
+
+    return resolved;
+  }
+
+  private resolveNewWorktree(request: NewWorktreeRequest): ResolvedRequest {
+    const project = this.requireProject(request.projectID);
+
+    if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+
+    const name = request.name ?? request.branch;
+    const directory = request.directory ?? defaultWorktreeDirectory(project, name);
+
+    const worktreePlan: MutableWorktreePlan = { branch: request.branch };
+
+    if (request.startPoint !== undefined) worktreePlan.startPoint = request.startPoint;
+
+    if (request.shareBranch === true) worktreePlan.shareBranch = true;
+
+    return {
+      project,
+      name,
+      directory,
+      backing: {
+        kind: "worktree",
+        binding: {
+          branch: request.branch,
+          path: directory,
+          ownership: "managed",
+          includedPaths: [],
+        },
+      },
+      worktreePlan,
+    };
+  }
+
+  private async resolveAdoptWorktree(request: AdoptWorktreeRequest): Promise<ResolvedRequest> {
+    const project = this.requireProject(request.projectID);
+
+    if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+
+    const listed = await this.findWorktree(project.directory, request.directory);
+
+    if (listed === undefined) throw new NotAWorktree(request.directory);
+
+    const binding: WorktreeBinding = {
+      path: listed.path,
+      ownership: "adopted",
+      includedPaths: [],
+    };
+
+    if (listed.branch !== undefined) binding.branch = listed.branch;
+
+    if (listed.head !== undefined) binding.baseCommit = listed.head;
+
+    return {
+      project,
+      name: request.name ?? basename(listed.path),
+      directory: listed.path,
+      backing: { kind: "worktree", binding },
+    };
+  }
+
+  private async resolveFromPullRequest(request: PullRequestRequest): Promise<ResolvedRequest> {
+    const project = this.requireProject(request.projectID);
+
+    if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
+
+    if (this.deps.forge === undefined) throw new PullRequestsNotSupported();
+
+    const branch = await this.deps.forge.pullRequestBranch({ project, number: request.number });
+
+    if (branch === undefined) throw new PullRequestUnavailable(request.number);
+
+    return this.resolveNewWorktree({
+      kind: "newWorktree",
+      projectID: project.id,
+      branch,
+      startPoint: `origin/${branch}`,
+    });
+  }
+
   private async findWorktree(
     repository: AbsolutePath,
     directory: AbsolutePath,
   ): Promise<GitWorktree | undefined> {
     const listed = await this.deps.worktrees.worktrees(repository);
     const canonical = await canonicalPath(directory);
+
     return listed.find((entry) => entry.path === directory || entry.path === canonical);
   }
 
-  /**
-   * Creates the worktree the session already promises.
-   *
-   * Persist-first means a crash between the record and the directory leaves a
-   * session pointing at nothing; a failure we *see* rolls the record back, so the
-   * user is not left with a session they cannot open and did not ask for.
-   */
-  private async addWorktree(
-    session: Session,
-    project: Project,
-    plan: {
-      readonly branch: string;
-      readonly startPoint?: string;
-      readonly shareBranch?: boolean;
-    },
-  ): Promise<void> {
-    let created;
-    try {
-      created = await this.deps.worktrees.createWorktree({
-        repository: project.directory,
-        directory: session.directory,
-        branch: plan.branch,
-        ...(plan.startPoint === undefined ? {} : { startPoint: plan.startPoint }),
-        // The user was told the branch would be shared; git needs `--force` to
-        // allow it, and nothing else here asks for it.
-        ...(plan.shareBranch === true ? { force: true } : {}),
-      });
-    } catch (error) {
-      this.known = this.known.filter((candidate) => candidate.id !== session.id);
-      await this.deps.repository.remove(session.id);
-      await this.publish();
-      // The `GitFailure` is user-facing and says which git subcommand refused,
-      // which is more useful than anything we could add.
-      throw error;
-    }
+  private addWorktree(session: Session, project: Project, plan: WorktreePlan): Promise<void> {
+    const request: MutableCreateWorktreeRequest = {
+      repository: project.directory,
+      directory: session.directory,
+      branch: plan.branch,
+    };
 
+    if (plan.startPoint !== undefined) request.startPoint = plan.startPoint;
+
+    if (plan.shareBranch === true) request.force = true;
+
+    return Effect.runPromise(
+      Effect.scoped(
+        Effect.acquireRelease(Effect.succeed(session.id), (id, exit) =>
+          Exit.isSuccess(exit) ? Effect.void : Effect.promise(() => this.forgetSession(id)),
+        ).pipe(
+          Effect.flatMap(() =>
+            Effect.tryPromise({
+              try: () => this.deps.worktrees.createWorktree(request),
+              catch: (cause: unknown) => cause,
+            }),
+          ),
+          Effect.flatMap((created) =>
+            Effect.promise(() => this.bindWorktree(session, created, plan.branch)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  private async bindWorktree(
+    session: Session,
+    created: GitWorktree,
+    branch: string,
+  ): Promise<void> {
     const binding: WorktreeBinding = {
-      branch: created.branch ?? plan.branch,
-      ...(created.head === undefined ? {} : { baseCommit: created.head }),
+      branch: created.branch ?? branch,
       path: created.path,
       ownership: "managed",
       includedPaths: [],
     };
+
+    if (created.head !== undefined) binding.baseCommit = created.head;
+
     session.directory = created.path;
     session.backing = { kind: "worktree", binding };
     await this.deps.repository.save(session);
     await this.publish();
   }
 
-  /**
-   * `.worktreeinclude`, before any automation.
-   *
-   * A copy failure is logged and creation continues: an `.env` that did not arrive
-   * costs the user a copy they can make themselves, and refusing the session over
-   * it costs them the terminal.
-   */
-  private async copyIncludedPaths(session: Session, project: Project): Promise<void> {
+  private copyIncludedPaths(session: Session, project: Project): Promise<void> {
     const include = this.deps.include;
-    if (include === undefined) return;
 
-    try {
-      const paths = await include.resolve(project.directory);
-      if (paths.length === 0) return;
+    if (include === undefined) return Promise.resolve();
 
-      const report = await include.copy({
-        repository: project.directory,
-        worktree: session.directory,
-        paths,
-      });
+    return Effect.runPromise(
+      Effect.tryPromise({
+        try: () => this.copyAndRecord(include, session, project),
+        catch: (cause: unknown) => cause,
+      }).pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            this.log.warning("worktreeinclude copy failed", { session: session.id });
+          }),
+        ),
+      ),
+    );
+  }
 
-      const binding = worktreeOf(session);
-      if (binding === undefined) return;
-      // Recorded at creation rather than recomputed at deletion, so the removal
-      // dialog can name the 400 MB `node_modules` it is about to take with it.
-      binding.includedPaths = report.copied;
-      await this.deps.repository.save(session);
-      await this.publish();
-    } catch {
-      this.log.warning("worktreeinclude copy failed", { session: session.id });
-    }
+  private async copyAndRecord(
+    include: WorktreeIncluding,
+    session: Session,
+    project: Project,
+  ): Promise<void> {
+    const paths = await include.resolve(project.directory);
+
+    if (paths.length === 0) return;
+
+    const report = await include.copy({
+      repository: project.directory,
+      worktree: session.directory,
+      paths,
+    });
+
+    const binding = worktreeOf(session);
+
+    if (binding === undefined) return;
+
+    binding.includedPaths = report.copied;
+    await this.deps.repository.save(session);
+    await this.publish();
   }
 
   private async runAutomation(
-    event: "worktreeCreated" | "sessionStart" | "sessionTeardown",
+    event: AutomationEvent,
     project: Project,
     session: Session,
   ): Promise<void> {
     const automation = this.deps.automation;
+
     if (automation === undefined) return;
 
-    try {
-      await automation.run({
-        event,
-        project,
-        session,
-        // The sink: each automation terminal is appended, persisted and announced
-        // *before* its process starts, which is what "automation is visible"
-        // means for a teardown the user is watching.
-        attach: (descriptor) => this.attachAutomationTerminal(session, descriptor),
-      });
-    } catch {
-      // Visible and non-fatal, by product rule: the command's own terminal shows
-      // what happened, and the session is still usable.
+    const ran = await Effect.runPromise(
+      Effect.tryPromise({
+        try: () =>
+          automation.run({
+            event,
+            project,
+            session,
+            attach: (descriptor) => this.attachAutomationTerminal(session, descriptor),
+          }),
+        catch: (cause: unknown) => cause,
+      }).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true })),
+    );
+
+    if (!ran) {
       this.log.warning("automation failed", { session: session.id, event });
+
       return;
     }
+
     await this.publish();
   }
 
-  /**
-   * The user's first terminal: configured, not started.
-   *
-   * Laziness is a feature — a configured terminal costs nothing until something
-   * asks for it — and `startsAutomatically` is what tells the opening client to
-   * ask.
-   */
   private async addFirstTerminal(session: Session, project: Project | undefined): Promise<void> {
     const profileID = project?.settings.defaultProfileID;
     const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
@@ -1043,26 +877,18 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     const descriptor: TerminalDescriptor = {
       id: newTerminalID(),
       title: profile?.name ?? "Shell",
-      // Only when the profile still exists: the column is a foreign key, and a
-      // terminal with no profile falls back to the login shell.
-      ...(profile === undefined ? {} : { profileID: profile.id }),
       startsAutomatically: true,
       role: { kind: "user" },
       createdAt: now(),
     };
+
+    if (profile !== undefined) descriptor.profileID = profile.id;
 
     this.appendTerminalTab(session, descriptor, { focus: true });
     await this.deps.repository.save(session);
     await this.publish();
   }
 
-  /**
-   * An automation terminal, visible before its process starts.
-   *
-   * Persisted as well as announced: the `sessionStart` descriptor *is* the record
-   * that the event has fired, so a daemon restart must find it in the database
-   * rather than re-run `pnpm dev`.
-   */
   private async attachAutomationTerminal(
     session: Session,
     descriptor: TerminalDescriptor,
@@ -1072,13 +898,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     await this.publish();
   }
 
-  /**
-   * Appends a terminal as its own tab.
-   *
-   * Focus is a parameter because the two callers disagree for a reason: the user
-   * asked for their own terminal, and an automation command starting while they
-   * read the output of the last one must not steal the tab out from under them.
-   */
   private appendTerminalTab(
     session: Session,
     descriptor: TerminalDescriptor,
@@ -1094,12 +913,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     };
   }
 
-  /**
-   * The `LiveTerminal` for a descriptor: resolved launch, no process yet.
-   *
-   * Named for what it returns rather than "createTerminal", which is the public
-   * method a client calls to add one to a session.
-   */
   private async liveTerminalFor(
     session: Session,
     descriptor: TerminalDescriptor,
@@ -1110,38 +923,33 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
         : await this.deps.profiles.find(descriptor.profileID);
     const project = this.projectOf(session);
 
-    const launch = await resolveTerminalLaunch({
+    const input: MutableLaunchInput = {
       session,
       terminal: descriptor,
-      ...(project === undefined ? {} : { project }),
-      ...(profile === undefined ? {} : { profile }),
       shell: this.deps.shell,
       processes: this.processes,
-    });
+    };
 
+    if (project !== undefined) input.project = project;
+
+    if (profile !== undefined) input.profile = profile;
+
+    const launch = await resolveTerminalLaunch(input);
     const create = this.deps.createTerminal ?? createLiveTerminal;
-    return create({
-      descriptor,
-      sessionID: session.id,
-      launch,
-      ...(this.deps.log === undefined ? {} : { log: this.deps.log }),
-    });
+
+    return create({ descriptor, sessionID: session.id, launch, log: this.log });
   }
 
-  /**
-   * Whether deleting this session's directory would lose work.
-   *
-   * `hasRunningSessions` is ours to answer and only ours: git cannot know what is
-   * live, so `WorktreeServing` always reports false and we overwrite it.
-   */
   private async safetyFor(
     session: Session,
     project: Project | undefined,
     live: number,
   ): Promise<WorktreeRemovalSafety> {
     const binding = worktreeOf(session);
+
     if (binding !== undefined && project !== undefined) {
       const listed = await this.findWorktree(project.directory, session.directory);
+
       if (listed !== undefined) {
         return {
           ...(await this.deps.worktrees.removalSafety(listed)),
@@ -1150,8 +958,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       }
     }
 
-    // Not a worktree, or git has lost it. Nothing git-shaped is at risk, and the
-    // only honest flag left is the one we own.
     return {
       hasUncommittedChanges: false,
       hasUntrackedFiles: false,
@@ -1159,14 +965,5 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       isLocked: false,
       hasRunningSessions: live > 0,
     };
-  }
-}
-
-/** `realpath`, or the path itself when it does not resolve. */
-async function canonicalPath(directory: AbsolutePath): Promise<string> {
-  try {
-    return await realpath(directory);
-  } catch {
-    return directory;
   }
 }

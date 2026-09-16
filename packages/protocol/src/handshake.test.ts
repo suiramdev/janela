@@ -40,6 +40,7 @@ describe("handshake compatibility", () => {
 
   test("the shipped range is self-compatible, so two current peers connect", () => {
     const current = hello(PROTOCOL_VERSION, MINIMUM_SUPPORTED_VERSION);
+
     expect(isCompatible(current, current)).toBe(true);
   });
 });

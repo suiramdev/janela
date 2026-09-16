@@ -10,17 +10,6 @@ import type {
 } from "@janela/core";
 import type { StateUpdate } from "@janela/protocol";
 
-/**
- * The mirror a client renders.
- *
- * A mirror of daemon state, not an owner of it. These were main-thread-isolated
- * observable classes; here they are plain observable stores the view layer
- * subscribes to. The isolation rule that pinned them to a thread is gone — a WebView
- * has one — but the *ownership* rule it protected is unchanged, and that was the
- * only part that mattered.
- *
- * Note the split of ownership below: `sessions` is the daemon's, `selection` is not.
- */
 export interface ProjectStore {
   readonly projects: readonly Project[];
   find(id: ProjectID): Project | undefined;
@@ -30,128 +19,62 @@ export interface ProjectStore {
 export interface SessionStore {
   readonly sessions: readonly Session[];
 
-  /**
-   * Purely local. Never sent to the daemon, never received from it.
-   *
-   * Selection is per-client state: two clients attached to the same daemon look at
-   * different sessions, which is the entire point of being able to open Janela on a
-   * phone while a Mac window is open.
-   *
-   * The user is not the only one who sets it. When they have not chosen — a fresh
-   * window, or the session they chose has been removed — `apply` answers instead,
-   * from what the mirror already carries. That is still local: nothing is sent,
-   * nothing is persisted, and the answer is recomputed from scratch next launch.
-   */
   selection: SessionID | undefined;
 
-  /** Per-terminal status, as last reported. */
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
 
   inProject(id: ProjectID): readonly Session[];
   readonly standaloneSessions: readonly Session[];
 
-  /**
-   * Every launch profile the daemon knows, in its order.
-   *
-   * Here rather than in a store of their own because a profile is only ever read
-   * alongside a session — the ⌘T picker, the settings window, the profile a split
-   * inherits — and a second store would be a second notification for one apply.
-   */
   readonly launchProfiles: readonly LaunchProfile[];
 
-  /** Whether each profile's executable was found on this machine, as reported. */
   readonly launchProfileAvailability: LaunchProfileAvailability;
 
-  /**
-   * Whether a session has any live terminal.
-   *
-   * Derived from what the daemon reported, never inferred from what this client did.
-   * A session whose terminals we have not heard about is not running as far as we
-   * are concerned, and rendering it as running would be a lie we invented.
-   */
   isRunning(id: SessionID): boolean;
 
   subscribe(listener: () => void): () => void;
 }
 
-/**
- * Applies a state update.
- *
- * The only way either collection ever changes. There is no local mutation path,
- * deliberately: "collapse this project" is a *request*, and the collapse renders
- * when the daemon confirms it.
- */
+export interface Stores {
+  readonly projects: ProjectStore;
+  readonly sessions: SessionStore;
+  readonly mirror: MirrorApplying;
+}
+
 export interface MirrorApplying {
   apply(update: StateUpdate): void;
-  /** Marks the mirror stale without discarding it. Called on disconnect. */
   markStale(): void;
 
-  /**
-   * True when the mirror predates the current connection.
-   *
-   * Held here rather than in the connection because staleness is a fact about the
-   * *mirror*: a full snapshot is what clears it, and a full snapshot only ever
-   * arrives here. `DaemonConnection.isStale` reads this one, so there is one
-   * source and the reconnecting strip cannot disagree with what is on screen.
-   * Starts true — an empty mirror predates every connection.
-   */
   readonly isStale: boolean;
 
-  /**
-   * Whether any session in the mirror owns this terminal.
-   *
-   * The connection needs it to tell a *detach race* — output for a terminal the
-   * mirror knows but nobody is watching, which is dropped — from a protocol
-   * violation, which closes the connection (`unknownTerminal` in `frame.ts`).
-   * The stores are the only place that knows which terminals exist, so the
-   * question is answered here rather than by the connection keeping a second
-   * table that could drift.
-   */
   hasTerminal(id: TerminalID): boolean;
 }
 
-/**
- * Merges `incoming` into `existing` by id, preserving order.
- *
- * A partial update names only what changed, so an empty collection means
- * "unchanged" and returns the *same reference* — which is what lets a
- * `useSyncExternalStore` consumer skip a re-render without comparing contents.
- * An updated item keeps its position; a new one goes last, and the next full
- * snapshot restores the daemon's canonical order.
- *
- * Generic over `Project` and `Session` rather than written twice: the merge is a
- * property of "collection of things with ids", and two copies would be two places
- * for the order rule to drift.
- */
 function mergeByID<T extends { readonly id: string }>(
   existing: readonly T[],
   incoming: readonly T[],
 ): readonly T[] {
   if (incoming.length === 0) return existing;
 
-  // Last duplicate wins, and the map's insertion order is the append order below.
   const byID = new Map<string, T>();
+
   for (const item of incoming) byID.set(item.id, item);
 
   const known = new Set<string>();
+
   const next = existing.map((item) => {
     known.add(item.id);
+
     return byID.get(item.id) ?? item;
   });
+
   for (const [id, item] of byID) {
     if (!known.has(id)) next.push(item);
   }
+
   return next;
 }
 
-/**
- * The session to select when a full snapshot proves the selected one is gone.
- *
- * The one *after* it in the old order, else the one before, else the first of
- * whatever is left. Dropping the user into an empty detail pane because a
- * different session was deleted is a bug they notice; so is jumping to the top of
- * the sidebar when the neighbour is right there.
- */
 function neighbourOf(
   previous: readonly Session[],
   removedID: SessionID,
@@ -161,81 +84,57 @@ function neighbourOf(
     next.some((candidate) => candidate.id === session.id);
 
   const index = previous.findIndex((session) => session.id === removedID);
+
   if (index >= 0) {
     for (let after = index + 1; after < previous.length; after += 1) {
       const candidate = previous[after];
+
       if (candidate !== undefined && survives(candidate)) return candidate.id;
     }
+
     for (let before = index - 1; before >= 0; before -= 1) {
       const candidate = previous[before];
+
       if (candidate !== undefined && survives(candidate)) return candidate.id;
     }
   }
+
   return next[0]?.id;
 }
 
-/**
- * The session to look at when the user has not chosen one.
- *
- * The moment this exists for: you quit Janela, your agent kept running, you came
- * back. Selection is local view state, so a relaunch starts with none — and the
- * first frame that shows the surviving session must show it *selected*, not an
- * empty pane beside a green dot (#46). "The only session there is" is the case
- * that matters and it falls out of this rule for free.
- *
- * `lastActiveAt` is the daemon's, moved when a terminal starts, and it survives a
- * daemon restart in the database — so this is read from the mirror rather than
- * remembered, and needs no new field, no wire message and no persistence.
- *
- * Compared as strings because `instant()` canonicalises every `Instant` to
- * `YYYY-MM-DDTHH:MM:SS.mmmZ`, which makes lexical order chronological order. The
- * comparison is strict, so sessions of equal age resolve to the first in the
- * daemon's own order rather than the last.
- */
 function mostRecentlyActive(candidates: readonly Session[]): SessionID | undefined {
   let best: Session | undefined;
+
   for (const candidate of candidates) {
     if (best === undefined || candidate.lastActiveAt > best.lastActiveAt) best = candidate;
   }
+
   return best?.id;
 }
 
-/**
- * Mirrors `isLiveState` in `@janela/terminal`, which is daemon-side and therefore
- * unreachable from here. Both exist because `isLive` in `@janela/core` is still a
- * seam; when it lands, both call it.
- */
 function isLiveState(state: TerminalState | undefined): boolean {
   return state !== undefined && (state.kind === "running" || state.kind === "needsAttention");
 }
 
-export function createStores(): {
-  readonly projects: ProjectStore;
-  readonly sessions: SessionStore;
-  readonly mirror: MirrorApplying;
-} {
+export function createStores(): Stores {
   let projects: readonly Project[] = [];
   let sessions: readonly Session[] = [];
-  let terminalStates: Readonly<Record<TerminalID, TerminalState>> = {};
+  let terminalStates: StateUpdate["terminalStates"] = {};
   let launchProfiles: readonly LaunchProfile[] = [];
   let launchProfileAvailability: LaunchProfileAvailability = {};
   let selection: SessionID | undefined;
   let stale = true;
-  /** Recomputed only when `sessions` changes; the sidebar reads it every render. */
   let standalone: readonly Session[] = [];
 
-  // One set for both stores: one `apply` is one notification, and a view that
-  // reads sessions *and* projects must not see a half-applied update.
   const listeners = new Set<() => void>();
 
   const notify = (): void => {
-    // `Set` iteration tolerates removal: a listener that unsubscribes itself
-    // during the walk is simply not visited again.
     for (const listener of listeners) listener();
   };
 
   const subscribe = (listener: () => void): (() => void) => {
     listeners.add(listener);
+
     return () => {
       listeners.delete(listener);
     };
@@ -259,6 +158,7 @@ export function createStores(): {
       },
       set selection(next: SessionID | undefined) {
         if (selection === next) return;
+
         selection = next;
         notify();
       },
@@ -277,7 +177,9 @@ export function createStores(): {
       },
       isRunning(id: SessionID): boolean {
         const session = sessions.find((candidate) => candidate.id === id);
+
         if (session === undefined) return false;
+
         return session.terminals.some((terminal) => isLiveState(terminalStates[terminal.id]));
       },
       subscribe,
@@ -290,54 +192,41 @@ export function createStores(): {
         if (update.isFullSnapshot) {
           projects = [...update.projects];
           sessions = [...update.sessions];
-          // Replaced, not merged: a key absent from a full snapshot is a terminal
-          // that no longer exists, and keeping its last state would render a dead
-          // terminal as running.
           terminalStates = { ...update.terminalStates };
-          // Same reason: a profile absent from a full snapshot was deleted, and a
-          // merge would leave it in the picker forever.
           launchProfiles = [...update.launchProfiles];
           launchProfileAvailability = { ...update.launchProfileAvailability };
 
           if (selection !== undefined && !sessions.some((session) => session.id === selection)) {
             selection = neighbourOf(previous, selection, sessions);
           }
+
           stale = false;
         } else {
           projects = mergeByID(projects, update.projects);
           sessions = mergeByID(sessions, update.sessions);
+
           if (Object.keys(update.terminalStates).length > 0) {
             terminalStates = { ...terminalStates, ...update.terminalStates };
           }
+
           if (update.launchProfiles.length > 0) {
             launchProfiles = mergeByID(launchProfiles, update.launchProfiles);
           }
+
           if (Object.keys(update.launchProfileAvailability).length > 0) {
             launchProfileAvailability = {
               ...launchProfileAvailability,
               ...update.launchProfileAvailability,
             };
           }
-          // Selection survives: the selected session may simply not have changed.
-          // Only a full snapshot proves it is gone.
         }
 
-        // Seeded, never remembered. A mirror holding sessions must not render with
-        // nothing selected: on the first snapshot after a relaunch that is the
-        // session whose agent the user came back for (#46). Outside the branches
-        // above because the rule is about the mirror having sessions at all, not
-        // about how it learned of them — and inside `apply`, before the single
-        // notification, so the first render that knows the session exists already
-        // has it selected rather than flashing an empty pane and correcting itself.
         if (selection === undefined) selection = mostRecentlyActive(sessions);
 
         if (sessions !== previous) {
           standalone = sessions.filter((session) => session.projectID === undefined);
         }
 
-        // Every apply notifies, even one that changed nothing: the references are
-        // stable when nothing changed, so a consumer comparing them re-renders
-        // nothing, and the alternative is a dirty-check on every field here.
         notify();
       },
 

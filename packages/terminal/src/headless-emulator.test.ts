@@ -1,20 +1,7 @@
-/**
- * The emulator, tested the way docs/testing.md says to: **two emulators**.
- *
- * Feed bytes to one, encode a repaint, feed the result to a second, and assert
- * the two grids are identical — cell by cell, attributes included, plus the
- * cursor and which buffer is active. That is the only assertion that means
- * "reattaching is correct rather than lucky"; comparing byte strings would pin
- * the encoder's mood instead.
- *
- * The receiver is a raw `@xterm/headless` terminal, not another `HeadlessEmulator`,
- * because a client renders with a stock emulator and that is the thing that has to
- * agree with us.
- */
-
 import { describe, expect, test } from "bun:test";
 
 import { Terminal } from "@xterm/headless";
+import { Predicate } from "effect";
 
 import { createEmulator, HeadlessEmulator, SCROLL_RING } from "./headless-emulator.ts";
 import {
@@ -25,27 +12,46 @@ import {
   type TerminalNotification,
 } from "./terminal-emulating.ts";
 
+interface Step {
+  readonly feed: string;
+  readonly fullAllowed: boolean;
+}
+
+interface Delta {
+  readonly text: string;
+  readonly length: number;
+}
+
+interface RecordingSink extends TerminalEventSink {
+  readonly titles: string[];
+  readonly directories: string[];
+  readonly notifications: TerminalNotification[];
+  readonly marks: PromptMark[];
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const FULL_REPAINT_PREFIX = "\x1bc";
+
+const SET_WINDOW_SIZE_CHARS = 8;
+
 function emulator(columns: number, rows: number, scrollback = 100): HeadlessEmulator {
-  return new HeadlessEmulator({ columns, rows }, scrollback);
+  return new HeadlessEmulator({ columns, rows }, scrollback, { rowHints: true });
 }
 
-/** Feeds a string through the production path. */
 function feed(target: HeadlessEmulator, data: string): void {
   target.feed(encoder.encode(data));
 }
 
-/**
- * A stock receiver, as a client would run one — including the one thing a client
- * has to supply itself.
- *
- * `windowOptions.setWinSizeChars` is the gate the library checks before any
- * handler sees `CSI 8 t`, and it implements no case for parameter 8 behind it, so
- * the resize is the client's. This mirrors `xtermRendering` in
- * `packages/terminal-ui`, which is the real thing; keep the two in step.
- */
+function delta(feedBytes: string): Step {
+  return { feed: feedBytes, fullAllowed: false };
+}
+
+function fullRepaintIsAllowed(feedBytes: string): Step {
+  return { feed: feedBytes, fullAllowed: true };
+}
+
 function receiver(columns: number, rows: number): Terminal {
   const target = new Terminal({
     cols: columns,
@@ -55,13 +61,18 @@ function receiver(columns: number, rows: number): Terminal {
     windowOptions: { setWinSizeChars: true },
   });
   target.parser.registerCsiHandler({ final: "t" }, (parameters) => {
-    if (parameters[0] !== 8) return false;
+    if (parameters[0] !== SET_WINDOW_SIZE_CHARS) return false;
+
     const announcedRows = parameters[1];
     const announcedColumns = parameters[2];
-    if (typeof announcedRows !== "number" || typeof announcedColumns !== "number") return true;
+
+    if (!Predicate.isNumber(announcedRows) || !Predicate.isNumber(announcedColumns)) return true;
+
     target.resize(announcedColumns, announcedRows);
+
     return true;
   });
+
   return target;
 }
 
@@ -71,52 +82,66 @@ function replay(target: Terminal, bytes: Uint8Array): Promise<void> {
   });
 }
 
-/**
- * Every cell's character and attributes, plus the cursor and the active buffer.
- *
- * Ported from `spikes/emulator-xterm/round-trip.ts`, which is what established
- * that the serialise-and-replay approach holds for an alternate-screen TUI.
- */
 function dumpGrid(target: Terminal): string {
   const buffer = target.buffer.active;
   const out: string[] = [];
+
   for (let y = 0; y < target.rows; y += 1) {
     const line = buffer.getLine(buffer.viewportY + y);
+
     if (line === undefined) {
       out.push("");
+
       continue;
     }
+
     let row = "";
+
     for (let x = 0; x < target.cols; x += 1) {
       const cell = line.getCell(x);
+
       if (cell === undefined) {
         continue;
       }
-      // Every attribute, not a selection: a dump that omitted `isDim` let a
-      // delta leave the client's cell dim when the source's was not, and the
-      // round trip could not see it.
+
       row +=
         `${cell.getChars() || " "}|${cell.getFgColor()}/${cell.getBgColor()}/` +
         `${cell.isBold()}${cell.isDim()}${cell.isItalic()}${cell.isUnderline()}` +
         `${cell.isBlink()}${cell.isInverse()}${cell.isInvisible()}` +
         `${cell.isStrikethrough()}${cell.isOverline()} `;
     }
+
     out.push(row.trimEnd());
   }
+
   return `${out.join("\n")}\n@cursor ${buffer.cursorX},${buffer.cursorY} @buffer ${buffer.type}`;
 }
 
-/** Records everything the emulator reports, in order. */
-function recordingSink(): TerminalEventSink & {
-  readonly titles: string[];
-  readonly directories: string[];
-  readonly notifications: TerminalNotification[];
-  readonly marks: PromptMark[];
-} {
+function dumpModes(target: Terminal): string {
+  return JSON.stringify(target.modes);
+}
+
+function history(target: Terminal): string[] {
+  const buffer = target.buffer.active;
+  const lines: string[] = [];
+
+  for (let y = 0; y < buffer.baseY; y += 1) {
+    lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+  }
+
+  return lines;
+}
+
+function escape(text: string): string {
+  return text.replaceAll("\x1b", "\\e").replaceAll("\r", "\\r").replaceAll("\n", "\\n");
+}
+
+function recordingSink(): RecordingSink {
   const titles: string[] = [];
   const directories: string[] = [];
   const notifications: TerminalNotification[] = [];
   const marks: PromptMark[] = [];
+
   return {
     titles,
     directories,
@@ -134,8 +159,6 @@ function recordingSink(): TerminalEventSink & {
 
 describe("feed", () => {
   test("parses synchronously, so a reused drain buffer is safe to pass by reference", () => {
-    // `TerminalBytes` is a view into a buffer the PTY layer reuses every frame. If
-    // the emulator parsed it later, the bytes would already be someone else's.
     const target = emulator(20, 3);
     const bytes = encoder.encode("hello world");
     const before = target.revision;
@@ -150,6 +173,7 @@ describe("feed", () => {
   test("an empty chunk changes nothing", () => {
     const target = emulator(20, 3);
     feed(target, "text");
+
     const revision = target.revision;
 
     target.feed(new Uint8Array(0));
@@ -157,7 +181,7 @@ describe("feed", () => {
     expect(target.revision).toBe(revision);
   });
 
-  test("repaintSince returns the same empty view when nothing changed", () => {
+  test("repaintSince returns the same shared empty view when nothing changed", () => {
     const target = emulator(20, 3);
     feed(target, "text");
 
@@ -165,8 +189,6 @@ describe("feed", () => {
     const second = target.repaintSince(target.revision);
 
     expect(first).toHaveLength(0);
-    // Polled once per frame per attached client: "nothing changed" must not
-    // allocate.
     expect(second).toBe(first);
   });
 });
@@ -194,11 +216,13 @@ describe("scrollback", () => {
 });
 
 describe("clearScrollback", () => {
-  test("drops history and leaves the visible screen alone", () => {
+  test("drops history, leaves the visible screen alone, and still bumps the revision", () => {
     const target = emulator(20, 3, 50);
+
     for (let line = 0; line < 20; line += 1) {
       feed(target, `line ${line}\r\n`);
     }
+
     const visible = target.snapshotText({ includeScrollback: false });
     const revision = target.revision;
 
@@ -206,8 +230,6 @@ describe("clearScrollback", () => {
 
     expect(target.snapshotText({ includeScrollback: false })).toBe(visible);
     expect(target.snapshotText({ includeScrollback: true })).toBe(visible);
-    // A mirror has to be told the buffer changed, or its next repaint is a
-    // no-op over a scrollback it still believes in.
     expect(target.revision).toBeGreaterThan(revision);
   });
 });
@@ -223,14 +245,13 @@ describe("events", () => {
     expect(sink.notifications).toEqual([{}]);
   });
 
-  test("OSC 9 and OSC 777 are attention with text", () => {
+  test("OSC 9 and OSC 777 are attention with text, and a ConEmu progress bar is neither", () => {
     const target = emulator(20, 3);
     const sink = recordingSink();
     target.events = sink;
 
     feed(target, "\x1b]9;hi\x07\x1b]777;notify;t;b\x07\x1b]9;4;1;50\x07");
 
-    // The last one is a ConEmu progress bar and must not badge a session.
     expect(sink.notifications).toEqual([{ body: "hi" }, { title: "t", body: "b" }]);
   });
 
@@ -288,15 +309,16 @@ describe("events", () => {
 });
 
 describe("round trip", () => {
-  /** The spike's alternate-screen TUI: the attach case that actually matters. */
   function paintAlternateScreenTui(target: HeadlessEmulator): void {
     feed(target, "\x1b[?1049h\x1b[2J\x1b[H");
+
     for (let row = 1; row <= 30; row += 1) {
       feed(
         target,
         `\x1b[${row};1H\x1b[4${row % 8}m row ${String(row).padStart(2)} \x1b[0m${"·".repeat(40)}`,
       );
     }
+
     feed(target, "\x1b[15;25H\x1b[1;97;41m [ MODAL ] \x1b[0m");
     feed(target, "\x1b[30;1H\x1b[7m -- INSERT --                    \x1b[0m");
     feed(target, "\x1b[5;12H");
@@ -317,10 +339,6 @@ describe("round trip", () => {
   });
 
   test("successive repaints stay correct on a receiver that is already populated", async () => {
-    // The reason every repaint carries RIS. `SerializeAddon` emits relative cursor
-    // moves and only ever *sets* modes, so replaying it onto a screen that already
-    // has content diverges — the second assertion here is the one that fails
-    // without the reset prefix.
     const source = emulator(100, 30);
     const target = receiver(100, 30);
     paintAlternateScreenTui(source);
@@ -332,9 +350,11 @@ describe("round trip", () => {
 
     const seen = source.revision;
     feed(source, "\x1b[?1049l\x1b[?1h\x1b[2J\x1b[Hback on the normal screen\r\nsecond line");
+
     const repaint = source.repaintSince(seen);
 
     expect(repaint.length).toBeGreaterThan(0);
+
     await replay(target, repaint);
 
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
@@ -342,9 +362,6 @@ describe("round trip", () => {
   });
 
   test("a receiver at the wrong size learns the negotiated grid from the repaint", async () => {
-    // The letterbox case, end to end at the byte level: the daemon has resolved
-    // the minimum of two viewports to 40×12 and the larger client is still 127×45.
-    // Nothing else in the stream says so, so the repaint has to.
     const source = emulator(127, 45);
     source.resize({ columns: 40, rows: 12 });
     feed(source, "\x1b[H\x1b[2Jthis line is forty columns wide, and it wraps at forty");
@@ -375,9 +392,7 @@ describe("resize", () => {
     expect(target.revision).toBe(0);
   });
 
-  test("reports what the emulator actually holds when it clamps", () => {
-    // xterm refuses to go below 2×1. Reporting the request rather than the result
-    // would make the negotiated PTY size and the grid disagree.
+  test("reports what the emulator actually holds when it clamps below two by one", () => {
     const target = emulator(80, 24);
 
     target.resize({ columns: 1, rows: 0 });
@@ -386,107 +401,74 @@ describe("resize", () => {
   });
 });
 
-/** The modes a client has to mirror, as the library reports them. */
-function dumpModes(target: Terminal): string {
-  return JSON.stringify(target.modes);
-}
-
-/** Scrollback only: the lines that have left the screen, oldest first. */
-function history(target: Terminal): string[] {
-  const buffer = target.buffer.active;
-  const lines: string[] = [];
-  for (let y = 0; y < buffer.baseY; y += 1) {
-    lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
-  }
-  return lines;
-}
-
-/** Readable in a failure message: which step of a corpus disagreed. */
-function escape(text: string): string {
-  return text.replaceAll("\x1b", "\\e").replaceAll("\r", "\\r").replaceAll("\n", "\\n");
-}
-
-/**
- * The damage encoder, tested the way the placeholder was: two emulators, and the
- * assertion is that they agree.
- *
- * Each case feeds the source in steps, encodes the delta for a client that saw
- * the previous step, replays it onto a stock receiver and compares the grids and
- * the modes. A step marked `full` is one where a full repaint is the sanctioned
- * answer — a buffer switch, a resize, a RIS — and every other step must be a
- * delta, which is what `expect(text.startsWith(FULL_RESET))` pins.
- */
 describe("damage encoder", () => {
-  /** A step, and whether a full repaint is the correct answer to it. */
-  type Step = string | { readonly feed: string; readonly full: true };
-
   async function roundTrip(
     source: HeadlessEmulator,
     target: Terminal,
     steps: readonly Step[],
-  ): Promise<{ text: string; length: number }[]> {
+  ): Promise<Delta[]> {
     await replay(target, source.fullRepaint());
+
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+
     let seen = source.revision;
-    const deltas: { text: string; length: number }[] = [];
+    const deltas: Delta[] = [];
+
     for (const step of steps) {
-      const bytes = typeof step === "string" ? step : step.feed;
-      const fullAllowed = typeof step !== "string";
-      feed(source, bytes);
-      const delta = source.repaintSince(seen);
-      const text = decoder.decode(delta);
-      if (!fullAllowed) {
-        expect({ step: escape(bytes), full: text.startsWith("\x1bc") }).toEqual({
-          step: escape(bytes),
+      feed(source, step.feed);
+
+      const bytes = source.repaintSince(seen);
+      const text = decoder.decode(bytes);
+
+      if (!step.fullAllowed) {
+        expect({ step: escape(step.feed), full: text.startsWith(FULL_REPAINT_PREFIX) }).toEqual({
+          step: escape(step.feed),
           full: false,
         });
       }
-      // Copied: the delta is a view into a buffer the emulator reuses, and `write`
-      // is asynchronous. The steps are a sequence, so each replay finishes first.
+
       // oxlint-disable-next-line no-await-in-loop -- sequential by nature.
-      await replay(target, new Uint8Array(delta));
-      expect({ step: escape(bytes), grid: dumpGrid(target) }).toEqual({
-        step: escape(bytes),
+      await replay(target, new Uint8Array(bytes));
+
+      expect({ step: escape(step.feed), grid: dumpGrid(target) }).toEqual({
+        step: escape(step.feed),
         grid: dumpGrid(source.terminal),
       });
-      expect({ step: escape(bytes), modes: dumpModes(target) }).toEqual({
-        step: escape(bytes),
+      expect({ step: escape(step.feed), modes: dumpModes(target) }).toEqual({
+        step: escape(step.feed),
         modes: dumpModes(source.terminal),
       });
+
       seen = source.revision;
-      deltas.push({ text, length: delta.length });
+      deltas.push({ text, length: bytes.length });
     }
+
     return deltas;
   }
 
   test("typing at a prompt sends one row, not a screen", async () => {
     const source = emulator(80, 24);
     const target = receiver(80, 24);
-    // A screen with content on every row, so "one row rather than a screen" is a
-    // claim with a number behind it.
+
     for (let row = 0; row < 23; row += 1) {
       feed(source, `filler row ${row} with enough text on it to matter\r\n`);
     }
-    feed(source, "$ ");
-    const full = source.fullRepaint().length;
 
+    feed(source, "$ ");
+
+    const full = source.fullRepaint().length;
     const deltas = await roundTrip(source, target, [
-      "l",
-      "s",
-      " -la",
-      "\r\n",
-      "total 0\r\n$ ",
-      // A short line landing on a long one. Without the row's trailing `EL` the
-      // client keeps the tail of what was there — invisible against a fresh
-      // receiver, wrong against a real one.
-      "\x1b[1;1H\x1b[2Kshort",
+      delta("l"),
+      delta("s"),
+      delta(" -la"),
+      delta("\r\n"),
+      delta("total 0\r\n$ "),
+      delta("\x1b[1;1H\x1b[2Kshort"),
     ]);
 
-    for (const delta of deltas.slice(0, 3)) {
-      expect(delta.length).toBeLessThan(full / 4);
-      // One `CUP` to a row's first column is one row painted. More would mean the
-      // library's conservative dirty range went out unfiltered.
-      expect(delta.text.split("\x1b[").filter((part) => /^\d+;1H/.test(part))).toHaveLength(1);
+    for (const encoded of deltas.slice(0, 3)) {
+      expect(encoded.length).toBeLessThan(full / 4);
+      expect(encoded.text.split("\x1b[").filter((part) => /^\d+;1H/.test(part))).toHaveLength(1);
     }
   });
 
@@ -495,15 +477,18 @@ describe("damage encoder", () => {
     const target = receiver(60, 8);
 
     await roundTrip(source, target, [
-      "\x1b[31mred \x1b[91mbright \x1b[38;5;200mpalette \x1b[38;2;10;200;30mtruecolor\x1b[0m\r\n",
-      "\x1b[41mred bg \x1b[101mbright bg \x1b[48;5;99mpalette bg \x1b[48;2;9;9;9mrgb bg\x1b[0m\r\n",
-      "\x1b[1mbold\x1b[22;2mdim\x1b[0m still\r\n",
-      // The other direction, and the one a single `22` gets wrong: painting left
-      // to right, the bold cells are reached with dim already tracked, so the
-      // sequence has to be `22` and then `1` rather than `1` alone.
-      "\x1b[2mdim\x1b[22;1mbold\x1b[0m still\r\n",
-      "\x1b[7minverse\x1b[27m \x1b[4munderline\x1b[24m \x1b[53moverline\x1b[55m\r\n",
-      "\x1b[5mblink\x1b[25m \x1b[8minvisible\x1b[28m \x1b[3mitalic\x1b[23m \x1b[9mstrike\x1b[29m\r\n",
+      delta(
+        "\x1b[31mred \x1b[91mbright \x1b[38;5;200mpalette \x1b[38;2;10;200;30mtruecolor\x1b[0m\r\n",
+      ),
+      delta(
+        "\x1b[41mred bg \x1b[101mbright bg \x1b[48;5;99mpalette bg \x1b[48;2;9;9;9mrgb bg\x1b[0m\r\n",
+      ),
+      delta("\x1b[1mbold\x1b[22;2mdim\x1b[0m still\r\n"),
+      delta("\x1b[2mdim\x1b[22;1mbold\x1b[0m still\r\n"),
+      delta("\x1b[7minverse\x1b[27m \x1b[4munderline\x1b[24m \x1b[53moverline\x1b[55m\r\n"),
+      delta(
+        "\x1b[5mblink\x1b[25m \x1b[8minvisible\x1b[28m \x1b[3mitalic\x1b[23m \x1b[9mstrike\x1b[29m\r\n",
+      ),
     ]);
   });
 
@@ -512,25 +497,21 @@ describe("damage encoder", () => {
     const target = receiver(12, 4);
 
     await roundTrip(source, target, [
-      "ab中文cd\r\n",
-      // Eleven columns used, so the wide character cannot fit and wraps.
-      "\x1b[2;1Hxxxxxxxxxxx中",
-      "\x1b[1;3Hzz",
+      delta("ab中文cd\r\n"),
+      delta("\x1b[2;1Hxxxxxxxxxxx中"),
+      delta("\x1b[1;3Hzz"),
     ]);
   });
 
   test("combined characters, including one replaced by a different combination", async () => {
-    // The packed cell word holds an index rather than the string, so replacing a
-    // combined character with another one leaves the word alone. A row holding a
-    // combined cell is therefore always treated as changed.
     const source = emulator(12, 4);
     const target = receiver(12, 4);
 
     await roundTrip(source, target, [
-      "e\u0301 a\u0300\r\n",
-      "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}\r\n",
-      "\x1b[1;1Ho\u0308",
-      "\x1b[1;1Hu\u030a",
+      delta("e\u0301 a\u0300\r\n"),
+      delta("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}\r\n"),
+      delta("\x1b[1;1Ho\u0308"),
+      delta("\x1b[1;1Hu\u030a"),
     ]);
   });
 
@@ -539,83 +520,83 @@ describe("damage encoder", () => {
     const target = receiver(20, 6);
 
     await roundTrip(source, target, [
-      "filled with text here\r\n",
-      "\x1b[1;5H\x1b[44m\x1b[K",
-      "\x1b[2;1Hsecond row of text\x1b[2;4H\x1b[41m\x1b[5X",
-      "\x1b[3;1Hthird\x1b[3;1H\x1b[42m\x1b[2K",
-      // Two runs with different backgrounds, side by side, with content between.
-      "\x1b[4;1H\x1b[45m\x1b[3X\x1b[3C\x1b[46m\x1b[3X\x1b[3Cmid\x1b[0m",
-      "\x1b[5;1H\x1b[43m\x1b[2J",
+      delta("filled with text here\r\n"),
+      delta("\x1b[1;5H\x1b[44m\x1b[K"),
+      delta("\x1b[2;1Hsecond row of text\x1b[2;4H\x1b[41m\x1b[5X"),
+      delta("\x1b[3;1Hthird\x1b[3;1H\x1b[42m\x1b[2K"),
+      delta("\x1b[4;1H\x1b[45m\x1b[3X\x1b[3C\x1b[46m\x1b[3X\x1b[3Cmid\x1b[0m"),
+      delta("\x1b[5;1H\x1b[43m\x1b[2J"),
     ]);
   });
 
   test("scrolling the normal buffer moves the client's screen and fills its scrollback", async () => {
     const source = emulator(40, 24, 100);
     const target = receiver(40, 24);
-    const steps: string[] = [];
+    const steps: Step[] = [];
     let line = 1;
+
     for (let batch = 0; batch < 5; batch += 1) {
       let payload = "";
+
       for (let index = 0; index < 3; index += 1) {
         payload += `line-${String(line).padStart(2, "0")} with a realistic width\r\n`;
         line += 1;
       }
-      steps.push(payload);
+
+      steps.push(delta(payload));
     }
 
-    // One burst of more lines than rows first, in a single chunk.
     let burst = "";
+
     for (let index = 0; index < 30; index += 1) {
       burst += `pre-${String(index).padStart(2, "0")} with a realistic width\r\n`;
     }
-    const deltas = await roundTrip(source, target, [burst, ...steps]);
 
-    // The client's own screen scrolled, so the lines that left it are in its
-    // scrollback, in order. It cannot have the lines from before it attached —
-    // `fullRepaint` sends `scrollback: 0` deliberately — so the comparison is of
-    // the tail, which is everything the deltas were responsible for.
+    const deltas = await roundTrip(source, target, [delta(burst), ...steps]);
+
     expect(target.buffer.active.baseY).toBeGreaterThan(0);
     expect(history(target).slice(-12)).toEqual(history(source.terminal).slice(-12));
+
     const full = source.fullRepaint().length;
-    for (const delta of deltas.slice(1)) {
-      expect(delta.length).toBeLessThan(full / 3);
+
+    for (const encoded of deltas.slice(1)) {
+      expect(encoded.length).toBeLessThan(full / 3);
     }
   });
 
-  test("a scroll region falls back to plain row repaints", async () => {
-    // Our scroll is a line feed at the bottom row, which would scroll the
-    // client's *region* rather than its screen. While a region is set the rows
-    // are repainted instead — slower, and the only correct answer.
+  test("a scroll region falls back to plain row repaints, never a line feed", async () => {
     const source = emulator(20, 10);
     const target = receiver(20, 10);
     feed(source, "\x1b[1;1Hheader\r\n");
 
     const deltas = await roundTrip(source, target, [
-      "\x1b[3;8r\x1b[3;1H",
-      "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\n",
-      "h\r\ni\r\n",
-      "\x1b[r",
-      "after\r\n",
+      delta("\x1b[3;8r\x1b[3;1H"),
+      delta("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\n"),
+      delta("h\r\ni\r\n"),
+      delta("\x1b[r"),
+      delta("after\r\n"),
     ]);
 
-    // The three steps taken while the region was set carry no line feed; the one
-    // after `CSI r` may.
-    for (const delta of deltas.slice(0, 3)) {
-      expect(delta.text.includes("\n")).toBe(false);
+    for (const encoded of deltas.slice(0, 3)) {
+      expect(encoded.text.includes("\n")).toBe(false);
     }
   });
 
-  test("a delta never line-feeds while a scroll region is set", async () => {
+  test("a client the region outlives still receives no line feed", async () => {
     const source = emulator(20, 10);
     const target = receiver(20, 10);
     await replay(target, source.fullRepaint());
     feed(source, "\x1b[3;8r\x1b[3;1H");
+
     let seen = source.revision;
 
     for (const step of ["a\r\nb\r\nc\r\nd\r\ne\r\nf\r\n", "g\r\nh\r\n"]) {
       feed(source, step);
-      const delta = decoder.decode(source.repaintSince(seen));
-      expect(delta.includes("\n")).toBe(false);
+
+      const encoded = decoder.decode(source.repaintSince(seen));
+
+      expect(encoded.includes("\n")).toBe(false);
+
       seen = source.revision;
     }
   });
@@ -626,96 +607,94 @@ describe("damage encoder", () => {
     feed(source, "normal screen content\r\n");
 
     await roundTrip(source, target, [
-      { feed: "\x1b[?1049h\x1b[2J\x1b[H", full: true },
-      "\x1b[3;3Hinside the alternate screen",
-      "\x1b[5;1H\x1b[44mstatus\x1b[0m",
-      { feed: "\x1b[?1049l", full: true },
-      "back on the normal screen\r\n",
+      fullRepaintIsAllowed("\x1b[?1049h\x1b[2J\x1b[H"),
+      delta("\x1b[3;3Hinside the alternate screen"),
+      delta("\x1b[5;1H\x1b[44mstatus\x1b[0m"),
+      fullRepaintIsAllowed("\x1b[?1049l"),
+      delta("back on the normal screen\r\n"),
     ]);
   });
 
-  test("cursor moves, pending wrap, and hiding the cursor", async () => {
+  test("cursor moves, pending wrap, and hiding the cursor the serialiser would drop", async () => {
     const source = emulator(10, 5);
     const target = receiver(10, 5);
     const hidden: boolean[] = [];
     target.parser.registerCsiHandler({ prefix: "?", final: "l" }, (parameters) => {
       if (parameters[0] === 25) hidden.push(true);
+
       return false;
     });
     target.parser.registerCsiHandler({ prefix: "?", final: "h" }, (parameters) => {
       if (parameters[0] === 25) hidden.push(false);
+
       return false;
     });
 
     feed(source, "\x1b[1;1Hrow");
     await replay(target, source.fullRepaint());
+
     let seen = source.revision;
-
-    // A cursor-only step: the reset prefix and one CUP, and nothing else.
     feed(source, "\x1b[4;7H");
-    const move = source.repaintSince(seen);
-    expect(decoder.decode(move)).toBe("\x1b[0m\x1b[4;7H");
-    await replay(target, new Uint8Array(move));
-    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
-    seen = source.revision;
 
-    // Exactly `cols` characters: the cursor sits past the last column.
-    await roundTrip(source, target, ["\x1b[2;1H0123456789", "\x1b[?25l", "\x1b[?25h"]);
+    const move = source.repaintSince(seen);
+
+    expect(decoder.decode(move)).toBe("\x1b[0m\x1b[4;7H");
+
+    await replay(target, new Uint8Array(move));
+
+    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+
+    seen = source.revision;
+    await roundTrip(source, target, [
+      delta("\x1b[2;1H0123456789"),
+      delta("\x1b[?25l"),
+      delta("\x1b[?25h"),
+    ]);
+
     expect(source.terminal.buffer.active.cursorX).toBe(10);
     expect(target.buffer.active.cursorX).toBe(10);
-    // Cursor visibility is not in `terminal.modes`, so the receiver records the
-    // sequences instead. `SerializeAddon` emits neither of them.
     expect(hidden).toEqual([true, false]);
   });
 
   test("pending wrap ending in a wide character reprints the character, not the spacer", async () => {
-    // The last column is the wide character's second half. Printing a space there
-    // to move the cursor past it would erase the character — the defect the
-    // seeded fuzz found.
     const source = emulator(6, 3);
     const target = receiver(6, 3);
 
-    await roundTrip(source, target, ["abcd中", "\x1b[2;1Hxx中文"]);
+    await roundTrip(source, target, [delta("abcd中"), delta("\x1b[2;1Hxx中文")]);
+
     expect(source.terminal.buffer.active.cursorX).toBe(6);
     expect(target.buffer.active.cursorX).toBe(6);
   });
 
   test("a client that missed several scrolling frames catches up in one delta", async () => {
-    // The case the round trip above cannot see, because it catches its client up
-    // every step: `changedAt` has to travel with the rows across a scroll, or a
-    // row whose *content* moved under an older revision number is never sent and
-    // the client keeps a stale line for as long as it stays on screen.
     const source = emulator(30, 24, 100);
     const target = receiver(30, 24);
+
     for (let row = 1; row <= 24; row += 1) {
       feed(source, `\x1b[${row};1Horiginal row ${row}`);
     }
+
     await replay(target, source.fullRepaint());
+
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+
     const seen = source.revision;
 
-    // Two frames the client never sees. Each scrolls exactly two lines — a line
-    // feed at the bottom row, printing nothing — and then rewrites row 20, so the
-    // first rewrite ends up at row 18: above the four rows that scrolled in and
-    // are repainted anyway. Its revision has to travel up with it; left where it
-    // was, row 18 is never sent and the client keeps the line it scrolled into
-    // that position.
     for (let step = 0; step < 2; step += 1) {
       feed(source, "\x1b[24;1H\n\n");
       feed(source, `\x1b[20;1Hrewritten by step ${step}`);
     }
 
-    const delta = source.repaintSince(seen);
+    const bytes = source.repaintSince(seen);
 
-    expect(decoder.decode(delta).startsWith("\x1bc")).toBe(false);
-    await replay(target, new Uint8Array(delta));
+    expect(decoder.decode(bytes).startsWith(FULL_REPAINT_PREFIX)).toBe(false);
+
+    await replay(target, new Uint8Array(bytes));
+
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
   });
 
-  test("a full repaint carries the three modes the serialiser omits", async () => {
-    // `SerializeAddon` emits neither cursor visibility, nor mouse encoding, nor
-    // cursor style. A client reattaching to a `vim` session would show a cursor
-    // `vim` hid, and report mouse coordinates in an encoding nothing asked for.
+  test("a full repaint carries the three modes the serialiser omits, both ways", async () => {
     const source = emulator(20, 5);
     feed(source, "\x1b[?25l\x1b[?1006h\x1b[5 qcontent");
 
@@ -725,8 +704,8 @@ describe("damage encoder", () => {
     expect(full).toContain("\x1b[?1006h");
     expect(full).toContain("\x1b[5 q");
 
-    // And they go away again when the program puts them back.
     feed(source, "\x1b[?25h\x1b[?1006l\x1b[0 q");
+
     const plain = decoder.decode(source.fullRepaint());
 
     expect(plain).not.toContain("\x1b[?25l");
@@ -740,24 +719,24 @@ describe("damage encoder", () => {
     feed(source, "content\r\n");
 
     await roundTrip(source, target, [
-      "\x1b[?1h",
-      "\x1b[?2004h",
-      "\x1b[?1000h\x1b[?1006h",
-      "\x1b[4h",
-      "\x1b[4l",
-      "\x1b[5 q",
-      "\x1b[!p",
-      "\x1b[?7l",
-      "\x1b[?7h",
+      delta("\x1b[?1h"),
+      delta("\x1b[?2004h"),
+      delta("\x1b[?1000h\x1b[?1006h"),
+      delta("\x1b[4h"),
+      delta("\x1b[4l"),
+      delta("\x1b[5 q"),
+      delta("\x1b[!p"),
+      delta("\x1b[?7l"),
+      delta("\x1b[?7h"),
     ]);
 
     const seen = source.revision;
     feed(source, "\x1b[?2004l");
-    const delta = decoder.decode(source.repaintSince(seen));
 
-    // A mode-only step repaints no row: the row's content never appears in it.
-    expect(delta).not.toContain("content");
-    expect(delta.includes("\x1b[?2004l")).toBe(true);
+    const encoded = decoder.decode(source.repaintSince(seen));
+
+    expect(encoded).not.toContain("content");
+    expect(encoded.includes("\x1b[?2004l")).toBe(true);
   });
 
   test("a resize is answered with a full repaint carrying the new geometry", async () => {
@@ -765,14 +744,18 @@ describe("damage encoder", () => {
     const target = receiver(40, 10);
     await replay(target, source.fullRepaint());
     feed(source, "content before the resize\r\n");
+
     const seen = source.revision;
 
     source.resize({ columns: 20, rows: 6 });
-    const delta = source.repaintSince(seen);
 
-    expect(decoder.decode(delta).startsWith("\x1bc")).toBe(true);
-    expect(decoder.decode(delta)).toContain("\x1b[8;6;20t");
-    await replay(target, new Uint8Array(delta));
+    const bytes = source.repaintSince(seen);
+
+    expect(decoder.decode(bytes).startsWith(FULL_REPAINT_PREFIX)).toBe(true);
+    expect(decoder.decode(bytes)).toContain("\x1b[8;6;20t");
+
+    await replay(target, new Uint8Array(bytes));
+
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
   });
 
@@ -781,19 +764,24 @@ describe("damage encoder", () => {
     const target = receiver(20, 5);
     await replay(target, source.fullRepaint());
     feed(source, "\x1b[41mcoloured content\r\n");
+
     const seen = source.revision;
 
     feed(source, "\x1bcafter the reset");
-    const delta = source.repaintSince(seen);
 
-    expect(decoder.decode(delta).startsWith("\x1bc")).toBe(true);
-    await replay(target, new Uint8Array(delta));
+    const bytes = source.repaintSince(seen);
+
+    expect(decoder.decode(bytes).startsWith(FULL_REPAINT_PREFIX)).toBe(true);
+
+    await replay(target, new Uint8Array(bytes));
+
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
   });
 
-  test("a chunk that only carried a title costs nothing", async () => {
+  test("a chunk that only carried a title costs nothing on the wire", () => {
     const source = emulator(20, 5);
     feed(source, "content\r\n");
+
     const seen = source.revision;
 
     feed(source, "\x1b]0;a new title\x07");
@@ -802,11 +790,13 @@ describe("damage encoder", () => {
     expect(source.repaintSince(seen)).toHaveLength(0);
   });
 
-  test("clearing scrollback costs nothing on the wire", async () => {
+  test("clearing scrollback costs nothing on the wire", () => {
     const source = emulator(20, 5, 50);
+
     for (let line = 0; line < 20; line += 1) {
       feed(source, `line ${line}\r\n`);
     }
+
     const seen = source.revision;
 
     source.clearScrollback();
@@ -814,23 +804,26 @@ describe("damage encoder", () => {
     expect(source.repaintSince(seen)).toHaveLength(0);
   });
 
-  test("a client from the future or further behind than the scroll ring gets a full repaint", async () => {
+  test("a client from the future or further behind than the scroll ring gets a full repaint", () => {
     const source = emulator(20, 5);
     feed(source, "content\r\n");
 
-    expect(decoder.decode(source.repaintSince(source.revision + 5)).startsWith("\x1bc")).toBe(true);
+    expect(
+      decoder.decode(source.repaintSince(source.revision + 5)).startsWith(FULL_REPAINT_PREFIX),
+    ).toBe(true);
 
     for (let index = 0; index < SCROLL_RING + 2; index += 1) {
       feed(source, `line ${index}\r\n`);
     }
 
-    expect(decoder.decode(source.repaintSince(1)).startsWith("\x1bc")).toBe(true);
+    expect(decoder.decode(source.repaintSince(1)).startsWith(FULL_REPAINT_PREFIX)).toBe(true);
   });
 
   test("under a flood the delta tracks the screen, not the throughput", async () => {
     const source = emulator(80, 24, 100);
     const target = receiver(80, 24);
     await replay(target, source.fullRepaint());
+
     const budget = Math.floor(2e6 / 120);
     const frame = "y\r\n".repeat(Math.floor(833_333 / 3));
     let seen = source.revision;
@@ -839,47 +832,49 @@ describe("damage encoder", () => {
 
     for (let index = 0; index < 10; index += 1) {
       feed(source, frame);
-      const delta = source.repaintSince(seen);
-      expect(delta.length).toBeLessThanOrEqual(budget);
-      lengths.push(delta.length);
-      buffers.push(delta.buffer);
+
+      const bytes = source.repaintSince(seen);
+
+      expect(bytes.length).toBeLessThanOrEqual(budget);
+
+      lengths.push(bytes.length);
+      buffers.push(bytes.buffer);
       // oxlint-disable-next-line no-await-in-loop -- one frame after another is the point.
-      await replay(target, new Uint8Array(delta));
+      await replay(target, new Uint8Array(bytes));
       seen = source.revision;
     }
 
     expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
-    // Twice the bytes, the same screen: the wire cost is the grid's, not the
-    // flood's.
+
     feed(source, frame + frame);
+
     const doubled = source.repaintSince(seen);
+
     expect(doubled.length).toBeLessThanOrEqual(budget);
+
     seen = source.revision;
-    // One allocation, reused: the frame loop copies each view before the next.
+
     expect(new Set(buffers).size).toBe(1);
     expect(lengths[9]).toBe(lengths[8]);
-
     expect(source.repaintSince(seen)).toHaveLength(0);
   });
 
   test("the fallback that diffs every row is just as correct", async () => {
-    // What runs if a library bump takes the per-parse dirty rows away.
     const source = new HeadlessEmulator({ columns: 20, rows: 8 }, 100, { rowHints: false });
     const target = receiver(20, 8);
+
     expect(source.rowHints).toBe(false);
 
     await roundTrip(source, target, [
-      "$ ",
-      "ls",
-      "\r\n",
-      "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\n",
-      "\x1b[41mcoloured\x1b[0m\r\n",
+      delta("$ "),
+      delta("ls"),
+      delta("\r\n"),
+      delta("a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nh\r\ni\r\n"),
+      delta("\x1b[41mcoloured\x1b[0m\r\n"),
     ]);
   });
 
   test("the library still hands us per-parse dirty rows", () => {
-    // A bump that removes `onRequestRefreshRows` turns this red rather than
-    // quietly halving the encoder's throughput.
     expect(emulator(20, 5).rowHints).toBe(true);
   });
 
@@ -887,52 +882,60 @@ describe("damage encoder", () => {
     const source = emulator(40, 12, 200);
     const target = receiver(40, 12);
     await replay(target, source.fullRepaint());
+
     let seed = 0x32;
+
     const random = (bound: number): number => {
-      // A tiny LCG: reproducible, and the failure message carries the step.
       seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+
       return seed % bound;
     };
+
     const generators: readonly ((rows: number, columns: number) => Step)[] = [
-      (rows, columns) => `\x1b[${1 + random(rows)};${1 + random(columns)}H`,
-      () => "text".repeat(1 + random(4)),
-      () => `\x1b[3${random(8)};4${random(8)}mcoloured`,
-      () => `\x1b[${random(3)}m`,
-      () => "\r\n".repeat(1 + random(5)),
-      () => `\x1b[${1 + random(6)}X`,
-      () => `\x1b[${random(3)}K`,
-      () => `\x1b[${random(3)}J`,
-      (rows) => `\x1b[${1 + random(rows / 2)};${rows}r`,
-      () => "\x1b[r",
-      () => "中文",
-      () => "e\u0301",
-      () => (random(2) === 0 ? "\x1b[?25l" : "\x1b[?25h"),
-      () => (random(2) === 0 ? "\x1b[4h" : "\x1b[4l"),
-      () => ({ feed: random(2) === 0 ? "\x1b[?1049h" : "\x1b[?1049l", full: true }),
+      (rows, columns) => delta(`\x1b[${1 + random(rows)};${1 + random(columns)}H`),
+      () => delta("text".repeat(1 + random(4))),
+      () => delta(`\x1b[3${random(8)};4${random(8)}mcoloured`),
+      () => delta(`\x1b[${random(3)}m`),
+      () => delta("\r\n".repeat(1 + random(5))),
+      () => delta(`\x1b[${1 + random(6)}X`),
+      () => delta(`\x1b[${random(3)}K`),
+      () => delta(`\x1b[${random(3)}J`),
+      (rows) => delta(`\x1b[${1 + random(rows / 2)};${rows}r`),
+      () => delta("\x1b[r"),
+      () => delta("中文"),
+      () => delta("e\u0301"),
+      () => delta(random(2) === 0 ? "\x1b[?25l" : "\x1b[?25h"),
+      () => delta(random(2) === 0 ? "\x1b[4h" : "\x1b[4l"),
+      () => fullRepaintIsAllowed(random(2) === 0 ? "\x1b[?1049h" : "\x1b[?1049l"),
     ];
 
     let seen = source.revision;
+
     for (let index = 0; index < 300; index += 1) {
       const generator = generators[random(generators.length)];
+
       if (generator === undefined) {
         continue;
       }
+
       const step = generator(12, 40);
-      const bytes = typeof step === "string" ? step : step.feed;
-      feed(source, bytes);
-      const delta = source.repaintSince(seen);
+      feed(source, step.feed);
+
+      const bytes = source.repaintSince(seen);
       // oxlint-disable-next-line no-await-in-loop -- one frame after another is the point.
-      await replay(target, new Uint8Array(delta));
-      expect({ index, step: escape(bytes), grid: dumpGrid(target) }).toEqual({
+      await replay(target, new Uint8Array(bytes));
+
+      expect({ index, step: escape(step.feed), grid: dumpGrid(target) }).toEqual({
         index,
-        step: escape(bytes),
+        step: escape(step.feed),
         grid: dumpGrid(source.terminal),
       });
-      expect({ index, step: escape(bytes), modes: dumpModes(target) }).toEqual({
+      expect({ index, step: escape(step.feed), modes: dumpModes(target) }).toEqual({
         index,
-        step: escape(bytes),
+        step: escape(step.feed),
         modes: dumpModes(source.terminal),
       });
+
       seen = source.revision;
     }
   });

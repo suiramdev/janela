@@ -9,11 +9,10 @@ import {
   resolveShellEnvironment,
   type AccountInformation,
 } from "./shell-environment.ts";
-import { recordingLogger, scriptedProcesses } from "./test-fakes.ts";
+import { recordingLogger, scriptedProcesses, type ScriptedOutcome } from "./test-fakes.ts";
 
 const project = "1c8c9c8e-0e1a-4f2c-9a10-6c1c1f0b9f11" as ProjectID;
 
-/** The environment a launchd-started daemon actually gets, plus a secret to leak. */
 const daemonEnvironment = {
   PATH: "/usr/bin:/bin",
   HOME: "/Users/x",
@@ -21,7 +20,11 @@ const daemonEnvironment = {
   UNSET: undefined,
 };
 
-const session = (overrides?: Partial<Session>): Session => ({
+const terminal = "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901" as TerminalID;
+
+const ALLOWED_LOG_FIELDS = ["exitCode", "reason", "shell", "timedOut", "variables"];
+
+const session = (overrides: Partial<Session> = {}): Session => ({
   id: "0f6e1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" as SessionID,
   name: "feature",
   directory: "/Users/x/code/janela" as AbsolutePath,
@@ -35,30 +38,17 @@ const session = (overrides?: Partial<Session>): Session => ({
   ...overrides,
 });
 
-const terminal = "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901" as TerminalID;
-
-/**
- * The account facts as Bun's runtime reports them: the sentinel shell, a real
- * name.
- *
- * Injected by every test that cares which shell wins, because the default is not
- * hermetic. Bun's `os.userInfo().shell` is `$SHELL`, and only falls back to
- * `"unknown"` when that is unset — so on any machine with `$SHELL` exported, a
- * CI runner included, `resolveLoginShell` returns it and never reaches the fake
- * processes the test scripted.
- */
 const bunAccount = (): AccountInformation => ({ shell: "unknown", username: "ada" });
 
-/** What `printf '\0JANELA_ENVIRONMENT\0'; /usr/bin/env -0` writes. */
 function captureOutput(variables: Readonly<Record<string, string>>, greeting = ""): string {
   const entries = Object.entries(variables).map(([name, value]) => `${name}=${value}\0`);
+
   return `${greeting}\0JANELA_ENVIRONMENT\0${entries.join("")}`;
 }
 
 describe("resolveShellEnvironment", () => {
   test("captures the login shell's environment, greeting and all", async () => {
     const fake = scriptedProcesses({
-      // No `dscl`, so resolution falls through to `$SHELL`.
       which: {},
       outcomes: [
         {
@@ -87,16 +77,13 @@ describe("resolveShellEnvironment", () => {
 
     expect(shell.loginShell).toBe("/opt/homebrew/bin/fish");
     expect(shell.loginShellArguments()).toEqual(["-fish"]);
-    // A `PATH` from the user's dotfiles is the entire point of the exercise.
     expect(shell.resolved["PATH"]).toBe("/opt/homebrew/bin:/usr/bin:/bin");
-    // NUL-delimited so a value with a newline survives; a line-based parse would
-    // have turned this into two variables, one of them nonsense.
     expect(shell.resolved["MULTI"]).toBe("first\nsecond");
     expect(Object.keys(shell.resolved).toSorted()).toEqual(["MULTI", "PATH"]);
 
     const invocation = fake.invocations[0];
+
     expect(invocation?.executable).toBe("/opt/homebrew/bin/fish");
-    // Separate flags, not `-ilc`: fish's option parser rejects the bundled form.
     expect(invocation?.arguments).toEqual([
       "-i",
       "-l",
@@ -139,8 +126,56 @@ describe("resolveShellEnvironment", () => {
         fields: { shell: "zsh", exitCode: -1, timedOut: true, reason: "timeout" },
       },
     ]);
-    // The log is the daemon's, and the daemon's log is the user's private data.
-    expect(JSON.stringify(records)).not.toContain("s3cret-value");
+  });
+
+  test("no capture path lets an environment value reach the log", async () => {
+    const inheritedSecret = "s3cret-inherited";
+    const capturedSecret = "s3cret-captured";
+    const inherited = {
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/x",
+      API_TOKEN: inheritedSecret,
+      SHELL: "/bin/zsh",
+    };
+
+    const outcomes: readonly ScriptedOutcome[] = [
+      new Error("ENOENT"),
+      { succeeded: false, exitCode: 1, timedOut: false },
+      { succeeded: false, exitCode: -1, timedOut: true },
+      { standardOutput: `PATH=/opt/homebrew/bin\nAPI_TOKEN=${inheritedSecret}\n` },
+      {
+        standardOutput: captureOutput({
+          PATH: "/opt/homebrew/bin",
+          SESSION_TOKEN: capturedSecret,
+        }),
+      },
+    ];
+
+    const { logger, records } = recordingLogger();
+
+    for (const outcome of outcomes) {
+      // oxlint-disable-next-line no-await-in-loop
+      await resolveShellEnvironment({
+        account: bunAccount,
+        processEnvironment: inherited,
+        processes: scriptedProcesses({ which: {}, outcomes: [outcome] }).processes,
+        log: logger,
+        timeoutMs: 5,
+      });
+    }
+
+    expect(records).toHaveLength(outcomes.length);
+
+    const serialised = JSON.stringify(records);
+
+    expect(serialised).not.toContain(inheritedSecret);
+    expect(serialised).not.toContain(capturedSecret);
+
+    for (const record of records) {
+      for (const field of Object.keys(record.fields ?? {})) {
+        expect(ALLOWED_LOG_FIELDS).toContain(field);
+      }
+    }
   });
 
   test("a shell that cannot be spawned is not fatal", async () => {
@@ -165,7 +200,6 @@ describe("resolveShellEnvironment", () => {
     const { logger, records } = recordingLogger();
     const fake = scriptedProcesses({
       which: {},
-      // A shell whose rc file failed early and printed only its own complaint.
       outcomes: [{ standardOutput: "PATH=/opt/homebrew/bin\n" }],
     });
 
@@ -190,10 +224,7 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
-      // What Bun reports: it does not call `getpwuid`, so the shell is a sentinel
-      // and the name has to come from somewhere.
       account: () => ({ shell: "unknown", username: "ada" }),
-      // `$SHELL` is only a hint — for a launchd daemon it is whatever launchd had.
       processEnvironment: { ...daemonEnvironment, SHELL: "/bin/bash" },
       processes: fake.processes,
     });
@@ -227,9 +258,6 @@ describe("resolveShellEnvironment", () => {
     });
 
     const shell = await resolveShellEnvironment({
-      // Bun's sentinel for both fields. Measured on this machine: `dscl . -read
-      // /Users/unknown UserShell` prints `/usr/bin/false` and exits 0, which
-      // looks exactly like a real shell and costs the user their environment.
       account: () => ({ shell: "unknown", username: "unknown" }),
       processEnvironment: { ...daemonEnvironment, SHELL: "/bin/zsh" },
       processes: fake.processes,
@@ -264,15 +292,15 @@ describe("resolveShellEnvironment", () => {
       processEnvironment: { SHELL: "/opt/homebrew/bin/fish" },
       processes: scriptedProcesses({ which: {} }).processes,
     });
+
     expect(withShell.loginShell).toBe("/opt/homebrew/bin/fish");
 
     const withNonsense = await resolveShellEnvironment({
       account: bunAccount,
-      // A relative `$SHELL` is not something we can exec, and guessing is worse
-      // than the documented default.
       processEnvironment: { SHELL: "fish" },
       processes: scriptedProcesses({ which: {} }).processes,
     });
+
     expect(withNonsense.loginShell).toBe(DEFAULT_LOGIN_SHELL);
     expect(withNonsense.loginShellArguments()).toEqual(["-zsh"]);
   });
@@ -338,8 +366,6 @@ describe("janelaVariables", () => {
       terminalID: terminal,
     });
 
-    // Absent rather than empty: `${JANELA_BRANCH}` in a script must not expand to
-    // a branch whose name is the empty string.
-    expect("JANELA_BRANCH" in variables).toBe(false);
+    expect(Object.hasOwn(variables, "JANELA_BRANCH")).toBe(false);
   });
 });

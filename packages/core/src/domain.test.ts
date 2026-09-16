@@ -13,10 +13,8 @@ describe("the concept budget", () => {
   test("built-in profiles are argv arrays, never shell strings", () => {
     for (const profile of BUILT_IN_PROFILES) {
       expect(Array.isArray(profile.command)).toBe(true);
+
       for (const argument of profile.command) {
-        // A built-in that needed a shell would be handing user-adjacent input to
-        // `sh -c`, which is the bug class docs/domain-model.md says does not exist
-        // here. `["zsh", "-lc", "…"]` is a choice a user makes, not one we ship.
         expect(argument).not.toContain("|");
         expect(argument).not.toContain("&&");
       }
@@ -25,6 +23,7 @@ describe("the concept budget", () => {
 
   test("an empty command means the login shell, and Shell is the one that has one", () => {
     const shell = BUILT_IN_PROFILES.find((profile) => profile.name === "Shell");
+
     expect(shell?.command).toEqual([]);
     expect(shell?.isAgent).toBe(false);
   });

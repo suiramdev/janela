@@ -18,7 +18,8 @@
     "@janela/pty": "workspace:*",
     "@janela/support": "workspace:*",
     "@xterm/addon-serialize": "0.14.0",
-    "@xterm/headless": "6.0.0"
+    "@xterm/headless": "6.0.0",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"

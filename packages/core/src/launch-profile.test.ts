@@ -25,7 +25,6 @@ function profile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
   };
 }
 
-/** The record the daemon sends, built by hand so absence is expressible. */
 function reported(entries: readonly [LaunchProfileID, boolean][]): LaunchProfileAvailability {
   return Object.fromEntries(entries);
 }
@@ -39,11 +38,13 @@ describe("the built-in profiles", () => {
 
   test("have unique names, which is the identity seeding matches on", () => {
     const names = BUILT_IN_PROFILES.map((built) => built.name);
+
     expect(new Set(names).size).toBe(names.length);
   });
 
   test("offer exactly one login shell, so a picker is never empty", () => {
     const shells = BUILT_IN_PROFILES.filter((built) => usesLoginShell(built));
+
     expect(shells.map((built) => built.name)).toEqual(["Shell"]);
   });
 
@@ -70,6 +71,7 @@ describe("profileAvailability", () => {
 
     const availability = profileAvailability([shell, absolute, bare], (executable) => {
       asked.push(executable);
+
       return true;
     });
 
@@ -83,17 +85,19 @@ describe("profileAvailability", () => {
     const missing = profile({ command: ["opencode"] });
     const availability = profileAvailability([missing], () => false);
 
-    // The distinction the record exists to carry: we looked, and it is not there.
     expect(Object.keys(availability)).toEqual([missing.id]);
     expect(availability[missing.id]).toBe(false);
   });
 
   test("only argv[0] decides; later arguments are never probed", () => {
     const asked: string[] = [];
+
     profileAvailability([profile({ command: ["zsh", "-lc", "claude"] })], (executable) => {
       asked.push(executable);
+
       return true;
     });
+
     expect(asked).toEqual(["zsh"]);
   });
 });
@@ -105,28 +109,30 @@ describe("isProfileAvailable", () => {
 
   test("a path-bearing command is available with nothing reported at all", () => {
     const absolute = profile({ command: ["/usr/local/bin/aider"] });
+
     expect(isProfileAvailable(absolute, reported([]))).toBe(true);
   });
 
-  test("a bare name nobody has reported on is hidden, not assumed", () => {
-    // The rule that makes "hidden, never shown broken" true before the first
-    // state update arrives.
+  test("a bare name nobody has reported on is hidden, not assumed available", () => {
     expect(isProfileAvailable(profile(), reported([]))).toBe(false);
   });
 
   test("a bare name reported false is hidden", () => {
     const missing = profile();
+
     expect(isProfileAvailable(missing, reported([[missing.id, false]]))).toBe(false);
   });
 
   test("a bare name reported true is available", () => {
     const present = profile();
+
     expect(isProfileAvailable(present, reported([[present.id, true]]))).toBe(true);
   });
 
   test("another profile's report does not make this one available", () => {
     const wanted = profile();
     const other = profile();
+
     expect(isProfileAvailable(wanted, reported([[other.id, true]]))).toBe(false);
   });
 });
@@ -152,13 +158,14 @@ describe("availableProfiles", () => {
 
   test("an empty availability record still yields the login shell", () => {
     const shell = profile({ name: "Shell", command: [] });
+
     expect(availableProfiles([profile(), shell], reported([])).map((e) => e.name)).toEqual([
       "Shell",
     ]);
   });
 
   test("round-trips with profileAvailability over a fake PATH", () => {
-    const installed: Record<string, true> = { claude: true };
+    const installed = new Set(["claude"]);
     const shell = profile({ name: "Shell", command: [] });
     const claude = profile({ name: "Claude Code" });
     const codex = profile({ name: "Codex", command: ["codex"] });
@@ -166,8 +173,9 @@ describe("availableProfiles", () => {
 
     const visible = availableProfiles(
       all,
-      profileAvailability(all, (executable) => installed[executable] === true),
+      profileAvailability(all, (executable) => installed.has(executable)),
     );
+
     expect(visible.map((entry) => entry.name)).toEqual(["Shell", "Claude Code"]);
   });
 });

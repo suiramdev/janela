@@ -5,7 +5,33 @@ import type { AbsolutePath } from "@janela/core";
 import { isUserFacing } from "@janela/support";
 import { gitFixture, temporaryDirectory } from "@janela/test-support";
 
-import { GitFailure, GitNotFound, gitRunner } from "./git-runner.ts";
+import {
+  GitError,
+  GitFailure,
+  gitErrorLabel,
+  GitNotFound,
+  gitRunner,
+  GitUnrunnable,
+} from "./git-runner.ts";
+
+async function fakeGit(
+  label: string,
+): Promise<AsyncDisposable & { readonly directory: AbsolutePath }> {
+  const temporary = await temporaryDirectory(label);
+  const script = temporary.join("git");
+
+  await writeFile(
+    script,
+    '#!/bin/sh\necho "${GIT_OPTIONAL_LOCKS-unset}"\nfor argument in "$@"; do echo "$argument"; done\n',
+    "utf8",
+  );
+  await chmod(script, 0o755);
+
+  return {
+    directory: temporary.path as AbsolutePath,
+    [Symbol.asyncDispose]: () => temporary[Symbol.asyncDispose](),
+  };
+}
 
 describe("GitFailure", () => {
   test("stderr goes in the reason, never the headline", () => {
@@ -24,30 +50,15 @@ describe("GitFailure", () => {
   });
 });
 
-/**
- * A stand-in `git` that reports how it was invoked: the lock setting on its
- * first line, then one argument per line.
- *
- * Real git cannot answer "what environment did you get, and was my argv split?",
- * which is the only thing these tests are about. Worktree behaviour is tested
- * against real repositories in `worktree-service.test.ts`.
- */
-async function fakeGit(
-  label: string,
-): Promise<AsyncDisposable & { readonly directory: AbsolutePath }> {
-  const temporary = await temporaryDirectory(label);
-  const script = temporary.join("git");
-  await writeFile(
-    script,
-    '#!/bin/sh\necho "${GIT_OPTIONAL_LOCKS-unset}"\nfor argument in "$@"; do echo "$argument"; done\n',
-    "utf8",
-  );
-  await chmod(script, 0o755);
-  return {
-    directory: temporary.path as AbsolutePath,
-    [Symbol.asyncDispose]: () => temporary[Symbol.asyncDispose](),
-  };
-}
+describe("GitError", () => {
+  test("a reason is named by its tag, and the tag is all a log field gets", () => {
+    const error = new GitError({ reason: new GitUnrunnable({ cause: new Error("spawn failed") }) });
+
+    expect(gitErrorLabel(error)).toBe("unrunnable");
+    expect(error.message).toBe("git error: unrunnable");
+    expect(isUserFacing(error)).toBe(false);
+  });
+});
 
 describe("gitRunner", () => {
   test("git is resolved from the given PATH, not a hardcoded location", async () => {
@@ -58,7 +69,6 @@ describe("gitRunner", () => {
       fake.directory,
     );
 
-    // The real git would print "git version …"; this one echoes its argv.
     expect(output.trimEnd().split("\n")).toEqual(["unset", "-C", fake.directory, "--version"]);
   });
 
@@ -70,8 +80,6 @@ describe("gitRunner", () => {
       fake.directory,
     );
 
-    // `a b` arriving as one argument is the no-shell rule; the leading `0` is
-    // GIT_OPTIONAL_LOCKS on a read-only command.
     expect(output.trimEnd().split("\n")).toEqual(["0", "-C", fake.directory, "status", "a b"]);
   });
 
@@ -79,7 +87,6 @@ describe("gitRunner", () => {
     await using fake = await fakeGit("git-locks");
     const runner = gitRunner({ environment: { PATH: fake.directory } });
 
-    // `worktree add` writes even though `worktree list` does not.
     expect((await runner.run(["worktree", "add", "x"], fake.directory)).split("\n")[0]).toBe(
       "unset",
     );
@@ -90,12 +97,30 @@ describe("gitRunner", () => {
     await using directory = await temporaryDirectory("git-absent");
     const runner = gitRunner({ environment: { PATH: "/nonexistent" } });
 
-    const thrown = await runner.run(["--version"], directory.path as AbsolutePath).then(
-      () => undefined,
-      (error: unknown) => error,
+    await expect(runner.run(["--version"], directory.path as AbsolutePath)).rejects.toBeInstanceOf(
+      GitNotFound,
     );
+  });
 
-    expect(thrown).toBeInstanceOf(GitNotFound);
+  test("a git that cannot be executed is a typed reason, and names no path", async () => {
+    await using fake = await fakeGit("git-unrunnable");
+    const executable = `${fake.directory}/git`;
+
+    await chmod(executable, 0o000);
+
+    const thrown = await gitRunner({ executable })
+      .probe(["status"], fake.directory)
+      .then(
+        () => undefined,
+        (cause: unknown) => cause,
+      );
+
+    expect(thrown).toBeInstanceOf(GitError);
+
+    if (!(thrown instanceof GitError)) throw new Error("expected a GitError");
+
+    expect(gitErrorLabel(thrown)).toBe("unrunnable");
+    expect(thrown.message).not.toContain(executable);
   });
 
   test("a non-zero exit is a GitFailure carrying the subcommand and stderr", async () => {
@@ -103,20 +128,25 @@ describe("gitRunner", () => {
     const runner = gitRunner();
     const repository = fixture.path as AbsolutePath;
 
-    // `worktree add` with no path: git refuses with usage on stderr.
     const failure = await runner.run(["worktree", "add"], repository).then(
       () => undefined,
-      (error: unknown) => error,
+      (cause: unknown) => cause,
     );
 
     expect(failure).toBeInstanceOf(GitFailure);
+
     if (!(failure instanceof GitFailure)) throw new Error("expected a GitFailure");
+
     expect(failure.subcommand).toBe("worktree add");
     expect(failure.exitCode).not.toBe(0);
     expect(failure.standardError).toMatch(/usage|fatal/);
+  });
 
-    // The same command through `probe` is an answer, not an exception.
-    const outcome = await runner.probe(["worktree", "add"], repository);
+  test("probe reports a non-zero exit as an answer, not an exception", async () => {
+    await using fixture = await gitFixture("git-probe");
+
+    const outcome = await gitRunner().probe(["worktree", "add"], fixture.path as AbsolutePath);
+
     expect(outcome.succeeded).toBe(false);
     expect(outcome.exitCode).not.toBe(0);
   });

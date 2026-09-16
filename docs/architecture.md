@@ -115,7 +115,7 @@ by accident.
 | `@janela/terminal` | `LiveTerminal`, authoritative grid, damage tracking, repaint encoding | Be imported *through* — no emulator type leaks upward |
 | `@janela/session` | Project and session lifecycle, automation, `ShellEnvironment`, removal planning | Import a view layer, or know a socket exists |
 | `@janela/daemon` | Listener, connections, subscriptions, peer-credential checks, the frame loop | Contain product logic that belongs in `@janela/session` |
-| `apps/daemon` → `janelad` | Socket activation, signals, idle exit | Contain anything testable |
+| `apps/daemon` → `janelad` | Socket bind, signals, idle exit | Contain anything testable |
 
 ### Client side
 
@@ -124,10 +124,89 @@ by accident.
 | `@janela/client` | Connection, reconnect, the mirrored state, attention policy | Import anything daemon-side, or anything platform-specific |
 | `@janela/design` | Tokens, semantic colours, shared controls | Know what a session is |
 | `@janela/terminal-ui` | `TerminalRendering`, the surface that draws | Own a PTY or a child process |
-| `@janela/ui` | Views and presentation state | Reach past `@janela/client` |
-| `apps/desktop` | The Tauri shell, the object graph, menus, notifications, the socket bridge | Contain logic worth testing |
+| `@janela/ui` | Views and presentation state, internally Feature-Sliced (below) | Reach past `@janela/client` |
+| `apps/desktop` | The Tauri shell, the object graph, the port adapters, menus, notifications, the socket bridge | Contain logic worth testing |
 
 *Planned* means designed and documented but not yet implemented.
+
+### Inside `@janela/ui`: Feature-Sliced Design
+
+Sixty view files in one flat directory had stopped saying where anything belonged,
+so the *inside* of `@janela/ui` has a structure of its own —
+[Feature-Sliced Design](https://feature-sliced.design), with `packages/ui/src` as
+its root. The package graph above is unchanged by it: from FSD's point of view
+`@janela/core`, `@janela/protocol`, `@janela/client`, `@janela/design` and
+`@janela/terminal-ui` are third-party libraries, and `bun run check:layers` still
+owns every edge *between* packages.
+
+```text
+packages/ui/src/
+  index.ts              the *package* public API: what apps/desktop imports, and nothing more
+  pages/
+    main-window/        the window — frame, sidebar, panes, tab strip, sheets, banner, confirmations
+      index.ts  ui/  model/
+    settings/           the settings screen — tabs, panes, the draft, and what a save writes
+      index.ts  ui/  model/
+  shared/
+    model/              the window's stores and the ports the app implements   (index.ts)
+    config/             the command catalogue, the profile-icon catalogue      (index.ts)
+    ui/                 window chrome, context menus, find surface, project icon (index.ts)
+    lib/                fuzzy-match/, test-fakes/                (an index.ts per folder)
+```
+
+Segments are the standard five, and only four are used: `ui`, `model`, `config`,
+`lib`. Imports point **downward, `pages → shared`**, and cross a slice or a shared
+segment only through its `index.ts`. `bun run check:fsd` enforces that — Steiger
+with `fsd.configs.recommended`, run from `packages/ui` so it finds
+`packages/ui/steiger.config.ts` — and it runs inside `bun run lint` beside
+`check:layers`.
+
+**There is no `features/` and no `entities/` layer**, and that is a decision
+rather than an omission. The domain models already live in `@janela/core`, which
+FSD sees as an external library, so what the views add on top is derived view
+(`sessionStatus`, `sidebarRows`) and form drafts — and every one of those has all
+its consumers inside a single page. FSD extracts only once a second consumer
+exists, and Steiger's `insignificant-slice` reports a feature used by one page as
+a slice to merge back, so the graph has not earned either layer.
+
+Two rules decide where a file goes, and they are not the same rule:
+
+- **Pages first, by count.** A feature or an entity is earned by a *second*
+  consumer. Duplication between two pages is cheaper than a boundary drawn on one
+  example.
+- **Shared, by content.** `shared/` is decided by what a module *is*, not by how
+  many callers it has: no business logic, no knowledge of any screen.
+  `fuzzy-match`, `find-surface` and `context-menu-region` are shared with one
+  consuming page each, because they name no domain type and would read the same in
+  a browser client. The settings panes' labelled fields are not, because
+  `ProfileSelect` takes a `LaunchProfile` and the rest encodes how that screen's
+  forms read.
+
+`apps/desktop/src` is the FSD **`app` layer**: the entry point, the object graph
+(`liveEnvironment`), and `adapters/` — the Tauri implementations of every port
+`shared/model/client-environment.tsx` declares (clipboard, native shell, window
+controls, command source, settings storage, transport, attention delivery).
+
+It is a *thinner* app layer than FSD assumes, and this is the one place the
+methodology was bent on purpose. FSD puts routing and the app-wide layout in
+`app`; here the window frame — the providers, the root right-click region, the
+connection banner, the sheet host, the confirmation host — stays in
+`pages/main-window`, because moving it would move some 550 lines of views and
+their tests into a package that is supposed to contain nothing worth testing. So
+`pages/main-window` is both a page and the application shell, and the two pages
+are composed by the app rather than by each other: `MainWindow` takes
+`MainWindowProps.renderSettings`, and `main.tsx` fills that slot with
+`<SettingsScreen route={route} />`. Neither page names the other, which is what
+FSD forbids and Steiger reports.
+
+One seam inside `shared/model` is worth knowing before editing it. `ViewState`
+holds the settings screen's **uncommitted draft**, so that navigating away cannot
+throw away what the user typed — which puts the draft's *shape* below both
+screens, in `shared/model/settings-draft.ts`, along with the profile form shape it
+names. The *rules* over that value — what a save writes, what refuses it, what an
+unnamed profile is called — live in `pages/settings/model`, because a rule the
+product enforces on the user's data is not infrastructure, and Shared may not hold
+one.
 
 ### Four rules that catch most mistakes
 
@@ -156,6 +235,53 @@ say which control used which.
 
 ---
 
+## Effect at the seams
+
+Effect v4 is a tool we reach for at a boundary, not the runtime the application
+is written in. A file that uses it should be a file where something crosses into
+the program from outside, or where a failure set is closed enough to be worth
+naming.
+
+In scope:
+
+- **`Schema` at every untrusted boundary** — socket control frames, persisted
+  JSON, configuration, IPC payloads. It replaces `typeof`, `in` and `as`, which
+  are guesses about a value's shape rather than evidence about it. Parse at the
+  edge, then work with the domain value.
+- **`Schema.TaggedError` / `Data.TaggedError` for closed failure sets**, so a
+  caller can branch with `Match.tag`, `Effect.catchTag` or `Predicate.isTagged`
+  and the compiler can tell it when a case is missing. Never read `_tag`.
+  `FrameError` in `@janela/protocol` is the reference shape: one error class
+  carrying a tagged `reason`.
+- **`Match` for a discriminant**, in place of `switch` and chained literal
+  ternaries. `Match.exhaustive` is the point.
+- **`Effect.try` / `Effect.tryPromise` / `Effect.acquireRelease` / `Scope` for
+  I/O lifetimes** in the daemon's subprocess, git, forge, database and session
+  layers, where a thrown value would otherwise lose its type and a resource
+  would otherwise be released by hand.
+
+Out of scope, deliberately:
+
+- **The terminal byte path.** The PTY reader, the emulator feed, the repaint
+  encoder and the raw `Input`/`Output` frames run per keystroke and per repaint.
+  They stay plain, allocation-free code against the budgets in
+  [`performance.md`](performance.md).
+- **React render paths.** A render is not a boundary, and an Effect in one is a
+  scheduler fighting a scheduler.
+- **Anything under a performance budget.** If `performance.md` names it, it is
+  not a place to add indirection.
+
+One hard rule on top: no Effect construct may introduce an unbounded buffer.
+A `Queue`, a `PubSub` or a `Stream` with no capacity is the same defect as an
+unbounded array, and AGENTS.md non-negotiable 9 applies to it identically.
+
+Domain values in `@janela/core` stay plain and JSON-shaped. A `Schema.Struct`
+describing one is fine as long as the derived type is still a plain readonly
+object and encoding is the identity; a domain type is never an Effect class with
+methods on it.
+
+---
+
 ## The seams that matter
 
 Five boundaries carry the design risk. Each is deliberately narrow, and all five
@@ -166,8 +292,9 @@ were real boundaries rather than artefacts of the old stack.
 
 An interface over "deliver these frames, give me those frames". Two implementations
 today, both local: the daemon's socket listener, and the app's bridge through the
-Tauri shell. A WebSocket implementation later makes a browser client a transport
-rather than a rewrite. Nothing above it knows which.
+Tauri shell (`apps/desktop/src/adapters/transport.ts`). A WebSocket implementation
+later makes a browser client a transport rather than a rewrite. Nothing above it
+knows which.
 
 ### 2. `TerminalEmulating` — the VT parser and the grid (daemon)
 
@@ -196,8 +323,15 @@ matcher we wrote.
 ### 5. `AttentionDelivering` — notification policy vs. delivery
 
 The daemon detects and emits a fact. `@janela/client` applies policy, because only a
-client knows what is focused. `apps/desktop` delivers, because notifications are an
+client knows what is focused. `apps/desktop` delivers
+(`apps/desktop/src/adapters/notification-delivery.ts`), because notifications are an
 app-level capability.
+
+The rest of what only an app can do — the clipboard, the directory picker, the
+window controls, the menu bar, settings storage — is the same shape and is not a
+sixth seam: the ports are declared in `packages/ui/src/shared/model/client-environment.tsx`,
+beside the views that consume them, and implemented once each in
+`apps/desktop/src/adapters/`.
 
 ---
 
@@ -413,9 +547,9 @@ Two consequences worth stating:
 - **The position is a contract between two files that cannot import each other.**
   `TRAFFIC_LIGHT_POSITION` in `@janela/ui` is measured against that row — its
   height comes from the size ladder — and `tauri.conf.json` has to carry the same
-  numbers. `apps/desktop/src/window-controls.test.ts` holds it to them, because
-  the failure mode is buttons sitting on top of a control rather than anything a
-  compiler or a person reviewing a diff would notice.
+  numbers. `apps/desktop/src/adapters/window-controls.test.ts` holds it to them,
+  because the failure mode is buttons sitting on top of a control rather than
+  anything a compiler or a person reviewing a diff would notice.
 - **Whether the buttons are there is a port, not an assumption.**
   `WindowControls` answers one boolean, and only the shell can: macOS takes the
   buttons away in fullscreen, and `titleBarStyle` is a macOS-only key, so any

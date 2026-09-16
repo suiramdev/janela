@@ -1,72 +1,21 @@
-/**
- * The module graph, as data.
- *
- * This graph used to live in a package manifest that a compiler read, so an illegal
- * import was a build error rather than a review comment. Nothing in TypeScript does
- * that for us — worse, Bun hoists `node_modules`, so a package can
- * `import "@janela/pty"` and have it *resolve* without ever declaring it.
- *
- * So the graph is written down here, once, and `check-layers.ts` enforces it.
- * This file is the single source of truth: `docs/architecture.md` § Packages
- * describes it in prose, and `.oxlintrc.json` restates the coarse side-level half
- * of it for editor feedback, but if they disagree, this file is right and the
- * others are stale.
- */
-
-/** Which process a package belongs to. */
-export type Side =
-  /** Links into both processes. Pure, and it may import from neither side. */
-  | "shared"
-  /** Runs inside `janelad`. Owns PTYs, git, the database, the emulator. */
-  | "daemon"
-  /** Runs inside a client. Renders a mirror; cannot spawn anything. */
-  | "client"
-  /** Not shipped. Test helpers and build tooling. */
-  | "tool";
+export type Side = "shared" | "daemon" | "client" | "tool";
 
 export interface PackageSpec {
-  /** Workspace name, as it appears in an import. */
   readonly name: string;
-  /** Directory relative to the repository root. */
   readonly dir: string;
-  /**
-   * Layer index. A dependency must have a *strictly lower* layer than its
-   * dependent — that is what "dependencies point downward only" means once the
-   * compiler has stopped saying it for us. Peers share a layer and therefore
-   * cannot depend on each other, which is how `git` and `forge` stay apart.
-   */
   readonly layer: number;
   readonly side: Side;
-  /** Every first-party package this one may import. Exhaustive. */
   readonly deps: readonly string[];
-  /** Designed and documented, but not yet implemented. */
   readonly planned?: boolean;
 }
 
-/**
- * Layer order, and the reason each boundary is where it is.
- *
- *   0  support        logging, errors, timing, bounded buffers, subprocess
- *   1  core           domain types. Pure. No I/O.
- *   2  protocol       wire messages, framing, handshake, transport seam
- *          ╭──────────────────────── daemon ────────────────────────╮
- *   3      git   pty   db   forge
- *   4      terminal                     (headless emulator + repaint encoder)
- *   5      session                      (the brain)
- *   6      daemon  →  apps/daemon       (listener, then the executable)
- *          ╰────────────────────────────────────────────────────────╯
- *          ╭──────────────────────── client ────────────────────────╮
- *   6      client                       (connection, mirror, attention policy)
- *   7      design                       (tokens and reusable controls)
- *   8      terminal-ui                  (the surface, fed escape sequences)
- *   9      ui
- *  10      apps/desktop                 (composition root)
- *          ╰────────────────────────────────────────────────────────╯
- *
- * The two halves meet only at `core` and `protocol`.
- */
+export interface GatedModule {
+  readonly pattern: string;
+  readonly allowed: readonly string[];
+  readonly reason: string;
+}
+
 export const PACKAGES: readonly PackageSpec[] = [
-  // ---- Shared ---------------------------------------------------------------
   {
     name: "@janela/support",
     dir: "packages/support",
@@ -89,7 +38,6 @@ export const PACKAGES: readonly PackageSpec[] = [
     deps: ["@janela/support", "@janela/core"],
   },
 
-  // ---- Daemon: one external boundary each, hidden completely ----------------
   {
     name: "@janela/git",
     dir: "packages/git",
@@ -170,7 +118,6 @@ export const PACKAGES: readonly PackageSpec[] = [
     ],
   },
 
-  // ---- Client ---------------------------------------------------------------
   {
     name: "@janela/client",
     dir: "packages/client",
@@ -221,13 +168,7 @@ export const PACKAGES: readonly PackageSpec[] = [
     ],
   },
 
-  // ---- Not shipped ----------------------------------------------------------
   {
-    // Layer 0 and dependency-free, deliberately. Every package's tests link it,
-    // including `@janela/support`'s own, so a first-party dependency here would be
-    // a cycle in the project-reference graph — and a test helper that needs the
-    // thing under test is a test helper that cannot test it. The fakes are typed
-    // structurally for the same reason.
     name: "@janela/test-support",
     dir: "packages/test-support",
     layer: 0,
@@ -235,24 +176,6 @@ export const PACKAGES: readonly PackageSpec[] = [
     deps: [],
   },
 ];
-
-/**
- * External modules that exactly one place is allowed to import.
- *
- * Each of these is a deliberate decision, and each is a boundary that erodes the
- * moment a second importer appears. There used to be one such rule — only two
- * modules could link the terminal library — and it was enforced by declaring that
- * dependency on exactly two of them. Here every dependency resolves everywhere,
- * so each rule needs teeth of its own.
- */
-export interface GatedModule {
-  /** Import specifier, or a prefix ending in `*`. */
-  readonly pattern: string;
-  /** Packages permitted to import it, by name. */
-  readonly allowed: readonly string[];
-  /** Why, in one sentence. */
-  readonly reason: string;
-}
 
 export const GATED_MODULES: readonly GatedModule[] = [
   {

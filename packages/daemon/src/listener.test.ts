@@ -34,58 +34,69 @@ import {
   type Recorded,
 } from "./test-fakes.ts";
 
-/**
- * The listener against a real Unix socket.
- *
- * Framing across arbitrary chunk boundaries, a peer that goes away mid-frame, and
- * back-pressure from a socket nobody is reading are exactly what an in-process
- * transport cannot tell us, so these tests pay for a real one.
- */
+interface SocketClient {
+  readonly frames: Frame[];
+  controls(): DaemonMessage[];
+  outputs(): { readonly terminalID: TerminalID; readonly text: string }[];
+  write(frame: Frame): void;
+  writeBytes(bytes: Uint8Array): void;
+  stopReading(): void;
+  ended(): boolean;
+  finish(): void;
+  destroy(): void;
+}
+
+interface Fixture {
+  readonly path: string;
+  readonly daemon: DaemonServer;
+  readonly dispatch: FakeDispatch;
+  readonly records: Recorded[];
+  with(message: string): Recorded[];
+  connect(): Promise<SocketClient>;
+  stop(): Promise<void>;
+}
+
+interface ColdStart extends AsyncDisposable {
+  readonly client: SocketClient;
+}
 
 const REQUEST_ID = 1 as RequestID;
 const VIEWPORT: GridSize = { columns: 80, rows: 24 };
 
 const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
 
+const subscribeToState = (): Frame =>
+  encodeClientMessage({ type: "subscribe", id: REQUEST_ID, scope: { kind: "state" } });
+
+const running: Fixture[] = [];
+const clients: SocketClient[] = [];
+
 async function until(condition: () => boolean, description: string): Promise<void> {
   for (let attempt = 0; attempt < 2_000; attempt += 1) {
     if (condition()) return;
-    // Polling is the point: the condition is what the test waits for, and each
-    // check has to happen after the previous one.
+
     // oxlint-disable-next-line no-await-in-loop
     await Bun.sleep(1);
   }
+
   throw new Error(`timed out waiting for ${description}`);
 }
 
-/** A `struct xucred` as the kernel would write it: little-endian, host order. */
 function xucred(uid: number): Uint8Array {
   const bytes = new Uint8Array(XUCRED_BYTE_LENGTH);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, XUCRED_VERSION, true);
   view.setUint32(4, uid, true);
+
   return bytes;
 }
 
 function currentUid(): number {
   const uid = process.getuid?.();
-  if (uid === undefined) throw new Error("POSIX only");
-  return uid;
-}
 
-/** A client on the real socket, framing by hand. */
-interface SocketClient {
-  readonly frames: Frame[];
-  controls(): DaemonMessage[];
-  outputs(): { readonly terminalID: TerminalID; readonly text: string }[];
-  write(frame: Frame): void;
-  /** Raw bytes, so a test can split a frame wherever it likes. */
-  writeBytes(bytes: Uint8Array): void;
-  /** Stops reading, so the kernel buffer fills and the daemon feels it. */
-  stopReading(): void;
-  ended(): boolean;
-  finish(): void;
-  destroy(): void;
+  if (uid === undefined) throw new Error("POSIX only");
+
+  return uid;
 }
 
 async function socketClient(path: string): Promise<SocketClient> {
@@ -99,8 +110,6 @@ async function socketClient(path: string): Promise<SocketClient> {
 
   socket.on("data", (chunk: Buffer) => {
     for (const frame of decoder.push(chunk)) {
-      // The decoder hands out views into its own buffer, valid only until the
-      // next push. This test keeps them, so it copies them.
       frames.push({ kind: frame.kind, payload: Uint8Array.from(frame.payload) });
     }
   });
@@ -120,6 +129,7 @@ async function socketClient(path: string): Promise<SocketClient> {
         .filter((frame) => frame.kind === FrameKind.Output)
         .map((frame) => {
           const output = decodeOutput(frame);
+
           return { terminalID: output.terminalID, text: text.decode(output.bytes) };
         }),
     write: (frame) => {
@@ -141,39 +151,23 @@ async function socketClient(path: string): Promise<SocketClient> {
   };
 }
 
-interface Fixture {
-  readonly path: string;
-  readonly daemon: DaemonServer;
-  readonly dispatch: FakeDispatch;
-  readonly records: Recorded[];
-  with(message: string): Recorded[];
-  connect(): Promise<SocketClient>;
-  stop(): Promise<void>;
-}
-
-const running: Fixture[] = [];
-const clients: SocketClient[] = [];
-
 afterEach(async () => {
   for (const client of clients.splice(0)) client.destroy();
+
   await Promise.all(running.splice(0).map((active) => active.stop()));
 });
 
 async function fixture(
   options: {
     readonly terminals?: readonly FakeTerminal[];
-    /** What the injected `getsockopt` reader reports. Defaults to us. */
     readonly peerUid?: number;
   } = {},
 ): Promise<Fixture> {
   const directory = await temporaryDirectory("listener");
   const path = directory.join("d.sock");
-  // A truncated `sun_path` silently addresses a different socket, so the fixture
-  // asserts its own path fits before it binds.
+
   expect(Buffer.byteLength(path)).toBeLessThan(MAXIMUM_SOCKET_PATH_LENGTH);
 
-  // `socketListener` insists on it: a queued socket that is still flowing loses
-  // whatever the peer wrote before the accept loop reached it (#43).
   const server = createServer({ pauseOnConnect: true });
   server.listen(path);
   await once(server, "listening");
@@ -212,6 +206,7 @@ async function fixture(
     async connect(): Promise<SocketClient> {
       const client = await socketClient(path);
       clients.push(client);
+
       return client;
     },
     async stop(): Promise<void> {
@@ -222,18 +217,64 @@ async function fixture(
   };
 
   running.push(value);
+
   return value;
 }
 
-const subscribeToState = (): Frame =>
-  encodeClientMessage({ type: "subscribe", id: REQUEST_ID, scope: { kind: "state" } });
-
-/** Handshakes and returns the client once the daemon has answered. */
 async function connectAndHandshake(daemon: Fixture): Promise<SocketClient> {
   const client = await daemon.connect();
   client.write(clientHello());
   await until(() => client.controls().length > 0, "the daemon's hello");
+
   return client;
+}
+
+async function coldStartedListener(): Promise<ColdStart> {
+  const directory = await temporaryDirectory("listener");
+  const path = directory.join("d.sock");
+
+  expect(Buffer.byteLength(path)).toBeLessThan(MAXIMUM_SOCKET_PATH_LENGTH);
+
+  const registry = fakeRegistry([]);
+  const dispatch = fakeDispatch(registry);
+  const { logger } = recordingLogger();
+  const ownUid = currentUid();
+  const controller = new AbortController();
+  const server = createServer({ pauseOnConnect: true });
+  const listener = socketListener({
+    server,
+    credentials: () => ({ xucred: xucred(ownUid), pid: 7 }),
+    ownUid,
+    log: logger,
+  });
+
+  server.listen(path);
+  await once(server, "listening");
+
+  const client = await socketClient(path);
+  client.write(clientHello());
+  await Bun.sleep(20);
+
+  const daemon = createDaemonServer({
+    sessions: fakeSessions(),
+    projects: fakeProjects(),
+    launchProfiles: fakeLaunchProfiles(),
+    terminals: registry,
+    log: logger,
+    dispatch,
+    handshakeDeadlineMs: 500,
+  });
+  const serving = daemon.serve(listener, controller.signal);
+
+  return {
+    client,
+    async [Symbol.asyncDispose](): Promise<void> {
+      controller.abort();
+      await serving;
+      client.destroy();
+      await directory[Symbol.asyncDispose]();
+    },
+  };
 }
 
 describe("the socket listener", () => {
@@ -242,17 +283,17 @@ describe("the socket listener", () => {
     const client = await daemon.connect();
 
     const bytes = encodeFrame(clientHello());
-    // Three bytes is inside the four-byte length prefix: a reader that assumes a
-    // frame arrives whole fails exactly here.
     client.writeBytes(bytes.subarray(0, 3));
     await Bun.sleep(10);
     client.writeBytes(bytes.subarray(3));
 
     await until(() => client.controls().length === 1, "the daemon's hello");
+
     expect(client.controls()[0]?.type).toBe("hello");
 
     client.write(subscribeToState());
     await until(() => client.controls().length === 2, "the acknowledgement");
+
     expect(client.controls()[1]).toEqual({ type: "acknowledged", id: REQUEST_ID });
     expect(daemon.daemon.connectionCount).toBe(1);
   });
@@ -263,15 +304,16 @@ describe("the socket listener", () => {
     const client = await daemon.connect();
 
     await until(() => client.frames.length === 1, "the refusal");
+
     expect(client.controls()[0]).toEqual({
       type: "refused",
       refusal: { kind: "unauthorized" },
     });
+
     await until(() => client.ended(), "the socket to close");
 
     expect(daemon.daemon.connectionCount).toBe(0);
     expect(daemon.with("peer refused")[0]?.fields?.["refusal"]).toBe("uid-mismatch");
-    // The refusal says nothing about which check failed.
     expect(client.controls()[0]).not.toHaveProperty("refusal.peerUid");
   });
 
@@ -282,12 +324,13 @@ describe("the socket listener", () => {
     await until(() => daemon.dispatch.requests.length === 1, "the subscription");
 
     const truncated = await connectAndHandshake(daemon);
-    // A length prefix claiming a payload that never comes, then FIN.
     truncated.writeBytes(new Uint8Array([0, 0, 0, 8, FrameKind.Control, 1, 2]));
     truncated.finish();
 
     await until(() => daemon.with("connection failed").length === 1, "the failure to be noticed");
+
     expect(daemon.with("connection failed")[0]?.fields?.["error"]).toBe("truncated");
+
     await until(() => daemon.daemon.connectionCount === 1, "the survivor to be the only one left");
 
     const session = fakeSession("s1");
@@ -299,7 +342,6 @@ describe("the socket listener", () => {
   });
 
   test("a peer that stops reading its socket bounds its own memory and delays nobody", async () => {
-    // 64 KB deltas: big enough that the kernel buffer fills within a few frames.
     const big = new Uint8Array(64 * 1024).fill(0x61);
     const terminal = fakeTerminal(terminalID(), { delta: big, full: big });
     const daemon = await fixture({ terminals: [terminal] });
@@ -327,7 +369,7 @@ describe("the socket listener", () => {
     }
 
     const encodes = terminal.repaintCalls.length + terminal.fullRepaintCalls.length;
-    // The bound is the queue plus what the socket itself took, not 200.
+
     expect(encodes).toBeLessThan(60);
 
     const started = Bun.nanoseconds();
@@ -336,8 +378,7 @@ describe("the socket listener", () => {
       () => reader.controls().some((message) => message.type === "state"),
       "the reading client's state update",
     );
-    // Two hundred frames owed to a peer that is not reading, and the other client
-    // is still served promptly.
+
     expect(Bun.nanoseconds() - started).toBeLessThan(200_000_000);
     expect(daemon.daemon.connectionCount).toBe(2);
     expect(terminal.stopCalls.count).toBe(0);
@@ -352,6 +393,7 @@ describe("the socket listener", () => {
 
     const late = connect(daemon.path);
     const [error] = (await once(late, "error")) as [NodeJS.ErrnoException];
+
     expect(["ECONNREFUSED", "ENOENT"]).toContain(error.code ?? "none");
   });
 
@@ -376,64 +418,20 @@ describe("the socket listener", () => {
       await Bun.sleep(0);
     }
 
-    // A reading client receives every frame; the bound only bites when it stops.
     await until(
       () => client.outputs().length >= OUTPUT_QUEUE_CAPACITY,
       "every frame to reach a reading client",
     );
+
     expect(client.outputs()[0]?.text).toBe("F");
     expect(client.outputs()[0]?.terminalID).toBe(terminal.id);
   });
 
   test("holds a connection accepted before the accept loop starts — on a server that was not yet listening", async () => {
-    // Built by hand rather than through `fixture()`, whose order is
-    // listen-then-listener: the order under test is the opposite one, which is
-    // what `serve()` in `apps/daemon` does since #43.
-    const directory = await temporaryDirectory("listener");
-    const path = directory.join("d.sock");
-    expect(Buffer.byteLength(path)).toBeLessThan(MAXIMUM_SOCKET_PATH_LENGTH);
+    await using cold = await coldStartedListener();
 
-    const registry = fakeRegistry([]);
-    const dispatch = fakeDispatch(registry);
-    const { logger } = recordingLogger();
-    const ownUid = currentUid();
-    const controller = new AbortController();
+    await until(() => cold.client.controls().length === 1, "the daemon's hello");
 
-    const server = createServer({ pauseOnConnect: true });
-    const listener = socketListener({
-      server,
-      credentials: () => ({ xucred: xucred(ownUid), pid: 7 }),
-      ownUid,
-      log: logger,
-    });
-    server.listen(path);
-    await once(server, "listening");
-
-    const client = await socketClient(path);
-    client.write(clientHello());
-    // Accepted and queued, with nobody accepting and nobody reading: this is the
-    // window a cold start opens, and both the socket and its bytes must survive.
-    await Bun.sleep(20);
-
-    const daemon = createDaemonServer({
-      sessions: fakeSessions(),
-      projects: fakeProjects(),
-      launchProfiles: fakeLaunchProfiles(),
-      terminals: registry,
-      log: logger,
-      dispatch,
-      handshakeDeadlineMs: 500,
-    });
-    const serving = daemon.serve(listener, controller.signal);
-
-    try {
-      await until(() => client.controls().length === 1, "the daemon's hello");
-      expect(client.controls()[0]?.type).toBe("hello");
-    } finally {
-      controller.abort();
-      await serving;
-      client.destroy();
-      await directory[Symbol.asyncDispose]();
-    }
+    expect(cold.client.controls()[0]?.type).toBe("hello");
   });
 });

@@ -46,9 +46,10 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run check` | `lint` + `typecheck` + `test` — exactly what CI runs | Before pushing |
 | `bun run typecheck` | `tsc --build` across the workspace | Constantly — takes seconds |
 | `bun test` | Run all tests | After every change |
-| `bun run lint` | Oxlint, format check, **and the layering gate**, non-mutating | Before committing |
+| `bun run lint` | Oxlint, format check, **the layering gate and the FSD gate**, non-mutating | Before committing |
 | `bun run format` | Fix formatting in place | When `lint` complains |
 | `bun run check:layers` | The layering gate alone | When you touched a dependency edge |
+| `bun run check:fsd` | The FSD structure gate alone (Steiger, inside `@janela/ui`) | When you moved a file inside `@janela/ui` |
 | `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
 | `bun run dev` | A `janelad` **and** the app, in one terminal | When you need to see it |
 | `bun run app` | The app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
@@ -77,12 +78,19 @@ Three things that will bite you once each:
 
 ```text
 apps/desktop/          The Tauri app. src-tauri/ is a THIN Rust shell; src/ is React.
+apps/desktop/src/      The FSD `app` layer: entry, the object graph, adapters/ for the ports.
 apps/daemon/           janelad. Process plumbing only — nothing testable.
 packages/              All logic, as layered packages. Your work goes here.
+packages/ui/src/       Feature-Sliced: pages/{main-window,settings}/ + shared/{model,config,ui,lib}/.
 scripts/layers.ts      The module graph, as data. The architecture, enforced.
 docs/                  Architecture, conventions, domain model. Read before designing.
 docs/MIGRATION_MAP.md  Where everything went when the stack changed.
 ```
+
+Inside `@janela/ui` imports point downward, `pages → shared`, and cross a slice or
+a shared segment only through its `index.ts` — enforced by `steiger`
+(`bun run check:fsd`). See
+[`architecture.md`](docs/architecture.md) § Inside `@janela/ui`.
 
 ---
 
@@ -215,12 +223,34 @@ it means a project or a session. Full table in
   environment values — log the *shape*: an id, a count, an exit status.
 - **Imports carry their `.ts` extension**, and `import type` is required for
   type-only imports.
+- **Inside `@janela/ui`, a file lives in a slice or a shared segment.** Layers are
+  `pages/` and `shared/`; segments are `ui`, `model`, `config`, `lib` and nothing
+  else; every slice and every shared segment has one `index.ts`, and that is the
+  only way in. Name files after the domain — no `types.ts`, `utils.ts` or
+  `helpers.ts`. Do not add `features/` or `entities/` until a second consumer
+  exists; `bun run check:fsd` will say so if you do.
 - **Domain values are plain and JSON-shaped.** Timestamps are ISO strings, paths are
   strings. Everything in `@janela/core` crosses a socket.
 - **Dependency injection through parameters.** There is no service locator and no
   module-level mutable state. The composition roots are `liveEnvironment()` in the
   app and `daemonEnvironment()` in the daemon.
-- **Doc comments explain *why*.** The signature already says what.
+- **No comments in TypeScript.** The only ones the linter leaves alone are
+  `SAFETY:` (a real invariant the type system cannot state, naming the evidence
+  that established it), `@ts-expect-error`, tooling directives (`oxlint-`,
+  `eslint-`, `c8 `, `istanbul `), triple-slash references, and shebangs. Intent
+  is carried by names, types, schemas and structure; durable rationale lives in
+  `docs/`, per package in [`docs/packages/<name>.md`](docs/packages/). A
+  `SAFETY:` spanning more than one line must be a single `/* … */` block — each
+  `//` line is its own comment and only the first would be exempt.
+- **Effect v4 at the seams, not as the runtime.** `Schema` at every untrusted
+  boundary — control frames, persisted JSON, config, IPC — instead of `typeof`,
+  `in` and `as`. `Schema.TaggedError` or `Data.TaggedError` for closed failure
+  sets, matched with `Match.tag` / `Effect.catchTag` / `Predicate.isTagged` and
+  never by reading `_tag`. `Match` instead of `switch`. `Effect.try`,
+  `Effect.tryPromise`, `Effect.acquireRelease` instead of `try`/`catch`/
+  `finally`. Never on the terminal byte path, never in a React render path, and
+  never where it would introduce an unbounded buffer. See
+  [`docs/architecture.md`](docs/architecture.md) § Effect at the seams.
 - **argv is always an array.** `LaunchProfile.command`, `AutomationCommand.command`,
   git invocations, PTY spawns. There is no shell anywhere, so there is no quoting bug
   class. A user who wants a shell writes `["zsh", "-lc", "…"]` and has chosen that.
@@ -232,8 +262,13 @@ Full details: [`docs/conventions.md`](docs/conventions.md).
 ## Testing
 
 - Tests use **`bun test`** (`describe`, `test`, `expect`), colocated as `*.test.ts`.
-- `bun test` runs files **in parallel**. Never write to a fixed path; use
-  `temporaryDirectory` and `gitFixture` from `@janela/test-support`.
+- In `@janela/ui` a test sits **inside the slice or segment it tests**, and obeys
+  the same boundaries the code does: Steiger lints test files, so a test imports a
+  segment's `index.ts` rather than a file behind it. Fakes live in
+  `shared/lib/test-fakes`.
+- `bun test` runs files **in sequence, in one process** — leftovers outlive the
+  file that made them, and `--parallel` must stay possible. Never write to a fixed
+  path; use `temporaryDirectory` and `gitFixture` from `@janela/test-support`.
 - Git behaviour is tested against **real repositories** in temp directories. We do
   not mock git — a mock would only prove our assumptions. The same goes for
   `.worktreeinclude`, which is tested by creating a real worktree and looking at what
@@ -255,6 +290,15 @@ Run `bun run check`. It must pass. Then confirm:
 - [ ] Did you add a dependency edge? It must point downward, must not cross the
       daemon/client line except through `@janela/core` or `@janela/protocol`, and must
       be in **both** `scripts/layers.ts` and the package's `package.json`.
+- [ ] Did you add a third-party import? Declare it in that package's
+      `package.json` at the version already in `bun.lock`. `bun run check:layers`
+      fails on an undeclared one — Bun's hoisting would otherwise resolve it.
+- [ ] Did you add a file to `@janela/ui`? It goes in a slice or a shared segment,
+      reached through that boundary's `index.ts`, and `bun run check:fsd` must pass.
+- [ ] Did you write a comment? Only `SAFETY:`, `@ts-expect-error`, tooling
+      directives, triple-slash references and shebangs survive the linter. Put
+      the rationale in `docs/packages/<name>.md` and let names and types carry
+      the intent.
 - [ ] Did you change the wire protocol? Version it, and say what an older peer does.
 - [ ] Did you add a concept a user has to learn? Justify it against
       [`docs/product.md`](docs/product.md) § Non-goals — the budget is four nouns.
@@ -263,6 +307,10 @@ Run `bun run check`. It must pass. Then confirm:
       [`docs/architecture.md`](docs/architecture.md).
 - [ ] Does anything you added allocate per-byte or per-frame on the terminal path?
       Check the budgets in [`docs/performance.md`](docs/performance.md).
+- [ ] Did you reach for Effect? It belongs at a seam — a boundary you are
+      parsing, a closed failure set, a discriminant, an I/O lifetime — not on
+      the terminal byte path or in a render path, and never where it adds an
+      unbounded buffer.
 
 ---
 

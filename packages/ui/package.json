@@ -9,6 +9,7 @@
   },
   "scripts": {
     "clean": "rm -rf dist *.tsbuildinfo",
+    "lint:fsd": "steiger src --fail-on-warnings",
     "test": "bun test",
     "typecheck": "tsc --build"
   },
@@ -19,11 +20,14 @@
     "@janela/core": "workspace:*",
     "@janela/design": "workspace:*",
     "@janela/protocol": "workspace:*",
-    "@janela/terminal-ui": "workspace:*"
+    "@janela/terminal-ui": "workspace:*",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
+    "@feature-sliced/steiger-plugin": "0.7.0",
     "@janela/test-support": "workspace:*",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "steiger": "0.6.0"
   }
 }

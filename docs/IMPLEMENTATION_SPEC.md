@@ -3382,7 +3382,7 @@ export const COMMANDS: readonly Command[];
 
 #### Keyboard
 
-`COMMANDS`, in file order, from `packages/ui/src/commands.ts`. Seventeen
+`COMMANDS`, in file order, from `packages/ui/src/shared/config/commands.ts`. Seventeen
 commands; fifteen accelerators, written in Tauri's notation because the native
 menu bar in `apps/desktop/src-tauri` is built from this table.
 
@@ -3483,11 +3483,11 @@ commands at all, `⌘T` is New Terminal, and `⌘⇧[` / `⌘⇧]` switch sessio
 
 **Seams**:
 
-- `packages/ui/src/main-window.tsx` — `MainWindow`, `Sidebar` and
-  `SessionDetail`, plus the `TODO:` notes that carry the sidebar and pane rules
-  above.
-- `packages/ui/src/connection-banner.tsx` — the `connecting`/`reconnecting`
-  strip and the `refused` case with the copy above.
+- `packages/ui/src/pages/main-window/ui/main-window.tsx` — `MainWindow`, and with
+  it `app-sidebar.tsx`, `session-detail.tsx` and the pane files, plus the `TODO:`
+  notes that carry the sidebar and pane rules above.
+- `packages/ui/src/pages/main-window/ui/connection-banner.tsx` — the
+  `connecting`/`reconnecting` strip and the `refused` case with the copy above.
 
 ---
 
@@ -3628,14 +3628,14 @@ export function setLogSink(sink: LogSink): void;
     sink is installed, records are dropped rather than printed.
 16. **`@tauri-apps/*` is gated to this package** by `scripts/layers.ts` — "Tauri
     is the shell, not the architecture". `@janela/client` stays
-    transport-agnostic, so a browser client replaces `transport.ts` with a
+    transport-agnostic, so a browser client replaces `adapters/transport.ts` with a
     WebSocket implementation and changes nothing above it.
 
 **Seams**:
 
 - `apps/desktop/src/environment.ts` — build the transport and ensure the daemon
   is registered as a launch agent if it is not already.
-- `apps/desktop/src/transport.ts` — implement over Tauri's IPC: bytes not
+- `apps/desktop/src/adapters/transport.ts` — implement over Tauri's IPC: bytes not
   strings, bounded back-pressure with the two policies, reconnection left to the
   shell.
 - `apps/desktop/src/main.tsx` — mount `MainWindow` with the live environment,
@@ -3646,7 +3646,7 @@ export function setLogSink(sink: LogSink): void;
 **Build deliverables** (required by issue #41; checked against the tree — **none
 of the five exists today**, and `apps/desktop` currently holds only
 `package.json`, `tsconfig.json`, `src/environment.ts`, `src/main.tsx`,
-`src/transport.ts` and `src-tauri/src/main.rs`):
+`src/adapters/transport.ts` and `src-tauri/src/main.rs`):
 
 - `apps/desktop/src-tauri/Cargo.toml` — missing.
 - `apps/desktop/src-tauri/tauri.conf.json` — missing; carries the bundle, the

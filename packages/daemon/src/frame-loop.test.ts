@@ -11,8 +11,6 @@ import {
   type Recorded,
 } from "./test-fakes.ts";
 
-const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
-
 interface Delivery {
   readonly client: string;
   readonly terminalID: TerminalID;
@@ -23,15 +21,16 @@ interface Harness {
   readonly loop: FrameLoop;
   readonly deliveries: Delivery[];
   readonly records: Recorded[];
-  /** Clients whose output queue is full, as the server's `hasRoom` would report. */
   readonly withoutRoom: Set<string>;
-  /** How often the loop asked for the terminals — one per frame it ran. */
   readonly frames: { count: number };
 }
 
+const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
+
+const SETTLE_MS = 2_000;
+
 function harness(
   terminals: readonly FakeTerminal[],
-  /** What the daemon's enumeration yields. Defaults to everything registered. */
   enumerated: readonly FakeTerminal[] = terminals,
 ): Harness {
   const deliveries: Delivery[] = [];
@@ -45,6 +44,7 @@ function harness(
       terminals: fakeRegistry(terminals),
       liveTerminals: () => {
         frames.count += 1;
+
         return enumerated;
       },
       hasRoom: (client) => !withoutRoom.has(client),
@@ -60,29 +60,23 @@ function harness(
   };
 }
 
-/**
- * How long a claim about a real timer gets before it is a failure.
- *
- * Generous on purpose: a loaded machine coalesces timers, so counting frames
- * against a fixed sleep measures the runner, not the loop. Waiting to a deadline
- * ends as soon as the claim holds — only a loop that genuinely stopped ticking
- * pays the whole budget.
- */
-const SETTLE_MS = 2_000;
-
 function eventually(claim: () => boolean): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
+
   if (claim()) {
     resolve();
+
     return promise;
   }
 
   const deadline = Date.now() + SETTLE_MS;
   const poll = setInterval(() => {
     if (!claim() && Date.now() < deadline) return;
+
     clearInterval(poll);
     resolve();
   }, 1);
+
   return promise;
 }
 
@@ -111,6 +105,7 @@ describe("the frame loop", () => {
     const { loop } = harness([terminal]);
 
     for (const client of ["a", "b", "c"]) loop.attach(client, terminal.id);
+
     loop.tick();
     loop.tick();
 
@@ -142,15 +137,19 @@ describe("the frame loop", () => {
 
     loop.attach("slow", terminal.id);
     loop.tick();
+
     expect(deliveries.map((delivery) => delivery.text)).toEqual(["F"]);
 
     withoutRoom.add("slow");
+
     for (let index = 0; index < 5; index += 1) loop.tick();
+
     expect(terminal.repaintCalls).toEqual([]);
     expect(terminal.fullRepaintCalls).toEqual(["slow"]);
 
     withoutRoom.delete("slow");
     loop.tick();
+
     expect(terminal.fullRepaintCalls).toEqual(["slow", "slow"]);
     expect(deliveries.map((delivery) => delivery.text)).toEqual(["F", "F"]);
   });
@@ -196,12 +195,14 @@ describe("the frame loop", () => {
     loop.tick();
 
     const failures = records.filter((record) => record.message === "repaint failed");
+
     expect(failures).toHaveLength(1);
     expect(failures[0]?.level).toBe("warning");
     expect(failures[0]?.fields?.["terminalID"]).toBe(broken.id);
     expect(failures[0]?.fields?.["error"]).toBe("RangeError");
 
     loop.tick();
+
     expect(deliveries.every((delivery) => delivery.terminalID === alive.id)).toBe(true);
     expect(alive.repaintCalls).toEqual(["c1"]);
   });
@@ -243,11 +244,6 @@ describe("the frame loop", () => {
     loop.tick();
     loop.tick();
 
-    // The rule this exists for: a terminal nobody has open still has to consume,
-    // or its child blocks in `write(2)` at the PTY's high-water mark.
-    expect(unwatched.drainCalls.count).toBe(2);
-    expect(watched.drainCalls.count).toBe(2);
-    // Fed, but never encoded: nobody is watching it.
     expect(unwatched.repaintCalls).toEqual([]);
     expect(unwatched.fullRepaintCalls).toEqual([]);
     expect(deliveries.map((delivery) => delivery.terminalID)).toEqual([watched.id, watched.id]);
@@ -262,8 +258,6 @@ describe("the frame loop", () => {
     loop.attach("c", terminal.id);
     loop.tick();
 
-    // One drain, one feed, N encodes — the reason `drain()` is not part of
-    // `repaintFor()` at all.
     expect(terminal.drainCalls.count).toBe(1);
     expect(terminal.fullRepaintCalls).toEqual(["a", "b", "c"]);
   });
@@ -279,8 +273,6 @@ describe("the frame loop", () => {
 
   test("a watched terminal the enumeration missed is fed, and still only once", () => {
     const terminal = fakeTerminal(terminalID());
-    // Registered, watched, and absent from the enumeration: the client's screen
-    // has to keep moving anyway.
     const { loop, deliveries } = harness([terminal], []);
 
     loop.attach("c1", terminal.id);
@@ -301,11 +293,10 @@ describe("the frame loop", () => {
       },
       fullRepaintFor: (client) => {
         order.push("encode");
+
         return terminal.fullRepaintFor(client);
       },
     };
-    // Both paths must order the same way: this one is fed by the encode pass,
-    // because the enumeration does not yield it.
     const { loop } = harness([observed], []);
     const enumerated = harness([observed]);
 
@@ -314,7 +305,6 @@ describe("the frame loop", () => {
     enumerated.loop.attach("c2", observed.id);
     enumerated.loop.tick();
 
-    // A repaint encoded before the feed would be a frame behind, every frame.
     expect(order).toEqual(["drain", "encode", "drain", "encode"]);
   });
 
@@ -328,12 +318,12 @@ describe("the frame loop", () => {
     loop.tick();
     loop.tick();
 
-    // #17's `readFailed` escaping would end the frame for every other terminal —
-    // and, from a timer callback, take the loop with it.
     expect(healthy.drainCalls.count).toBe(2);
     expect(deliveries.map((delivery) => delivery.terminalID)).toEqual([healthy.id, healthy.id]);
     expect(lost.fullRepaintCalls).toEqual([]);
+
     const failures = records.filter((record) => record.message === "drain failed");
+
     expect(failures).toHaveLength(1);
     expect(failures[0]?.fields?.["terminalID"]).toBe(lost.id);
   });
@@ -345,6 +335,7 @@ describe("the frame loop", () => {
       ...terminal,
       drain: () => {
         terminal.drainCalls.count += 1;
+
         if (failuresLeft > 0) {
           failuresLeft -= 1;
           throw new Error("read failed");
@@ -356,11 +347,11 @@ describe("the frame loop", () => {
     loop.attach("c1", flaky.id);
     loop.tick();
     loop.tick();
+
     expect(deliveries).toEqual([]);
 
-    // A `restart` re-establishes the descriptor. Resuming with a delta against a
-    // screen the client never saw is the corruption a full repaint avoids.
     loop.tick();
+
     expect(deliveries.map((delivery) => delivery.text)).toEqual(["F"]);
     expect(terminal.repaintCalls).toEqual([]);
   });
@@ -370,15 +361,15 @@ describe("the frame loop", () => {
     const { loop } = harness([terminal]);
     const controller = new AbortController();
 
-    // Real time, deliberately: the claim is about `setInterval`, which fake
-    // timers would assert about the mock rather than about the loop.
     loop.start(controller.signal);
     await eventually(() => terminal.drainCalls.count > 1);
+
     expect(terminal.drainCalls.count).toBeGreaterThan(1);
 
     controller.abort();
     const fed = terminal.drainCalls.count;
     await Bun.sleep(FRAME_INTERVAL_MS * 4);
+
     expect(terminal.drainCalls.count).toBe(fed);
   });
 
@@ -389,14 +380,15 @@ describe("the frame loop", () => {
 
     loop.start(controller.signal);
     await eventually(() => frames.count > 0);
-    // One frame to discover there is nothing to do, then no wakeups at all:
-    // forty configured-but-idle terminals cost nothing (non-negotiable #5).
     await Bun.sleep(FRAME_INTERVAL_MS * 4);
+
     expect(frames.count).toBe(1);
 
     loop.wake();
     await eventually(() => frames.count > 1);
+
     expect(frames.count).toBeGreaterThan(1);
+
     controller.abort();
   });
 
@@ -407,15 +399,18 @@ describe("the frame loop", () => {
 
     loop.start(controller.signal);
     await Bun.sleep(FRAME_INTERVAL_MS * 4);
+
     expect(deliveries).toEqual([]);
 
     loop.attach("c1", idle.id);
     await eventually(() => deliveries.length > 0);
     const delivered = deliveries.length;
+
     expect(delivered).toBeGreaterThan(0);
 
     controller.abort();
     await Bun.sleep(FRAME_INTERVAL_MS * 4);
+
     expect(deliveries).toHaveLength(delivered);
   });
 
@@ -432,9 +427,10 @@ describe("the frame loop", () => {
     const fed = terminal.drainCalls.count;
 
     await eventually(() => terminal.drainCalls.count > fed);
+
     expect(deliveries).toHaveLength(delivered);
-    // Closing the last window does not stop the terminal consuming.
     expect(terminal.drainCalls.count).toBeGreaterThan(fed);
+
     controller.abort();
   });
 });

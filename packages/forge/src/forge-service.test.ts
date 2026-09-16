@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { absolutePath, instant } from "@janela/core";
-import type { Project, Session } from "@janela/core";
 
 import {
   DEFAULT_FORGE_TIMEOUT_MS,
@@ -19,65 +18,95 @@ import {
   type ManualClock,
   type RecordedLog,
   type ScriptedOutcome,
+  type ScriptedProcesses,
 } from "./test-fakes.ts";
 
-const environment = { PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/Users/x" };
-const ghPath = "/opt/homebrew/bin/gh";
-const glabPath = "/opt/homebrew/bin/glab";
+interface GitHubRollupFixture {
+  readonly __typename: string;
+  readonly status?: string;
+  readonly conclusion?: string | null;
+  readonly state?: string | null;
+}
 
-const GH_FIELDS = "number,title,state,isDraft,url,statusCheckRollup";
+interface GitHubPullRequestFixture {
+  readonly number: number;
+  readonly title: string;
+  readonly state: string;
+  readonly isDraft: boolean;
+  readonly url: string;
+  readonly statusCheckRollup: readonly GitHubRollupFixture[];
+}
 
-/** Content that must never reach a log record. */
-const title = "feat(pty): the pseudo-terminal";
-const url = "https://github.com/suiramdev/janela/pull/42";
+interface GitLabPipelineFixture {
+  readonly status: string;
+}
 
-const ghPullRequest = (overrides?: Record<string, unknown>): string =>
-  JSON.stringify({
-    number: 42,
-    title,
-    state: "MERGED",
-    isDraft: false,
-    url,
-    statusCheckRollup: [
-      { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS", state: null },
-    ],
-    ...overrides,
-  });
+interface GitLabMergeRequestFixture {
+  readonly iid: number;
+  readonly title: string;
+  readonly state: string;
+  readonly draft: boolean;
+  readonly web_url: string;
+  readonly head_pipeline: GitLabPipelineFixture | null;
+}
 
-const glabMergeRequest = (overrides?: Record<string, unknown>): string =>
-  JSON.stringify({
-    iid: 42,
-    title,
-    state: "opened",
-    draft: true,
-    web_url: url,
-    head_pipeline: { status: "failed" },
-    ...overrides,
-  });
+interface HarnessOptions {
+  readonly outcomes?: readonly ScriptedOutcome[];
+  readonly which?: Readonly<Record<string, string>>;
+  readonly timeoutMs?: number;
+}
 
 interface Harness {
   readonly forge: ForgeServing;
-  readonly invocations: readonly {
-    readonly executable: string;
-    readonly arguments: readonly string[];
-    readonly workingDirectory: string;
-    readonly environment?: Readonly<Record<string, string>>;
-    readonly timeoutMs?: number;
-  }[];
-  readonly whichCalls: readonly { readonly executable: string; readonly path: string }[];
+  readonly invocations: ScriptedProcesses["invocations"];
+  readonly whichCalls: ScriptedProcesses["whichCalls"];
   readonly records: readonly RecordedLog[];
   readonly clock: ManualClock;
   hold(): () => void;
 }
 
-function harness(options?: {
-  readonly outcomes?: readonly ScriptedOutcome[];
-  readonly which?: Readonly<Record<string, string>>;
-  readonly timeoutMs?: number;
-}): Harness {
+const environment = { PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/Users/x" };
+
+const ghPath = "/opt/homebrew/bin/gh";
+
+const glabPath = "/opt/homebrew/bin/glab";
+
+const GH_FIELDS = "number,title,state,isDraft,url,statusCheckRollup";
+
+const unloggableTitle = "feat(pty): the pseudo-terminal";
+
+const unloggableUrl = "https://github.com/suiramdev/janela/pull/42";
+
+function ghPullRequest(overrides: Partial<GitHubPullRequestFixture> = {}): string {
+  return JSON.stringify({
+    number: 42,
+    title: unloggableTitle,
+    state: "MERGED",
+    isDraft: false,
+    url: unloggableUrl,
+    statusCheckRollup: [
+      { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS", state: null },
+    ],
+    ...overrides,
+  });
+}
+
+function glabMergeRequest(overrides: Partial<GitLabMergeRequestFixture> = {}): string {
+  return JSON.stringify({
+    iid: 42,
+    title: unloggableTitle,
+    state: "opened",
+    draft: true,
+    web_url: unloggableUrl,
+    head_pipeline: { status: "failed" },
+    ...overrides,
+  });
+}
+
+function harness(options: HarnessOptions = {}): Harness {
   const processes = scriptedProcesses({
-    ...(options?.outcomes === undefined ? {} : { outcomes: options.outcomes }),
-    which: options?.which ?? { gh: ghPath, glab: glabPath },
+    outcomes: options.outcomes ?? [],
+    which: options.which ?? { gh: ghPath, glab: glabPath },
   });
   const { logger, records } = recordingLogger();
   const clock = manualClock();
@@ -88,7 +117,7 @@ function harness(options?: {
       processes: processes.processes,
       log: logger,
       clock: clock.now,
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      timeoutMs: options.timeoutMs ?? DEFAULT_FORGE_TIMEOUT_MS,
     }),
     invocations: processes.invocations,
     whichCalls: processes.whichCalls,
@@ -98,21 +127,18 @@ function harness(options?: {
   };
 }
 
-/** The single class a failing read logged. */
-const failures = (records: readonly RecordedLog[]): readonly unknown[] =>
-  records
+function failures(records: readonly RecordedLog[]): readonly unknown[] {
+  return records
     .filter((record) => record.message === "forge read failed")
-    .map((r) => r.fields?.["failure"]);
-
-const project = (overrides?: Partial<Project>): Project => fakeProject(overrides);
-const session = (overrides?: Partial<Session>): Session => fakeSession(overrides);
+    .map((record) => record.fields?.["failure"]);
+}
 
 describe("state: what we ask gh", () => {
   test("the argv, the executable, the directory and the timeout are pinned", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }] });
-    const workingSession = session();
+    const workingSession = fakeSession();
 
-    await h.forge.state({ project: project(), session: workingSession });
+    await h.forge.state({ project: fakeProject(), session: workingSession });
 
     expect(h.whichCalls).toEqual([{ executable: "gh", path: environment.PATH }]);
     expect(h.invocations).toEqual([
@@ -128,8 +154,11 @@ describe("state: what we ask gh", () => {
 
   test("a session in the project directory names no branch, so the CLI resolves one", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }] });
-    const owning = project();
-    const simple = session({ directory: owning.directory, backing: { kind: "projectDirectory" } });
+    const owning = fakeProject();
+    const simple = fakeSession({
+      directory: owning.directory,
+      backing: { kind: "projectDirectory" },
+    });
 
     await h.forge.state({ project: owning, session: simple });
 
@@ -140,7 +169,7 @@ describe("state: what we ask gh", () => {
   test("a caller's timeout reaches the process", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }], timeoutMs: 250 });
 
-    await h.forge.state({ project: project(), session: session() });
+    await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(h.invocations[0]?.timeoutMs).toBe(250);
   });
@@ -150,11 +179,17 @@ describe("state: decoding gh", () => {
   test("the verified gh shape becomes a ForgeState stamped with our clock", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }] });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state).toEqual({
       host: "gitHub",
-      pullRequest: { number: 42, title, state: "merged", isDraft: false, url },
+      pullRequest: {
+        number: 42,
+        title: unloggableTitle,
+        state: "merged",
+        isDraft: false,
+        url: unloggableUrl,
+      },
       checks: "passing",
       refreshedAt: instant(new Date(h.clock.now())),
     });
@@ -172,7 +207,7 @@ describe("state: decoding gh", () => {
       outcomes: [{ standardOutput: ghPullRequest({ state: "OPEN", isDraft: true }) }],
     });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.pullRequest?.state).toBe("open");
     expect(state?.pullRequest?.isDraft).toBe(true);
@@ -181,7 +216,7 @@ describe("state: decoding gh", () => {
   test("a closed pull request is closed", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest({ state: "CLOSED" }) }] });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.pullRequest?.state).toBe("closed");
   });
@@ -201,7 +236,7 @@ describe("state: decoding gh", () => {
       ],
     });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.checks).toBe("failing");
   });
@@ -220,7 +255,7 @@ describe("state: decoding gh", () => {
       ],
     });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.checks).toBe("running");
   });
@@ -236,7 +271,7 @@ describe("state: decoding gh", () => {
       ],
     });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.checks).toBe("failing");
   });
@@ -244,19 +279,20 @@ describe("state: decoding gh", () => {
   test("no checks at all is none, not passing", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest({ statusCheckRollup: [] }) }] });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.checks).toBe("none");
   });
 
   test("output of exactly the cap is still an answer", async () => {
-    // The boundary, both sides: the case list above refuses one character more.
     const padding = MAXIMUM_FORGE_OUTPUT_CHARACTERS - ghPullRequest().length;
-    const standardOutput = ghPullRequest({ title: `${title}${"y".repeat(padding)}` });
+    const standardOutput = ghPullRequest({ title: `${unloggableTitle}${"y".repeat(padding)}` });
+
     expect(standardOutput).toHaveLength(MAXIMUM_FORGE_OUTPUT_CHARACTERS);
+
     const h = harness({ outcomes: [{ standardOutput }] });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state?.checks).toBe("passing");
   });
@@ -268,7 +304,7 @@ describe("state: decoding glab", () => {
   test("the argv is glab's, which has no field list", async () => {
     const h = harness({ outcomes: [{ standardOutput: glabMergeRequest() }] });
 
-    await h.forge.state({ project: project(gitLab), session: session() });
+    await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
 
     expect(h.whichCalls).toEqual([{ executable: "glab", path: environment.PATH }]);
     expect(h.invocations[0]?.arguments).toEqual(["mr", "view", "feat/x", "--output", "json"]);
@@ -277,11 +313,17 @@ describe("state: decoding glab", () => {
   test("iid, draft, web_url and a failed pipeline map across", async () => {
     const h = harness({ outcomes: [{ standardOutput: glabMergeRequest() }] });
 
-    const state = await h.forge.state({ project: project(gitLab), session: session() });
+    const state = await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
 
     expect(state).toEqual({
       host: "gitLab",
-      pullRequest: { number: 42, title, state: "open", isDraft: true, url },
+      pullRequest: {
+        number: 42,
+        title: unloggableTitle,
+        state: "open",
+        isDraft: true,
+        url: unloggableUrl,
+      },
       checks: "failing",
       refreshedAt: instant(new Date(h.clock.now())),
     });
@@ -290,7 +332,7 @@ describe("state: decoding glab", () => {
   test("a locked merge request is still open to a reader", async () => {
     const h = harness({ outcomes: [{ standardOutput: glabMergeRequest({ state: "locked" }) }] });
 
-    const state = await h.forge.state({ project: project(gitLab), session: session() });
+    const state = await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
 
     expect(state?.pullRequest?.state).toBe("open");
   });
@@ -300,7 +342,7 @@ describe("state: decoding glab", () => {
       outcomes: [{ standardOutput: glabMergeRequest({ head_pipeline: null }) }],
     });
 
-    const state = await h.forge.state({ project: project(gitLab), session: session() });
+    const state = await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
 
     expect(state?.checks).toBe("none");
   });
@@ -313,8 +355,8 @@ describe("state: decoding glab", () => {
       ],
     });
 
-    const first = await h.forge.state({ project: project(gitLab), session: session() });
-    const second = await h.forge.state({ project: project(gitLab), session: session() });
+    const first = await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
+    const second = await h.forge.state({ project: fakeProject(gitLab), session: fakeSession() });
 
     expect(first?.checks).toBe("running");
     expect(second?.checks).toBe("passing");
@@ -389,7 +431,31 @@ describe("state: every failure is undefined plus a logged class", () => {
     },
     {
       name: "json missing a field we asked for",
-      outcome: { standardOutput: JSON.stringify({ number: 42, title, state: "OPEN", url }) },
+      outcome: {
+        standardOutput: JSON.stringify({
+          number: 42,
+          title: unloggableTitle,
+          state: "OPEN",
+          url: unloggableUrl,
+        }),
+      },
+      failure: "unknownShape",
+      level: "warning",
+    },
+    {
+      name: "a json array where one object was promised",
+      outcome: {
+        standardOutput: JSON.stringify([
+          {
+            number: 42,
+            title: unloggableTitle,
+            state: "OPEN",
+            isDraft: false,
+            url: unloggableUrl,
+            statusCheckRollup: [],
+          },
+        ]),
+      },
       failure: "unknownShape",
       level: "warning",
     },
@@ -421,9 +487,9 @@ describe("state: every failure is undefined plus a logged class", () => {
   for (const scenario of cases) {
     test(`${scenario.name} reads as absence, logging ${scenario.failure}`, async () => {
       const h = harness({ outcomes: [scenario.outcome] });
-      const workingSession = session();
+      const workingSession = fakeSession();
 
-      const state = await h.forge.state({ project: project(), session: workingSession });
+      const state = await h.forge.state({ project: fakeProject(), session: workingSession });
 
       expect(state).toBeUndefined();
       expect(h.records).toHaveLength(1);
@@ -432,8 +498,9 @@ describe("state: every failure is undefined plus a logged class", () => {
       expect(h.records[0]?.fields?.["failure"]).toBe(scenario.failure);
 
       const logged = JSON.stringify(h.records);
-      expect(logged).not.toContain(title);
-      expect(logged).not.toContain(url);
+
+      expect(logged).not.toContain(unloggableTitle);
+      expect(logged).not.toContain(unloggableUrl);
       expect(logged).not.toContain("feat/x");
       expect(logged).not.toContain(workingSession.directory);
       expect(logged).not.toContain("auth login");
@@ -456,8 +523,8 @@ describe("state: every failure is undefined plus a logged class", () => {
     });
 
     const state = await h.forge.state({
-      project: project({ git: { forge: "gitLab", defaultBranch: "main" } }),
-      session: session(),
+      project: fakeProject({ git: { forge: "gitLab", defaultBranch: "main" } }),
+      session: fakeSession(),
     });
 
     expect(state).toBeUndefined();
@@ -468,7 +535,7 @@ describe("state: every failure is undefined plus a logged class", () => {
   test("a non-zero exit carries its code, which is a shape not content", async () => {
     const h = harness({ outcomes: [{ exitCode: 3, succeeded: false, standardError: "boom" }] });
 
-    await h.forge.state({ project: project(), session: session() });
+    await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(h.records[0]?.fields).toEqual({
       forge: "gitHub",
@@ -482,7 +549,7 @@ describe("state: every failure is undefined plus a logged class", () => {
   test("no gh on PATH runs no process at all", async () => {
     const h = harness({ which: {} });
 
-    const state = await h.forge.state({ project: project(), session: session() });
+    const state = await h.forge.state({ project: fakeProject(), session: fakeSession() });
 
     expect(state).toBeUndefined();
     expect(h.invocations).toEqual([]);
@@ -493,10 +560,11 @@ describe("state: every failure is undefined plus a logged class", () => {
 describe("state: when we must not look", () => {
   test("a project with no recognised forge is silence, not a read", async () => {
     const h = harness();
-    const folder = project();
+    const folder = fakeProject();
+
     delete folder.git;
 
-    const state = await h.forge.state({ project: folder, session: session() });
+    const state = await h.forge.state({ project: folder, session: fakeSession() });
 
     expect(state).toBeUndefined();
     expect(h.whichCalls).toEqual([]);
@@ -506,10 +574,11 @@ describe("state: when we must not look", () => {
 
   test("the setting off is silence, not a read", async () => {
     const h = harness();
-    const disabled = project();
+    const disabled = fakeProject();
+
     disabled.settings = { ...disabled.settings, isForgeEnabled: false };
 
-    const state = await h.forge.state({ project: disabled, session: session() });
+    const state = await h.forge.state({ project: disabled, session: fakeSession() });
 
     expect(state).toBeUndefined();
     expect(h.whichCalls).toEqual([]);
@@ -521,11 +590,13 @@ describe("state: when we must not look", () => {
 describe("state: the cache", () => {
   test("a second read inside the interval is the same answer and no process", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }] });
-    const owning = project();
-    const working = session();
+    const owning = fakeProject();
+    const working = fakeSession();
 
     const first = await h.forge.state({ project: owning, session: working });
+
     h.clock.advance(FORGE_REFRESH_INTERVAL_MS - 1);
+
     const second = await h.forge.state({ project: owning, session: working });
 
     expect(h.invocations).toHaveLength(1);
@@ -536,8 +607,8 @@ describe("state: the cache", () => {
     const h = harness({
       outcomes: [{ standardOutput: ghPullRequest() }, { standardOutput: ghPullRequest() }],
     });
-    const owning = project();
-    const working = session();
+    const owning = fakeProject();
+    const working = fakeSession();
 
     await h.forge.state({ project: owning, session: working });
     h.clock.advance(FORGE_REFRESH_INTERVAL_MS);
@@ -548,8 +619,8 @@ describe("state: the cache", () => {
 
   test("a failure is cached too, so a logged-out user is asked once a minute", async () => {
     const h = harness({ which: {} });
-    const owning = project();
-    const working = session();
+    const owning = fakeProject();
+    const working = fakeSession();
 
     await h.forge.state({ project: owning, session: working });
     await h.forge.state({ project: owning, session: working });
@@ -560,15 +631,17 @@ describe("state: the cache", () => {
 
   test("two concurrent reads share one invocation", async () => {
     const h = harness({ outcomes: [{ standardOutput: ghPullRequest() }] });
-    const owning = project();
-    const working = session();
+    const owning = fakeProject();
+    const working = fakeSession();
     const release = h.hold();
 
     const both = Promise.all([
       h.forge.state({ project: owning, session: working }),
       h.forge.state({ project: owning, session: working }),
     ]);
+
     release();
+
     const [first, second] = await both;
 
     expect(h.invocations).toHaveLength(1);
@@ -579,10 +652,10 @@ describe("state: the cache", () => {
     const h = harness({
       outcomes: [{ standardOutput: ghPullRequest() }, { standardOutput: ghPullRequest() }],
     });
-    const owning = project();
+    const owning = fakeProject();
 
-    await h.forge.state({ project: owning, session: session() });
-    await h.forge.state({ project: owning, session: session() });
+    await h.forge.state({ project: owning, session: fakeSession() });
+    await h.forge.state({ project: owning, session: fakeSession() });
 
     expect(h.invocations).toHaveLength(2);
   });
@@ -629,7 +702,6 @@ describe("isAvailable", () => {
 
     expect(await h.forge.isAvailable("gitHub")).toBe(true);
     expect(await h.forge.isAvailable("gitHub")).toBe(true);
-
     expect(h.invocations).toHaveLength(1);
   });
 });
@@ -641,7 +713,7 @@ describe("pullRequestBranch", () => {
         { standardOutput: JSON.stringify({ headRefName: "feat/x", isCrossRepository: false }) },
       ],
     });
-    const owning = project();
+    const owning = fakeProject();
 
     const branch = await h.forge.pullRequestBranch({ project: owning, number: 42 });
 
@@ -664,7 +736,7 @@ describe("pullRequestBranch", () => {
       ],
     });
 
-    const branch = await h.forge.pullRequestBranch({ project: project(), number: 42 });
+    const branch = await h.forge.pullRequestBranch({ project: fakeProject(), number: 42 });
 
     expect(branch).toBeUndefined();
     expect(failures(h.records)).toEqual(["crossRepository"]);
@@ -682,7 +754,7 @@ describe("pullRequestBranch", () => {
         },
       ],
     });
-    const owning = project({ git: { forge: "gitLab", defaultBranch: "main" } });
+    const owning = fakeProject({ git: { forge: "gitLab", defaultBranch: "main" } });
 
     const branch = await h.forge.pullRequestBranch({ project: owning, number: 42 });
 
@@ -704,7 +776,7 @@ describe("pullRequestBranch", () => {
     });
 
     const branch = await h.forge.pullRequestBranch({
-      project: project({ git: { forge: "gitLab", defaultBranch: "main" } }),
+      project: fakeProject({ git: { forge: "gitLab", defaultBranch: "main" } }),
       number: 42,
     });
 
@@ -724,7 +796,7 @@ describe("pullRequestBranch", () => {
       ],
     });
 
-    const branch = await h.forge.pullRequestBranch({ project: project(), number: 999_999 });
+    const branch = await h.forge.pullRequestBranch({ project: fakeProject(), number: 999_999 });
 
     expect(branch).toBeUndefined();
     expect(failures(h.records)).toEqual(["noPullRequest"]);
@@ -735,7 +807,7 @@ describe("pullRequestBranch", () => {
       outcomes: [{ standardOutput: JSON.stringify({ headRefName: "", isCrossRepository: false }) }],
     });
 
-    const branch = await h.forge.pullRequestBranch({ project: project(), number: 42 });
+    const branch = await h.forge.pullRequestBranch({ project: fakeProject(), number: 42 });
 
     expect(branch).toBeUndefined();
     expect(failures(h.records)).toEqual(["unknownShape"]);
@@ -743,7 +815,8 @@ describe("pullRequestBranch", () => {
 
   test("a project with no forge is asked nothing", async () => {
     const h = harness();
-    const folder = project();
+    const folder = fakeProject();
+
     delete folder.git;
 
     expect(await h.forge.pullRequestBranch({ project: folder, number: 42 })).toBeUndefined();
@@ -758,7 +831,7 @@ describe("pullRequestBranch", () => {
         { standardOutput: JSON.stringify({ headRefName: "feat/y", isCrossRepository: false }) },
       ],
     });
-    const owning = project();
+    const owning = fakeProject();
 
     expect(await h.forge.pullRequestBranch({ project: owning, number: 42 })).toBe("feat/x");
     expect(await h.forge.pullRequestBranch({ project: owning, number: 42 })).toBe("feat/y");

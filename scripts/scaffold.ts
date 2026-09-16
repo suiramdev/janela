@@ -1,32 +1,43 @@
 #!/usr/bin/env bun
-/**
- * One-shot scaffolder for the workspace's `package.json` and `tsconfig.json`
- * files, driven by `scripts/layers.ts` so the dependency edges in the manifest
- * and the ones in `package.json` cannot disagree on the day they are written.
- *
- * This exists so the graph is generated from the graph. It is not part of `check`
- * and is not expected to be run again — later edits are made by hand, and
- * `check:layers` is what keeps them honest.
- */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { PACKAGES, type PackageSpec } from "./layers.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
-
 interface Extra {
   readonly description: string;
   readonly deps?: Record<string, string>;
   readonly devDeps?: Record<string, string>;
   readonly scripts?: Record<string, string>;
-  readonly exports?: Record<string, unknown>;
+  readonly exports?: Record<string, string>;
   readonly jsx?: boolean;
   readonly dom?: boolean;
 }
 
-const EXTRAS: Record<string, Extra> = {
+interface PackageManifest {
+  readonly name: string;
+  readonly version: string;
+  readonly private: boolean;
+  readonly type: string;
+  readonly description: string;
+  readonly exports: Record<string, string>;
+  readonly scripts: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+interface TsconfigOptions {
+  readonly lib: readonly string[];
+  readonly outDir: string;
+  readonly rootDir: string;
+  readonly types: readonly string[];
+  jsx?: string;
+}
+
+const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+
+const EXTRAS = {
   "@janela/support": {
     description:
       "Logging, user-facing errors, timing marks, bounded buffers, and the one subprocess runner.",
@@ -141,84 +152,102 @@ const EXTRAS: Record<string, Extra> = {
   },
 };
 
-function packageJson(pkg: PackageSpec, extra: Extra): string {
-  const deps: Record<string, string> = { ...extra.deps };
-  for (const dep of pkg.deps) deps[dep] = "workspace:*";
+function sortedRecord(values: Map<string, string>): Record<string, string> {
+  return Object.fromEntries([...values].toSorted(([one], [other]) => one.localeCompare(other)));
+}
 
-  const devDeps: Record<string, string> = { ...extra.devDeps };
+function packageJson(pkg: PackageSpec, extra: Extra): string {
+  const deps = new Map(Object.entries(extra.deps ?? {}));
+
+  for (const dep of pkg.deps) deps.set(dep, "workspace:*");
+
+  const devDeps = new Map(Object.entries(extra.devDeps ?? {}));
+
   if (pkg.name !== "@janela/test-support") {
-    devDeps["@janela/test-support"] = "workspace:*";
+    devDeps.set("@janela/test-support", "workspace:*");
   }
 
-  const scripts: Record<string, string> = {
-    typecheck: "tsc --build",
-    test: "bun test",
-    ...extra.scripts,
-  };
-  if (!("clean" in scripts)) scripts["clean"] = "rm -rf dist *.tsbuildinfo";
+  const scripts = new Map<string, string>([
+    ["typecheck", "tsc --build"],
+    ["test", "bun test"],
+    ...Object.entries(extra.scripts ?? {}),
+  ]);
 
-  const json = {
+  if (!scripts.has("clean")) scripts.set("clean", "rm -rf dist *.tsbuildinfo");
+
+  const json: PackageManifest = {
     name: pkg.name,
     version: "0.0.0",
     private: true,
     type: "module",
     description: extra.description,
     exports: extra.exports ?? { ".": "./src/index.ts" },
-    scripts: Object.fromEntries(Object.entries(scripts).toSorted(([a], [b]) => a.localeCompare(b))),
-    ...(Object.keys(deps).length > 0
-      ? {
-          dependencies: Object.fromEntries(
-            Object.entries(deps).toSorted(([a], [b]) => a.localeCompare(b)),
-          ),
-        }
-      : {}),
-    ...(Object.keys(devDeps).length > 0
-      ? {
-          devDependencies: Object.fromEntries(
-            Object.entries(devDeps).toSorted(([a], [b]) => a.localeCompare(b)),
-          ),
-        }
-      : {}),
+    scripts: sortedRecord(scripts),
   };
+
+  if (deps.size > 0) json.dependencies = sortedRecord(deps);
+
+  if (devDeps.size > 0) json.devDependencies = sortedRecord(devDeps);
+
   return `${JSON.stringify(json, null, 2)}\n`;
 }
 
 function tsconfig(pkg: PackageSpec, extra: Extra): string {
   const depth = pkg.dir.split("/").length;
   const up = "../".repeat(depth);
-  const references = pkg.deps
-    .map((d) => PACKAGES.find((p) => p.name === d))
-    .filter((p): p is PackageSpec => p !== undefined)
-    .map((p) => ({ path: `${up}${p.dir}` }));
+
+  const references = pkg.deps.flatMap((dep) => {
+    const target = PACKAGES.find((candidate) => candidate.name === dep);
+
+    return target === undefined ? [] : [{ path: `${up}${target.dir}` }];
+  });
+
   if (pkg.name !== "@janela/test-support") {
     references.push({ path: `${up}packages/test-support` });
   }
 
   const lib = ["ES2023"];
+
   if (extra.dom === true) lib.push("DOM", "DOM.Iterable");
+
+  const compilerOptions: TsconfigOptions = {
+    lib,
+    outDir: "dist",
+    rootDir: "src",
+    types: ["bun"],
+  };
+
+  if (extra.jsx === true) compilerOptions.jsx = "react-jsx";
 
   const json = {
     extends: `${up}tsconfig.base.json`,
-    compilerOptions: {
-      lib,
-      outDir: "dist",
-      rootDir: "src",
-      ...(extra.jsx === true ? { jsx: "react-jsx" } : {}),
-      types: extra.dom === true ? ["bun"] : ["bun"],
-    },
+    compilerOptions,
     include: ["src/**/*"],
     exclude: ["node_modules", "dist", "generated", "native/target", "src-tauri"],
     references,
   };
+
   return `${JSON.stringify(json, null, 2)}\n`;
 }
 
-for (const pkg of PACKAGES) {
-  const extra = EXTRAS[pkg.name];
-  if (!extra) throw new Error(`no scaffold entry for ${pkg.name}`);
-  const dir = join(ROOT, pkg.dir);
-  await mkdir(join(dir, "src"), { recursive: true });
-  await writeFile(join(dir, "package.json"), packageJson(pkg, extra));
-  await writeFile(join(dir, "tsconfig.json"), tsconfig(pkg, extra));
-  console.log(`scaffolded ${pkg.dir}`);
+async function main(): Promise<void> {
+  const uncovered = PACKAGES.filter((pkg) => !Object.hasOwn(EXTRAS, pkg.name));
+
+  if (uncovered.length > 0) {
+    throw new Error(`no scaffold entry for ${uncovered.map((pkg) => pkg.name).join(", ")}`);
+  }
+
+  for (const [name, extra] of Object.entries(EXTRAS)) {
+    const pkg = PACKAGES.find((candidate) => candidate.name === name);
+
+    if (pkg === undefined) throw new Error(`${name} has a scaffold entry but no manifest entry`);
+
+    const dir = join(ROOT, pkg.dir);
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "package.json"), packageJson(pkg, extra));
+    await writeFile(join(dir, "tsconfig.json"), tsconfig(pkg, extra));
+    console.log(`scaffolded ${pkg.dir}`);
+  }
 }
+
+await main();

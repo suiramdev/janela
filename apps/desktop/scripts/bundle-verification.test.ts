@@ -1,12 +1,3 @@
-/**
- * The bundle gate, against real `codesign`.
- *
- * Nothing here is faked: the behaviour under test *is* the signing tool's, and a fake
- * would only assert that we know what `codesign` does — which is exactly the
- * knowledge that turns out to be wrong when a bundle fails on a user's machine. Each
- * fixture is a miniature Janela.app in its own temporary directory, signed inside out
- * the way Tauri's bundler signs: sidecar, app executable, then the bundle.
- */
 import { describe, expect, test } from "bun:test";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,11 +7,22 @@ import { temporaryDirectory } from "@janela/test-support";
 import { LAUNCH_AGENT_PLIST, MAIN_EXECUTABLE, SIDECAR_BUNDLE_PROGRAM } from "./bundle-layout.ts";
 import { expectationFromEnvironment, verifyBundle } from "./bundle-verification.ts";
 
+interface SigningOptions {
+  readonly runtime?: boolean;
+  readonly entitlements?: string;
+}
+
+interface FixtureOptions {
+  readonly launchAgent?: string;
+  readonly withoutLaunchAgent?: boolean;
+  readonly infoPlist?: string;
+}
+
 const ENTITLEMENTS = new URL("../src-tauri/Entitlements.plist", import.meta.url).pathname;
+
 const LAUNCH_AGENT = new URL("../src-tauri/launchd/sh.janela.janelad.plist", import.meta.url)
   .pathname;
 
-/** Universal Mach-O, tiny, and already on every machine that can run this test. */
 const SOME_EXECUTABLE = "/usr/bin/true";
 
 const ADHOC = { expect: "adhoc", notarized: false } as const;
@@ -55,37 +57,26 @@ ${keys.map((key) => `  <key>${key}</key><true/>`).join("\n")}
 `;
 }
 
-interface SigningOptions {
-  readonly runtime?: boolean;
-  readonly entitlements?: string;
-}
-
 function sign(path: string, options: SigningOptions = {}): void {
   const command = ["codesign", "--force", "-s", "-"];
+
   if (options.runtime !== false) command.push("--options", "runtime");
+
   if (options.entitlements !== undefined) command.push("--entitlements", options.entitlements);
+
   command.push(path);
 
   const signed = Bun.spawnSync(command);
+
   if (signed.exitCode !== 0) {
     throw new Error(`codesign failed: ${new TextDecoder().decode(signed.stderr)}`);
   }
 }
 
-/** Signs sidecar, then app executable, then the bundle — the bundler's order. */
 function signInsideOut(app: string, entitlements = ENTITLEMENTS): void {
   for (const relative of [SIDECAR_BUNDLE_PROGRAM, MAIN_EXECUTABLE, ""]) {
     sign(join(app, relative), { entitlements });
   }
-}
-
-interface FixtureOptions {
-  /** Contents of the LaunchAgent plist. Omitted: the one the app actually ships. */
-  readonly launchAgent?: string;
-  /** Leave the plist out, so a test can add it after the bundle is signed. */
-  readonly withoutLaunchAgent?: boolean;
-  /** Contents of `Info.plist`. Omitted: one naming the executable the bundler writes. */
-  readonly infoPlist?: string;
 }
 
 function buildApp(directory: string, options: FixtureOptions = {}): string {
@@ -115,16 +106,15 @@ describe("verifyBundle", () => {
   });
 
   test("rejects a bundle whose Info.plist names an executable the bundler did not write", async () => {
-    // The trap this defends: macOS filesystems are case-insensitive by default, so a
-    // capitalised `Contents/MacOS/Janela` opens fine here and vanishes on a
-    // case-sensitive volume. Only the string comparison catches it.
     await using temporary = await temporaryDirectory("bundle-name");
+
     const app = buildApp(temporary.path, {
       infoPlist: INFO_PLIST.replace(
         "<key>CFBundleExecutable</key><string>janela</string>",
         "<key>CFBundleExecutable</key><string>Janela</string>",
       ),
     });
+
     signInsideOut(app);
 
     const problems = verifyBundle(app, ADHOC);
@@ -185,12 +175,14 @@ describe("verifyBundle", () => {
 
   test("rejects a LaunchAgent that brings back socket activation", async () => {
     await using temporary = await temporaryDirectory("bundle-sockets");
+
     const app = buildApp(temporary.path, {
       launchAgent: plistWith(`  <key>Sockets</key><dict><key>Listener</key><dict>
     <key>SockPathName</key><string>/Users/someone/.janela/run/janelad.sock</string>
   </dict></dict>
 `),
     });
+
     signInsideOut(app);
 
     expect(verifyBundle(app, ADHOC)).toEqual([
@@ -200,14 +192,12 @@ describe("verifyBundle", () => {
 
   test("rejects a LaunchAgent that points the daemon's stdio at a path", async () => {
     await using temporary = await temporaryDirectory("bundle-stdio");
-    // What someone reaches for when they want the daemon's log back on launchd's
-    // side. launchd expands no `~`, and this plist is sealed once for every user
-    // of the machine, so the path is either shared or somebody else's. The daemon
-    // owns its log instead (#45).
+
     const app = buildApp(temporary.path, {
       launchAgent: plistWith(`  <key>StandardErrorPath</key><string>/tmp/janelad.log</string>
 `),
     });
+
     signInsideOut(app);
 
     expect(verifyBundle(app, ADHOC)).toEqual([
@@ -219,8 +209,6 @@ describe("verifyBundle", () => {
     await using temporary = await temporaryDirectory("bundle-unsealed");
     const app = buildApp(temporary.path, { withoutLaunchAgent: true });
     signInsideOut(app);
-    // What registration would do if it generated the plist: the seal no longer
-    // covers it, and `smd` refuses to load it (errSecCSBadResource).
     copyFileSync(LAUNCH_AGENT, join(app, LAUNCH_AGENT_PLIST));
 
     const problems = verifyBundle(app, ADHOC);

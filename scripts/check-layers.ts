@@ -1,41 +1,11 @@
 #!/usr/bin/env bun
-/**
- * The layering gate.
- *
- * AGENTS.md's first rule is that packages depend downward only, and that no client
- * package may import a daemon package. That rule used to be enforced by a compiler,
- * because an undeclared dependency simply did not resolve. Two things changed:
- *
- *   1. TypeScript has no notion of a module graph above the file level.
- *   2. Bun hoists `node_modules`, so `import "@janela/pty"` from `@janela/ui`
- *      resolves *and runs* even though nothing declared it.
- *
- * Together those turn a build error into a review comment, and a rule that is
- * only a review comment is a rule that erodes. So this script re-creates what the
- * compiler used to do, and `bun run check` fails when it is violated.
- *
- * It checks six things:
- *
- *   1. Every first-party import is declared in `scripts/layers.ts`.
- *   2. Every dependency edge points strictly downward by layer.
- *   3. No edge crosses the daemon/client line. The two halves meet only at
- *      `@janela/core` and `@janela/protocol`.
- *   4. Each package's `package.json` dependencies agree with the manifest —
- *      neither undeclared (which hoisting hides) nor declared-but-unused (which
- *      makes the graph a lie).
- *   5. Gated external modules are imported only where they are allowed — the
- *      successor to "only two modules may link the terminal library".
- *   6. The manifest itself is acyclic and every package on disk appears in it.
- *
- * Run: `bun run check:layers`
- */
-
+import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-import { GATED_MODULES, PACKAGE_BY_NAME, PACKAGES, type PackageSpec } from "./layers.ts";
+import { Effect, Option, Schema } from "effect";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+import { GATED_MODULES, PACKAGE_BY_NAME, PACKAGES, type PackageSpec, type Side } from "./layers.ts";
 
 interface Violation {
   readonly file: string;
@@ -44,22 +14,80 @@ interface Violation {
   readonly message: string;
 }
 
+interface FoundImport {
+  readonly specifier: string;
+  readonly line: number;
+}
+
+const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+
+const SIDES_MAY_DEPEND_ON = {
+  shared: ["shared"],
+  daemon: ["shared", "daemon"],
+  client: ["shared", "client"],
+  tool: ["shared", "tool"],
+} as const satisfies Record<Side, readonly Side[]>;
+
+const BUILTIN_PREFIXES = ["node:", "bun:"] as const;
+
+const DependencyRecord = Schema.Record(Schema.String, Schema.String);
+
+const PackageManifest = Schema.Struct({
+  dependencies: Schema.optionalKey(DependencyRecord),
+  devDependencies: Schema.optionalKey(DependencyRecord),
+  peerDependencies: Schema.optionalKey(DependencyRecord),
+});
+
+const decodePackageManifest = Schema.decodeUnknownOption(Schema.fromJsonString(PackageManifest));
+
+const bold = (s: string): string => `\u001B[1m${s}\u001B[0m`;
+
+const red = (s: string): string => `\u001B[31m${s}\u001B[0m`;
+
+const dim = (s: string): string => s;
+
 const violations: Violation[] = [];
+
+const unusedEdges: string[] = [];
 
 function fail(file: string, line: number, rule: string, message: string): void {
   violations.push({ file, line, rule, message });
 }
 
-// ---------------------------------------------------------------------------
-// Import extraction
-// ---------------------------------------------------------------------------
+function readTextFile(path: string): Promise<Option.Option<string>> {
+  return Effect.runPromise(
+    Effect.tryPromise(() => readFile(path, "utf8")).pipe(
+      Effect.map(Option.some<string>),
+      Effect.catch(() => Effect.succeed(Option.none<string>())),
+    ),
+  );
+}
 
-/**
- * Blank out comments and template literals so a doc comment that *names* an
- * illegal import — and this repository's doc comments do exactly that — is not
- * mistaken for one. Replacing with same-length spaces keeps line numbers honest.
- */
-/** Same-length blanking, so line numbers survive. */
+function readDirectoryEntries(path: string): Promise<readonly Dirent[]> {
+  return Effect.runPromise(
+    Effect.tryPromise(() => readdir(path, { withFileTypes: true })).pipe(
+      Effect.catch(() => Effect.succeed<readonly Dirent[]>([])),
+    ),
+  );
+}
+
+function readDirectoryNames(path: string): Promise<readonly string[]> {
+  return Effect.runPromise(
+    Effect.tryPromise(() => readdir(path)).pipe(
+      Effect.catch(() => Effect.succeed<readonly string[]>([])),
+    ),
+  );
+}
+
+function pathExists(path: string): Promise<boolean> {
+  return Effect.runPromise(
+    Effect.tryPromise(() => stat(path)).pipe(
+      Effect.as(true),
+      Effect.catch(() => Effect.succeed(false)),
+    ),
+  );
+}
+
 function blank(s: string): string {
   return s.replace(/[^\n]/g, " ");
 }
@@ -71,6 +99,7 @@ function stripNonCode(source: string): string {
 
   while (i < n) {
     const two = source.slice(i, i + 2);
+
     if (two === "//") {
       const end = source.indexOf("\n", i);
       const stop = end === -1 ? n : end;
@@ -83,7 +112,9 @@ function stripNonCode(source: string): string {
       i = stop;
     } else if (source[i] === "`") {
       let j = i + 1;
+
       while (j < n && !(source[j] === "`" && source[j - 1] !== "\\")) j++;
+
       out += blank(source.slice(i, Math.min(j + 1, n)));
       i = j + 1;
     } else {
@@ -91,91 +122,108 @@ function stripNonCode(source: string): string {
       i++;
     }
   }
+
   return out;
 }
 
-/**
- * Every module specifier this file depends on, with its line number.
- *
- * Type-only imports count. An architecture rule that `import type` can route
- * around is not an architecture rule.
- */
-function extractImports(source: string): Array<{ specifier: string; line: number }> {
+function extractImports(source: string): readonly FoundImport[] {
   const code = stripNonCode(source);
-  const found: Array<{ specifier: string; line: number }> = [];
+  const found: FoundImport[] = [];
   const patterns = [
-    // import … from "x" / import "x" / export … from "x"
-    /^[ \t]*(?:import|export)\b[^;\n]*?["']([^"']+)["']/gm,
-    // dynamic import("x")
+    /(?:^|\n)[ \t]*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']/g,
+    /(?:^|\n)[ \t]*import\s+["']([^"']+)["']/g,
     /\bimport\s*\(\s*["']([^"']+)["']/g,
-    // require("x")
     /\brequire\s*\(\s*["']([^"']+)["']/g,
   ];
+
   for (const re of patterns) {
     for (const m of code.matchAll(re)) {
       const specifier = m[1];
+
       if (specifier === undefined) continue;
+
       const line = code.slice(0, m.index).split("\n").length;
       found.push({ specifier, line });
     }
   }
+
   return found;
 }
 
-async function sourceFiles(dir: string): Promise<string[]> {
+async function sourceFiles(dir: string): Promise<readonly string[]> {
   const skip = new Set(["node_modules", "dist", "generated", "target", ".turbo", "src-tauri"]);
   const out: string[] = [];
+
   async function walk(current: string): Promise<void> {
-    let entries: Awaited<ReturnType<typeof readdir>>;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
+    for (const entry of await readDirectoryEntries(current)) {
       if (entry.name.startsWith(".") || skip.has(entry.name)) continue;
+
       const full = join(current, entry.name);
+
       if (entry.isDirectory()) await walk(full);
       else if (/\.(ts|tsx|mts|cts)$/.test(entry.name)) out.push(full);
     }
   }
+
   await walk(dir);
+
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Matching helpers
-// ---------------------------------------------------------------------------
-
 function matchesPattern(specifier: string, pattern: string): boolean {
   if (pattern.endsWith("*")) return specifier.startsWith(pattern.slice(0, -1));
+
   return specifier === pattern || specifier.startsWith(`${pattern}/`);
 }
 
-/** The first-party package a specifier names, if any. `@janela/x/sub` → `@janela/x`. */
 function firstPartyPackage(specifier: string): string | undefined {
   if (!specifier.startsWith("@janela/")) return undefined;
+
   const parts = specifier.split("/");
+
   return `${parts[0]}/${parts[1]}`;
 }
 
-const SIDES_MAY_DEPEND_ON: Record<string, readonly string[]> = {
-  shared: ["shared"],
-  daemon: ["shared", "daemon"],
-  client: ["shared", "client"],
-  tool: ["shared", "tool"],
-};
+function externalPackage(specifier: string): Option.Option<string> {
+  if (specifier.startsWith(".") || specifier.startsWith("/")) return Option.none();
 
-// ---------------------------------------------------------------------------
-// Checks
-// ---------------------------------------------------------------------------
+  if (BUILTIN_PREFIXES.some((prefix) => specifier.startsWith(prefix))) return Option.none();
 
-/** 6. The manifest describes reality, and describes something acyclic. */
+  if (specifier === "bun") return Option.none();
+
+  if (specifier.startsWith("@janela/")) return Option.none();
+
+  const parts = specifier.split("/");
+  const scope = parts[0];
+
+  if (scope === undefined) return Option.none();
+
+  if (!scope.startsWith("@")) return Option.some(scope);
+
+  const name = parts[1];
+
+  return name === undefined ? Option.none() : Option.some(`${scope}/${name}`);
+}
+
+async function declaredPackages(pkg: PackageSpec): Promise<Option.Option<ReadonlySet<string>>> {
+  const raw = await readTextFile(join(ROOT, pkg.dir, "package.json"));
+
+  return Option.flatMap(raw, (text) =>
+    Option.map(decodePackageManifest(text), (manifest) => {
+      const names = [
+        ...Object.keys(manifest.dependencies ?? {}),
+        ...Object.keys(manifest.devDependencies ?? {}),
+        ...Object.keys(manifest.peerDependencies ?? {}),
+      ];
+
+      return new Set(names);
+    }),
+  );
+}
+
 async function checkManifestIntegrity(): Promise<void> {
   for (const pkg of PACKAGES) {
-    try {
-      await stat(join(ROOT, pkg.dir, "package.json"));
-    } catch {
+    if (!(await pathExists(join(ROOT, pkg.dir, "package.json")))) {
       fail(
         "scripts/layers.ts",
         0,
@@ -183,8 +231,10 @@ async function checkManifestIntegrity(): Promise<void> {
         `${pkg.name} is in the manifest but ${pkg.dir}/package.json does not exist.`,
       );
     }
+
     for (const dep of pkg.deps) {
       const target = PACKAGE_BY_NAME.get(dep);
+
       if (!target) {
         fail(
           "scripts/layers.ts",
@@ -194,6 +244,7 @@ async function checkManifestIntegrity(): Promise<void> {
         );
         continue;
       }
+
       if (target.layer >= pkg.layer) {
         fail(
           "scripts/layers.ts",
@@ -203,7 +254,8 @@ async function checkManifestIntegrity(): Promise<void> {
             `Dependencies point downward only. If you need an upward reference, you need an interface in the lower package instead.`,
         );
       }
-      if (!SIDES_MAY_DEPEND_ON[pkg.side]?.includes(target.side)) {
+
+      if (!SIDES_MAY_DEPEND_ON[pkg.side].includes(target.side)) {
         fail(
           "scripts/layers.ts",
           0,
@@ -215,18 +267,12 @@ async function checkManifestIntegrity(): Promise<void> {
     }
   }
 
-  // Every workspace directory must be accounted for. A package nobody declared
-  // is a package outside the graph, which is how the graph stops being true.
   for (const parent of ["packages", "apps"]) {
-    let entries: string[] = [];
-    try {
-      entries = await readdir(join(ROOT, parent));
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
+    for (const entry of await readDirectoryNames(join(ROOT, parent))) {
       if (entry.startsWith(".")) continue;
+
       const dir = `${parent}/${entry}`;
+
       if (!PACKAGES.some((p) => p.dir === dir)) {
         fail(
           "scripts/layers.ts",
@@ -239,29 +285,17 @@ async function checkManifestIntegrity(): Promise<void> {
   }
 }
 
-/** 4. package.json agrees with the manifest, in both directions. */
 async function checkDeclaredDependencies(pkg: PackageSpec): Promise<void> {
-  const manifestPath = join(ROOT, pkg.dir, "package.json");
-  let raw: string;
-  try {
-    raw = await readFile(manifestPath, "utf8");
-  } catch {
-    return;
-  }
-  const json = JSON.parse(raw) as {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  };
-  const declared = new Set(
-    [...Object.keys(json.dependencies ?? {}), ...Object.keys(json.devDependencies ?? {})].filter(
-      (d) => d.startsWith("@janela/"),
-    ),
-  );
+  const packages = await declaredPackages(pkg);
+
+  if (Option.isNone(packages)) return;
+
+  const declared = new Set([...packages.value].filter((d) => d.startsWith("@janela/")));
   const allowed = new Set(pkg.deps);
 
   for (const dep of declared) {
-    // test-support is a devDependency everywhere and is not an architectural edge.
     if (dep === "@janela/test-support") continue;
+
     if (!allowed.has(dep)) {
       fail(
         `${pkg.dir}/package.json`,
@@ -271,6 +305,7 @@ async function checkDeclaredDependencies(pkg: PackageSpec): Promise<void> {
       );
     }
   }
+
   for (const dep of allowed) {
     if (!declared.has(dep)) {
       fail(
@@ -283,23 +318,28 @@ async function checkDeclaredDependencies(pkg: PackageSpec): Promise<void> {
   }
 }
 
-/** 1, 2, 3, 5. What the sources actually import. */
 async function checkImports(pkg: PackageSpec): Promise<void> {
   const files = await sourceFiles(join(ROOT, pkg.dir));
   const allowed = new Set(pkg.deps);
   const used = new Set<string>();
+  const thirdParty = await declaredPackages(pkg);
 
   for (const file of files) {
     const rel = relative(ROOT, file).split(sep).join("/");
-    const source = await readFile(file, "utf8");
+    const source = await readTextFile(file);
+
+    if (Option.isNone(source)) continue;
+
     const isTest = /\.test\.tsx?$/.test(rel) || pkg.dir === "packages/test-support";
 
-    for (const { specifier, line } of extractImports(source)) {
-      // --- first-party edges
+    for (const { specifier, line } of extractImports(source.value)) {
       const target = firstPartyPackage(specifier);
+
       if (target !== undefined && target !== pkg.name) {
         used.add(target);
+
         const targetSpec = PACKAGE_BY_NAME.get(target);
+
         if (!targetSpec) {
           fail(
             rel,
@@ -309,12 +349,14 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
           );
           continue;
         }
+
         if (isTest && targetSpec.name === "@janela/test-support") continue;
+
         if (!allowed.has(target)) {
           const why =
             targetSpec.layer >= pkg.layer
               ? `${target} is at layer ${targetSpec.layer} and ${pkg.name} is at layer ${pkg.layer} — that edge points sideways or upward.`
-              : !SIDES_MAY_DEPEND_ON[pkg.side]?.includes(targetSpec.side)
+              : !SIDES_MAY_DEPEND_ON[pkg.side].includes(targetSpec.side)
                 ? `${pkg.name} is ${pkg.side}-side and ${target} is ${targetSpec.side}-side. They meet only at @janela/core and @janela/protocol.`
                 : `${target} is not in ${pkg.name}'s declared dependencies.`;
           fail(
@@ -326,10 +368,24 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
         }
       }
 
-      // --- gated external modules
+      const external = externalPackage(specifier);
+
+      if (Option.isSome(external) && Option.isSome(thirdParty)) {
+        if (!thirdParty.value.has(external.value)) {
+          fail(
+            rel,
+            line,
+            "deps/undeclared-third-party",
+            `${pkg.name} imports ${specifier} but ${pkg.dir}/package.json does not declare ${external.value}. Bun's hoisting resolves it from the root anyway, which is exactly the failure this gate exists to stop — declare it at the version already in bun.lock.`,
+          );
+        }
+      }
+
       for (const gate of GATED_MODULES) {
         if (!matchesPattern(specifier, gate.pattern)) continue;
+
         if (gate.allowed.includes(pkg.name)) continue;
+
         fail(
           rel,
           line,
@@ -340,9 +396,6 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
     }
   }
 
-  // A declared edge nobody uses makes the graph less true, not more safe. Only
-  // reported for implemented packages: a skeleton legitimately declares the
-  // edges its seams will need.
   if (!pkg.planned) {
     for (const dep of allowed) {
       if (!used.has(dep)) unusedEdges.push(`${pkg.name} → ${dep}`);
@@ -350,56 +403,57 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
   }
 }
 
-const unusedEdges: string[] = [];
+function report(): void {
+  if (violations.length > 0) {
+    console.error(`\n${red(bold(`Layering violations (${violations.length}):`))}\n`);
 
-// ---------------------------------------------------------------------------
-// Report
-// ---------------------------------------------------------------------------
+    for (const v of violations) {
+      const where = v.line > 0 ? `${v.file}:${v.line}` : v.file;
+      console.error(`  ${bold(where)}`);
+      console.error(`    ${red(v.rule)}  ${v.message}\n`);
+    }
+
+    console.error(
+      dim(
+        "The module graph lives in scripts/layers.ts and is described in\n" +
+          "docs/architecture.md § Packages. If the edge you want is genuinely right,\n" +
+          "change the manifest and say why in docs/architecture.md — that is a design\n" +
+          "change, which is the point of this gate.\n",
+      ),
+    );
+    process.exit(1);
+  }
+
+  const counts = PACKAGES.reduce<Record<string, number>>((acc, p) => {
+    acc[p.side] = (acc[p.side] ?? 0) + 1;
+
+    return acc;
+  }, {});
+
+  const edges = PACKAGES.reduce((n, p) => n + p.deps.length, 0);
+
+  console.log(
+    `layers ok — ${PACKAGES.length} packages (${Object.entries(counts)
+      .map(([side, n]) => `${n} ${side}`)
+      .join(", ")}), ${edges} edges, ${GATED_MODULES.length} gated modules`,
+  );
+
+  if (unusedEdges.length > 0) {
+    console.log(
+      dim(
+        `  note: ${unusedEdges.length} declared edges not yet imported (expected while the packages are skeletons):`,
+      ),
+    );
+
+    for (const e of unusedEdges) console.log(dim(`    ${e}`));
+  }
+}
 
 await checkManifestIntegrity();
+
 for (const pkg of PACKAGES) {
   await checkDeclaredDependencies(pkg);
   await checkImports(pkg);
 }
 
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
-const dim = (s: string) => `[2m${s}[0m`;
-
-if (violations.length > 0) {
-  console.error(`\n${red(bold(`Layering violations (${violations.length}):`))}\n`);
-  for (const v of violations) {
-    const where = v.line > 0 ? `${v.file}:${v.line}` : v.file;
-    console.error(`  ${bold(where)}`);
-    console.error(`    ${red(v.rule)}  ${v.message}\n`);
-  }
-  console.error(
-    dim(
-      "The module graph lives in scripts/layers.ts and is described in\n" +
-        "docs/architecture.md § Packages. If the edge you want is genuinely right,\n" +
-        "change the manifest and say why in docs/architecture.md — that is a design\n" +
-        "change, which is the point of this gate.\n",
-    ),
-  );
-  process.exit(1);
-}
-
-const counts = PACKAGES.reduce<Record<string, number>>((acc, p) => {
-  acc[p.side] = (acc[p.side] ?? 0) + 1;
-  return acc;
-}, {});
-const edges = PACKAGES.reduce((n, p) => n + p.deps.length, 0);
-
-console.log(
-  `layers ok — ${PACKAGES.length} packages (${Object.entries(counts)
-    .map(([side, n]) => `${n} ${side}`)
-    .join(", ")}), ${edges} edges, ${GATED_MODULES.length} gated modules`,
-);
-if (unusedEdges.length > 0) {
-  console.log(
-    dim(
-      `  note: ${unusedEdges.length} declared edges not yet imported (expected while the packages are skeletons):`,
-    ),
-  );
-  for (const e of unusedEdges) console.log(dim(`    ${e}`));
-}
+report();

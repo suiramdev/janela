@@ -26,6 +26,7 @@ import {
   repairLayout,
 } from "@janela/core";
 import type { LogRecord, Logger } from "@janela/support";
+import { Effect, Result } from "effect";
 
 import { temporaryDatabase } from "./database.ts";
 import type { TemporaryDatabase } from "./database.ts";
@@ -37,17 +38,25 @@ interface Record_ {
   readonly fields: LogRecord["fields"];
 }
 
-/**
- * A structural fake. `@janela/test-support`'s recording sink is global and
- * unimplemented; the logger here is injected, so a local fake is enough.
- */
-function recordingLogger(): { logger: Logger; records: Record_[] } {
+interface RecordingLogger {
+  readonly logger: Logger;
+  readonly records: Record_[];
+}
+
+interface Fixture {
+  readonly database: TemporaryDatabase;
+  readonly records: readonly Record_[];
+  corrupt(sql: string, parameters?: readonly (string | number | null)[]): void;
+}
+
+function recordingLogger(): RecordingLogger {
   const records: Record_[] = [];
   const at =
     (level: Record_["level"]) =>
-    (message: string, fields?: LogRecord["fields"]): void => {
+    (message: string, fields: LogRecord["fields"] | undefined): void => {
       records.push({ level, message, fields });
     };
+
   return {
     logger: {
       debug: at("debug"),
@@ -60,40 +69,56 @@ function recordingLogger(): { logger: Logger; records: Record_[] } {
   };
 }
 
-interface Fixture {
-  readonly database: TemporaryDatabase;
-  readonly records: readonly Record_[];
-  /**
-   * The side door: SQL straight at the file, for writing rows the repositories
-   * would refuse. Every corruption test needs one, and the alternative — an
-   * injectable "write a bad row" seam — would be a hole in the real API.
-   */
-  corrupt(sql: string, parameters?: readonly (string | number | null)[]): void;
-}
+function sideDoor(
+  path: string,
+  sql: string,
+  parameters: readonly (string | number | null)[],
+): void {
+  Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const side = yield* Effect.acquireRelease(
+          Effect.sync(() => new Database(path)),
+          (open) =>
+            Effect.sync(() => {
+              open.close();
+            }),
+        );
 
-async function withDatabase(work: (fixture: Fixture) => Promise<void>): Promise<void> {
-  const { logger, records } = recordingLogger();
-  const database = await temporaryDatabase({ log: logger });
-  try {
-    await work({
-      database,
-      records,
-      corrupt(sql, parameters = []): void {
-        const side = new Database(database.path);
-        try {
+        yield* Effect.sync(() => {
           side.run(sql, [...parameters]);
-        } finally {
-          side.close();
-        }
-      },
-    });
-  } finally {
-    await database.dispose();
-  }
+        });
+      }),
+    ),
+  );
 }
 
-// ---- Fixtures. Built with the real minting and branding functions, because a
-// hand-branded id would not prove that what we write can be read back.
+function withDatabase(work: (fixture: Fixture) => Promise<void>): Promise<void> {
+  const { logger, records } = recordingLogger();
+
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const database = yield* Effect.acquireRelease(
+          Effect.promise(() => temporaryDatabase({ log: logger })),
+          (open) => Effect.promise(() => open.dispose()),
+        );
+
+        yield* Effect.tryPromise({
+          try: () =>
+            work({
+              database,
+              records,
+              corrupt(sql, parameters = []): void {
+                sideDoor(database.path, sql, parameters);
+              },
+            }),
+          catch: (cause: unknown) => cause,
+        });
+      }),
+    ),
+  );
+}
 
 function profile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
   return {
@@ -154,6 +179,7 @@ function oneTab(id: TerminalID): SessionLayout {
 function session(overrides: Partial<Session> = {}): Session {
   const first = terminal();
   const directory = absolutePath(`/tmp/janela-session-${crypto.randomUUID()}`);
+
   return {
     id: newSessionID(),
     name: "feature",
@@ -169,9 +195,9 @@ function session(overrides: Partial<Session> = {}): Session {
   };
 }
 
-/** A worktree-backed session in `parent`, whose binding path is its directory. */
 function worktreeSession(parent: ProjectID, overrides: Partial<Session> = {}): Session {
   const base = session(overrides);
+
   return {
     ...base,
     projectID: parent,
@@ -188,11 +214,13 @@ function worktreeSession(parent: ProjectID, overrides: Partial<Session> = {}): S
   };
 }
 
-/** A left-nested chain, one terminal per level, so depth equals `ids.length`. */
 function deepLayout(ids: readonly TerminalID[]): SessionLayout {
   const [head, ...rest] = ids;
+
   if (head === undefined) throw new Error("need at least one id");
+
   let root: Pane = { kind: "terminal", id: head };
+
   for (const id of rest) {
     root = {
       kind: "split",
@@ -202,42 +230,67 @@ function deepLayout(ids: readonly TerminalID[]): SessionLayout {
       second: { kind: "terminal", id },
     };
   }
+
   return { tabs: [{ root, focusedTerminalID: head }], focusedTabIndex: 0 };
 }
 
-async function failureOf(work: Promise<unknown>): Promise<unknown> {
-  return work.then(
-    () => undefined,
-    (error: unknown) => error,
+async function failureOf(work: Promise<unknown>): Promise<Error> {
+  const outcome = await Effect.runPromise(
+    Effect.result(Effect.tryPromise({ try: () => work, catch: (cause: unknown) => cause })),
+  );
+
+  if (Result.isSuccess(outcome)) throw new Error("expected the work to fail");
+
+  return outcome.failure instanceof Error
+    ? outcome.failure
+    : new Error(String(outcome.failure), { cause: outcome.failure });
+}
+
+function reasonsOf(failure: Error): readonly string[] {
+  if (failure instanceof CorruptRecord || failure instanceof InvalidRecord) return failure.reasons;
+
+  throw failure;
+}
+
+function rowCount(database: TemporaryDatabase, table: string): number {
+  return Effect.runSync(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const side = yield* Effect.acquireRelease(
+          Effect.sync(() => new Database(database.path, { readonly: true })),
+          (open) =>
+            Effect.sync(() => {
+              open.close();
+            }),
+        );
+
+        return yield* Effect.sync(() =>
+          Number(
+            side.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM "${table}"`).get()?.n ?? -1,
+          ),
+        );
+      }),
+    ),
   );
 }
-
-function reasonsOf(error: unknown): readonly string[] {
-  if (error instanceof CorruptRecord || error instanceof InvalidRecord) return error.reasons;
-  throw error instanceof Error
-    ? error
-    : new Error(`expected a record failure, got ${String(error)}`);
-}
-
-// ---- Launch profiles.
 
 describe("launch profiles", () => {
   test("a profile round-trips, argv and environment intact", async () => {
     await withDatabase(async ({ database }) => {
       const value = profile();
       await database.launchProfiles.save(value);
+
       expect(await database.launchProfiles.find(value.id)).toEqual(value);
     });
   });
 
   test("all is name-ordered, and an absent id is undefined rather than a throw", async () => {
     await withDatabase(async ({ database }) => {
-      // Sequentially, so insertion order is the opposite of name order and the
-      // assertion is about `all()` and not about luck.
       for (const name of ["Zsh", "Codex", "Aider"]) {
         // oxlint-disable-next-line no-await-in-loop
         await database.launchProfiles.save(profile({ name }));
       }
+
       expect((await database.launchProfiles.all()).map((p) => p.name)).toEqual([
         "Aider",
         "Codex",
@@ -254,6 +307,7 @@ describe("launch profiles", () => {
       corrupt(`UPDATE LaunchProfile SET command = '"claude --dangerous"'`);
 
       const failure = await failureOf(database.launchProfiles.find(value.id));
+
       expect(failure).toBeInstanceOf(CorruptRecord);
       expect(failure instanceof CorruptRecord ? failure.table : undefined).toBe("LaunchProfile");
       expect(reasonsOf(failure)).toEqual(["command is not a JSON array of strings"]);
@@ -265,6 +319,7 @@ describe("launch profiles", () => {
       const value = profile();
       await database.launchProfiles.save(value);
       corrupt(`UPDATE LaunchProfile SET environment = '["FOO=bar"]'`);
+
       expect(reasonsOf(await failureOf(database.launchProfiles.find(value.id)))).toEqual([
         "environment is not a JSON object of strings",
       ]);
@@ -275,22 +330,25 @@ describe("launch profiles", () => {
     await withDatabase(async ({ database }) => {
       await database.launchProfiles.seedBuiltIns();
       await database.launchProfiles.seedBuiltIns();
+
       expect(await database.launchProfiles.all()).toHaveLength(BUILT_IN_PROFILES.length);
 
       const claude = (await database.launchProfiles.all()).find((p) => p.name === "Claude Code");
+
       expect(claude).toBeDefined();
+
       if (claude === undefined) return;
+
       await database.launchProfiles.save({ ...claude, command: ["claude", "--resume"] });
 
       await database.launchProfiles.seedBuiltIns();
       const after = await database.launchProfiles.all();
+
       expect(after).toHaveLength(BUILT_IN_PROFILES.length);
       expect(after.find((p) => p.name === "Claude Code")?.command).toEqual(["claude", "--resume"]);
     });
   });
 });
-
-// ---- Projects.
 
 describe("projects", () => {
   test("a project round-trips with git, a custom worktree root and ordered automation", async () => {
@@ -313,13 +371,14 @@ describe("projects", () => {
       });
 
       await database.projects.save(value);
+
       expect(await database.projects.find(value.id)).toEqual(value);
 
-      // Re-saving with one command gone reconciles rather than merges.
       await database.projects.save({
         ...value,
         settings: { ...value.settings, automation: [second] },
       });
+
       expect((await database.projects.find(value.id))?.settings.automation).toEqual([second]);
     });
   });
@@ -330,9 +389,7 @@ describe("projects", () => {
       const { git: _empty, ...withoutGit } = value;
       await database.projects.save(value);
       const read = await database.projects.find(value.id);
-      // The documented rule, and the contract it implies for whoever registers a
-      // repository: always record `defaultBranch`, or the project reads back as
-      // not a repository.
+
       expect(read?.git).toBeUndefined();
       expect(read).toEqual(withoutGit);
     });
@@ -342,15 +399,16 @@ describe("projects", () => {
     await withDatabase(async ({ database }) => {
       const value = project({ git: { defaultBranch: "trunk" } });
       await database.projects.save(value);
+
       expect((await database.projects.find(value.id))?.git).toEqual({ defaultBranch: "trunk" });
     });
   });
 
   test("all is name-ordered", async () => {
     await withDatabase(async ({ database }) => {
-      // Sequential, so insertion order is not name order.
       // oxlint-disable-next-line no-await-in-loop
       for (const name of ["zed", "atlas", "meta"]) await database.projects.save(project({ name }));
+
       expect((await database.projects.all()).map((p) => p.name)).toEqual(["atlas", "meta", "zed"]);
     });
   });
@@ -362,6 +420,7 @@ describe("projects", () => {
       corrupt(`UPDATE Project SET forge = 'bitbucket'`);
 
       const read = await database.projects.find(value.id);
+
       expect(read?.git).toEqual({ remoteURL: "ssh://git@example.test/x" });
       expect(records).toContainEqual({
         level: "warning",
@@ -410,12 +469,11 @@ describe("projects", () => {
   test("removing an absent project is a no-op", async () => {
     await withDatabase(async ({ database }) => {
       await database.projects.remove(newProjectID());
+
       expect(await database.projects.all()).toEqual([]);
     });
   });
 });
-
-// ---- Sessions.
 
 describe("sessions", () => {
   test("a worktree-backed session round-trips whole: terminals, tabs, splits, titles", async () => {
@@ -471,6 +529,7 @@ describe("sessions", () => {
       const value = session();
       await database.sessions.save(value);
       const read = await database.sessions.find(value.id);
+
       expect(read?.projectID).toBeUndefined();
       expect(read).toEqual(value);
     });
@@ -484,8 +543,7 @@ describe("sessions", () => {
       const first = worktreeSession(owner.id, { name: "first" });
       const loose = session({ name: "loose" });
       const secondSession = worktreeSession(owner.id, { name: "second" });
-      // Sequential on purpose: `position` is max+1 at insert, so concurrent
-      // saves would be asserting about a race rather than about the order.
+
       // oxlint-disable-next-line no-await-in-loop
       for (const value of [first, loose, secondSession]) await database.sessions.save(value);
 
@@ -521,9 +579,8 @@ describe("sessions", () => {
       await database.sessions.save({ ...first, terminals: [keep] });
 
       const read = await database.sessions.find(first.id);
+
       expect(read?.terminals.map((t) => t.id)).toEqual([keep.id]);
-      // Re-saving is not a reorder: the interface has no reorder entry point, so
-      // `save` must never move a session in the list.
       expect((await database.sessions.inProject(owner.id)).map((s) => s.name)).toEqual([
         "first",
         "second",
@@ -540,6 +597,7 @@ describe("sessions", () => {
 
       await database.sessions.touch(value.id);
       const read = await database.sessions.find(value.id);
+
       expect(read?.lastActiveAt).not.toBe(value.lastActiveAt);
       expect(read).toEqual({ ...value, lastActiveAt: read?.lastActiveAt ?? value.lastActiveAt });
     });
@@ -548,12 +606,11 @@ describe("sessions", () => {
   test("removing an absent session is a no-op", async () => {
     await withDatabase(async ({ database }) => {
       await database.sessions.remove(newSessionID());
+
       expect(await database.sessions.all()).toEqual([]);
     });
   });
 });
-
-// ---- Cascades. These are the product rules, so they are tested as such.
 
 describe("cascades", () => {
   test("removing a project takes its sessions, terminals and automation with it", async () => {
@@ -618,25 +675,13 @@ describe("cascades", () => {
       await database.launchProfiles.remove(profileValue.id);
 
       const read = await database.sessions.find(value.id);
+
       expect(read?.terminals).toHaveLength(1);
       expect(read?.terminals[0]?.profileID).toBeUndefined();
       expect((await database.projects.find(owner.id))?.settings.defaultProfileID).toBeUndefined();
     });
   });
 });
-
-function rowCount(database: TemporaryDatabase, table: string): number {
-  const side = new Database(database.path, { readonly: true });
-  try {
-    return Number(
-      side.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM "${table}"`).get()?.n ?? -1,
-    );
-  } finally {
-    side.close();
-  }
-}
-
-// ---- Half-populated discriminators.
 
 describe("a backing that is representable in SQL and meaningless in the domain", () => {
   test("a worktree session missing its ownership is refused, by name", async () => {
@@ -651,8 +696,6 @@ describe("a backing that is representable in SQL and meaningless in the domain",
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "worktreeOwnership is not managed or adopted",
       ]);
-      // `all()` is not more forgiving than `find()`: one bad row fails the list,
-      // because a list quietly missing a session is worse than an error.
       expect(await failureOf(database.sessions.all())).toBeInstanceOf(CorruptRecord);
     });
   });
@@ -724,8 +767,6 @@ describe("a backing that is representable in SQL and meaningless in the domain",
   });
 });
 
-// ---- Layout: repaired on the way out, refused on the way in.
-
 describe("layout", () => {
   test("a layout naming a terminal that no longer exists is repaired and reported", async () => {
     await withDatabase(async ({ database, records, corrupt }) => {
@@ -752,6 +793,7 @@ describe("layout", () => {
       corrupt(`UPDATE Session SET layout = ?`, [JSON.stringify(stored)]);
 
       const read = await database.sessions.find(value.id);
+
       expect(read?.layout).toEqual(repairLayout(stored, [real.id]));
       expect(read?.layout).toEqual(oneTab(real.id));
       expect(records).toContainEqual({
@@ -791,6 +833,7 @@ describe("layout", () => {
       corrupt(`UPDATE Session SET layout = 'not json'`);
 
       const read = await database.sessions.find(value.id);
+
       expect(read?.layout.tabs).toHaveLength(2);
       expect(read?.layout).toEqual({
         tabs: [
@@ -827,6 +870,7 @@ describe("layout", () => {
       );
       const ids = terminals.map((t) => t.id);
       const first = ids[0];
+
       if (first === undefined) throw new Error("no terminals");
 
       const value = session({ terminals, layout: oneTab(first) });
@@ -836,6 +880,7 @@ describe("layout", () => {
       corrupt(`UPDATE Session SET layout = ?`, [JSON.stringify(tooDeep)]);
 
       const read = await database.sessions.find(value.id);
+
       expect(read?.layout).toEqual(repairLayout(tooDeep, ids));
       expect(read?.layout).not.toEqual(tooDeep);
       expect(records).toContainEqual({
@@ -847,16 +892,73 @@ describe("layout", () => {
         },
       });
 
-      // The other direction: encode refuses it, so the daemon never writes what
-      // it would then have to truncate.
       const failure = await failureOf(database.sessions.save({ ...value, layout: tooDeep }));
+
       expect(failure).toBeInstanceOf(InvalidRecord);
       expect(reasonsOf(failure)).toContain(`tab 0: split tree deeper than ${MAXIMUM_PANE_DEPTH}`);
     });
   });
-});
 
-// ---- Writes that are refused, before any I/O.
+  test("a pane id that is not a UUID rebuilds the layout, so no terminal is unreachable", async () => {
+    await withDatabase(async ({ database, records, corrupt }) => {
+      const first = terminal();
+      const second = terminal({ title: "second" });
+      const value = session({ terminals: [first, second], layout: oneTab(first.id) });
+      await database.sessions.save(value);
+
+      corrupt(`UPDATE Session SET layout = ?`, [
+        `{"tabs":[{"root":{"kind":"terminal","id":"not-a-uuid"},"focusedTerminalID":"not-a-uuid"}],"focusedTabIndex":0}`,
+      ]);
+
+      const read = await database.sessions.find(value.id);
+
+      expect(read?.layout).toEqual({
+        tabs: [
+          { root: { kind: "terminal", id: first.id }, focusedTerminalID: first.id },
+          { root: { kind: "terminal", id: second.id }, focusedTerminalID: second.id },
+        ],
+        focusedTabIndex: 0,
+      });
+      expect(records).toContainEqual({
+        level: "warning",
+        message: "layout unreadable, rebuilt",
+        fields: { sessionID: value.id },
+      });
+    });
+  });
+
+  test("a fractional focusedTabIndex is repaired to the first tab, not refused", async () => {
+    await withDatabase(async ({ database, records, corrupt }) => {
+      const first = terminal();
+      const second = terminal({ title: "second" });
+      const value = session({ terminals: [first, second], layout: oneTab(first.id) });
+      await database.sessions.save(value);
+
+      const stored: SessionLayout = {
+        tabs: [
+          { root: { kind: "terminal", id: first.id }, focusedTerminalID: first.id },
+          { root: { kind: "terminal", id: second.id }, focusedTerminalID: second.id },
+        ],
+        focusedTabIndex: 0,
+      };
+      corrupt(`UPDATE Session SET layout = ?`, [
+        JSON.stringify({ ...stored, focusedTabIndex: 1.5 }),
+      ]);
+
+      const read = await database.sessions.find(value.id);
+
+      expect(read?.layout).toEqual(stored);
+      expect(records).toContainEqual({
+        level: "warning",
+        message: "layout repaired",
+        fields: { sessionID: value.id, reason: "focusedTabIndex 1.5 outside 0..1" },
+      });
+      expect(
+        records.filter((record) => record.message === "layout unreadable, rebuilt"),
+      ).toHaveLength(0);
+    });
+  });
+});
 
 describe("save refuses", () => {
   test("a layout naming a terminal the session does not have", async () => {
@@ -866,10 +968,7 @@ describe("save refuses", () => {
       const failure = await failureOf(database.sessions.save({ ...value, layout: oneTab(ghost) }));
 
       expect(failure).toBeInstanceOf(InvalidRecord);
-      // One reason, not two: the focus names a terminal the *tree* contains, so
-      // `layoutViolations` has nothing to add about it.
       expect(reasonsOf(failure)).toEqual([`tab 0: pane names absent terminal ${ghost}`]);
-      // Nothing was written: the row does not exist, rather than existing badly.
       expect(await database.sessions.find(value.id)).toBeUndefined();
     });
   });
@@ -928,12 +1027,11 @@ describe("save refuses", () => {
       await database.sessions.save(value);
 
       await failureOf(database.sessions.save({ ...value, layout: oneTab(newTerminalID()) }));
+
       expect(await database.sessions.find(value.id)).toEqual(value);
     });
   });
 });
-
-// ---- The profile id a session names must exist; that is the schema's rule.
 
 describe("referential integrity", () => {
   test("a terminal naming a profile that does not exist is a caller bug that propagates", async () => {
@@ -942,8 +1040,6 @@ describe("referential integrity", () => {
       const value = session({ terminals: [orphan], layout: oneTab(orphan.id) });
       const failure = await failureOf(database.sessions.save(value));
 
-      // Not an `InvalidRecord`: this is the database's foreign key doing its job,
-      // and dressing it up as a repository rule would give us two copies of it.
       expect(failure).toBeDefined();
       expect(failure).not.toBeInstanceOf(InvalidRecord);
       expect(await database.sessions.find(value.id)).toBeUndefined();
@@ -954,6 +1050,7 @@ describe("referential integrity", () => {
     await withDatabase(async ({ database }) => {
       const directory = absolutePath("/tmp/janela-shared");
       await database.projects.save(project({ directory }));
+
       expect(await failureOf(database.projects.save(project({ directory })))).toBeDefined();
     });
   });

@@ -1,13 +1,3 @@
-/**
- * The registry: bookkeeping over live terminals, and the one number the daemon's
- * idle-exit rule reads.
- *
- * Constructing a `LiveTerminal` costs nothing — no PTY, no process, no emulator —
- * so most of this runs against real ones without spawning anything. The two tests
- * that need a running child spawn one, for the same reason the rest of the suite
- * does.
- */
-
 import { afterEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 
@@ -48,7 +38,9 @@ function live(id: string, session: string, script = "exec cat"): LiveTerminal {
       initialSize: { columns: 80, rows: 24 },
     },
   });
+
   started.push(terminal);
+
   return terminal;
 }
 
@@ -59,21 +51,25 @@ function drainUntil(terminals: readonly LiveTerminal[], done: () => boolean): Pr
     for (const terminal of terminals) {
       terminal.drain();
     }
+
     if (done()) {
       clearInterval(timer);
       resolve();
+
       return;
     }
+
     if (Date.now() - startedAt > DEADLINE_MS) {
       clearInterval(timer);
       reject(new Error("timed out waiting for every terminal to exit"));
     }
   }, POLL_MS);
+
   return promise;
 }
 
 describe("membership", () => {
-  test("registers, finds and removes by id", () => {
+  test("registers, finds and removes by id, and removing twice is harmless", () => {
     const registry = createTerminalRegistry();
     const terminal = live("r-1", "s-1");
 
@@ -86,13 +82,10 @@ describe("membership", () => {
     registry.remove(terminal.id);
 
     expect(registry.get(terminal.id)).toBeUndefined();
-    // Removing something that was never there is how a teardown path stays simple.
     expect(() => registry.remove(terminal.id)).not.toThrow();
   });
 
-  test("registering the same id twice is a programming error", () => {
-    // Restart keeps a terminal's identity, so there is no legitimate reason for a
-    // second registration — and silently replacing one would orphan a live child.
+  test("registering the same id twice is a programming error, never a silent replacement", () => {
     const registry = createTerminalRegistry();
     registry.register(live("r-dup", "s-1"));
 
@@ -113,7 +106,7 @@ describe("membership", () => {
 });
 
 describe("liveCount", () => {
-  test("counts only terminals holding a process", async () => {
+  test("counts only terminals holding a process, and a terminal asking for attention holds one", async () => {
     const registry = createTerminalRegistry();
     const idle = live("r-idle", "s-1");
     const running = live("r-running", "s-1");
@@ -128,8 +121,6 @@ describe("liveCount", () => {
     await belling.start();
     await drainUntil([belling], () => belling.state.kind === "needsAttention");
 
-    // A terminal asking for attention is still running: the daemon must not exit
-    // out from under it.
     expect(registry.liveCount).toBe(2);
 
     await running.stop();

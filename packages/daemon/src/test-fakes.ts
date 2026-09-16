@@ -1,17 +1,20 @@
-import type {
-  AbsolutePath,
-  GridSize,
-  LaunchProfile,
-  LaunchProfileID,
-  Project,
-  ProjectID,
-  Session,
-  SessionID,
-  TerminalDescriptor,
-  TerminalID,
-  TerminalState,
+import {
+  absolutePath,
+  identifier,
+  instant,
+  type GridSize,
+  type Identifier,
+  type LaunchProfile,
+  type LaunchProfileID,
+  type Project,
+  type Session,
+  type SessionID,
+  type TerminalDescriptor,
+  type TerminalID,
+  type TerminalState,
 } from "@janela/core";
 import {
+  FrameKind,
   decodeDaemonMessage,
   encodeClientMessage,
   MINIMUM_SUPPORTED_VERSION,
@@ -30,19 +33,19 @@ import type {
 } from "@janela/session";
 import type { LogRecord, Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
+import { Match } from "effect";
 
 import type { ClientConnection, RequestDispatching } from "./dispatch.ts";
 import type { PeerCredential } from "./endpoint.ts";
 import type { AcceptedConnection, ConnectionListening } from "./server.ts";
 
-/**
- * Fakes for the daemon's own tests.
- *
- * Not exported from `index.ts`: these exist for `*.test.ts` in this package and
- * nothing ships them. Automation, registries and transports are faked because the
- * logic under test is the *decision* — which client gets which frame, and who is
- * disconnected — not the socket. The socket has its own tests, against a real one.
- */
+export type WireValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly WireValue[]
+  | { readonly [field: string]: WireValue };
 
 export interface FakeDispatch extends RequestDispatching {
   readonly requests: { readonly client: string; readonly type: ClientMessage["type"] }[];
@@ -51,55 +54,6 @@ export interface FakeDispatch extends RequestDispatching {
     readonly terminalID: TerminalID;
     readonly text: string;
   }[];
-  /** Set to make `input` throw, which must not cost the connection. */
-  failure: Error | undefined;
-}
-
-/**
- * A dispatcher that does the two things the server's own contract needs —
- * register a subscription and register a viewport — and records the rest.
- *
- * What a `createSession` *means* is the request dispatcher's; what a connection
- * does with a `subscribe` is the server's, and that is the line this fake draws.
- */
-export function fakeDispatch(registry: TerminalRegistry): FakeDispatch {
-  const decoder = new TextDecoder();
-  const dispatch: FakeDispatch = {
-    requests: [],
-    inputs: [],
-    failure: undefined,
-
-    request(connection: ClientConnection, message: ClientMessage): Promise<void> {
-      dispatch.requests.push({ client: connection.id, type: message.type });
-      switch (message.type) {
-        case "subscribe":
-          connection.subscribe(message.scope);
-          break;
-        case "attach": {
-          const terminal = registry.get(message.terminalID);
-          if (terminal !== undefined) connection.attach(terminal, message.viewport);
-          break;
-        }
-        case "detach":
-          connection.detach(message.terminalID);
-          break;
-        default:
-          break;
-      }
-      if ("id" in message) connection.send({ type: "acknowledged", id: message.id });
-      return Promise.resolve();
-    },
-
-    input(connection: ClientConnection, terminal, bytes): void {
-      if (dispatch.failure !== undefined) throw dispatch.failure;
-      dispatch.inputs.push({
-        client: connection.id,
-        terminalID: terminal.id,
-        text: decoder.decode(bytes),
-      });
-    },
-  };
-  return dispatch;
 }
 
 export interface Recorded {
@@ -111,17 +65,121 @@ export interface Recorded {
 export interface RecordingLogger {
   readonly logger: Logger;
   readonly records: Recorded[];
-  /** Every record with this message, in order. */
   with(message: string): Recorded[];
+}
+
+export interface FakeTerminalOptions {
+  readonly state?: TerminalState;
+  readonly delta?: Uint8Array;
+  readonly full?: Uint8Array;
+  readonly throwOnRepaint?: Error;
+  readonly throwOnDrain?: Error;
+  readonly throwOnSend?: Error;
+  readonly snapshot?: string;
+  readonly sessionID?: SessionID;
+}
+
+export interface FakeTerminal extends LiveTerminal {
+  readonly repaintCalls: string[];
+  readonly fullRepaintCalls: string[];
+  readonly drainCalls: { count: number };
+  readonly attached: Map<string, GridSize>;
+  readonly attachCalls: { client: string; viewport: GridSize }[];
+  readonly sendCalls: Uint8Array[];
+  readonly stopCalls: { count: number };
+  readonly startCalls: { count: number };
+}
+
+export interface FakeRegistry extends TerminalRegistry {
+  readonly registerCalls: { count: number };
+  readonly hangUpAllCalls: { count: number };
+  add(terminal: LiveTerminal): void;
+}
+
+export interface TransportPair {
+  readonly daemonSide: MessageTransport;
+  readonly clientSide: MessageTransport;
+  readonly unreadByClient: number;
+}
+
+export interface MemoryListener extends ConnectionListening {
+  connect(credential?: PeerCredential): TransportPair;
+  readonly closeCalls: { count: number };
+}
+
+const OWN_UID = 501;
+
+const FIXTURE_INSTANT = instant("2026-01-01T00:00:00.000Z");
+
+const NOT_CALLED = "the daemon must not call this";
+
+const encoder = new TextEncoder();
+
+function fixtureIdentifier<Subject extends string>(name: string): Identifier<Subject> {
+  const digest = new Bun.CryptoHasher("md5").update(name).digest("hex");
+
+  return identifier<Subject>(
+    [
+      digest.slice(0, 8),
+      digest.slice(8, 12),
+      digest.slice(12, 16),
+      digest.slice(16, 20),
+      digest.slice(20, 32),
+    ].join("-"),
+  );
+}
+
+export function fakeDispatch(registry: TerminalRegistry): FakeDispatch {
+  const decoder = new TextDecoder();
+  const dispatch: FakeDispatch = {
+    requests: [],
+    inputs: [],
+
+    request(connection: ClientConnection, message: ClientMessage): Promise<void> {
+      dispatch.requests.push({ client: connection.id, type: message.type });
+
+      Match.value(message).pipe(
+        Match.discriminator("type")("subscribe", (request) => {
+          connection.subscribe(request.scope);
+        }),
+        Match.discriminator("type")("attach", (request) => {
+          const terminal = registry.get(request.terminalID);
+
+          if (terminal !== undefined) connection.attach(terminal, request.viewport);
+        }),
+        Match.discriminator("type")("detach", (request) => {
+          connection.detach(request.terminalID);
+        }),
+        Match.orElse(() => undefined),
+      );
+
+      if (message.type !== "hello" && message.type !== "resize") {
+        connection.send({ type: "acknowledged", id: message.id });
+      }
+
+      return Promise.resolve();
+    },
+
+    input(connection: ClientConnection, terminal, bytes): void {
+      dispatch.inputs.push({
+        client: connection.id,
+        terminalID: terminal.id,
+        text: decoder.decode(bytes),
+      });
+    },
+  };
+
+  return dispatch;
 }
 
 export function recordingLogger(): RecordingLogger {
   const records: Recorded[] = [];
   const at =
     (level: Recorded["level"]) =>
-    (message: string, fields?: LogRecord["fields"]): void => {
+    (message: string, fields: LogRecord["fields"]): void => {
       records.push({ level, message, fields });
     };
+
   return {
     logger: {
       debug: at("debug"),
@@ -135,44 +193,9 @@ export function recordingLogger(): RecordingLogger {
   };
 }
 
-export interface FakeTerminalOptions {
-  readonly state?: TerminalState;
-  /** Bytes `repaintFor` returns. Empty means "nothing changed". */
-  readonly delta?: Uint8Array;
-  readonly full?: Uint8Array;
-  /** Thrown by both encoders, to exercise the loop's lost-terminal path. */
-  readonly throwOnRepaint?: Error;
-  /**
-   * Thrown by `drain`, which is what a real terminal does when its descriptor is
-   * lost — `PseudoTerminalFailure` with `detail.kind === "readFailed"` (#17).
-   */
-  readonly throwOnDrain?: Error;
-  /** What `snapshotText` returns, for the CLI's read path. */
-  readonly snapshot?: string;
-  /** The session this terminal belongs to. Defaults to `"session"`. */
-  readonly sessionID?: SessionID;
-}
-
-export interface FakeTerminal extends LiveTerminal {
-  /** Client ids passed to `repaintFor`, in call order. */
-  readonly repaintCalls: string[];
-  readonly fullRepaintCalls: string[];
-  /** How often the frame loop fed this terminal. One per frame, or the loop is wrong. */
-  readonly drainCalls: { count: number };
-  readonly attached: Map<string, GridSize>;
-  /** Every `attach`, in order: the upsert history a resize shows up in. */
-  readonly attachCalls: { client: string; viewport: GridSize }[];
-  readonly sendCalls: Uint8Array[];
-  readonly stopCalls: { count: number };
-  /** Times `start` was called. Attaching must never move this. */
-  readonly startCalls: { count: number };
-}
-
-const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
-
 export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}): FakeTerminal {
-  const delta = options.delta ?? bytes("d");
-  const full = options.full ?? bytes("F");
+  const delta = options.delta ?? encoder.encode("d");
+  const full = options.full ?? encoder.encode("F");
   const repaintCalls: string[] = [];
   const fullRepaintCalls: string[] = [];
   const drainCalls = { count: 0 };
@@ -187,12 +210,12 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     title: "fake",
     startsAutomatically: false,
     role: { kind: "user" },
-    createdAt: "2026-01-01T00:00:00.000Z" as TerminalDescriptor["createdAt"],
+    createdAt: FIXTURE_INSTANT,
   };
 
   return {
     id,
-    sessionID: options.sessionID ?? ("session" as SessionID),
+    sessionID: options.sessionID ?? fixtureIdentifier<"Session">("session"),
     descriptor,
     state: options.state ?? { kind: "running" },
     displayTitle: "fake",
@@ -206,49 +229,54 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     startCalls,
     start: () => {
       startCalls.count += 1;
+
       return Promise.resolve();
     },
     stop: () => {
       stopCalls.count += 1;
+
       return Promise.resolve();
     },
     restart: () => Promise.resolve(),
     drain: () => {
       drainCalls.count += 1;
+
       if (options.throwOnDrain !== undefined) throw options.throwOnDrain;
     },
     send: (input) => {
+      if (options.throwOnSend !== undefined) throw options.throwOnSend;
+
       sendCalls.push(Uint8Array.from(input));
     },
     attach: (client, viewport) => {
       attachCalls.push({ client, viewport });
       attached.set(client, viewport);
+
       return viewport;
     },
     detach: (client) => {
       attached.delete(client);
+
       return attached.size === 0 ? undefined : { columns: 80, rows: 24 };
     },
     repaintFor: (client) => {
       if (options.throwOnRepaint !== undefined) throw options.throwOnRepaint;
+
       repaintCalls.push(client);
+
       return delta;
     },
     fullRepaintFor: (client) => {
       if (options.throwOnRepaint !== undefined) throw options.throwOnRepaint;
+
       fullRepaintCalls.push(client);
+
       return full;
     },
     snapshotText: ({ includeScrollback }) =>
       includeScrollback ? `${options.snapshot ?? ""}+scrollback` : (options.snapshot ?? ""),
     events: undefined,
   };
-}
-
-export interface FakeRegistry extends TerminalRegistry {
-  readonly registerCalls: { count: number };
-  readonly hangUpAllCalls: { count: number };
-  add(terminal: LiveTerminal): void;
 }
 
 export function fakeRegistry(terminals: readonly LiveTerminal[] = []): FakeRegistry {
@@ -278,90 +306,7 @@ export function fakeRegistry(terminals: readonly LiveTerminal[] = []): FakeRegis
     },
     hangUpAll: () => {
       hangUpAllCalls.count += 1;
-      return Promise.resolve();
-    },
-  };
-}
 
-/**
- * One direction of a transport pair: a frame is handed over only once the other
- * side's consumer takes it.
- *
- * A rendezvous rather than a buffer, because the interesting daemon behaviour is
- * exactly what happens when a peer stops reading — a buffered channel would let a
- * stalled client look healthy.
- */
-class Channel {
-  #items: Frame[] = [];
-  #takers: ((frame: Frame | undefined) => void)[] = [];
-  #senders: { readonly frame: Frame; readonly resolve: () => void }[] = [];
-  #closed = false;
-
-  send(frame: Frame): Promise<void> {
-    if (this.#closed) return Promise.reject(new Error("transport closed"));
-    const taker = this.#takers.shift();
-    if (taker !== undefined) {
-      taker(frame);
-      return Promise.resolve();
-    }
-    const { promise, resolve } = Promise.withResolvers<void>();
-    this.#senders.push({ frame, resolve });
-    this.#items.push(frame);
-    return promise;
-  }
-
-  take(): Promise<Frame | undefined> {
-    const item = this.#items.shift();
-    if (item !== undefined) {
-      const sender = this.#senders.shift();
-      sender?.resolve();
-      return Promise.resolve(item);
-    }
-    if (this.#closed) return Promise.resolve(undefined);
-    const { promise, resolve } = Promise.withResolvers<Frame | undefined>();
-    this.#takers.push(resolve);
-    return promise;
-  }
-
-  close(): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    for (const taker of this.#takers.splice(0)) taker(undefined);
-    // A sender waiting on a peer that went away is released, not rejected: the
-    // frame is lost because the connection is gone.
-    for (const sender of this.#senders.splice(0)) sender.resolve();
-    this.#items = [];
-  }
-
-  /** Frames sent but not yet taken. */
-  get queued(): number {
-    return this.#items.length;
-  }
-}
-
-export interface TransportPair {
-  readonly daemonSide: MessageTransport;
-  readonly clientSide: MessageTransport;
-  /** Frames the daemon sent that the client has not read. */
-  readonly unreadByClient: number;
-}
-
-/** One end of a `transportPair`. */
-function transportSide(outgoing: Channel, incoming: Channel): MessageTransport {
-  return {
-    async *incoming(): AsyncIterableIterator<Frame> {
-      for (;;) {
-        // A rendezvous: one frame at a time, only when the consumer asks.
-        // oxlint-disable-next-line no-await-in-loop
-        const frame = await incoming.take();
-        if (frame === undefined) return;
-        yield frame;
-      }
-    },
-    send: (frame) => outgoing.send(frame),
-    close: () => {
-      outgoing.close();
-      incoming.close();
       return Promise.resolve();
     },
   };
@@ -380,14 +325,6 @@ export function transportPair(): TransportPair {
   };
 }
 
-export interface MemoryListener extends ConnectionListening {
-  /** Connects a peer and returns the client end of its transport. */
-  connect(credential?: PeerCredential): TransportPair;
-  readonly closeCalls: { count: number };
-}
-
-const OWN_UID = 501;
-
 export function memoryListener(): MemoryListener {
   const pending: AcceptedConnection[] = [];
   let waiting: (() => void) | undefined;
@@ -399,20 +336,24 @@ export function memoryListener(): MemoryListener {
     connect(credential = { uid: OWN_UID, pid: 4242 }): TransportPair {
       const pair = transportPair();
       pending.push({ transport: pair.daemonSide, credential });
+
       const wake = waiting;
       waiting = undefined;
       wake?.();
+
       return pair;
     },
     async *accept(): AsyncIterableIterator<AcceptedConnection> {
-      // `closed` is set by `close()`, which wakes the parked waiter below.
       // oxlint-disable-next-line no-unmodified-loop-condition
       while (!closed) {
         const next = pending.shift();
+
         if (next !== undefined) {
           yield next;
+
           continue;
         }
+
         const { promise, resolve } = Promise.withResolvers<void>();
         waiting = resolve;
         // oxlint-disable-next-line no-await-in-loop
@@ -422,15 +363,16 @@ export function memoryListener(): MemoryListener {
     close(): Promise<void> {
       closeCalls.count += 1;
       closed = true;
+
       const wake = waiting;
       waiting = undefined;
       wake?.();
+
       return Promise.resolve();
     },
   };
 }
 
-/** A client `hello`, compatible unless the overrides say otherwise. */
 export function clientHello(overrides: Partial<Hello> = {}): Frame {
   return encodeClientMessage({
     type: "hello",
@@ -443,36 +385,30 @@ export function clientHello(overrides: Partial<Hello> = {}): Frame {
   });
 }
 
-/** A `hello` whose fields are the wrong types — the wire has no type system. */
-export function malformedHello(hello: unknown): Frame {
-  return encodeClientMessage({ type: "hello", hello } as ClientMessage);
+export function wireControl(value: WireValue): Frame {
+  return { kind: FrameKind.Control, payload: encoder.encode(JSON.stringify(value)) };
 }
 
-/** The next control message the peer sends, decoded. */
+export function malformedHello(hello: WireValue): Frame {
+  return wireControl({ type: "hello", hello });
+}
+
 export async function readMessage(transport: MessageTransport): Promise<DaemonMessage> {
   for await (const frame of transport.incoming()) {
     return decodeDaemonMessage(frame);
   }
+
   throw new Error("the peer closed without sending a message");
 }
 
-/** The next frame, whatever kind it is. */
 export async function readFrame(transport: MessageTransport): Promise<Frame> {
   for await (const frame of transport.incoming()) {
     return frame;
   }
+
   throw new Error("the peer closed without sending a frame");
 }
 
-const NOT_CALLED = "the daemon must not call this";
-
-/**
- * The brain, as far as the daemon can tell.
- *
- * Every mutating method rejects by default, which is what makes the fan-out tests
- * meaningful: a server that quietly created a session would fail them. `overrides`
- * are spread last, so a dispatch test replaces exactly the calls it is about.
- */
 export function fakeSessions(
   sessions: readonly Session[] = [],
   overrides: Partial<SessionService> = {},
@@ -515,20 +451,14 @@ export function fakeProjects(
   };
 }
 
-/**
- * The launch profiles, as far as the daemon can tell.
- *
- * `availability` defaults to "everything the profiles list is available", because
- * the interesting daemon behaviour is that it publishes whatever the service says
- * — the probing itself is `@janela/session`'s, and tested there against a real
- * `which`.
- */
 export function fakeLaunchProfiles(
   profiles: readonly LaunchProfile[] = [],
   overrides: Partial<LaunchProfileService> = {},
 ): LaunchProfileService {
   const availability: Record<LaunchProfileID, boolean> = {};
+
   for (const profile of profiles) availability[profile.id] = true;
+
   return {
     profiles,
     availability,
@@ -539,10 +469,9 @@ export function fakeLaunchProfiles(
   };
 }
 
-/** A launch profile, for the tests that only care that one crossed the wire. */
 export function fakeProfile(id: string, overrides: Partial<LaunchProfile> = {}): LaunchProfile {
   return {
-    id: id as LaunchProfileID,
+    id: fixtureIdentifier<"LaunchProfile">(id),
     name: id,
     iconName: "terminal",
     command: [id],
@@ -553,27 +482,26 @@ export function fakeProfile(id: string, overrides: Partial<LaunchProfile> = {}):
   };
 }
 
-/** A session, for the fan-out tests. Only the fields a `state` update carries. */
 export function fakeSession(id: string): Session {
   return {
-    id: id as SessionID,
+    id: fixtureIdentifier<"Session">(id),
     name: id,
-    directory: `/tmp/${id}` as AbsolutePath,
+    directory: absolutePath(`/tmp/${id}`),
     backing: { kind: "folder" },
     terminals: [],
     layout: { tabs: [], focusedTabIndex: 0 },
     accent: "none",
-    createdAt: "2026-01-01T00:00:00.000Z" as Session["createdAt"],
-    lastActiveAt: "2026-01-01T00:00:00.000Z" as Session["lastActiveAt"],
+    createdAt: FIXTURE_INSTANT,
+    lastActiveAt: FIXTURE_INSTANT,
     isPinned: false,
   };
 }
 
 export function fakeProject(id: string): Project {
   return {
-    id: id as ProjectID,
+    id: fixtureIdentifier<"Project">(id),
     name: id,
-    directory: `/tmp/${id}` as AbsolutePath,
+    directory: absolutePath(`/tmp/${id}`),
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
       automation: [],
@@ -581,6 +509,87 @@ export function fakeProject(id: string): Project {
     },
     accent: "none",
     isExpanded: true,
-    addedAt: "2026-01-01T00:00:00.000Z" as Project["addedAt"],
+    addedAt: FIXTURE_INSTANT,
+  };
+}
+
+class Channel {
+  #items: Frame[] = [];
+  #takers: ((frame: Frame | undefined) => void)[] = [];
+  #senders: { readonly frame: Frame; readonly resolve: () => void }[] = [];
+  #closed = false;
+
+  send(frame: Frame): Promise<void> {
+    if (this.#closed) return Promise.reject(new Error("transport closed"));
+
+    const taker = this.#takers.shift();
+
+    if (taker !== undefined) {
+      taker(frame);
+
+      return Promise.resolve();
+    }
+
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#senders.push({ frame, resolve });
+    this.#items.push(frame);
+
+    return promise;
+  }
+
+  take(): Promise<Frame | undefined> {
+    const item = this.#items.shift();
+
+    if (item !== undefined) {
+      const sender = this.#senders.shift();
+      sender?.resolve();
+
+      return Promise.resolve(item);
+    }
+
+    if (this.#closed) return Promise.resolve(undefined);
+
+    const { promise, resolve } = Promise.withResolvers<Frame | undefined>();
+    this.#takers.push(resolve);
+
+    return promise;
+  }
+
+  close(): void {
+    if (this.#closed) return;
+
+    this.#closed = true;
+
+    for (const taker of this.#takers.splice(0)) taker(undefined);
+
+    for (const sender of this.#senders.splice(0)) sender.resolve();
+
+    this.#items = [];
+  }
+
+  get queued(): number {
+    return this.#items.length;
+  }
+}
+
+function transportSide(outgoing: Channel, incoming: Channel): MessageTransport {
+  return {
+    async *incoming(): AsyncIterableIterator<Frame> {
+      for (;;) {
+        // oxlint-disable-next-line no-await-in-loop
+        const frame = await incoming.take();
+
+        if (frame === undefined) return;
+
+        yield frame;
+      }
+    },
+    send: (frame) => outgoing.send(frame),
+    close: () => {
+      outgoing.close();
+      incoming.close();
+
+      return Promise.resolve();
+    },
   };
 }

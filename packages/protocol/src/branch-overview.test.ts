@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
 import type { AbsolutePath } from "@janela/core";
+import { Schema } from "effect";
 
 import {
   parseBranchOverview,
   serializeBranchOverview,
   type BranchOverview,
 } from "./branch-overview.ts";
+
+type WireValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly WireValue[]
+  | { readonly [key: string]: WireValue };
 
 const path = (raw: string): AbsolutePath => raw as AbsolutePath;
 
@@ -15,14 +24,26 @@ const overview: BranchOverview = {
   worktrees: [
     { directory: path("/Users/x/code/janela"), branch: "main", isMain: true },
     { directory: path("/Users/x/code/.worktrees/feat-pty"), branch: "feat/pty", isMain: false },
-    // Detached: no branch at all, which is exactly the case a client must not
-    // render as a branch named "undefined".
     { directory: path("/Users/x/code/.worktrees/spike"), isMain: false },
   ],
 };
 
-/** The overview with one field replaced by something the wire allows and we do not. */
-const corrupted = (field: string, value: unknown): string =>
+const EncodedOverview = Schema.fromJsonString(
+  Schema.Struct({
+    branches: Schema.Array(Schema.String),
+    worktrees: Schema.Array(
+      Schema.Struct({
+        directory: Schema.String,
+        branch: Schema.optionalKey(Schema.String),
+        isMain: Schema.Boolean,
+      }),
+    ),
+  }),
+);
+
+const decodeEncodedOverview = Schema.decodeUnknownSync(EncodedOverview);
+
+const corrupted = (field: string, value: WireValue): string =>
   JSON.stringify({ ...overview, [field]: value });
 
 describe("the branch overview on the wire", () => {
@@ -31,20 +52,11 @@ describe("the branch overview on the wire", () => {
   });
 
   test("a detached worktree carries no branch key at all", () => {
-    const encoded: unknown = JSON.parse(serializeBranchOverview(overview));
-    if (typeof encoded !== "object" || encoded === null || !("worktrees" in encoded)) {
-      throw new Error("expected an encoded overview");
-    }
-    const { worktrees } = encoded;
-    if (!Array.isArray(worktrees)) throw new Error("expected encoded worktrees");
-    const detached: unknown = worktrees[2];
-    if (typeof detached !== "object" || detached === null) {
-      throw new Error("expected the detached worktree");
-    }
+    const encoded = decodeEncodedOverview(serializeBranchOverview(overview));
+    const detached = encoded.worktrees[2];
 
-    // `exactOptionalPropertyTypes`: an explicit `branch: undefined` is not the
-    // same thing as absent, and `toEqual` would not tell the two apart.
-    expect(Object.hasOwn(detached, "branch")).toBe(false);
+    expect(detached).toBeDefined();
+    expect(detached).not.toHaveProperty("branch");
     expect(parseBranchOverview(serializeBranchOverview(overview)).worktrees[2]).not.toHaveProperty(
       "branch",
     );

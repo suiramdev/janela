@@ -19,7 +19,8 @@
     "@janela/core": "workspace:*",
     "@janela/support": "workspace:*",
     "@prisma/client": "7.9.1",
-    "@prisma/driver-adapter-utils": "7.9.1"
+    "@prisma/driver-adapter-utils": "7.9.1",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*",

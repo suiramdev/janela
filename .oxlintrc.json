@@ -1,5 +1,13 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // ---- @jliocsar/begone-slop: rules that police *evidence* rather than style,
+  // plus the Effect v4 idioms. `extends` here does not take a package
+  // specifier — oxlint resolves it relative to this file — so the path is
+  // explicit. The preset sets `"plugins": []`; our own `plugins` array below is
+  // later and wins, which is how oxlint's own plugin rules stay on.
+  "extends": ["./node_modules/@jliocsar/begone-slop/preset.json"],
+
   "plugins": ["import", "typescript", "unicorn", "promise", "react", "react-perf", "jsx-a11y"],
 
   // ---- @shadcn/lint: the design system's own rules, for the half of the
@@ -12,7 +20,7 @@
   // restyle is a design decision, not a setup step. Rules go in "rules" below,
   // next to the ones already there. Oxlint's JS plugin API is alpha, and it
   // arrived in 1.80 — which is why the oxlint pin moved off 1.79.
-  "jsPlugins": ["@shadcn/lint"],
+  "jsPlugins": ["@shadcn/lint", "@jliocsar/begone-slop"],
   "settings": {
     "shadcn": {
       // The primitives are not under a `components/ui` directory and there is
@@ -71,7 +79,17 @@
     // React 19 with the automatic runtime (`"jsx": "react-jsx"` in
     // tsconfig.base.json): JSX compiles to `jsx()` from `react/jsx-runtime`, so a
     // `React` binding in scope would be an unused import, not a requirement.
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+
+    // `_tag` is Effect's discriminant, not a private-field convention.
+    "no-underscore-dangle": ["error", { "allow": ["_tag"] }],
+
+    // A `src/index.ts` is a package's `exports` entry and, inside @janela/ui, the
+    // one door Steiger allows into a slice. Re-exporting is its whole job.
+    "begone-slop/no-reexport-only-modules": [
+      "error",
+      { "allowedFilenames": ["index.ts"], "routeDirectoryNames": ["src"] }
+    ]
   },
   "overrides": [
     {
@@ -337,6 +355,10 @@
       //                            its `onMouseDown` is what stops a click from
       //                            taking focus off the field
       //
+      // Every `begone-slop/*` rule is off here for the same reason: rewriting
+      // someone else's component to our evidence standard is work the next
+      // `shadcn add --overwrite` throws away.
+      //
       // What stays on is everything load-bearing: no `any`, no `!`, no
       // `console`, the import restrictions, and `consistent-type-imports`. The
       // registry copies pass all of those as shipped.
@@ -369,15 +391,59 @@
         "unicorn/no-array-sort": "off",
         "jsx-a11y/no-noninteractive-tabindex": "off",
         "jsx-a11y/no-static-element-interactions": "off",
-        "jsx-a11y/interactive-supports-focus": "off"
+        "jsx-a11y/interactive-supports-focus": "off",
+
+        "begone-slop/statement-order": "off",
+        "begone-slop/padding-line-between-statements": "off",
+        "begone-slop/expect-padding": "off",
+        "begone-slop/no-comments": "off",
+        "begone-slop/no-tag-access": "off",
+        "begone-slop/no-shadowed-error-field": "off",
+        "begone-slop/no-switch": "off",
+        "begone-slop/no-try-catch": "off",
+        "begone-slop/no-in-operator": "off",
+        "begone-slop/no-service-option": "off",
+        "begone-slop/no-effect-asvoid": "off",
+        "begone-slop/no-disable-validation": "off",
+        "begone-slop/no-banned-type-assertions": "off",
+        "begone-slop/no-optional-function-parameters": "off",
+        "begone-slop/no-sql-type-parameter": "off",
+        "begone-slop/pipe-max-arguments": "off",
+        "begone-slop/no-reflect-get": "off",
+        "begone-slop/no-reflect-apply": "off",
+        "begone-slop/no-conditional-empty-object-spread": "off",
+        "begone-slop/require-safety-comment-for-type-assertion": "off",
+        "begone-slop/no-chained-type-assertions": "off",
+        "begone-slop/no-unknown-parameters": "off",
+        "begone-slop/no-unknown-returns": "off",
+        "begone-slop/no-unknown-type-aliases": "off",
+        "begone-slop/no-silent-error-swallow": "off",
+        "begone-slop/no-shadowed-standard-array-static": "off",
+        "begone-slop/no-nested-effect-array-methods": "off",
+        "begone-slop/prefer-option-from-nullable": "off",
+        "begone-slop/prefer-effect-match": "off",
+        "begone-slop/no-cascading-layer-provide": "off",
+        "begone-slop/no-nested-layer-provide": "off",
+        "begone-slop/no-reexport-only-modules": "off",
+        "begone-slop/no-unsafe-dictionary-type": "off",
+        "begone-slop/no-known-value-widening": "off",
+        "begone-slop/no-widen-then-assert": "off",
+        "begone-slop/no-object-parameters": "off",
+        "begone-slop/no-module-mocking": "off",
+        "begone-slop/no-runtime-typeof": "off"
       }
     },
     {
-      // Tests are allowed the assertions production code is not.
+      // Tests are allowed the assertions production code is not — which is
+      // exactly what `require-safety-comment-for-type-assertion` asks a
+      // justification for. `expect-padding` is the one begone-slop rule its
+      // preset leaves off, because it only means anything where `expect()` runs.
       "files": ["**/*.test.ts", "**/*.test.tsx", "packages/test-support/**"],
       "rules": {
         "typescript/no-non-null-assertion": "off",
-        "no-console": "off"
+        "no-console": "off",
+        "begone-slop/require-safety-comment-for-type-assertion": "off",
+        "begone-slop/expect-padding": "error"
       }
     },
     {

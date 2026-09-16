@@ -20,6 +20,7 @@ import {
 } from "./test-fakes.ts";
 
 const id = (name: string): SessionID => name as SessionID;
+
 const profileID = (name: string): LaunchProfileID => name as LaunchProfileID;
 
 describe("the mirror", () => {
@@ -49,8 +50,6 @@ describe("the mirror", () => {
     ]);
     expect(stores.sessions.sessions[0]?.name).toBe("a-renamed");
     expect(stores.sessions.sessions[2]?.name).toBe("c-renamed");
-    // The same object, not an equal one: a view comparing references re-renders
-    // nothing for a session that did not change.
     expect(stores.sessions.sessions[1]).toBe(untouched);
   });
 
@@ -98,7 +97,6 @@ describe("the mirror", () => {
     expect(stores.sessions.terminalStates[one]).toEqual({ kind: "running" });
     expect(stores.sessions.terminalStates[two]).toEqual({ kind: "exited", code: 0 });
 
-    // A key absent from a full snapshot is a terminal that no longer exists.
     stores.mirror.apply(snapshot([fakeSession("s1", [one, two])], [], { [two]: { kind: "idle" } }));
 
     expect(stores.sessions.terminalStates[one]).toBeUndefined();
@@ -112,17 +110,17 @@ describe("the mirror", () => {
     stores.mirror.apply(snapshot([], [], {}, [fakeLaunchProfile("p1"), fakeLaunchProfile("p2")]));
     const before = stores.sessions.launchProfiles;
 
-    // Empty means unchanged, exactly as the other collections do.
     stores.mirror.apply(partial());
+
     expect(stores.sessions.launchProfiles).toBe(before);
 
     stores.mirror.apply(partial([], [], {}, [fakeLaunchProfile("p2", "renamed")]));
+
     expect(stores.sessions.launchProfiles.map((profile) => profile.id)).toEqual([one, two]);
     expect(stores.sessions.launchProfiles[1]?.name).toBe("renamed");
 
-    // A profile absent from a full snapshot was deleted: keeping it would leave a
-    // dead row in the ⌘T picker forever.
     stores.mirror.apply(snapshot([], [], {}, [fakeLaunchProfile("p2")]));
+
     expect(stores.sessions.launchProfiles.map((profile) => profile.id)).toEqual([two]);
     expect(stores.sessions.launchProfileAvailability).toEqual({ [two]: true });
   });
@@ -155,12 +153,15 @@ describe("selection", () => {
     stores.sessions.selection = id("c");
 
     stores.mirror.apply(snapshot([fakeSession("a"), fakeSession("b")]));
+
     expect(stores.sessions.selection).toBe(id("b"));
 
     stores.mirror.apply(snapshot([fakeSession("a")]));
+
     expect(stores.sessions.selection).toBe(id("a"));
 
     stores.mirror.apply(snapshot([]));
+
     expect(stores.sessions.selection).toBeUndefined();
   });
 
@@ -175,21 +176,11 @@ describe("selection", () => {
   });
 });
 
-/** The same session, aged. `fakeSession` gives every session one timestamp. */
 const activeAt = (name: string, at: string): Session => ({
   ...fakeSession(name),
   lastActiveAt: instant(at),
 });
 
-/**
- * The survival moment: you quit Janela, your agent kept running, you came back.
- *
- * The guarantee is *the first frame that shows the session shows it selected* — not
- * the first frame, because no client can select a session it has not been told
- * about. Selection stays local and unsent; this is a rule for answering "what am I
- * looking at" when the user has not said, exactly as `neighbourOf` answers it when
- * the session they chose is gone.
- */
 describe("selection when the user has not chosen", () => {
   test("the first snapshot selects the most recently active session", () => {
     const stores = createStores();
@@ -231,7 +222,6 @@ describe("selection when the user has not chosen", () => {
     );
     stores.sessions.selection = id("a");
 
-    // `b` is still the most recently active, and a fresher `b` arrives.
     stores.mirror.apply(
       snapshot([
         activeAt("a", "2026-03-01T09:00:00.000Z"),
@@ -272,11 +262,12 @@ describe("derived views", () => {
   test("a session is running when any terminal is live, and never by inference", () => {
     const stores = createStores();
     const [running, attention, exited] = [terminalID(), terminalID(), terminalID()];
-    const states: Record<string, TerminalState> = {
+
+    const states = {
       [running]: { kind: "running" },
       [attention]: { kind: "needsAttention" },
       [exited]: { kind: "exited", code: 0 },
-    };
+    } satisfies Record<string, TerminalState>;
 
     stores.mirror.apply(
       snapshot(
@@ -314,21 +305,24 @@ describe("derived views", () => {
 describe("staleness and notification", () => {
   test("starts stale, a full snapshot clears it, a partial does not", () => {
     const stores = createStores();
+
     expect(stores.mirror.isStale).toBe(true);
 
     stores.mirror.apply(partial([fakeSession("a")]));
+
     expect(stores.mirror.isStale).toBe(true);
 
     stores.mirror.apply(snapshot([fakeSession("a")]));
+
     expect(stores.mirror.isStale).toBe(false);
 
     stores.mirror.markStale();
+
     expect(stores.mirror.isStale).toBe(true);
-    // The mirror is kept, not discarded: this is what the reconnecting strip
-    // renders behind.
     expect(stores.sessions.sessions.map((session) => session.id)).toEqual([id("a")]);
 
     stores.mirror.apply(partial([fakeSession("b")]));
+
     expect(stores.mirror.isStale).toBe(true);
   });
 
@@ -336,32 +330,35 @@ describe("staleness and notification", () => {
     const stores = createStores();
     let sessions = 0;
     let projects = 0;
+
     const stop = stores.sessions.subscribe(() => {
       sessions += 1;
     });
+
     stores.projects.subscribe(() => {
       projects += 1;
     });
 
-    // Two sessions, because the first is seeded as the selection: the assignment
-    // below has to be a genuine change for "a change notifies" to mean anything.
     stores.mirror.apply(snapshot([fakeSession("a"), fakeSession("b")]));
+
     expect(sessions).toBe(1);
-    // One apply is one notification for both views: a listener must never see a
-    // half-applied update.
     expect(projects).toBe(1);
 
     stores.sessions.selection = id("b");
+
     expect(sessions).toBe(2);
-    // Setting the same value again changes nothing and says nothing.
+
     stores.sessions.selection = id("b");
+
     expect(sessions).toBe(2);
 
     stores.mirror.markStale();
+
     expect(sessions).toBe(3);
 
     stop();
     stores.mirror.apply(snapshot([]));
+
     expect(sessions).toBe(3);
     expect(projects).toBe(4);
   });

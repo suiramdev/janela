@@ -46,69 +46,18 @@ import {
   fakeTerminal,
   memoryListener,
   recordingLogger,
+  wireControl,
   type FakeRegistry,
   type FakeTerminal,
   type Recorded,
+  type WireValue,
 } from "./test-fakes.ts";
-
-const VIEWPORT: GridSize = { columns: 80, rows: 24 };
-const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
-
-/** Marker text a person must never see: it stands in for a page of git stderr. */
-const STDERR = "fatal: could not read Username for https://example.invalid";
-
-class GitFailure extends UserFacingError {
-  override readonly summary = "Couldn't create the session.";
-}
-
-/** Stands in for `@janela/session`'s `BuiltInProfileProtected`, which is its own test's. */
-class BuiltInProfile extends UserFacingError {
-  override readonly summary = "Built-in profiles can't be deleted.";
-
-  constructor() {
-    super("built-in launch profile cannot be removed", {
-      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
-    });
-  }
-}
-
-/** What `createTerminal` hands back: only the fields the dispatcher reads. */
-function fakeDescriptor(id: TerminalID): TerminalDescriptor {
-  return {
-    id,
-    title: "Shell",
-    startsAutomatically: true,
-    role: { kind: "user" },
-    createdAt: "2026-01-01T00:00:00.000Z" as TerminalDescriptor["createdAt"],
-  };
-}
-
-/**
- * Waits for a condition rather than a duration.
- *
- * The server runs a real frame interval and answers requests off the read loop,
- * so a test has to let real time pass; polling keeps a failure pointing at the
- * condition rather than at a guessed sleep.
- */
-async function until(condition: () => boolean, description: string): Promise<void> {
-  for (let attempt = 0; attempt < 2_000; attempt += 1) {
-    if (condition()) return;
-    // Polling is the point: each check happens after the previous one.
-    // oxlint-disable-next-line no-await-in-loop
-    await Bun.sleep(1);
-  }
-  throw new Error(`timed out waiting for ${description}`);
-}
 
 interface Peer {
   send(frame: Frame): Promise<void>;
-  /** Everything the daemon said on the control channel, in order. */
   readonly controls: DaemonMessage[];
-  /** The reply correlated to this request, once it arrives. */
   reply(id: RequestID): Promise<DaemonMessage>;
-  /** Raw frames, for the "did this client get a repaint" question. */
   readonly frames: Frame[];
-  /** Takes exactly one frame. For a peer that is not draining. */
   receive(): Promise<Frame>;
   close(): Promise<void>;
 }
@@ -122,13 +71,78 @@ interface Fixture {
   stop(): Promise<void>;
 }
 
+const VIEWPORT: GridSize = { columns: 80, rows: 24 };
+const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
+
+const STDERR = "fatal: could not read Username for https://example.invalid";
+
 const running: Fixture[] = [];
+
+const request = (message: ClientMessage): Frame => encodeClientMessage(message);
+
+const plan = (overrides: Partial<SessionRemovalPlan> = {}): SessionRemovalPlan => ({
+  liveTerminalCount: 2,
+  canDeleteDirectory: true,
+  deletesDirectory: false,
+  includedPaths: [".env"],
+  runsTeardownAutomation: true,
+  safety: {
+    hasUncommittedChanges: true,
+    hasUntrackedFiles: false,
+    hasUnpushedCommits: false,
+    isLocked: false,
+    hasRunningSessions: true,
+  },
+  ...overrides,
+});
+
+class GitFailure extends UserFacingError {
+  override readonly summary = "Couldn't create the session.";
+}
+
+class TerminalNotRunning extends UserFacingError {
+  override readonly summary = "That terminal isn't running.";
+
+  constructor() {
+    super("pseudo-terminal not running");
+  }
+}
+
+class BuiltInProfile extends UserFacingError {
+  override readonly summary = "Built-in profiles can't be deleted.";
+
+  constructor() {
+    super("built-in launch profile cannot be removed", {
+      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
+    });
+  }
+}
+
+function fakeDescriptor(id: TerminalID): TerminalDescriptor {
+  return {
+    id,
+    title: "Shell",
+    startsAutomatically: true,
+    role: { kind: "user" },
+    createdAt: "2026-01-01T00:00:00.000Z" as TerminalDescriptor["createdAt"],
+  };
+}
+
+async function until(condition: () => boolean, description: string): Promise<void> {
+  for (let attempt = 0; attempt < 2_000; attempt += 1) {
+    if (condition()) return;
+
+    // oxlint-disable-next-line no-await-in-loop
+    await Bun.sleep(1);
+  }
+
+  throw new Error(`timed out waiting for ${description}`);
+}
 
 afterEach(async () => {
   await Promise.all(running.splice(0).map((active) => active.stop()));
 });
 
-/** A server with the *real* dispatcher: no `dispatch` override, on purpose. */
 function fixture(
   options: {
     readonly terminals?: readonly FakeTerminal[];
@@ -167,31 +181,34 @@ function fixture(
       const frames: Frame[] = [];
       const controls: DaemonMessage[] = [];
       const iterator = transport.incoming()[Symbol.asyncIterator]();
+
       const take = async (): Promise<Frame> => {
         const next = await iterator.next();
+
         if (next.done === true) throw new Error("the daemon closed the connection");
+
         frames.push(next.value);
+
         if (next.value.kind === FrameKind.Control) {
           controls.push(decodeDaemonMessage(next.value));
         }
+
         return next.value;
       };
-      // A peer that does not drain is how the output queue is made to overflow:
-      // the transport is a rendezvous, so an untaken frame stays in the daemon.
+
       const drains = connectOptions.drains ?? true;
+
       if (drains) {
         void (async () => {
           for (;;) {
-            // One frame at a time, in order, for as long as the daemon lives.
             // oxlint-disable-next-line no-await-in-loop
             await take();
           }
-        })().catch(() => {
-          // The daemon closing is how every one of these ends.
-        });
+        })().catch(() => {});
       }
 
       await transport.send(clientHello());
+
       if (drains) await until(() => controls.length > 0, "the daemon's hello");
       else await take();
 
@@ -203,7 +220,9 @@ function fixture(
         async reply(id: RequestID): Promise<DaemonMessage> {
           await until(() => correlated(controls, id) !== undefined, `a reply to request ${id}`);
           const message = correlated(controls, id);
+
           if (message === undefined) throw new Error("no reply");
+
           return message;
         },
         close: () => transport.close(),
@@ -216,10 +235,10 @@ function fixture(
   };
 
   running.push(value);
+
   return value;
 }
 
-/** The reply to one request, which is the only place a `RequestID` may appear. */
 function correlated(controls: readonly DaemonMessage[], id: RequestID): DaemonMessage | undefined {
   return controls.find(
     (message) =>
@@ -228,32 +247,14 @@ function correlated(controls: readonly DaemonMessage[], id: RequestID): DaemonMe
   );
 }
 
-const request = (message: ClientMessage): Frame => encodeClientMessage(message);
-
-/** Every byte the daemon sent this peer, and every field it logged, as one string. */
 function everythingSaid(peer: Peer, records: readonly Recorded[]): string {
   const decoder = new TextDecoder();
+
   return [
     ...peer.frames.map((frame) => decoder.decode(frame.payload)),
     JSON.stringify(records),
   ].join("\n");
 }
-
-const plan = (overrides: Partial<SessionRemovalPlan> = {}): SessionRemovalPlan => ({
-  liveTerminalCount: 2,
-  canDeleteDirectory: true,
-  deletesDirectory: false,
-  includedPaths: [".env"],
-  runsTeardownAutomation: true,
-  safety: {
-    hasUncommittedChanges: true,
-    hasUntrackedFiles: false,
-    hasUnpushedCommits: false,
-    isLocked: false,
-    hasRunningSessions: true,
-  },
-  ...overrides,
-});
 
 describe("terminals", () => {
   test("attaching a viewport starts nothing", async () => {
@@ -264,6 +265,7 @@ describe("terminals", () => {
       sessionOverrides: {
         startTerminal: (id) => {
           started.push(id);
+
           return Promise.resolve();
         },
       },
@@ -288,6 +290,7 @@ describe("terminals", () => {
       sessionOverrides: {
         startTerminal: (id) => {
           started.push(id);
+
           return Promise.resolve();
         },
       },
@@ -326,12 +329,11 @@ describe("terminals", () => {
     const renderer = await daemon.connect();
 
     await reader.send(request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id }));
+
     expect(await reader.reply(1 as RequestID)).toEqual({
       type: "acknowledged",
       id: 1 as RequestID,
     });
-    // The terminal never learned about it: no viewport, no size negotiation, and
-    // nothing for the frame loop to encode.
     expect([...terminal.attached.keys()]).toEqual([]);
 
     await reader.send(
@@ -343,13 +345,14 @@ describe("terminals", () => {
       request({ type: "resize", terminalID: terminal.id, size: { columns: 200, rows: 60 } }),
     );
     await until(() => daemon.with("resize ignored").length === 1, "the ignored resize");
+
     expect(terminal.attachCalls).toEqual([]);
 
-    // Participation is per client, not per terminal.
     await renderer.send(
       request({ type: "attach", id: 2 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
     );
     await renderer.reply(2 as RequestID);
+
     expect(terminal.attachCalls).toEqual([{ client: "c2", viewport: VIEWPORT }]);
     expect(reader.frames.some((frame) => frame.kind === FrameKind.Output)).toBe(false);
   });
@@ -378,6 +381,7 @@ describe("terminals", () => {
       request({ type: "resize", terminalID: terminal.id, size: { columns: 10, rows: 10 } }),
     );
     await until(() => daemon.with("resize ignored").length === 1, "the ignored resize");
+
     expect(terminal.attachCalls).toHaveLength(2);
   });
 
@@ -407,13 +411,41 @@ describe("terminals", () => {
       () => daemon.with("input from a connection not attached").length === 1,
       "the dropped input",
     );
+
     expect(terminal.sendCalls).toHaveLength(1);
 
-    // Dropping the input is not a reason to lose the connection.
     await stranger.send(request({ type: "detach", id: 9 as RequestID, terminalID: terminal.id }));
+
     expect(await stranger.reply(9 as RequestID)).toEqual({
       type: "acknowledged",
       id: 9 as RequestID,
+    });
+  });
+
+  test("a terminal that refuses input costs a log line, not the connection", async () => {
+    const terminal = fakeTerminal(terminalID(), { throwOnSend: new TerminalNotRunning() });
+    const daemon = fixture({ terminals: [terminal] });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
+    );
+    await peer.reply(1 as RequestID);
+    await peer.send(
+      encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("ls\r") }),
+    );
+    await until(() => daemon.with("input failed").length === 1, "the failure record");
+
+    expect(daemon.with("input failed")[0]?.fields).toEqual({
+      client: "c1",
+      error: "TerminalNotRunning",
+    });
+
+    await peer.send(request({ type: "detach", id: 2 as RequestID, terminalID: terminal.id }));
+
+    expect(await peer.reply(2 as RequestID)).toEqual({
+      type: "acknowledged",
+      id: 2 as RequestID,
     });
   });
 
@@ -446,6 +478,7 @@ describe("terminals", () => {
         includeScrollback: false,
       }),
     );
+
     expect(await peer.reply(1 as RequestID)).toEqual({
       type: "text",
       id: 1 as RequestID,
@@ -469,14 +502,10 @@ describe("terminals", () => {
 
     for (let index = 0; index < 3; index += 1) {
       daemon.server.frameLoop.tick();
-      // Lets the pump hand the frame over, so the next tick is a fresh one.
       // oxlint-disable-next-line no-await-in-loop
       await Bun.sleep(0);
     }
 
-    // A repaint for a client the terminal never attached is not a wasted encode,
-    // it is an exception: `LiveTerminal.repaintFor` throws for an unknown client,
-    // and the loop answers that by dropping the terminal.
     expect(read.fullRepaintCalls).toEqual([]);
     expect(read.repaintCalls).toEqual([]);
     expect(rendered.fullRepaintCalls).toEqual(["c1"]);
@@ -504,6 +533,7 @@ describe("state", () => {
     await peer.reply(1 as RequestID);
 
     const [, state, acknowledged] = peer.controls;
+
     expect(state).toEqual({
       type: "state",
       update: {
@@ -515,7 +545,6 @@ describe("state", () => {
         isFullSnapshot: true,
       },
     });
-    // Ordered on one queue: the mirror is populated by the time `request()` settles.
     expect(acknowledged).toEqual({ type: "acknowledged", id: 1 as RequestID });
   });
 
@@ -534,6 +563,7 @@ describe("state", () => {
     );
 
     const announced = peer.controls.findLast((message) => message.type === "state");
+
     expect(announced).toEqual({
       type: "state",
       update: {
@@ -555,6 +585,7 @@ describe("sessions", () => {
       sessionOverrides: {
         removalPlan: (id) => {
           asked.push(id);
+
           return Promise.resolve(plan());
         },
       },
@@ -566,7 +597,9 @@ describe("sessions", () => {
     const reply = await peer.reply(1 as RequestID);
 
     if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+
     const preview: SessionRemovalPreview = parseRemovalPlan(reply.text);
+
     expect(preview).toEqual(plan());
     expect(asked).toEqual([sessionID]);
   });
@@ -579,10 +612,12 @@ describe("sessions", () => {
         removalPlan: () => {
           const fresh = plan();
           plans.push(fresh);
+
           return Promise.resolve(fresh);
         },
         removeSession: (id, applied) => {
           removals.push({ id, plan: applied });
+
           return Promise.resolve();
         },
       },
@@ -600,7 +635,6 @@ describe("sessions", () => {
     await peer.reply(2 as RequestID);
 
     expect(removals.map((removal) => removal.plan.deletesDirectory)).toEqual([true, false]);
-    // Each removal used the plan fetched for it, never one the client was holding.
     expect(removals[0]?.plan).toBe(plans[0]);
     expect(removals[1]?.plan).toBe(plans[1]);
     expect(plans).toHaveLength(2);
@@ -650,6 +684,7 @@ describe("sessions", () => {
         intent: { kind: "standalone", directory: "/tmp/x" as Session["directory"] },
       }),
     );
+
     expect(await peer.reply(1 as RequestID)).toEqual({
       type: "failed",
       id: 1 as RequestID,
@@ -679,6 +714,7 @@ describe("sessions", () => {
       sessionOverrides: {
         branchOverview: (id) => {
           asked.push(id);
+
           return Promise.resolve(overview);
         },
       },
@@ -690,8 +726,7 @@ describe("sessions", () => {
     const reply = await peer.reply(1 as RequestID);
 
     if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
-    // Through the same serialize/parse pair a client uses, so the detached
-    // worktree's absent branch survives the trip.
+
     expect(parseBranchOverview(reply.text)).toEqual(overview);
     expect(asked).toEqual([projectID]);
   });
@@ -700,6 +735,7 @@ describe("sessions", () => {
     class NoGit extends UserFacingError {
       override readonly summary = "This project isn't a git repository.";
     }
+
     const daemon = fixture({
       sessionOverrides: { branchOverview: () => Promise.reject(new NoGit("not a repository")) },
     });
@@ -726,6 +762,7 @@ describe("sessions", () => {
       sessionOverrides: {
         moveTab: (id, from, to) => {
           moves.push({ id, from, to });
+
           return Promise.resolve();
         },
       },
@@ -745,14 +782,13 @@ describe("sessions", () => {
       sessionOverrides: {
         moveTab: () => {
           moves.push(1);
+
           return Promise.resolve();
         },
       },
     });
     const peer = await daemon.connect();
-    // The wire has no type system: each of these is typed `number` and reaches
-    // the layout algebra if nobody looks.
-    const impossible: readonly { readonly from: unknown; readonly to: unknown }[] = [
+    const impossible: readonly { readonly from: WireValue; readonly to: WireValue }[] = [
       { from: "0", to: 1 },
       { from: 0, to: null },
       { from: -1, to: 0 },
@@ -763,17 +799,11 @@ describe("sessions", () => {
     for (const [index, indices] of impossible.entries()) {
       const id = (index + 1) as RequestID;
       // oxlint-disable-next-line no-await-in-loop
-      await peer.send(
-        encodeClientMessage({
-          type: "moveTab",
-          id,
-          sessionID: "s1" as SessionID,
-          ...indices,
-        } as unknown as ClientMessage),
-      );
+      await peer.send(wireControl({ type: "moveTab", id, sessionID: "s1", ...indices }));
       // oxlint-disable-next-line no-await-in-loop
       expect((await peer.reply(id)).type).toBe("failed");
     }
+
     expect(moves).toEqual([]);
   });
 
@@ -783,6 +813,7 @@ describe("sessions", () => {
       sessionOverrides: {
         createSession: (received) => {
           intents.push(received);
+
           return Promise.resolve(fakeSession("s1"));
         },
       },
@@ -807,8 +838,6 @@ describe("sessions", () => {
     );
     await peer.reply(2 as RequestID);
 
-    // `exactOptionalPropertyTypes`: the second request must carry no `branch`
-    // key at all, because `{ branch: undefined }` is a different request.
     expect(intents).toEqual([
       { kind: "inProject", projectID, branch: "feat/pty" },
       { kind: "inProject", projectID },
@@ -826,6 +855,7 @@ describe("launch profiles", () => {
       profileOverrides: {
         save: (value) => {
           saved.push(value);
+
           return Promise.resolve(value);
         },
       },
@@ -841,13 +871,13 @@ describe("launch profiles", () => {
       id: 2 as RequestID,
     });
     expect(saved).toEqual([profile]);
-    // Profiles have no `StateObserving` path: without the dispatcher announcing,
-    // a settings window would show a profile no other client can see.
+
     await until(
       () => peer.controls.filter((message) => message.type === "state").length === 2,
       "the announcement",
     );
     const announced = peer.controls.findLast((message) => message.type === "state");
+
     expect(announced?.type === "state" ? announced.update.launchProfiles : undefined).toEqual([
       profile,
     ]);
@@ -859,6 +889,7 @@ describe("launch profiles", () => {
       profileOverrides: {
         save: (value) => {
           saved.push(value);
+
           return Promise.resolve(value);
         },
       },
@@ -866,13 +897,11 @@ describe("launch profiles", () => {
     const peer = await daemon.connect();
 
     await peer.send(
-      encodeClientMessage({
+      wireControl({
         type: "saveLaunchProfile",
-        id: 1 as RequestID,
-        // argv with a hole in it: the wire has no type system, and this reaches
-        // `execve` if nobody looks.
+        id: 1,
         profile: { ...fakeProfile("p1"), command: ["zsh", null] },
-      } as unknown as ClientMessage),
+      }),
     );
 
     expect((await peer.reply(1 as RequestID)).type).toBe("failed");
@@ -913,6 +942,7 @@ describe("launch profiles", () => {
       sessionOverrides: {
         createTerminal: (session, options) => {
           asked.push({ session, ...options });
+
           return Promise.resolve(fakeDescriptor(created));
         },
         startTerminal: () => Promise.reject(new Error("nothing may start here")),
@@ -929,8 +959,6 @@ describe("launch profiles", () => {
       }),
     );
 
-    // The id comes back because the client needs it to attach; the process does
-    // not exist yet, and `startTerminal` is still the only thing that spawns one.
     expect(await peer.reply(1 as RequestID)).toEqual({
       type: "text",
       id: 1 as RequestID,
@@ -947,6 +975,7 @@ describe("launch profiles", () => {
       sessionOverrides: {
         createTerminal: (_session, options = {}) => {
           asked.push(options);
+
           return Promise.resolve(fakeDescriptor(terminalID()));
         },
       },
@@ -973,6 +1002,7 @@ describe("launch profiles", () => {
       sessionOverrides: {
         createTerminal: () => {
           calls.push(1);
+
           return Promise.resolve(fakeDescriptor(terminalID()));
         },
       },
@@ -980,14 +1010,12 @@ describe("launch profiles", () => {
     const peer = await daemon.connect();
 
     await peer.send(
-      encodeClientMessage({
+      wireControl({
         type: "createTerminal",
-        id: 1 as RequestID,
-        sessionID: "s1" as SessionID,
-        // An axis the layout algebra has never heard of: the wire has no type
-        // system, and this reaches `splitPane` if nobody looks.
+        id: 1,
+        sessionID: "s1",
         placement: { kind: "split", beside: terminalID(), axis: "sideways" },
-      } as unknown as ClientMessage),
+      }),
     );
 
     expect((await peer.reply(1 as RequestID)).type).toBe("failed");
@@ -1000,12 +1028,11 @@ describe("launch profiles", () => {
     const daemon = fixture({
       sessions: [fakeSession("s1")],
       sessionOverrides: {
-        // Neither of these may be reached: a stop and a start over the wire is
-        // exactly the ordering this message exists to avoid.
         stopTerminal: () => Promise.reject(new Error("stopTerminal must not be called")),
         startTerminal: () => Promise.reject(new Error("startTerminal must not be called")),
         restartTerminal: (id) => {
           restarted.push(id);
+
           return Promise.resolve();
         },
       },
@@ -1026,6 +1053,7 @@ describe("launch profiles", () => {
       sessionOverrides: {
         removeTerminal: (id) => {
           removed.push(id);
+
           return Promise.resolve();
         },
       },
@@ -1041,17 +1069,18 @@ describe("launch profiles", () => {
 
 describe("correlation", () => {
   test("a slow request never delays a fast one, and each reply carries its own id", async () => {
-    // Held open by hand: the point is that a request in flight blocks nothing else.
     const slow = Promise.withResolvers<void>();
     const renamed: string[] = [];
     const daemon = fixture({
       sessionOverrides: {
         createSession: async () => {
           await slow.promise;
+
           return fakeSession("s1");
         },
         rename: (_id, name) => {
           renamed.push(name);
+
           return Promise.resolve();
         },
       },
@@ -1079,21 +1108,23 @@ describe("correlation", () => {
     expect(renamed).toEqual(["renamed"]);
 
     slow.resolve();
+
     expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
   });
 
   test("an id already in flight is dropped rather than answered twice", async () => {
-    // Held open by hand: the point is that a request in flight blocks nothing else.
     const slow = Promise.withResolvers<void>();
     const renamed: string[] = [];
     const daemon = fixture({
       sessionOverrides: {
         createSession: async () => {
           await slow.promise;
+
           return fakeSession("s1");
         },
         rename: (_id, name) => {
           renamed.push(name);
+
           return Promise.resolve();
         },
       },
@@ -1117,13 +1148,12 @@ describe("correlation", () => {
     );
     await until(() => daemon.with("duplicate request id").length === 1, "the duplicate to be seen");
 
-    // The colliding request did not run: answering it would have settled the
-    // client's promise for the createSession that is still in flight.
     expect(renamed).toEqual([]);
     expect(correlated(peer.controls, 7 as RequestID)).toBeUndefined();
 
     slow.resolve();
     await peer.reply(7 as RequestID);
+
     expect(peer.controls.filter((message) => message.type === "acknowledged")).toHaveLength(1);
   });
 
@@ -1133,16 +1163,16 @@ describe("correlation", () => {
     const peer = await daemon.connect();
 
     await peer.send(
-      encodeClientMessage({
+      wireControl({
         type: "createSession",
         id: "one",
         intent: { kind: "standalone", directory: "/tmp/x" },
-      } as unknown as ClientMessage),
+      }),
     );
     await until(() => daemon.with("request malformed").length === 1, "the malformed request");
+
     expect(peer.controls).toHaveLength(1);
 
-    // A bad *field* is answerable, unlike a bad id, so it is answered.
     await peer.send(
       request({
         type: "attach",
@@ -1151,6 +1181,7 @@ describe("correlation", () => {
         viewport: { columns: 0, rows: -1 },
       }),
     );
+
     expect(await peer.reply(3 as RequestID)).toEqual({
       type: "failed",
       id: 3 as RequestID,

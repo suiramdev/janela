@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { LaunchProfile } from "@janela/core";
 import { BUILT_IN_PROFILES, newLaunchProfileID } from "@janela/core";
 import { temporaryDatabase } from "@janela/db";
+import { Effect } from "effect";
 
 import { BuiltInProfileProtected, UnknownLaunchProfile } from "./errors.ts";
 import type { LaunchProfileService } from "./launch-profile-service.ts";
@@ -10,6 +11,12 @@ import { createLaunchProfileService } from "./launch-profile-service.ts";
 import type { ShellEnvironment } from "./shell-environment.ts";
 import { silentLogger } from "./silent-logger.ts";
 import { scriptedProcesses } from "./test-fakes.ts";
+
+interface ServiceFixture {
+  readonly service: LaunchProfileService;
+  readonly whichCalls: readonly { executable: string; path: string }[];
+  readonly stored: () => Promise<readonly LaunchProfile[]>;
+}
 
 const shell: ShellEnvironment = {
   loginShell: "/opt/homebrew/bin/fish",
@@ -30,16 +37,9 @@ function profile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
   };
 }
 
-/** A service over a real database, because the store is half of what is tested. */
 async function withService(
-  options: {
-    readonly which?: Readonly<Record<string, string>>;
-  },
-  work: (fixture: {
-    readonly service: LaunchProfileService;
-    readonly whichCalls: readonly { executable: string; path: string }[];
-    readonly stored: () => Promise<readonly LaunchProfile[]>;
-  }) => Promise<void>,
+  options: { readonly which?: Readonly<Record<string, string>> },
+  work: (fixture: ServiceFixture) => Promise<void>,
 ): Promise<void> {
   const database = await temporaryDatabase({ log: silentLogger });
   const scripted = scriptedProcesses(options.which === undefined ? {} : { which: options.which });
@@ -50,15 +50,20 @@ async function withService(
     log: silentLogger,
   });
 
-  try {
-    await work({
-      service,
-      whichCalls: scripted.whichCalls,
-      stored: () => database.launchProfiles.all(),
-    });
-  } finally {
-    await database.dispose();
-  }
+  await Effect.runPromise(
+    Effect.ensuring(
+      Effect.tryPromise({
+        try: () =>
+          work({
+            service,
+            whichCalls: scripted.whichCalls,
+            stored: () => database.launchProfiles.all(),
+          }),
+        catch: (cause: unknown) => cause,
+      }),
+      Effect.promise(() => database.dispose()),
+    ),
+  );
 }
 
 describe("loading", () => {
@@ -67,20 +72,18 @@ describe("loading", () => {
       await fixture.service.load();
 
       expect(fixture.service.profiles).toHaveLength(BUILT_IN_PROFILES.length);
+
       const byName = new Map(fixture.service.profiles.map((held) => [held.name, held]));
       const shellProfile = byName.get("Shell");
       const claude = byName.get("Claude Code");
       const codex = byName.get("Codex");
+
       if (shellProfile === undefined || claude === undefined || codex === undefined) {
         throw new Error("the built-ins are missing");
       }
 
-      // An empty argv is the login shell, which exists by construction and is
-      // never probed.
       expect(fixture.service.availability[shellProfile.id]).toBe(true);
       expect(fixture.service.availability[claude.id]).toBe(true);
-      // Nothing installed it, so it is reported unavailable rather than hidden
-      // here: hiding is the client's decision, and this is the fact it needs.
       expect(fixture.service.availability[codex.id]).toBe(false);
       expect(fixture.whichCalls.map((call) => call.path)).not.toContain(undefined);
     });
@@ -122,14 +125,15 @@ describe("saving", () => {
     await withService({ which: { claude: "/opt/homebrew/bin/claude" } }, async (fixture) => {
       await fixture.service.load();
       const builtIn = fixture.service.profiles.find((held) => held.isBuiltIn);
+
       if (builtIn === undefined) throw new Error("no built-in was seeded");
 
       const claimed = await fixture.service.save(profile({ isBuiltIn: true }));
+
       expect(claimed.isBuiltIn).toBe(false);
 
-      // Editing a built-in is offered; demoting it is not, because that is how a
-      // shipped profile would become deletable and stop coming back.
       const edited = await fixture.service.save({ ...builtIn, name: "Mine", isBuiltIn: false });
+
       expect(edited.isBuiltIn).toBe(true);
       expect(edited.name).toBe("Mine");
     });
@@ -139,9 +143,11 @@ describe("saving", () => {
     await withService({ which: {} }, async (fixture) => {
       const value = profile({ command: ["nowhere"] });
       await fixture.service.save(value);
+
       expect(fixture.service.availability[value.id]).toBe(false);
 
       await fixture.service.save({ ...value, command: [] });
+
       expect(fixture.service.availability[value.id]).toBe(true);
     });
   });
@@ -156,8 +162,6 @@ describe("removing", () => {
 
       expect(fixture.service.profiles).toEqual([]);
       expect(await fixture.stored()).toEqual([]);
-      // Not left behind as a stale `true`: a client that merged the record would
-      // keep offering a profile that no longer exists.
       expect(Object.hasOwn(fixture.service.availability, value.id)).toBe(false);
     });
   });
@@ -166,6 +170,7 @@ describe("removing", () => {
     await withService({ which: { claude: "/opt/homebrew/bin/claude" } }, async (fixture) => {
       await fixture.service.load();
       const builtIn = fixture.service.profiles.find((held) => held.isBuiltIn);
+
       if (builtIn === undefined) throw new Error("no built-in was seeded");
 
       await expect(fixture.service.remove(builtIn.id)).rejects.toBeInstanceOf(

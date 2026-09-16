@@ -4,8 +4,6 @@ import { MINIMUM_GRID, gridThatFits, letterboxMargins } from "./grid-fit.ts";
 
 describe("gridThatFits", () => {
   test("floors: a partial cell is not a cell", () => {
-    // Deliberately past the half-cell mark in both axes: rounding would claim a
-    // column and a row that are only partly on screen.
     expect(gridThatFits({ width: 813, height: 409 }, { width: 8, height: 16 })).toEqual({
       columns: 101,
       rows: 25,
@@ -68,15 +66,10 @@ describe("letterboxMargins", () => {
   });
 
   test("a grid the daemon negotiated smaller letterboxes the difference", () => {
-    // The values #31 measured in the app, derived rather than chosen: the pane is
-    // a real box, the grid it could show is what `gridThatFits` says, and the grid
-    // it is actually given is the 40×12 a second, smaller client held. Before
-    // protocol 5 the second argument here was a number no call site could produce,
-    // which is how a tested helper passed for a shipped feature — see
-    // docs/survival-proof.md § D2.
     const box = { width: 1016, height: 720 };
     const cell = { width: 8, height: 16 };
     const ours = gridThatFits(box, cell);
+
     expect(ours).toEqual({ columns: 127, rows: 45 });
 
     const announced = { columns: 40, rows: 12 };

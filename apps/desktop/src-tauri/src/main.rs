@@ -56,7 +56,7 @@ use tauri::{AppHandle, Emitter, Wry};
 
 /// The event a chosen menu item arrives on.
 ///
-/// Paired with `COMMAND_EVENT` in `apps/desktop/src/menu.ts`; the two spellings
+/// Paired with `COMMAND_EVENT` in `apps/desktop/src/adapters/menu.ts`; the two spellings
 /// must match, and there is deliberately no third place that knows this string.
 pub const COMMAND_EVENT: &str = "janela://command";
 

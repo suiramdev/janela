@@ -12,17 +12,26 @@ import {
   shutdown,
 } from "./lifecycle.ts";
 
-setLogSink(nullLogSink);
-const silent = log("session");
-
-/** A clock a test moves by hand, so the grace period is exact. */
 interface FakeClock {
   now(): number;
   advance(milliseconds: number): void;
 }
 
+interface FakeRegistry {
+  readonly registry: TerminalRegistry;
+  readonly calls: string[];
+  liveCount: number;
+}
+
+const FIRST_TICK = 1_000_000;
+
+setLogSink(nullLogSink);
+
+const silent = log("session");
+
 function fakeClock(): FakeClock {
-  let value = 1_000_000;
+  let value = FIRST_TICK;
+
   return {
     now: () => value,
     advance: (milliseconds) => {
@@ -31,42 +40,36 @@ function fakeClock(): FakeClock {
   };
 }
 
-/**
- * A registry that records the calls that matter and nothing else.
- *
- * Faked rather than real because the behaviour under test is the *order* of two
- * calls, and a real registry would need real PTYs to have a `liveCount` at all.
- */
-interface FakeRegistry {
-  readonly registry: TerminalRegistry;
-  readonly calls: string[];
-  liveCount: number;
-}
-
 function fakeRegistry(liveCount = 0): FakeRegistry {
   const calls: string[] = [];
   const state = { liveCount };
+
   return {
     calls,
+
     get liveCount(): number {
       return state.liveCount;
     },
+
     set liveCount(value: number) {
       state.liveCount = value;
     },
+
     registry: {
       get: (): LiveTerminal | undefined => undefined,
       register: (): void => {},
       remove: (): void => {},
       inSession: (_id: SessionID): readonly LiveTerminal[] => [],
+
       get liveCount(): number {
         return state.liveCount;
       },
+
       hangUpAll: async (): Promise<void> => {
         calls.push("hangUpAll");
-        // A real hang-up awaits the reader threads winding down, so the order
-        // under test has to survive an await point.
+
         await Promise.resolve();
+
         state.liveCount = 0;
       },
     },
@@ -74,7 +77,7 @@ function fakeRegistry(liveCount = 0): FakeRegistry {
 }
 
 describe("the idle monitor", () => {
-  test("the idle grace period is five minutes", () => {
+  test("the idle grace period is five minutes, re-checked far more often than that", () => {
     expect(IDLE_GRACE_PERIOD_MS).toBe(5 * 60_000);
     expect(IDLE_POLL_INTERVAL_MS).toBeLessThan(IDLE_GRACE_PERIOD_MS);
   });
@@ -127,7 +130,7 @@ describe("the idle monitor", () => {
     expect(expired).toBe(1);
   });
 
-  test("a reconnect during the grace period restarts the clock", () => {
+  test("a reconnect during the grace period restarts the clock from zero", () => {
     const clock = fakeClock();
     let idle = true;
     let expired = 0;
@@ -139,8 +142,6 @@ describe("the idle monitor", () => {
 
     monitor.poll();
     clock.advance(IDLE_GRACE_PERIOD_MS - 1_000);
-    // A client comes back: the daemon it reconnected to must still be there in
-    // another five minutes, not one second.
     idle = false;
     monitor.poll();
     idle = true;
@@ -152,6 +153,7 @@ describe("the idle monitor", () => {
 
     clock.advance(1);
     monitor.poll();
+
     expect(expired).toBe(1);
   });
 
@@ -179,10 +181,7 @@ describe("isDaemonIdle", () => {
     expect(isDaemonIdle({ connectionCount: 0, canExitWhenIdle: () => true })).toBe(true);
   });
 
-  test("a live terminal blocks idle exit even with no clients connected", () => {
-    // The asymmetry is the entire feature: the daemon exists to outlive clients,
-    // not to serve them. Without this conjunct it would exit five minutes after
-    // the user closed the window on a running build.
+  test("a live terminal blocks idle exit indefinitely, with no clients connected", () => {
     expect(isDaemonIdle({ connectionCount: 0, canExitWhenIdle: () => false })).toBe(false);
   });
 
@@ -192,20 +191,16 @@ describe("isDaemonIdle", () => {
 });
 
 describe("shutdown", () => {
-  test("hangs up every terminal before the process ends", async () => {
+  test("hangs up every terminal before it stops serving and before the process ends", async () => {
     const fake = fakeRegistry(3);
 
     await shutdown({
       terminals: fake.registry,
       log: silent,
-      // One array, deliberately: two arrays concatenated afterwards would record
-      // the calls and assert nothing about their order.
       stopServing: () => fake.calls.push("stopServing"),
       finish: (code) => fake.calls.push(`finish:${code}`),
     });
 
-    // Children must get SIGHUP from a parent that still exists; the alternative
-    // is every shell reparented onto launchd, running and invisible.
     expect(fake.calls).toEqual(["hangUpAll", "stopServing", "finish:0"]);
   });
 

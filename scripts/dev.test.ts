@@ -6,31 +6,33 @@ import { join } from "node:path";
 
 import { daemonIsListening, lineSplitter } from "./dev.ts";
 
-/**
- * `/tmp`, never `$TMPDIR`: `sun_path` is 104 bytes and macOS hands out
- * `/var/folders/…` paths long enough to spend most of that before a filename.
- */
+const cleanups: (() => Promise<void>)[] = [];
+
 async function socketDirectory(): Promise<string> {
   return await mkdtemp("/tmp/janela-dev-");
 }
 
-const cleanups: (() => Promise<void>)[] = [];
+async function listening(path: string): Promise<Server> {
+  const server = createServer();
+  const bound = Promise.withResolvers<void>();
+
+  server.once("error", bound.reject);
+  server.listen(path, bound.resolve);
+  await bound.promise;
+
+  cleanups.push(async () => {
+    const closed = Promise.withResolvers<void>();
+
+    server.close(() => closed.resolve());
+    await closed.promise;
+  });
+
+  return server;
+}
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
-
-async function listening(path: string): Promise<Server> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(path, resolve);
-  });
-  cleanups.push(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-  return server;
-}
 
 describe("the dev script's liveness probe", () => {
   test("answers for a socket nothing is bound to", async () => {
@@ -50,10 +52,6 @@ describe("the dev script's liveness probe", () => {
   });
 
   test("a leftover file at the socket path is not alive", async () => {
-    // The reason this is a connect rather than an `existsSync`: a killed daemon
-    // leaves its address behind, and testing for the file would make `bun run dev`
-    // refuse to start a daemon forever — while the daemon's own bind path takes a
-    // dead incumbent's address over happily (`packages/daemon`'s endpoint).
     const directory = await socketDirectory();
     cleanups.push(() => rm(directory, { recursive: true, force: true }));
     const path = join(directory, "janelad.sock");

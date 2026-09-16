@@ -31,6 +31,7 @@ describe("coalescePerFrame", () => {
     coalescer.push(2);
 
     expect(scheduler.pendingCount).toBe(1);
+
     scheduler.fire();
 
     expect(delivered).toEqual([1, 2]);
@@ -91,6 +92,7 @@ describe("coalescePerFrame", () => {
   test("undefined is a value, not a sentinel", () => {
     const scheduler = fakeScheduler();
     let calls = 0;
+
     const coalescer = coalescePerFrame<number | undefined>(() => {
       calls += 1;
     }, scheduler);

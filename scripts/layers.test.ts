@@ -2,13 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import { GATED_MODULES, PACKAGES, type PackageSpec } from "./layers.ts";
 
-/**
- * Tests for the graph itself.
- *
- * `check-layers.ts` verifies that the *code* obeys the manifest. These verify that
- * the manifest still describes the architecture docs/architecture.md claims — the
- * properties that would make the gate pass while the design was wrong.
- */
 const byName = new Map(PACKAGES.map((p) => [p.name, p]));
 
 describe("the module graph", () => {
@@ -16,6 +9,7 @@ describe("the module graph", () => {
     for (const pkg of PACKAGES) {
       for (const dep of pkg.deps) {
         const target = byName.get(dep);
+
         expect(target, `${dep} is not in the manifest`).toBeDefined();
         expect(target!.layer, `${pkg.name} → ${dep}`).toBeLessThan(pkg.layer);
       }
@@ -24,10 +18,13 @@ describe("the module graph", () => {
 
   test("the two halves meet only at @janela/core and @janela/protocol", () => {
     const meetingPoints = new Set(["@janela/core", "@janela/protocol", "@janela/support"]);
+
     for (const pkg of PACKAGES.filter((p) => p.side === "client" || p.side === "daemon")) {
       for (const dep of pkg.deps) {
         const target = byName.get(dep)!;
+
         if (target.side === pkg.side) continue;
+
         expect(
           meetingPoints.has(dep),
           `${pkg.name} (${pkg.side}) reaches ${dep} (${target.side})`,
@@ -38,8 +35,10 @@ describe("the module graph", () => {
 
   test("no client package depends on a daemon package, or the reverse", () => {
     const opposite = { client: "daemon", daemon: "client" } as const;
+
     for (const pkg of PACKAGES) {
       if (pkg.side !== "client" && pkg.side !== "daemon") continue;
+
       for (const dep of pkg.deps) {
         expect(byName.get(dep)!.side).not.toBe(opposite[pkg.side]);
       }
@@ -48,18 +47,24 @@ describe("the module graph", () => {
 
   test("the graph is acyclic", () => {
     const seen = new Set<string>();
+
     const walk = (name: string, stack: readonly string[]): void => {
       expect(stack.includes(name), `cycle: ${[...stack, name].join(" → ")}`).toBe(false);
+
       if (seen.has(name)) return;
+
       seen.add(name);
+
       for (const dep of byName.get(name)?.deps ?? []) walk(dep, [...stack, name]);
     };
+
     for (const pkg of PACKAGES) walk(pkg.name, []);
   });
 
   test("git and forge are peers, so neither can depend on the other", () => {
     const git = byName.get("@janela/git")!;
     const forge = byName.get("@janela/forge")!;
+
     expect(git.layer).toBe(forge.layer);
     expect(git.deps).not.toContain("@janela/forge");
     expect(forge.deps).not.toContain("@janela/git");
@@ -82,6 +87,7 @@ describe("gated modules", () => {
   test("two terminal seams, and exactly one package each", () => {
     const headless = GATED_MODULES.find((g) => g.pattern === "@xterm/headless");
     const renderer = GATED_MODULES.find((g) => g.pattern === "@xterm/xterm");
+
     expect(headless?.allowed).toEqual(["@janela/terminal"]);
     expect(renderer?.allowed).toEqual(["@janela/terminal-ui"]);
   });
@@ -119,8 +125,6 @@ describe("the manifest is complete", () => {
   });
 
   test("the full package set, so one cannot quietly disappear", () => {
-    // docs/MIGRATION_MAP.md is the table this was derived from; this is the count,
-    // so a package going missing fails a test rather than a review.
     const expected: readonly string[] = [
       "@janela/support",
       "@janela/core",
@@ -140,6 +144,7 @@ describe("the manifest is complete", () => {
       "@janela/desktop",
       "@janela/test-support",
     ];
+
     expect([...byName.keys()].toSorted()).toEqual([...expected].toSorted());
   });
 

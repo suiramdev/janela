@@ -17,7 +17,8 @@
     "@janela/protocol": "workspace:*",
     "@janela/session": "workspace:*",
     "@janela/support": "workspace:*",
-    "@janela/terminal": "workspace:*"
+    "@janela/terminal": "workspace:*",
+    "effect": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"

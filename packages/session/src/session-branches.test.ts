@@ -21,15 +21,17 @@ import {
   scriptedProcesses,
 } from "./test-fakes.ts";
 
-/**
- * "Which branch, and where" — over a **real** repository.
- *
- * A separate file from `session-service.test.ts`, which fakes git at the
- * `WorktreeServing` seam: what is under test here is what git actually reports
- * and actually does. A fake `branches()` would prove our assumptions about
- * `for-each-ref`, and a fake `checkoutBranch()` would prove nothing at all
- * about whether the project's own checkout moved (docs/testing.md).
- */
+interface World extends AsyncDisposable {
+  readonly sessions: SessionService;
+  readonly database: TemporaryDatabase;
+  readonly service: WorktreeServing;
+  readonly project: Project;
+  readonly folder: Project;
+  readonly repository: AbsolutePath;
+  readonly scratch: (...components: string[]) => AbsolutePath;
+  readonly git: (...args: string[]) => Promise<string>;
+  readonly currentBranch: () => Promise<string>;
+}
 
 const shell: ShellEnvironment = {
   loginShell: "/bin/zsh",
@@ -37,20 +39,13 @@ const shell: ShellEnvironment = {
   loginShellArguments: () => ["-zsh"],
 };
 
-interface World extends AsyncDisposable {
-  readonly sessions: SessionService;
-  readonly database: TemporaryDatabase;
-  readonly service: WorktreeServing;
-  /** A project over the real repository. */
-  readonly project: Project;
-  /** A plain-folder project, for the cases git is refused. */
-  readonly folder: Project;
-  readonly repository: AbsolutePath;
-  readonly scratch: (...components: string[]) => AbsolutePath;
-  readonly git: (...args: string[]) => Promise<string>;
-  /** The branch the project's own directory is on, as git sees it. */
-  readonly currentBranch: () => Promise<string>;
-}
+const rejection = (work: Promise<unknown>): Promise<Error> =>
+  work.then(
+    () => {
+      throw new Error("the call resolved instead of rejecting");
+    },
+    (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause))),
+  );
 
 async function setup(label: string): Promise<World> {
   const fixture = await gitFixture(label);
@@ -68,8 +63,7 @@ async function setup(label: string): Promise<World> {
     isExpanded: true,
     addedAt: now(),
   };
-  // Its own directory: a project row is unique by directory, and this one is
-  // never touched — every case that names it is refused before any I/O.
+
   const folder: Project = {
     ...project,
     id: newProjectID(),
@@ -77,6 +71,7 @@ async function setup(label: string): Promise<World> {
     directory: scratch.join("notes") as AbsolutePath,
   };
   delete folder.git;
+
   await database.projects.save(project);
   await database.projects.save(folder);
 
@@ -85,8 +80,6 @@ async function setup(label: string): Promise<World> {
   const { logger } = recordingLogger();
   const service = worktreeService(gitRunner());
 
-  // Saved directly rather than through `addProject`, so no git detection runs:
-  // what is under test is the branch questions, not project onboarding.
   const projects = createProjectService({
     repository: database.projects,
     git: failingGit(),
@@ -128,12 +121,6 @@ async function setup(label: string): Promise<World> {
   };
 }
 
-const rejection = (work: Promise<unknown>): Promise<unknown> =>
-  work.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-
 describe("branchOverview", () => {
   test("lists the branches, and marks the repository's own checkout", async () => {
     await using world = await setup("branches-main");
@@ -158,8 +145,6 @@ describe("branchOverview", () => {
 
     const overview = await world.sessions.branchOverview(world.project.id);
 
-    // Both placements the dialog offers are visible from this one answer: the
-    // branch exists, and it is already checked out somewhere.
     expect(overview.branches).toEqual(["feat/b", "main"]);
     expect(overview.worktrees).toEqual([
       { directory: world.repository, branch: "main", isMain: true },
@@ -183,8 +168,6 @@ describe("branchOverview", () => {
 
     const thrown = await rejection(world.sessions.branchOverview(world.folder.id));
 
-    // "No branches" and "not a repository" are different things to tell a
-    // person, and an empty list says the wrong one.
     expect(thrown).toBeInstanceOf(WorktreesUnsupported);
   });
 
@@ -209,8 +192,6 @@ describe("createSession: inProject with a branch", () => {
     });
 
     expect(await world.currentBranch()).toBe("feat/target");
-    // Still a session in the project's directory: naming a branch chooses what
-    // is checked out there, not a different kind of session.
     expect(session.directory).toBe(world.repository);
     expect(session.backing.kind).toBe("projectDirectory");
     expect(session.name).toBe("feat/target");
@@ -241,8 +222,6 @@ describe("createSession: inProject with a branch", () => {
       }),
     );
 
-    // git's own refusal, and no half-made session: the checkout runs before the
-    // record exists.
     expect(thrown).toBeInstanceOf(GitFailure);
     expect(await world.database.sessions.all()).toEqual([]);
     expect(world.sessions.sessions).toEqual([]);
@@ -277,11 +256,10 @@ describe("createSession: inProject with a branch", () => {
       kind: "inProject",
       projectID: world.project.id,
     });
+
     expect(plain.backing.kind).toBe("projectDirectory");
     expect(await world.currentBranch()).toBe("main");
 
-    // A folder project has no branches to check out, so naming one is refused
-    // before any git runs against a directory that is not a repository.
     const thrown = await rejection(
       world.sessions.createSession({
         kind: "inProject",
@@ -289,6 +267,7 @@ describe("createSession: inProject with a branch", () => {
         branch: "main",
       }),
     );
+
     expect(thrown).toBeInstanceOf(WorktreesUnsupported);
   });
 });

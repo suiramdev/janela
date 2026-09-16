@@ -1,12 +1,3 @@
-/**
- * The OSC payload parsers, tested without an emulator.
- *
- * These are pure string functions on purpose: what a shell puts in an OSC 7 or an
- * OSC 133 is hostile input from this package's point of view, and the interesting
- * cases — a remote host's cwd, a truncated path, a ConEmu progress bar wearing
- * OSC 9's clothes — are all reachable without parsing a byte stream to get there.
- */
-
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -30,12 +21,9 @@ describe("sanitiseOscText", () => {
     expect(sanitiseOscText("x".repeat(3000))).toHaveLength(MAX_OSC_TEXT_LENGTH);
   });
 
-  test("truncates by code point, never splitting a surrogate pair", () => {
+  test("truncates by code point, never leaving a lone surrogate behind", () => {
     const result = sanitiseOscText("😀".repeat(1024));
 
-    // A naive `slice(0, MAX_OSC_TEXT_LENGTH)` would cut this in half and leave a
-    // lone high surrogate at the end — a string that survives a socket and then
-    // renders as a replacement character in someone's sidebar.
     expect([...result]).toHaveLength(MAX_OSC_TEXT_LENGTH);
     expect(result).toBe("😀".repeat(1024));
   });
@@ -48,9 +36,7 @@ describe("parseWorkingDirectory", () => {
     expect(parseWorkingDirectory(`file://${HOST}/a/b`, HOST)).toBe("/a/b");
   });
 
-  test("refuses another host's directory", () => {
-    // A shell on the far side of an ssh session reports a path that does not exist
-    // here. Showing it would be worse than showing nothing.
+  test("refuses another host's directory, which does not exist on this machine", () => {
     expect(parseWorkingDirectory("file://otherhost/a", HOST)).toBeUndefined();
   });
 
@@ -64,9 +50,7 @@ describe("parseWorkingDirectory", () => {
     expect(parseWorkingDirectory("file://localhost/%ZZ", HOST)).toBeUndefined();
   });
 
-  test("refuses an over-long path instead of truncating it", () => {
-    // A truncated path is a wrong path, and a wrong path in a session header is a
-    // lie rather than a missing field.
+  test("refuses an over-long path instead of truncating it to a wrong one", () => {
     const long = `file:///${"d".repeat(MAX_OSC_TEXT_LENGTH + 10)}`;
 
     expect(parseWorkingDirectory(long, HOST)).toBeUndefined();
@@ -83,9 +67,7 @@ describe("parseNotification", () => {
     expect(parseNotification("\u0001")).toEqual({});
   });
 
-  test("ignores ConEmu sub-commands", () => {
-    // `OSC 9 ; 4 ; 1 ; 50` is a progress bar, not a notification. Badging a session
-    // for every percent of a download is the failure mode this guards.
+  test("ignores ConEmu sub-commands, so a progress bar never badges a session", () => {
     expect(parseNotification("4;1;50")).toBeUndefined();
     expect(parseNotification("1;done")).toBeUndefined();
   });

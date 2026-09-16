@@ -27,6 +27,11 @@ Then, as needed:
   central bet (quit the app, the terminals live), its per-step verdict, and the
   defects that run found. Re-run it when the daemon's lifecycle, the handshake or
   the frame loop changes.
+- **[`packages/`](packages/)** — one page per package: the decisions behind its
+  modules, the constraints they were measured against, and what was deliberately
+  left out. Read the page for a package before changing it.
+- **[`scripts.md`](scripts.md)** — the workspace tooling: `bun run dev`, the daemon
+  helpers, the survival probe, and the gates that keep the build honest.
 - **[`research/`](research/)** — primary-source research behind the architecture and
   the technology choices.
 
@@ -40,6 +45,7 @@ Then, as needed:
 | Change a technology choice | `architecture.md` |
 | Add a file the user writes, or anything that runs on their behalf | `architecture.md` — answer the trust question first: are we reading what the user wrote, or running what the repository supplied? |
 | Change the wire protocol, or what a client may do | `architecture.md` + a version bump |
+| Move a file inside `@janela/ui`, or change its layers and segments | `architecture.md` § Inside `@janela/ui` — and `bun run check:fsd` must agree |
 | Change a code style rule | `conventions.md` (and `.swift-format` / `.swiftlint.yml`) |
 | Record a performance budget | `performance.md` |
 | Prove the daemon really owns the terminals, or record that it does not | `survival-proof.md` |

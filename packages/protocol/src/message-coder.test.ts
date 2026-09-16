@@ -1,9 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
 import type { TerminalID } from "@janela/core";
+import { Effect, Option, Result } from "effect";
 
-import { FrameError, FrameKind, encodeFrame, frameDecoder } from "./frame.ts";
-import type { Frame, FrameErrorKind } from "./frame.ts";
+import {
+  FrameError,
+  FrameKind,
+  MalformedControl,
+  RawHeaderTooShort,
+  UnexpectedFrameKind,
+  encodeFrame,
+  frameDecoder,
+} from "./frame.ts";
+import type { Frame, FrameErrorReason } from "./frame.ts";
 import {
   RAW_HEADER_LENGTH,
   decodeClientMessage,
@@ -16,25 +25,25 @@ import {
   encodeOutput,
 } from "./message-coder.ts";
 
-/** Every hex digit, so an endianness or offset slip shows up as wrong bytes. */
 const TERMINAL_ID = "01234567-89ab-cdef-0123-456789abcdef" as TerminalID;
 
 const HEADER_BYTES = [
   0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 ];
 
-/** The `FrameError.detail` a call produces, or a failure if it produces none. */
-function detailOf(run: () => void): FrameErrorKind {
-  try {
-    run();
-  } catch (error) {
-    if (error instanceof FrameError) return error.detail;
-    throw error;
-  }
-  throw new Error("expected a FrameError");
+function reasonOf(run: () => void): FrameErrorReason {
+  const outcome = Effect.runSync(Effect.result(Effect.try({ try: run, catch: (cause) => cause })));
+  const failure = Result.getFailure(outcome);
+
+  if (Option.isNone(failure)) throw new Error("expected a FrameError");
+
+  const error = failure.value;
+
+  if (!(error instanceof FrameError)) throw error;
+
+  return error.reason;
 }
 
-/** Round-trips a frame through the wire form, split at `split`. */
 function throughTheWire(frame: Frame, split: number): Frame {
   const encoded = encodeFrame(frame);
   const decoder = frameDecoder();
@@ -45,9 +54,11 @@ function throughTheWire(frame: Frame, split: number): Frame {
   decoder.end();
 
   const only = decoded[0];
+
   if (decoded.length !== 1 || only === undefined) {
     throw new Error(`expected one frame, got ${decoded.length}`);
   }
+
   return only;
 }
 
@@ -60,10 +71,12 @@ describe("raw frame header", () => {
     const bytes = new Uint8Array([1, 2, 3]);
 
     const input = encodeInput({ terminalID: TERMINAL_ID, bytes });
+
     expect(input.kind).toBe(FrameKind.Input);
     expect(Array.from(input.payload)).toEqual([...HEADER_BYTES, 1, 2, 3]);
 
     const output = encodeOutput({ terminalID: TERMINAL_ID, bytes });
+
     expect(output.kind).toBe(FrameKind.Output);
     expect(Array.from(output.payload)).toEqual([...HEADER_BYTES, 1, 2, 3]);
   });
@@ -79,7 +92,6 @@ describe("raw frame header", () => {
 
   test("bytes JSON could not carry survive a split inside the header", () => {
     const bytes = new Uint8Array([0xff, 0xfe, 0x80, 0x00, 0xc0]);
-    // 5 framing bytes plus 7 of the raw header: the split lands mid-UUID.
     const frame = throughTheWire(encodeOutput({ terminalID: TERMINAL_ID, bytes }), 12);
     const decoded = decodeOutput(frame);
 
@@ -92,6 +104,7 @@ describe("raw frame header", () => {
       kind: FrameKind.Output,
       payload: new Uint8Array(RAW_HEADER_LENGTH),
     });
+
     expect(nil.terminalID).toBe("00000000-0000-0000-0000-000000000000" as TerminalID);
     expect(nil.bytes.length).toBe(0);
 
@@ -99,6 +112,7 @@ describe("raw frame header", () => {
       kind: FrameKind.Output,
       payload: new Uint8Array(RAW_HEADER_LENGTH).fill(0xff),
     });
+
     expect(ones.terminalID).toBe("ffffffff-ffff-ffff-ffff-ffffffffffff" as TerminalID);
   });
 
@@ -112,23 +126,23 @@ describe("raw frame header", () => {
 
   test("a payload too short to hold a header is a protocol error", () => {
     const payload = new Uint8Array(RAW_HEADER_LENGTH - 1);
-    expect(detailOf(() => void decodeOutput({ kind: FrameKind.Output, payload }))).toEqual({
-      kind: "rawHeaderTooShort",
-      received: 15,
-    });
+
+    expect(reasonOf(() => void decodeOutput({ kind: FrameKind.Output, payload }))).toEqual(
+      new RawHeaderTooShort({ received: 15 }),
+    );
   });
 
   test("a frame of the wrong kind is a direction violation, not a coercion", () => {
     const control = { kind: FrameKind.Control, payload: new Uint8Array(RAW_HEADER_LENGTH) };
-    expect(detailOf(() => void decodeInput(control))).toEqual({
-      kind: "unexpectedKind",
-      expected: FrameKind.Input,
-      received: FrameKind.Control,
-    });
+
+    expect(reasonOf(() => void decodeInput(control))).toEqual(
+      new UnexpectedFrameKind({ expected: FrameKind.Input, received: FrameKind.Control }),
+    );
   });
 
   test("an id that is not a UUID is a caller bug, not something to encode", () => {
     const bytes = new Uint8Array(0);
+
     expect(() => encodeInput({ terminalID: "not-a-uuid" as TerminalID, bytes })).toThrow(TypeError);
     expect(() =>
       encodeInput({ terminalID: "0123456g-89ab-cdef-0123-456789abcdef" as TerminalID, bytes }),
@@ -158,14 +172,12 @@ describe("control frame coding", () => {
 
   test("malformed control frames close the connection and say nothing else", () => {
     const notJSON = { kind: FrameKind.Control, payload: new TextEncoder().encode("{") };
-    expect(detailOf(() => void decodeClientMessage(notJSON))).toEqual({
-      kind: "malformedControl",
-    });
+
+    expect(reasonOf(() => void decodeClientMessage(notJSON))).toEqual(new MalformedControl());
 
     const notUTF8 = { kind: FrameKind.Control, payload: new Uint8Array([0xff]) };
-    expect(detailOf(() => void decodeClientMessage(notUTF8))).toEqual({
-      kind: "malformedControl",
-    });
+
+    expect(reasonOf(() => void decodeClientMessage(notUTF8))).toEqual(new MalformedControl());
   });
 
   test("routing terminal traffic through the control path is refused", () => {
@@ -173,18 +185,16 @@ describe("control frame coding", () => {
       JSON.stringify({ type: "input", terminalID: TERMINAL_ID }),
     );
 
-    expect(detailOf(() => void decodeClientMessage({ kind: FrameKind.Control, payload }))).toEqual({
-      kind: "malformedControl",
-    });
+    expect(reasonOf(() => void decodeClientMessage({ kind: FrameKind.Control, payload }))).toEqual(
+      new MalformedControl(),
+    );
   });
 
   test("a raw frame is not a control frame", () => {
     const raw = encodeInput({ terminalID: TERMINAL_ID, bytes: new Uint8Array(0) });
 
-    expect(detailOf(() => void decodeDaemonMessage(raw))).toEqual({
-      kind: "unexpectedKind",
-      expected: FrameKind.Control,
-      received: FrameKind.Input,
-    });
+    expect(reasonOf(() => void decodeDaemonMessage(raw))).toEqual(
+      new UnexpectedFrameKind({ expected: FrameKind.Control, received: FrameKind.Input }),
+    );
   });
 });

@@ -4,8 +4,6 @@ import { parseDaemonArguments, USAGE } from "./arguments.ts";
 
 describe("janelad's command line", () => {
   test("refuses an argument it does not parse, naming it", () => {
-    // The whole point of #49: `--socket /tmp/dev.sock` used to be ignored, and the
-    // daemon bound the real user socket while a developer believed otherwise.
     expect(parseDaemonArguments(["--socket", "/tmp/x"])).toEqual({
       kind: "usage",
       problem: 'unknown argument "--socket"',
@@ -16,17 +14,14 @@ describe("janelad's command line", () => {
     });
   });
 
-  test("--version wins", () => {
-    // CI runs `./janelad --version` from an empty directory to prove the compiled
-    // binary carries its own runtime. It must never start serving instead.
+  test("--version wins wherever it appears, so probing the binary never starts serving", () => {
     expect(parseDaemonArguments(["--foreground", "--version"])).toEqual({ kind: "version" });
     expect(parseDaemonArguments(["--version"])).toEqual({ kind: "version" });
   });
 
-  test("serves in the foreground", () => {
+  test("serves in the foreground, and a repeated flag is not a refusal", () => {
     expect(parseDaemonArguments(["--foreground"])).toEqual({ kind: "serve", foreground: true });
     expect(parseDaemonArguments([])).toEqual({ kind: "serve", foreground: false });
-    // A repeat is not a mistake worth refusing.
     expect(parseDaemonArguments(["--foreground", "--foreground"])).toEqual({
       kind: "serve",
       foreground: true,

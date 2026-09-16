@@ -20,10 +20,6 @@ import {
   splitPane,
 } from "./session-layout.ts";
 
-/**
- * `identifier()` is its own seam, and these values never leave the test, so they
- * are branded directly. A layout function must not care what an id looks like.
- */
 const id = (raw: string): TerminalID => raw as TerminalID;
 
 const terminal = (raw: string): Pane => ({ kind: "terminal", id: id(raw) });
@@ -39,7 +35,7 @@ const split = (first: Pane, second: Pane, axis: Axis = "horizontal", fraction = 
 const leftmost = (pane: Pane): TerminalID =>
   pane.kind === "terminal" ? pane.id : leftmost(pane.first);
 
-const tab = (root: Pane, focused?: string): LayoutTab => ({
+const tab = (root: Pane, focused: string | undefined = undefined): LayoutTab => ({
   root,
   focusedTerminalID: focused === undefined ? leftmost(root) : id(focused),
 });
@@ -49,42 +45,39 @@ const layout = (tabs: readonly LayoutTab[], focusedTabIndex = 0): SessionLayout 
   focusedTabIndex,
 });
 
-/**
- * A left-nested chain of the given depth, with `deep` as its left-most (and
- * deepest) terminal. Built iteratively so that a hostile depth — the case
- * `repairLayout` exists for — can be constructed without recursing.
- */
 const deepTree = (depth: number): Pane => {
   let pane = terminal("deep");
+
   for (let level = 1; level < depth; level += 1) pane = split(pane, terminal(`filler-${level}`));
+
   return pane;
 };
 
-/** The ids `deepTree(depth)` names, without walking it. */
 const deepTreeIDs = (depth: number): readonly TerminalID[] => {
   const ids = [id("deep")];
+
   for (let level = 1; level < depth; level += 1) ids.push(id(`filler-${level}`));
+
   return ids;
 };
 
 const tabAt = (value: SessionLayout, index = 0): LayoutTab => {
   const found = value.tabs[index];
+
   if (found === undefined) throw new Error(`expected a tab at ${index}`);
+
   return found;
 };
 
 const nestedFraction = (value: SessionLayout): number => {
   const { root } = tabAt(value);
+
   if (root.kind !== "split" || root.second.kind !== "split")
     throw new Error("expected a nested split");
+
   return root.second.fraction;
 };
 
-/**
- * The layout algebra itself is a TODO seam, so these pin the *bounds* it will be
- * written against. They are here from the first commit because they are the rules
- * the layout must obey, and a bound with no test is a bound that drifts.
- */
 describe("SessionLayout bounds", () => {
   test("depth is bounded, because Pane is recursive and read from a persisted blob", () => {
     expect(MAXIMUM_PANE_DEPTH).toBe(6);
@@ -108,7 +101,7 @@ describe("constructing and reading a layout", () => {
       tabs: [{ root: { kind: "terminal", id: id("a") }, focusedTerminalID: id("a") }],
       focusedTabIndex: 0,
     });
-    expect("title" in tabAt(singleTerminalLayout(id("a")))).toBe(false);
+    expect(Object.keys(tabAt(singleTerminalLayout(id("a"))))).not.toContain("title");
   });
 
   test("layoutTerminalIDs walks tab then tree, left to right", () => {
@@ -145,10 +138,12 @@ describe("splitPane", () => {
 
   test("refuses a split that would exceed the depth bound", () => {
     const atBound = layout([tab(deepTree(MAXIMUM_PANE_DEPTH))]);
+
     expect(splitPane(atBound, id("deep"), id("new"), "horizontal")).toBe(atBound);
 
     const belowBound = layout([tab(deepTree(MAXIMUM_PANE_DEPTH - 1))]);
     const after = splitPane(belowBound, id("deep"), id("new"), "horizontal");
+
     expect(paneDepth(tabAt(after).root)).toBe(MAXIMUM_PANE_DEPTH);
   });
 
@@ -205,11 +200,13 @@ describe("closeTerminal", () => {
     const before = layout([tab(terminal("a")), tab(terminal("b")), tab(terminal("c"))], 2);
 
     const afterFirst = closeTerminal(before, id("a"));
+
     expect(afterFirst.tabs).toHaveLength(2);
     expect(afterFirst.focusedTabIndex).toBe(1);
     expect(tabAt(afterFirst, 1)).toBe(tabAt(before, 2));
 
     const afterFocused = closeTerminal(afterFirst, id("c"));
+
     expect(afterFocused.tabs).toHaveLength(1);
     expect(afterFocused.focusedTabIndex).toBe(0);
   });
@@ -220,6 +217,7 @@ describe("closeTerminal", () => {
 
   test("an absent terminal changes nothing", () => {
     const before = layout([tab(split(terminal("a"), terminal("b")))]);
+
     expect(closeTerminal(before, id("nobody"))).toBe(before);
   });
 });
@@ -229,7 +227,9 @@ describe("focusNeighbour", () => {
 
   test("right walks tab-then-tree order and wraps", () => {
     const visited: { id: TerminalID | undefined; tabIndex: number }[] = [];
+
     let value = twoTabs;
+
     for (let step = 0; step < 4; step += 1) {
       value = focusNeighbour(value, "right");
       visited.push({ id: focusedTab(value)?.focusedTerminalID, tabIndex: value.focusedTabIndex });
@@ -306,7 +306,10 @@ const corruptFixtures: readonly {
     layout: layout([tab(split(terminal("a"), terminal("b")), "a"), tab(terminal("a"))]),
     existing: [id("a"), id("b")],
   },
-  { layout: layout([tab(deepTree(5000), "deep")]), existing: deepTreeIDs(5000) },
+  {
+    layout: layout([tab(deepTree(5000), "deep")]),
+    existing: deepTreeIDs(5000),
+  },
   {
     layout: layout([tab(split(terminal("a"), terminal("b"), "vertical", 4), "a")], 3),
     existing: [id("a"), id("b")],
@@ -315,11 +318,9 @@ const corruptFixtures: readonly {
   { layout: layout([tab(terminal("x"))], 0), existing: [] },
 ];
 
-/** Three tabs of one terminal each, named a, b, c in that order. */
 const threeTabs = (focusedTabIndex = 0): SessionLayout =>
   layout([tab(terminal("a")), tab(terminal("b")), tab(terminal("c"))], focusedTabIndex);
 
-/** Which terminal each tab holds, which is the order the user sees. */
 const tabOrder = (value: SessionLayout): readonly string[] =>
   value.tabs.map((entry) => (entry.root.kind === "terminal" ? entry.root.id : "split"));
 
@@ -336,23 +337,19 @@ describe("moveTab", () => {
     expect(tabOrder(after)).toEqual(["c", "a", "b"]);
   });
 
-  test("focus follows the tab that moved", () => {
-    // The user dragged the tab they were looking at: it is still the one on
-    // screen afterwards, wherever it landed.
+  test("focus follows the tab that moved, wherever it landed", () => {
     expect(moveTab(threeTabs(0), 0, 2).focusedTabIndex).toBe(2);
     expect(moveTab(threeTabs(2), 2, 1).focusedTabIndex).toBe(1);
   });
 
   test("focus stays on an unmoved tab whose index shifted", () => {
-    // "b" was focused and did not move; dragging "a" past it must not switch
-    // the user to a different tab, so the index changes and the tab does not.
     const after = moveTab(threeTabs(1), 0, 2);
 
     expect(tabOrder(after)).toEqual(["b", "c", "a"]);
     expect(after.focusedTabIndex).toBe(0);
 
-    // The mirror case: dragging the last tab in front of the focused one.
     const backward = moveTab(threeTabs(1), 2, 0);
+
     expect(tabOrder(backward)).toEqual(["c", "a", "b"]);
     expect(backward.focusedTabIndex).toBe(2);
   });
@@ -360,8 +357,6 @@ describe("moveTab", () => {
   test("a move that changes nothing returns the same layout, by reference", () => {
     const before = threeTabs(1);
 
-    // Identity, so the daemon can persist nothing for a drag that ended where
-    // it started.
     expect(moveTab(before, 1, 1)).toBe(before);
     expect(moveTab(before, 3, 0)).toBe(before);
     expect(moveTab(before, 0, 3)).toBe(before);
@@ -464,6 +459,7 @@ describe("repairLayout", () => {
   test("leaves no violation behind, for any corruption", () => {
     for (const corrupt of corruptFixtures) {
       const repaired = repairLayout(corrupt.layout, corrupt.existing);
+
       expect(layoutViolations(repaired, corrupt.existing)).toEqual([]);
     }
   });

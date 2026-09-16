@@ -2,30 +2,30 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { begin, setSignpostSink, type SignpostRecord } from "./signpost.ts";
 
-function recording(): {
-  sink: { record(record: SignpostRecord): void };
-  records: SignpostRecord[];
-} {
+function recording() {
   const records: SignpostRecord[] = [];
-  return { sink: { record: (record) => records.push(record) }, records };
+
+  return { sink: { record: (record: SignpostRecord) => records.push(record) }, records };
 }
 
 afterEach(() => {
-  // The sink is process-wide, and `bun test` runs files in parallel but a file's
-  // tests in sequence. Restoring it keeps this file's tests independent of order.
   setSignpostSink(undefined);
 });
 
 describe("signposts", () => {
   test("an interval records its name, id, fields and a duration", () => {
     const { sink, records } = recording();
+
     setSignpostSink(sink);
 
     const mark = begin("repaint", "terminal-1");
+
     mark.end({ client: "a", bytes: 42, full: false });
 
     expect(records).toHaveLength(1);
+
     const record = records[0];
+
     expect(record?.name).toBe("repaint");
     expect(record?.id).toBe("terminal-1");
     expect(record?.fields).toEqual({ client: "a", bytes: 42, full: false });
@@ -34,6 +34,7 @@ describe("signposts", () => {
 
   test("an interval with neither id nor fields leaves no keys behind", () => {
     const { sink, records } = recording();
+
     setSignpostSink(sink);
 
     begin("connect").end();
@@ -44,9 +45,11 @@ describe("signposts", () => {
 
   test("ending twice records once", () => {
     const { sink, records } = recording();
+
     setSignpostSink(sink);
 
     const mark = begin("attach", "terminal-1");
+
     mark.end({ bytes: 1 });
     mark.end({ bytes: 2 });
 
@@ -55,8 +58,6 @@ describe("signposts", () => {
   });
 
   test("with no sink, every interval is the same unobserved object", () => {
-    // The identity is the contract: the repaint path calls `begin` once per frame
-    // per attached client, and must allocate nothing when nobody is measuring.
     const first = begin("repaint", "terminal-1");
     const second = begin("attach");
 
@@ -66,11 +67,9 @@ describe("signposts", () => {
   });
 
   test("a sink installed mid-interval is not consulted by that interval", () => {
-    // The sink is read at `begin`, so an interval never records into a sink that
-    // was not installed when it started — otherwise a duration would span an
-    // unmeasured stretch and read as a stall.
     const mark = begin("git");
     const { sink, records } = recording();
+
     setSignpostSink(sink);
 
     mark.end();
@@ -80,6 +79,7 @@ describe("signposts", () => {
 
   test("removing the sink stops recording", () => {
     const { sink, records } = recording();
+
     setSignpostSink(sink);
     begin("forge").end();
     setSignpostSink(undefined);

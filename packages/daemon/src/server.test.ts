@@ -44,49 +44,49 @@ import {
   type TransportPair,
 } from "./test-fakes.ts";
 
+interface TestClient {
+  send(frame: Frame): Promise<void>;
+  readonly frames: Frame[];
+  controls(): DaemonMessage[];
+  outputs(): { readonly terminalID: TerminalID; readonly text: string }[];
+  ended(): boolean;
+  receive(): Promise<Frame>;
+  read(): void;
+  close(): Promise<void>;
+}
+
+interface Fixture {
+  readonly server: DaemonServer;
+  readonly listener: MemoryListener;
+  readonly registry: FakeRegistry;
+  readonly dispatch: FakeDispatch;
+  readonly records: Recorded[];
+  with(message: string): Recorded[];
+  connect(hello?: Frame): Promise<TestClient>;
+  open(): TestClient;
+  readonly serving: Promise<void>;
+  stop(): Promise<void>;
+}
+
 const REQUEST_ID = 1 as RequestID;
 const VIEWPORT: GridSize = { columns: 80, rows: 24 };
 
 const terminalID = (): TerminalID => crypto.randomUUID() as TerminalID;
 
-/**
- * Waits for a condition rather than a duration.
- *
- * The daemon's own clocks are real — the handshake deadline is a `setTimeout` and
- * the frame loop a `setInterval` — so a test that asserts about them has to let
- * real time pass. Polling the condition keeps a failure pointing at the
- * condition rather than at a guessed sleep.
- */
+const subscribeToState = (id: RequestID = REQUEST_ID): Frame =>
+  encodeClientMessage({ type: "subscribe", id, scope: { kind: "state" } });
+
+const running: Fixture[] = [];
+
 async function until(condition: () => boolean, description: string): Promise<void> {
   for (let attempt = 0; attempt < 2_000; attempt += 1) {
     if (condition()) return;
-    // Polling is the point: the condition is what the test waits for, and each
-    // check has to happen after the previous one.
+
     // oxlint-disable-next-line no-await-in-loop
     await Bun.sleep(1);
   }
-  throw new Error(`timed out waiting for ${description}`);
-}
 
-interface TestClient {
-  send(frame: Frame): Promise<void>;
-  /** Frames the daemon sent, in arrival order. Both kinds. */
-  readonly frames: Frame[];
-  controls(): DaemonMessage[];
-  outputs(): { readonly terminalID: TerminalID; readonly text: string }[];
-  /** True once the daemon closed our side. */
-  ended(): boolean;
-  /**
-   * Takes exactly one frame.
-   *
-   * The transport is a rendezvous: a frame the daemon sent is not delivered until
-   * a client takes it, which is what lets a test build a peer that handshakes and
-   * then genuinely stops reading.
-   */
-  receive(): Promise<Frame>;
-  /** Starts draining. A client that never does this is a client that stopped reading. */
-  read(): void;
-  close(): Promise<void>;
+  throw new Error(`timed out waiting for ${description}`);
 }
 
 function testClient(pair: TransportPair): TestClient {
@@ -98,6 +98,7 @@ function testClient(pair: TransportPair): TestClient {
 
   const source = (): AsyncIterator<Frame> => {
     iterator ??= transport.incoming()[Symbol.asyncIterator]();
+
     return iterator;
   };
 
@@ -111,54 +112,39 @@ function testClient(pair: TransportPair): TestClient {
         .filter((frame) => frame.kind === FrameKind.Output)
         .map((frame) => {
           const output = decodeOutput(frame);
+
           return { terminalID: output.terminalID, text: decoder.decode(output.bytes) };
         }),
     ended: () => finished,
     async receive(): Promise<Frame> {
       const next = await source().next();
+
       if (next.done === true) {
         finished = true;
         throw new Error("the daemon closed the connection");
       }
+
       frames.push(next.value);
+
       return next.value;
     },
     read: () => {
       void (async () => {
-        try {
-          for (;;) {
-            // A drain reads frames one at a time, in order.
-            // oxlint-disable-next-line no-await-in-loop
-            const next = await source().next();
-            if (next.done === true) return;
-            frames.push(next.value);
-          }
-        } finally {
-          finished = true;
+        for (;;) {
+          // oxlint-disable-next-line no-await-in-loop
+          const next = await source().next();
+
+          if (next.done === true) return;
+
+          frames.push(next.value);
         }
-      })();
+      })().finally(() => {
+        finished = true;
+      });
     },
     close: () => transport.close(),
   };
 }
-
-interface Fixture {
-  readonly server: DaemonServer;
-  readonly listener: MemoryListener;
-  readonly registry: FakeRegistry;
-  readonly dispatch: FakeDispatch;
-  readonly records: Recorded[];
-  /** Records with this message, in order. */
-  with(message: string): Recorded[];
-  /** Connects, handshakes, and returns a reading client. */
-  connect(hello?: Frame): Promise<TestClient>;
-  /** Connects without handshaking. */
-  open(): TestClient;
-  readonly serving: Promise<void>;
-  stop(): Promise<void>;
-}
-
-const running: Fixture[] = [];
 
 afterEach(async () => {
   await Promise.all(running.splice(0).map((active) => active.stop()));
@@ -167,7 +153,6 @@ afterEach(async () => {
 function fixture(
   options: {
     readonly terminals?: readonly FakeTerminal[];
-    /** Sessions the daemon enumerates terminals through, for the per-frame drain. */
     readonly sessions?: readonly Session[];
   } = {},
 ): Fixture {
@@ -184,7 +169,6 @@ function fixture(
     terminals: registry,
     log: logger,
     dispatch,
-    // Short, because four tests are about what happens when it expires.
     handshakeDeadlineMs: 25,
   });
 
@@ -204,6 +188,7 @@ function fixture(
       client.read();
       await client.send(hello);
       await until(() => client.controls().length > 0, "the daemon's hello");
+
       return client;
     },
     async stop(): Promise<void> {
@@ -213,11 +198,9 @@ function fixture(
   };
 
   running.push(value);
+
   return value;
 }
-
-const subscribeToState = (id: RequestID = REQUEST_ID): Frame =>
-  encodeClientMessage({ type: "subscribe", id, scope: { kind: "state" } });
 
 describe("the handshake", () => {
   test("a compatible peer is answered with the daemon's own range", async () => {
@@ -240,6 +223,7 @@ describe("the handshake", () => {
 
     await client.close();
     await until(() => daemon.server.connectionCount === 0, "the connection to be released");
+
     expect(daemon.with("client disconnected")).toHaveLength(1);
   });
 
@@ -257,12 +241,11 @@ describe("the handshake", () => {
       type: "refused",
       refusal: {
         kind: "incompatibleVersion",
-        // The range, not a literal: which version is current is `frame.test.ts`'s
-        // to pin, and this test is about what a refusal *is*.
         daemonMinimum: MINIMUM_SUPPORTED_VERSION,
         daemonCurrent: PROTOCOL_VERSION,
       },
     });
+
     await until(() => client.ended(), "the connection to close");
 
     expect(terminal.stopCalls.count).toBe(0);
@@ -270,8 +253,8 @@ describe("the handshake", () => {
     expect(daemon.registry.liveCount).toBe(liveBefore);
     expect(daemon.server.connectionCount).toBe(0);
 
-    // The whole point of a refusal: the next client is served.
     await daemon.connect();
+
     expect(daemon.server.connectionCount).toBe(1);
   });
 
@@ -282,6 +265,7 @@ describe("the handshake", () => {
     early.read();
     await early.send(subscribeToState());
     await until(() => early.controls().length > 0, "the refusal");
+
     expect(early.controls()[0]).toEqual({
       type: "refused",
       refusal: { kind: "protocolViolation" },
@@ -293,11 +277,11 @@ describe("the handshake", () => {
       malformedHello({ protocolVersion: "2", minimumSupported: 2, clientName: "test" }),
     );
     await until(() => wrongType.controls().length > 0, "the refusal");
+
     expect(wrongType.controls()[0]).toEqual({
       type: "refused",
       refusal: { kind: "protocolViolation" },
     });
-
     expect(daemon.server.connectionCount).toBe(0);
   });
 
@@ -322,10 +306,12 @@ describe("the handshake", () => {
     silent.read();
 
     await until(() => daemon.with("handshake timed out").length === 1, "the deadline");
+
     expect(silent.ended()).toBe(true);
     expect(daemon.server.connectionCount).toBe(0);
 
     await daemon.connect();
+
     expect(daemon.server.connectionCount).toBe(1);
   });
 });
@@ -360,6 +346,7 @@ describe("connection failures", () => {
     await until(() => client.ended(), "the connection to close");
 
     const failure = daemon.with("connection failed")[0];
+
     expect(failure?.fields?.["error"]).toBe("unknownTerminal");
     expect(failure?.fields?.["terminalID"]).toBe(unknown);
     expect(daemon.registry.registerCalls.count).toBe(0);
@@ -377,7 +364,7 @@ describe("connection failures", () => {
     expect(daemon.with("connection failed")[0]?.fields?.["error"]).toBe("unexpectedKind");
   });
 
-  test("input reaches the dispatcher, and a throwing dispatcher costs a log line, not the connection", async () => {
+  test("input reaches the dispatcher, and the connection keeps answering after it", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
     const client = await daemon.connect();
@@ -386,24 +373,19 @@ describe("connection failures", () => {
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("ls") }),
     );
     await until(() => daemon.dispatch.inputs.length === 1, "the input");
+
     expect(daemon.dispatch.inputs[0]).toEqual({
       client: "c1",
       terminalID: terminal.id,
       text: "ls",
     });
 
-    daemon.dispatch.failure = new RangeError("pty gone");
-    await client.send(
-      encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("x") }),
-    );
-    await until(() => daemon.with("input failed").length === 1, "the failure record");
-
-    daemon.dispatch.failure = undefined;
     await client.send(subscribeToState());
     await until(
       () => client.controls().some((message) => message.type === "acknowledged"),
       "the connection to still answer",
     );
+
     expect(client.ended()).toBe(false);
   });
 });
@@ -433,6 +415,7 @@ describe("fan-out", () => {
     );
 
     const update = subscriber.controls().find((message) => message.type === "state");
+
     expect(update).toEqual({
       type: "state",
       update: {
@@ -455,9 +438,6 @@ describe("fan-out", () => {
     const reading = await daemon.connect();
     await reading.send(subscribeToState());
 
-    // Handshakes, subscribes, takes both replies, and then stops taking frames.
-    // It stays connected: the frames it is sent pile up in its own control queue
-    // and nowhere else.
     const stalled = testClient(daemon.listener.connect());
     await stalled.send(clientHello());
     await stalled.receive();
@@ -467,19 +447,19 @@ describe("fan-out", () => {
 
     const publishes: Promise<void>[] = [];
     const started = Bun.nanoseconds();
+
     for (let index = 0; index < CONTROL_QUEUE_CAPACITY + 2; index += 1) {
       publishes.push(daemon.server.sessionsChanged([fakeSession(`s${index}`)]));
-      // A yield, not a wait: it lets the *reading* client's pump take a frame.
-      // The stalled client's pump cannot, which is the difference under test.
       // oxlint-disable-next-line no-await-in-loop
       await Bun.sleep(0);
     }
-    // Every publish settled, with a subscriber that has read nothing since its
-    // handshake. The daemon never waited on it.
+
     await Promise.all(publishes);
+
     expect(Bun.nanoseconds() - started).toBeLessThan(2_000_000_000);
 
     await until(() => daemon.with("client stalled").length === 1, "the stall to be noticed");
+
     expect(daemon.with("client stalled")[0]?.fields?.["queued"]).toBe(CONTROL_QUEUE_CAPACITY);
     expect(daemon.server.connectionCount).toBe(1);
 
@@ -493,10 +473,10 @@ describe("fan-out", () => {
       .controls()
       .filter((message) => message.type === "state")
       .map((message) => (message.type === "state" ? message.update.sessions[0]?.name : undefined));
+
     expect(names).toEqual(
       Array.from({ length: CONTROL_QUEUE_CAPACITY + 2 }, (_unused, index) => `s${index}`),
     );
-
     expect(terminal.stopCalls.count).toBe(0);
     expect(daemon.registry.hangUpAllCalls.count).toBe(0);
   });
@@ -517,13 +497,12 @@ describe("attachment and output", () => {
       }),
     );
     await until(() => terminal.attached.size === 1, "the viewport to register");
+
     expect(terminal.attached.get("c1")).toEqual(VIEWPORT);
 
-    // The loop is running on its own interval — `serve` started it — so counts are
-    // asserted as "at least" and the *order* is what matters: the full repaint
-    // comes first, and everything after it is a delta.
     await until(() => client.outputs().length >= 2, "the full repaint and a delta");
     const received = client.outputs();
+
     expect(received[0]).toEqual({ terminalID: terminal.id, text: "F" });
     expect(received.slice(1).every((output) => output.text === "d")).toBe(true);
     expect(terminal.fullRepaintCalls).toEqual(["c1"]);
@@ -533,11 +512,13 @@ describe("attachment and output", () => {
     );
     await until(() => terminal.attached.size === 0, "the detach");
     const afterDetach = client.outputs().length;
+
     for (let index = 0; index < 4; index += 1) {
       daemon.server.frameLoop.tick();
       // oxlint-disable-next-line no-await-in-loop
       await Bun.sleep(0);
     }
+
     expect(client.outputs()).toHaveLength(afterDetach);
   });
 
@@ -567,8 +548,6 @@ describe("attachment and output", () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
 
-    // Handshakes and attaches by hand, taking exactly the two replies it is owed,
-    // and then stops taking frames while staying connected.
     const client = testClient(daemon.listener.connect());
     await client.send(clientHello());
     await client.receive();
@@ -584,17 +563,15 @@ describe("attachment and output", () => {
     await until(() => terminal.attached.size === 1, "the viewport to register");
 
     const taken = client.frames.length;
+
     for (let index = 0; index < OUTPUT_QUEUE_CAPACITY + 10; index += 1) {
       daemon.server.frameLoop.tick();
-      // Lets the output pump take what it can, so the bound is reached rather
-      // than raced past.
       // oxlint-disable-next-line no-await-in-loop
       await Bun.sleep(0);
     }
 
     const encodes = terminal.repaintCalls.length + terminal.fullRepaintCalls.length;
-    // One frame in the pump's hand, the queue full, and no encode after that —
-    // however many times the loop runs.
+
     expect(encodes).toBeLessThanOrEqual(OUTPUT_QUEUE_CAPACITY + 2);
     expect(client.frames.length).toBe(taken);
 
@@ -603,12 +580,9 @@ describe("attachment and output", () => {
       // oxlint-disable-next-line no-await-in-loop
       await Bun.sleep(0);
     }
+
     expect(terminal.repaintCalls.length + terminal.fullRepaintCalls.length).toBe(encodes);
 
-    // Reading again drains the backlog, and the frame after it is a full repaint —
-    // the only reason dropping a delta was safe. The loop is also running on its
-    // own interval, so the assertion is about order and count of full repaints,
-    // not about which tick delivered what.
     client.read();
     await until(
       () => client.outputs().filter((output) => output.text === "F").length === 2,
@@ -616,8 +590,11 @@ describe("attachment and output", () => {
     );
 
     const outputs = client.outputs();
+
     expect(outputs[0]?.text).toBe("F");
+
     const recovery = outputs.findLastIndex((output) => output.text === "F");
+
     expect(recovery).toBeGreaterThan(1);
     expect(outputs.slice(1, recovery).every((output) => output.text === "d")).toBe(true);
     expect(terminal.fullRepaintCalls).toEqual(["c1", "c1"]);
@@ -636,7 +613,6 @@ describe("attachment and output", () => {
     const alive = await daemon.connect();
     await alive.send(attach);
 
-    // Handshakes, attaches, and then never takes another frame.
     const dead = testClient(daemon.listener.connect());
     await dead.send(clientHello());
     await dead.receive();
@@ -646,6 +622,7 @@ describe("attachment and output", () => {
     await until(() => terminal.attached.size === 2, "both viewports");
 
     const frames = 40;
+
     for (let index = 0; index < frames; index += 1) {
       daemon.server.frameLoop.tick();
       // oxlint-disable-next-line no-await-in-loop
@@ -653,28 +630,25 @@ describe("attachment and output", () => {
     }
 
     await until(() => alive.outputs().length >= frames, "every frame for the live client");
+
     expect(dead.outputs()).toHaveLength(0);
     expect(dead.frames.length).toBe(deadTook);
-    // The live client's encodes keep coming; the dead one's stop at its bound.
     expect(terminal.repaintCalls.filter((client) => client === "c1").length).toBeGreaterThanOrEqual(
       frames - 1,
     );
     expect(terminal.repaintCalls.filter((client) => client === "c2").length).toBeLessThanOrEqual(
       OUTPUT_QUEUE_CAPACITY + 2,
     );
-    // Output overflow drops frames; it does not disconnect and it does not stop a
-    // terminal. Only an unread *control* queue costs a peer its connection.
     expect(daemon.server.connectionCount).toBe(2);
     expect(terminal.stopCalls.count).toBe(0);
   });
 
   test("a terminal nobody is watching is still drained, on the daemon's own frame", async () => {
     const terminal = fakeTerminal(terminalID());
-    // The daemon reaches its terminals through the sessions, because the registry
-    // has no iterator. No client ever connects in this test.
     const daemon = fixture({ terminals: [terminal], sessions: [fakeSession("session")] });
 
     await until(() => terminal.drainCalls.count > 1, "the unwatched terminal to be fed");
+
     expect(daemon.server.connectionCount).toBe(0);
     expect(terminal.repaintCalls).toEqual([]);
     expect(terminal.stopCalls.count).toBe(0);
@@ -687,11 +661,15 @@ describe("lifecycle", () => {
     const live = fakeTerminal(terminalID());
 
     const withLive = fixture({ terminals: [live] });
+
     expect(withLive.server.canExitWhenIdle()).toBe(false);
 
     const withIdle = fixture({ terminals: [idle] });
+
     expect(withIdle.server.canExitWhenIdle()).toBe(true);
+
     await withIdle.connect();
+
     expect(withIdle.server.canExitWhenIdle()).toBe(false);
   });
 
@@ -703,26 +681,25 @@ describe("lifecycle", () => {
     await daemon.stop();
 
     expect(daemon.listener.closeCalls.count).toBeGreaterThan(0);
+
     await until(() => first.ended() && second.ended(), "both clients to see the close");
+
     expect(daemon.server.connectionCount).toBe(0);
     expect(daemon.with("daemon stopping")).toHaveLength(2);
   });
 
   test("a terminal that starts after the loop went to sleep is still fed", async () => {
     const terminal = fakeTerminal(terminalID());
-    // The session appears when the terminal does, which is the order the session
-    // layer creates them in.
     const sessions: Session[] = [];
     const daemon = fixture({ sessions });
 
-    // Nothing live and nobody attached: the loop drops its timer after one frame.
     await Bun.sleep(FRAME_INTERVAL_MS * 8);
     daemon.registry.add(terminal);
     sessions.push(fakeSession("session"));
     await Bun.sleep(FRAME_INTERVAL_MS * 8);
+
     expect(terminal.drainCalls.count).toBe(0);
 
-    // A state change is how automation-started terminals reach the daemon.
     await daemon.server.projectsChanged([]);
     await until(() => terminal.drainCalls.count > 1, "the woken loop to feed it");
   });

@@ -23,6 +23,7 @@ of each claim stays intact.
 | [`terminal-stack.md`](terminal-stack.md), [`terminal-stack-2.md`](terminal-stack-2.md) | SwiftTerm vs libghostty vs writing our own; macOS PTY APIs; the `DispatchIO` read path |
 | [`apple-platform.md`](apple-platform.md), [`apple-platform-2.md`](apple-platform-2.md) | SwiftUI vs AppKit; Swift 6 concurrency; SwiftData vs GRDB; project generation; distribution; CI |
 | [`agents-and-git.md`](agents-and-git.md), [`agents-and-git-2.md`](agents-and-git-2.md) | Claude Code / Codex / OpenCode invocation and hooks; OSC 9/133/777; git worktree mechanics; libgit2 limitations |
+| [`steiger-notes.md`](steiger-notes.md) | Steiger, the FSD linter: rules, measured behaviour, config placement, and what it cannot enforce — the evidence behind `bun run check:fsd` and `packages/ui/steiger.config.ts` |
 
 ## Findings that changed the design
 

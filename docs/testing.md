@@ -19,39 +19,28 @@ be useful in a year.
 
 ## Tooling
 
-**swift-testing** (`@Test`, `@Suite`, `#expect`, `#require`), not XCTest. Tests
-live in `Packages/JanelaKit/Tests/<Module>Tests/`.
+**`bun test`** (`bun:test` — `describe`, `test`, `expect`), not XCTest and not
+swift-testing. A test lives beside its subject as `<subject>.test.ts`, inside the
+package that owns it.
 
 ```bash
-make test                                    # everything, seconds
-cd Packages/JanelaKit && swift test --filter SessionBacking
+bun test                                     # everything, seconds
+bun test packages/daemon                     # one package
+bun test packages/daemon/src/listener.test.ts
 ```
 
-XCTest remains for UI tests only, in `App/JanelaUITests/`, because
-`XCUIApplication` has no swift-testing equivalent.
+`bun run check` — `lint` + `typecheck` + `test` — is exactly what CI runs. There is
+no separate UI-test target: the Tauri shell is exercised by hand with
+`bun run dev` ([`AGENTS.md`](../AGENTS.md) § Commands).
 
-### `#expect` cannot swallow a `try`
+### Tests share one process
 
-This will not compile:
-
-```swift
-#expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM session") == 0)
-```
-
-Hoist the throwing call, then assert on the value:
-
-```swift
-let count = try database.read { db in
-    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM session")
-}
-#expect(count == 0)
-```
-
-### Tests run in parallel
-
-`swift test` parallelises by default. Never write to a fixed path, never mutate
-process-global state, never assume ordering. Use `TemporaryDirectory` and
-`GitFixture` from `JanelaTestSupport`, both of which are unique per test.
+`bun test` runs every file in a single process, one after another, so leftovers
+outlive the file that made them: never write to a fixed path, never mutate
+process-global state, never assume ordering. Use `temporaryDirectory(label)` and
+`gitFixture(label)` from `@janela/test-support` — each call makes its own directory
+under `TMPDIR`, and both are `AsyncDisposable`, so `await using` removes it however
+the test ends.
 
 ---
 
@@ -83,10 +72,10 @@ This is the section worth reading twice.
 
 ### We do **not** fake git
 
-`GitFixture` creates a real repository in a temporary directory and runs the real
-`git`. Worktree behaviour is exactly the kind of thing a mock cannot verify: `git
-worktree add` either works against a real repository or it does not, and a mock
-would only assert that we call the function we think we call.
+`gitFixture(label)` creates a real repository in a temporary directory and runs the
+real `git`. Worktree behaviour is exactly the kind of thing a mock cannot verify:
+`git worktree add` either works against a real repository or it does not, and a
+mock would only assert that we call the function we think we call.
 
 The same applies to **`.worktreeinclude`**, and more so. Its correctness *is*
 git's pattern matching, so a test that fakes the matcher tests nothing. Write a
@@ -102,8 +91,9 @@ Cost is a few hundred milliseconds per test. Worth it.
 
 ### We do **not** fake the database
 
-`JanelaDatabase.inMemory()` is a real SQLite database with the real migrations
-applied. A fake repository would test our fake.
+`openDatabase({ path })` against a file in a `temporaryDirectory()` — or
+`":memory:"` where nothing needs to survive a reopen — is a real SQLite database
+with the real migrations applied. A fake repository would test our fake.
 
 ### We do **not** fake PTYs for PTY tests
 
@@ -113,15 +103,30 @@ signalling reaches the process *group*, that closing reaps the child.
 
 ### We do **not** fake the socket
 
-`JanelaDaemon` tests bind a real Unix socket in a `TemporaryDirectory` and connect
-real clients over it. A fake transport would test our fake, and every interesting bug
-here is a real-socket bug: partial reads, a frame split across two `recv` calls, a
-peer that vanishes mid-frame, a length prefix that lies.
+`@janela/daemon` tests bind a real Unix socket under a `temporaryDirectory()` and
+connect real clients over it. A fake transport would test our fake, and every
+interesting bug here is a real-socket bug: partial reads, a frame split across two
+reads, a peer that vanishes mid-frame, a length prefix that lies.
 
-Mind the path limit. `sun_path` is 104 bytes and a temp directory plus a test
-name gets close, so `TemporaryDirectory.socketPath(_:)` exists to keep them
-short. A test that builds its own socket path will pass for you and fail for
-someone with a longer home directory.
+**Mind the path limit, by hand.** `sun_path` is 104 bytes —
+`MAXIMUM_SOCKET_PATH_LENGTH` in `packages/daemon/src/endpoint.ts`, which is pinned
+to 104 by `endpoint.test.ts` and enforced in production by `defaultSocketPath()`,
+the only place that throws `SocketPathTooLong`. There is **no socket-path helper**:
+`@janela/test-support` exports `temporaryDirectory(label)` (with `path` and `join`)
+and `gitFixture(label)`, and nothing else. So a socket test passes a short `label`,
+builds the path with `join()` — `"d.sock"`, not the test's name — and asserts
+`Buffer.byteLength(path)` against the constant *before* binding, which is what
+`listener.test.ts` does in both of its fixtures. Assert rather than truncate: an
+over-long path is not an error, it addresses a *different* socket.
+
+The two cross-process files cannot use `TMPDIR` at all. On macOS the per-user
+temporary directory is a `/var/folders/…/T/` path that spends roughly 50 of the 104
+bytes before any label, and these tests spawn the daemon with a whole isolated
+`HOME` (and `TMPDIR` pointed at it) and let it compute
+`~/.janela/run/janelad.sock` itself — so `apps/daemon/src/survival.test.ts` and
+`main.test.ts` call `mkdtemp("/tmp/jd-")` and `mkdtemp("/tmp/jd-main-")` directly,
+as `scripts/dev.test.ts` does with `/tmp/janela-dev-`. Anywhere else, prefer the
+fixture.
 
 ### We do **not** fake the emulator when testing the repaint encoder
 
@@ -253,6 +258,23 @@ logic probably belongs in an `@Observable` store where it can be tested directly
 Snapshot tests are not currently used; they tend to fail on OS updates for reasons
 unrelated to correctness.
 
+**Where a client test lives (current stack).** `@janela/ui` is internally
+Feature-Sliced ([`architecture.md`](architecture.md) § Inside `@janela/ui`), and a
+test is colocated with its subject *inside the slice or segment that owns it*:
+`pages/settings/model/draft-save.test.ts` beside `draft-save.ts`, not in a `tests/`
+tree of its own. Two rules follow from the gate rather than from taste:
+
+- **Steiger lints test files too.** A test may not sidestep a slice's or a shared
+  segment's public API either — it imports `../../../shared/model/index.ts`, never
+  a file inside it — and it may not reach into the other page. A claim that needs
+  both screens is a claim about the app layer, and belongs there or in the shared
+  chrome both screens compose.
+- **Fakes live in `shared/lib/test-fakes`.** The domain values, the recording
+  ports and the two `ClientEnvironment` builders are one boundary with one
+  `index.ts`, below every page, so a test never builds a second version of the
+  mirror. They are not re-exported from the package's `index.ts`: nothing ships
+  them.
+
 ---
 
 ## Performance tests
@@ -274,10 +296,20 @@ paths.
 
 ## Writing a good test here
 
-- **Name the behaviour, not the method.** `@Test("Only Janela-created worktrees
-  may be deleted from disk")` beats `testOwnsItsDirectory`.
+- **Name the behaviour, not the method.** `test("only Janela-created worktrees may
+  be deleted from disk")` beats `test("ownsItsDirectory")`.
 - **One reason to fail.** If the name needs "and", split it.
-- **Assert on outcomes, not calls.** `#expect(worktreeExists)` beats "verify
-  `createWorktree` was called once".
+- **Assert on outcomes, not calls.** `expect(worktreeExists).toBe(true)` beats
+  "verify `createWorktree` was called once".
 - **A test for a bug reproduces the bug first.** Watch it fail, then fix it.
   Otherwise you have not proven the test covers the fix.
+- **The test name carries what a comment used to.** `begone-slop/no-comments`
+  applies to `*.test.ts` as well, so a fact about why a case exists belongs in
+  the `test("…")` string, not above it.
+- **Blank lines between runs of `expect()` are required.** `expect-padding` is
+  on for test files and is autofixable — run `bunx --bun oxlint --fix` rather
+  than placing them by hand.
+- **Tests may assert what production code may not.** `!` and `console` are
+  allowed there, and so is `as T` without a `SAFETY:` justification: a fixture
+  branding a literal is stating the test's premise, not claiming an invariant.
+  Every other begone-slop rule applies to tests exactly as it does to source.

@@ -6,6 +6,14 @@ import {
   type SessionRemovalPreview,
 } from "./removal-plan.ts";
 
+type WireValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly WireValue[]
+  | { readonly [key: string]: WireValue };
+
 const preview: SessionRemovalPreview = {
   liveTerminalCount: 3,
   canDeleteDirectory: true,
@@ -21,8 +29,7 @@ const preview: SessionRemovalPreview = {
   },
 };
 
-/** The plan with one field replaced by something the wire allows and we do not. */
-const corrupted = (field: string, value: unknown): string =>
+const corrupted = (field: string, value: WireValue): string =>
   JSON.stringify({ ...preview, [field]: value });
 
 describe("the removal plan on the wire", () => {
