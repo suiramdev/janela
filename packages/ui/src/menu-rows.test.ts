@@ -31,7 +31,6 @@ function recordingActions(): SidebarActions & { readonly calls: string[] } {
   return {
     calls,
     newSession: (id: ProjectID) => calls.push(`newSession:${id}`),
-    newBranchSession: (id: ProjectID) => calls.push(`newBranchSession:${id}`),
     newTerminal: (id: SessionID) => calls.push(`newTerminal:${id}`),
     openProjectSettings: (id: ProjectID) => calls.push(`openProjectSettings:${id}`),
     removeProject: (project) => calls.push(`removeProject:${project.id}`),
@@ -74,7 +73,6 @@ describe("projectMenuRows", () => {
 
     expect(actions.calls).toEqual([
       `newSession:${project.id}`,
-      `newBranchSession:${project.id}`,
       "revealInFinder:/src/janela",
       "openInTerminal:/src/janela",
       `openProjectSettings:${project.id}`,
@@ -82,18 +80,14 @@ describe("projectMenuRows", () => {
     ]);
   });
 
-  test("a folder that is not a repository offers the branch row, disabled", () => {
-    // Shown rather than hidden: a row that vanishes teaches nothing, and "why
-    // can I not make a branch session here" is exactly what it answers.
-    // No `git` facts, which is exactly the question `supportsWorktrees` asks.
+  test("a folder that is not a repository offers the same rows", () => {
+    // Nothing on this menu depends on git any more: "New Session…" is the one
+    // way a session is made, and which starts a project allows is the sheet's
+    // question rather than a disabled row's.
     const { git: _git, ...plain } = fakeProject({ name: "notes" });
 
-    expect(labels(projectMenuRows(plain, recordingActions()))).toContain("New Branch Session…");
-    expect(row(projectMenuRows(plain, recordingActions()), "New Branch Session…").disabled).toBe(
-      true,
-    );
-    expect(row(projectMenuRows(project, recordingActions()), "New Branch Session…").disabled).toBe(
-      false,
+    expect(labels(projectMenuRows(plain, recordingActions()))).toEqual(
+      labels(projectMenuRows(project, recordingActions())),
     );
   });
 

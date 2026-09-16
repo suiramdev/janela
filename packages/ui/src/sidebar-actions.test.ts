@@ -121,14 +121,6 @@ describe("createSidebarActions", () => {
     expect(sent).toEqual([{ type: "createTerminal", sessionID: sessionID("s") }]);
   });
 
-  test("the branch sheet opens over the right-clicked project", () => {
-    const { target } = harness({ agrees: true });
-
-    createSidebarActions(target).newBranchSession(projectID("p"));
-
-    expect(target.view.sheet).toEqual({ kind: "newBranch", projectID: projectID("p") });
-  });
-
   test("project settings navigate to that project's pane in settings, not to a sheet", () => {
     const { target } = harness({ agrees: true });
 

@@ -175,8 +175,9 @@ describe("sheets and screens", () => {
     expect(view.sheet).toEqual({ kind: "jumpList" });
     await dispatch("showCommands");
     expect(view.sheet).toEqual({ kind: "commands" });
-    await dispatch("newBranchSession");
-    expect(view.sheet).toEqual({ kind: "newBranch" });
+    await dispatch("newSession");
+    // Nothing is selected in a project here, so there is no project to carry.
+    expect(view.sheet).toEqual({ kind: "newSession" });
   });
 
   test("Settings is a screen, not a sheet", async () => {

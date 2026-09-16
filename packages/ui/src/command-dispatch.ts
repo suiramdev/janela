@@ -331,10 +331,6 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
         view.openSheet({ kind: "jumpList" });
         return;
 
-      case "newBranchSession":
-        view.openSheet({ kind: "newBranch" });
-        return;
-
       case "nextSession":
         stepSession(1);
         return;

@@ -15,7 +15,6 @@ import { createSessionAndSelect, focusedTerminalOf, selectSession } from "./comm
 import { CommandPalette } from "./command-palette.tsx";
 import type { CommandID } from "./commands.ts";
 import { JumpList } from "./jump-list.tsx";
-import { NewBranchSheet, type NewBranchIntent } from "./new-branch-sheet.tsx";
 import { NewSessionSheet, useBranchOverview } from "./new-session-sheet.tsx";
 import type { Sheet } from "./view-state.ts";
 
@@ -38,9 +37,9 @@ import type { Sheet } from "./view-state.ts";
  *   sheets have none — they open from the menu bar, the palette and the sidebar.
  *   `finalFocus={false}` turns that off, and `close` sends focus to the terminal.
  * - **Which field opens focused.** The default is the first tabbable element, which
- *   is right for a find field and wrong for the branch sheet, where the project
- *   select comes first and the branch name is what you came to type. A field that
- *   wants to open focused says so with `data-autofocus`.
+ *   is right for a find field and wrong for the new-session sheet, where the
+ *   project select comes first and the branch is what you came to name. A field
+ *   that wants to open focused says so with `data-autofocus`.
  */
 
 type SheetKind = Sheet["kind"];
@@ -49,7 +48,6 @@ const SHEET_LABEL: Record<SheetKind, string> = {
   jumpList: "Go to Session",
   commands: "Command Palette",
   newSession: "New Session",
-  newBranch: "New Branch Session",
 };
 
 /**
@@ -73,7 +71,6 @@ const SHEET_SHAPE: Record<
   jumpList: { size: "lg", titled: false },
   commands: { size: "lg", titled: false },
   newSession: { size: "lg", titled: true },
-  newBranch: { size: "lg", titled: true },
 };
 
 /** A request from a sheet is best-effort, exactly as one from a view is. */
@@ -209,22 +206,6 @@ function SheetBody(props: {
     [connection, onClose, sessionStore, view],
   );
 
-  const createBranchSession = useCallback(
-    (intent: NewBranchIntent) => {
-      onClose();
-      void createSessionAndSelect(
-        { sessions: sessionStore, connection, view },
-        {
-          kind: "newWorktree",
-          projectID: intent.projectID,
-          branch: intent.branch,
-          ...(intent.startPoint === undefined ? {} : { startPoint: intent.startPoint }),
-        },
-      ).catch(swallowRequestFailure);
-    },
-    [connection, onClose, sessionStore, view],
-  );
-
   const selected = sessions.find((session) => session.id === selection);
 
   switch (sheet.kind) {
@@ -253,8 +234,10 @@ function SheetBody(props: {
       );
 
     case "newSession": {
-      // The `+` or context menu's project wins over the selection's, as for the
-      // branch sheet; from the header there is only the selection to go on.
+      // The `+` or context menu's project wins over the selection's: a
+      // right-click on a project is a statement about which project, and the
+      // selection is only a guess made on the menu bar's behalf. From the
+      // header there is only the selection to go on.
       const preselected = sheet.projectID ?? selected?.projectID;
       return (
         <ConnectedNewSessionSheet
@@ -262,21 +245,6 @@ function SheetBody(props: {
           initialProjectID={preselected}
           sessions={sessions}
           onCreate={createSession}
-          onCancel={onClose}
-        />
-      );
-    }
-
-    case "newBranch": {
-      // The context menu's project wins over the selection's: a right-click on a
-      // project is a statement about which project, and the selection is only a
-      // guess made on the menu bar's behalf.
-      const preselected = sheet.projectID ?? selected?.projectID;
-      return (
-        <NewBranchSheet
-          projects={projects}
-          {...(preselected === undefined ? {} : { initialProjectID: preselected })}
-          onCreate={createBranchSession}
           onCancel={onClose}
         />
       );

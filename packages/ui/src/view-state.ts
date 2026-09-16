@@ -42,13 +42,7 @@ export type Sheet =
    * when opened from the header, the welcome card or the menu bar, where the
    * selection is the only subject there is.
    */
-  | { readonly kind: "newSession"; readonly projectID?: ProjectID }
-  /**
-   * `projectID` is the project a *context menu* was opened over, which is
-   * frequently not the selected session's project. Absent when the sheet was
-   * opened from the menu bar, where the selection is the only subject there is.
-   */
-  | { readonly kind: "newBranch"; readonly projectID?: ProjectID };
+  | { readonly kind: "newSession"; readonly projectID?: ProjectID };
 
 /** The four panes that configure the application itself. */
 export type SettingsTabID = "general" | "terminal" | "profiles" | "notifications";

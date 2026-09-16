@@ -31,7 +31,7 @@
 export interface Command {
   readonly id: CommandID;
   readonly title: string;
-  /** Accelerator in Tauri's notation, e.g. `CmdOrCtrl+Shift+B`. */
+  /** Accelerator in Tauri's notation, e.g. `CmdOrCtrl+Shift+P`. */
   readonly accelerator?: string;
   /** Which menu the row belongs to. */
   readonly menu: CommandMenu;
@@ -66,7 +66,6 @@ export type CommandID =
   | "showCommands"
   // Session
   | "goToSession"
-  | "newBranchSession"
   | "nextSession"
   | "previousSession"
   | "revealInFinder"
@@ -122,12 +121,6 @@ export const COMMANDS: readonly Command[] = [
   { id: "showCommands", title: "Command Palette…", accelerator: "CmdOrCtrl+Shift+P", menu: "view" },
 
   { id: "goToSession", title: "Go to Session…", accelerator: "CmdOrCtrl+Shift+O", menu: "session" },
-  {
-    id: "newBranchSession",
-    title: "New Branch Session…",
-    accelerator: "CmdOrCtrl+Shift+B",
-    menu: "session",
-  },
   {
     id: "nextSession",
     title: "Next Session",

@@ -26,7 +26,6 @@ export * from "./fuzzy.ts";
 export * from "./jump-list.tsx";
 export * from "./layout-edits.ts";
 export * from "./main-window.tsx";
-export * from "./new-branch-sheet.tsx";
 export * from "./new-session-sheet.tsx";
 export * from "./find-surface.tsx";
 export * from "./sheets.tsx";

@@ -40,8 +40,6 @@ export interface SidebarActionTarget {
 export interface SidebarActions {
   /** Opens the new-session dialog: which branch, and where it is worked on. */
   newSession(projectID: ProjectID): void;
-  /** A new branch, made by name: opens the branch sheet with this project preselected. */
-  newBranchSession(projectID: ProjectID): void;
   /** A new terminal in the session. Always a shell — there is nothing to pick. */
   newTerminal(sessionID: SessionID): void;
   /**
@@ -97,10 +95,6 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
   return {
     newSession(projectID: ProjectID): void {
       view.openSheet({ kind: "newSession", projectID });
-    },
-
-    newBranchSession(projectID: ProjectID): void {
-      view.openSheet({ kind: "newBranch", projectID });
     },
 
     newTerminal(sessionID: SessionID): void {

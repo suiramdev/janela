@@ -6,7 +6,6 @@ import {
   Eraser01Icon,
   FolderAddIcon,
   FolderOpenIcon,
-  GitBranchIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
   PlusSignIcon,
@@ -14,7 +13,7 @@ import {
   Settings01Icon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
-import { supportsWorktrees, type Project, type Session } from "@janela/core";
+import type { Project, Session } from "@janela/core";
 import { hugeicon } from "@janela/design";
 
 import type { CommandID } from "./commands.ts";
@@ -43,7 +42,6 @@ import type { SidebarActions } from "./sidebar-actions.ts";
 
 const ICON = {
   newSession: hugeicon(PlusSignIcon),
-  newBranch: hugeicon(GitBranchIcon),
   newTerminal: hugeicon(ComputerTerminal01Icon),
   reveal: hugeicon(FolderOpenIcon),
   terminal: hugeicon(TerminalIcon),
@@ -69,15 +67,6 @@ export function projectMenuRows(project: Project, actions: SidebarActions): read
       label: "New Session…",
       icon: ICON.newSession,
       onSelect: () => actions.newSession(project.id),
-    },
-    {
-      kind: "item",
-      label: "New Branch Session…",
-      icon: ICON.newBranch,
-      // A folder that is not a git repository has no branches to make a session
-      // on. Shown rather than hidden: the row is what tells the user why.
-      disabled: !supportsWorktrees(project),
-      onSelect: () => actions.newBranchSession(project.id),
     },
     { kind: "separator" },
     {
