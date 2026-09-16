@@ -3147,8 +3147,9 @@ export const COLOR = {
   failure: "--janela-failure",
 } as const;
 
-export const TERMINAL_FONT_STACK =
-  '"SF Mono", "Menlo", "DejaVu Sans Mono", "Symbols Nerd Font Mono", "Symbols Nerd Font", ui-monospace, monospace';
+export const TERMINAL_SYMBOL_FONT = "Symbols Nerd Font Mono";
+
+export const TERMINAL_FONT_STACK = `"SF Mono", "Menlo", "DejaVu Sans Mono", "${TERMINAL_SYMBOL_FONT}", ui-monospace, monospace`;
 
 export const MOTION = { fast: 120, medium: 200 } as const;
 ```
@@ -3176,10 +3177,11 @@ export const MOTION = { fast: 120, medium: 200 } as const;
    one is in force — the setting is a `TerminalFont` the surface requires, not a
    preference the renderer may ignore. SF Mono ships with macOS, has the coverage
    agents need and hints well at small sizes; the fallbacks exist because a WebView
-   on another platform has to render something. `Symbols Nerd Font Mono` sits before
+   on another platform has to render something. `TERMINAL_SYMBOL_FONT` sits before
    the generics because agent CLIs and prompts draw icons from the private-use
-   ranges, macOS ships no font that has them, and per-glyph fallback means naming
-   the symbols-only font costs nothing when it is absent.
+   ranges and macOS ships no font that has them; the application ships that font
+   (`packages/design/src/fonts`, declared as an `@font-face`), so the family always
+   resolves and per-glyph fallback asks it only for the codepoints SF Mono lacks.
 5. **Every transition respects `prefers-reduced-motion`**, the web's spelling of
    the Reduce Motion setting `docs/product.md` § Principles 4 commits to. A
    component that animates unconditionally is a bug, not a flourish. `MOTION`

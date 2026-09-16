@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { COLOR, CORNER_RADIUS, spring, surfaceClasses, TERMINAL_FONT_STACK } from "./index.ts";
+import {
+  COLOR,
+  CORNER_RADIUS,
+  spring,
+  surfaceClasses,
+  TERMINAL_FONT_STACK,
+  TERMINAL_SYMBOL_FONT,
+} from "./index.ts";
 
 const source = await Bun.file(new URL("./styles.css", import.meta.url)).text();
 
@@ -94,6 +101,18 @@ describe("styles.css", () => {
     const mono = /--font-mono:\s*([^;]+);/.exec(theme)?.[1];
 
     expect(mono?.replace(/\s+/gu, " ")).toBe(TERMINAL_FONT_STACK);
+  });
+
+  test("the symbol font the stack names is bundled and declared", async () => {
+    const face = block("@font-face {");
+
+    expect(face).toContain(`font-family: "${TERMINAL_SYMBOL_FONT}";`);
+    expect(TERMINAL_FONT_STACK).toContain(`"${TERMINAL_SYMBOL_FONT}"`);
+
+    const asset = /url\("([^"]+)"\)/u.exec(face)?.[1];
+
+    expect(asset).toBeDefined();
+    expect(await Bun.file(new URL(asset ?? "", import.meta.url)).exists()).toBe(true);
   });
 
   test("the CSS motion ladder is the spring ladder, in milliseconds", () => {
