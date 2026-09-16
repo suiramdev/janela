@@ -14,6 +14,7 @@ const config = (await Bun.file(
       readonly hiddenTitle?: boolean;
       readonly decorations?: boolean;
       readonly trafficLightPosition?: { readonly x: number; readonly y: number };
+      readonly dragDropEnabled?: boolean;
     }[];
   };
 };
@@ -29,6 +30,12 @@ describe("the main window's title bar", () => {
 
   test("puts the controls where the sidebar's first row expects them", () => {
     expect(main?.trafficLightPosition).toEqual(TRAFFIC_LIGHT_POSITION);
+  });
+});
+
+describe("the main window's drag and drop", () => {
+  test("leaves the drag session to the page, or no tab and no pane can ever be dropped", () => {
+    expect(main?.dragDropEnabled).toBe(false);
   });
 });
 

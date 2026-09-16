@@ -180,6 +180,12 @@ row should have its leading space back. Only the shell can answer that.
   the buttons simply sit on top of the search control. `Overlay` is what puts content
   under the buttons (`Transparent` would leave a 28px strip), and `decorations` must
   stay on: the buttons need the frame, only the *title* goes.
+- `dragDropEnabled` is **off**, and the same test pins it. Tauri's native handler
+  exists to hand *files* dropped from Finder to Rust, and on macOS it answers the
+  drag session before the page does: `dragstart` fires, so a tab or a pane bar can
+  be picked up, but `dragover` and `drop` never reach the DOM and nothing lands.
+  Nothing here consumes the native events, and every drag in `@janela/ui` — tab
+  reorder, pane docking — is HTML5 DnD on the page.
 
 ## `src/adapters/{native,menu}.ts`
 
