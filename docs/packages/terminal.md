@@ -629,6 +629,14 @@ this appears, or fail at a deadline", and the two negative claims ("no second
 child", "no second close") are made against injected seams, where they are
 decidable rather than merely unobserved.
 
+A child whose output a test asserts on is also held open on a `read _` until the
+test writes a newline, including the exit-status test: on Darwin the child's own
+exit closes the last replica descriptor and the kernel flushes whatever the
+reader thread has not copied yet, so the tail of a `/bin/echo` is a race and not
+a contract (`docs/packages/pty.md` § Tests, where it is measured). The exit test
+therefore releases the child *after* seeing its output, and asserts a non-zero
+status — 7, which only a real `WEXITSTATUS` produces.
+
 Two seams exist for tests and are worth keeping honest. The scripted
 `PseudoTerminal` covers a read *failure*, which a real terminal cannot produce on
 Darwin at all: a child exiting and `revoke(2)` on the replica both make `read`

@@ -277,13 +277,10 @@ describe("before start", () => {
 
 describe("lifecycle", () => {
   test("a child that finishes reaches exited with its status, once", async () => {
-    const terminal = live("t-echo", {
-      executable: "/bin/echo",
-      arguments: ["echo", "JANELA_T21"],
-      workingDirectory: tmpdir(),
-      environment: ENVIRONMENT,
-      initialSize: { columns: 80, rows: 24 },
-    });
+    const terminal = live(
+      "t-exit",
+      shellLaunch("stty raw -echo; printf JANELA_T21; read _; exit 7"),
+    );
     const sink = recordingSink();
     terminal.events = sink;
 
@@ -291,17 +288,25 @@ describe("lifecycle", () => {
 
     expect(terminal.state).toEqual({ kind: "running" });
 
+    await drainUntil(
+      terminal,
+      () => terminal.snapshotText({ includeScrollback: true }).includes("JANELA_T21"),
+      "the child's output",
+    );
+
+    terminal.send(new Uint8Array([0x0a]));
+
     await drainUntil(terminal, () => sink.exits.length > 0, "the child to exit");
 
-    expect(sink.exits).toEqual([0]);
-    expect(terminal.state).toEqual({ kind: "exited", code: 0 });
+    expect(sink.exits).toEqual([7]);
+    expect(terminal.state).toEqual({ kind: "exited", code: 7 });
     expect(terminal.snapshotText({ includeScrollback: true })).toContain("JANELA_T21");
 
     terminal.drain();
     terminal.drain();
 
-    expect(sink.exits).toEqual([0]);
-    expect(terminal.state).toEqual({ kind: "exited", code: 0 });
+    expect(sink.exits).toEqual([7]);
+    expect(terminal.state).toEqual({ kind: "exited", code: 7 });
   });
 
   test("start is idempotent: a second call does not spawn a second child", async () => {

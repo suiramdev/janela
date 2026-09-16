@@ -337,7 +337,7 @@ are pinned by value on both sides instead (`HIGH_WATER` in Rust,
 `TERMINAL_WATER_MARKS.highWater` here), because asserting a backlog reached the
 mark means pushing 4 MB through a tty inside a wall-clock window.
 
-Two more details that look incidental and are not:
+Three more details that look incidental and are not:
 
 - The Ctrl-C test's foreground job is a loop of short sleeps rather than one long
   one. Writing the byte races the shell's own `fork`: lose the race and `SIGINT`
@@ -348,6 +348,19 @@ Two more details that look incidental and are not:
 - `set +m` in the grandchild tests is load-bearing: with job control off the
   background job stays in the shell's process group, which is exactly the case
   `killpg` reaches and a `kill` on the direct child does not.
+- **No test may depend on the output of a child that exits immediately.** Every
+  child that prints something the test then asserts on stays alive on a `read _`
+  until the test writes a newline. This is Darwin, not caution: the parent closes
+  the replica after `fork`, so the child's own exit closes the last replica
+  descriptor, and `ttyclose` flushes the tty's queues. Anything the reader thread
+  has not copied into the ring by then is gone — not buffered, not delivered late.
+  Measured with `openpty` + `fork` + `/bin/echo` directly: wait 50 ms after the
+  child exits and the output survives 0 times in 10, `read` returning EOF with an
+  empty buffer. The reader thread is parked in `poll` and normally wins the race
+  by a wide margin, which is why this reads as a rare CI-only flake — one such
+  failure is what `@janela/terminal`'s exit test was built on, asserting the tail
+  of `/bin/echo` rather than this layer's contract. Bytes already in the ring are
+  safe: `jpty_read` drains them before it reports any stop reason.
 
 Three checklist items are asserted in `native/src/lib.rs`'s `cargo test` module
 instead, because they are only observable from the other side of the boundary:

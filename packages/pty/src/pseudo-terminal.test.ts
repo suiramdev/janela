@@ -37,6 +37,8 @@ const RING_CEILING = TERMINAL_WATER_MARKS.highWater + READ_SIZE;
 
 const HERMETIC_ENVIRONMENT = { TERM: "xterm-256color", PATH: "/usr/bin:/bin" };
 
+const NEWLINE = new Uint8Array([0x0a]);
+
 const started: PseudoTerminal[] = [];
 
 const probeProcess = Option.liftThrowable((pid: number) => process.kill(pid, 0));
@@ -254,11 +256,12 @@ function scriptedTerminal(read: bigint, exitCode: number): PseudoTerminal {
 
 describe("spawning and reading", () => {
   test("output arrives, and the exit status is readable in the tick the stream ended", async () => {
-    const terminal = spawn("/bin/echo", ["echo", "JANELA_ECHO_OK"]);
+    const terminal = shell('stty raw -echo; printf "JANELA_ECHO_OK\\n"; read _');
 
     expect(terminal.pid).toBeGreaterThan(0);
 
     await drainUntil(terminal, /JANELA_ECHO_OK/);
+    terminal.write(NEWLINE);
     await drainToEnd(terminal);
 
     expect(terminal.exitCode()).toBe(0);
@@ -392,8 +395,20 @@ describe("signals and job control", () => {
 
 describe("marshalling", () => {
   test("argv arrives verbatim: an empty element, a space, a tab and a multi-byte character", async () => {
-    const terminal = spawn("/usr/bin/printf", ["printf", "[%s]\n", "", "a b", "a\tb", "héllo→"]);
-    const seen = await drainToEnd(terminal);
+    const terminal = spawn("/bin/sh", [
+      "sh",
+      "-c",
+      'stty raw -echo; printf "[%s]\\n" "$@"; printf "JANELA_ARGV_DONE\\n"; read _',
+      "sh",
+      "",
+      "a b",
+      "a\tb",
+      "héllo→",
+    ]);
+    const seen = await drainUntil(terminal, /JANELA_ARGV_DONE/);
+
+    terminal.write(NEWLINE);
+    await drainToEnd(terminal);
 
     expect(seen).toContain("[]");
     expect(seen).toContain("[a b]");
@@ -409,8 +424,15 @@ describe("marshalling", () => {
       index === 7 ? large : `value-${index}`,
     ]);
     const environment = { ...HERMETIC_ENVIRONMENT, ...Object.fromEntries(many) };
-    const terminal = spawn("/usr/bin/env", ["env"], environment);
-    const seen = await drainToEnd(terminal);
+    const terminal = spawn(
+      "/bin/sh",
+      ["sh", "-c", 'stty raw -echo; env; printf "JANELA_ENV_DONE\\n"; read _'],
+      environment,
+    );
+    const seen = await drainUntil(terminal, /JANELA_ENV_DONE/);
+
+    terminal.write(NEWLINE);
+    await drainToEnd(terminal);
 
     expect(seen).toContain(`JANELA_VAR_7=${large}`);
     expect(seen).toContain("JANELA_VAR_199=value-199");
