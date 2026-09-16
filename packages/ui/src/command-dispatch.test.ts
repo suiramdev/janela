@@ -474,6 +474,32 @@ describe("closeTerminals", () => {
       { type: "removeTerminal", terminalID: second.id },
     ]);
   });
+
+  test("closing a run of tabs asks once, about the tabs", async () => {
+    // "Close Other Tabs" is one gesture, so it is one question — and it names
+    // what it ends in the plural, because agreeing to "this tab" and losing six
+    // is exactly the surprise non-negotiable #7 forbids.
+    const shell = fakeTerminal({ title: "zsh" });
+    const agent = fakeTerminal({ title: "claude" });
+    const session = fakeSession({ terminals: [shell, agent] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: { [shell.id]: { kind: "running" }, [agent.id]: { kind: "running" } },
+    });
+    const asked = asking(context, true);
+
+    await closeTerminals(asked.target, session, [shell.id, agent.id], "tabs");
+
+    expect(asked.asked).toEqual([
+      {
+        title: "Close these tabs?",
+        message: "2 terminals are still running. Closing the tabs ends them.",
+        confirmLabel: "Close Tabs",
+        remember: "closeTerminals",
+      },
+    ]);
+  });
 });
 
 describe("navigation", () => {

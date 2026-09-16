@@ -153,14 +153,18 @@ export function splitTerminal(
   });
 }
 
+/** What a close is about, in the three shapes the question comes in. */
+export type CloseScope = "pane" | "tab" | "tabs";
+
 /**
- * What closing one pane, or a whole tab, costs — as a question.
+ * What closing one pane, one tab, or a run of tabs costs — as a question.
  *
- * One function behind ⌘W, a pane's close button and a tab's close button, because
- * they differ only in how many terminals they name. A tab's button is the case
- * that makes this worth sharing: it ends every terminal in that tab, including
- * the ones its splits are not currently showing, and non-negotiable #7 says the
- * user is told what they are ending rather than finding out.
+ * One function behind ⌘W, a pane's close button, a tab's close button and the
+ * strip's "close the rest" rows, because they differ only in how many terminals
+ * they name. A tab's button is the case that makes this worth sharing: it ends
+ * every terminal in that tab, including the ones its splits are not currently
+ * showing, and non-negotiable #7 says the user is told what they are ending
+ * rather than finding out.
  *
  * Idle, exited and failed terminals are closed without a word — there is nothing
  * to lose — so a tab of finished shells shuts with one click.
@@ -178,7 +182,7 @@ export async function closeTerminals(
   target: Pick<CommandTarget, "sessions" | "connection" | "confirmations">,
   session: Session,
   terminals: readonly TerminalID[],
-  scope: "pane" | "tab",
+  scope: CloseScope,
 ): Promise<void> {
   const { sessions, connection, confirmations } = target;
 
@@ -198,6 +202,16 @@ export async function closeTerminals(
 }
 
 /**
+ * The words each scope is asked in. A table rather than three ternaries: the
+ * message reads the noun, so the three spellings of one scope cannot disagree.
+ */
+const CLOSE_WORDS: Readonly<Record<CloseScope, { title: string; confirmLabel: string }>> = {
+  pane: { title: "Close this pane?", confirmLabel: "Close Pane" },
+  tab: { title: "Close this tab?", confirmLabel: "Close Tab" },
+  tabs: { title: "Close these tabs?", confirmLabel: "Close Tabs" },
+};
+
+/**
  * The confirmation's words: what is still running, and what ends if it goes.
  *
  * The one question in the application that offers "Don't ask again". Anyone who
@@ -208,16 +222,17 @@ export async function closeTerminals(
 function closingCost(
   session: Session,
   live: readonly TerminalID[],
-  scope: "pane" | "tab",
+  scope: CloseScope,
 ): ConfirmationRequest {
   const named = session.terminals.find((terminal) => terminal.id === live[0])?.title ?? "It";
+  const words = CLOSE_WORDS[scope];
   return {
-    title: scope === "pane" ? "Close this pane?" : "Close this tab?",
+    title: words.title,
     message:
       live.length === 1
         ? `${named} is still running. Closing the ${scope} ends it.`
         : `${live.length} terminals are still running. Closing the ${scope} ends them.`,
-    confirmLabel: scope === "pane" ? "Close Pane" : "Close Tab",
+    confirmLabel: words.confirmLabel,
     remember: "closeTerminals",
   };
 }

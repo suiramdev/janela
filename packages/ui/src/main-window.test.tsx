@@ -45,6 +45,7 @@ import {
 } from "./client-environment.tsx";
 import {
   resolveLocalLayout,
+  tabsInCloseScope,
   withFocusedTab,
   withFocusedTerminal,
   withFraction,
@@ -55,6 +56,7 @@ import {
   MainWindow,
   SessionDetail,
   attachPane,
+  closeQuestionScope,
   shouldStartOnAttach,
   tabTerminals,
 } from "./main-window.tsx";
@@ -1015,6 +1017,47 @@ describe("tabTerminals", () => {
     // is not a separate tab and must not survive its tab being thrown away.
     expect(tabTerminals(layout, 0)).toEqual([terminalID("t1"), terminalID("t2")]);
     expect(tabTerminals(layout, 1)).toEqual([]);
+  });
+});
+
+describe("tabsInCloseScope", () => {
+  test("each scope is the run of tabs its label names", () => {
+    expect(tabsInCloseScope(4, 1, "this")).toEqual([1]);
+    expect(tabsInCloseScope(4, 1, "others")).toEqual([0, 2, 3]);
+    expect(tabsInCloseScope(4, 1, "left")).toEqual([0]);
+    expect(tabsInCloseScope(4, 1, "right")).toEqual([2, 3]);
+    expect(tabsInCloseScope(4, 1, "all")).toEqual([0, 1, 2, 3]);
+  });
+
+  test("the ends name nothing on the side they have no tabs on", () => {
+    expect(tabsInCloseScope(3, 0, "left")).toEqual([]);
+    expect(tabsInCloseScope(3, 2, "right")).toEqual([]);
+    expect(tabsInCloseScope(1, 0, "others")).toEqual([]);
+  });
+
+  test("a tab the strip no longer has names nothing, and takes no neighbours with it", () => {
+    // The daemon owns the layout, so a terminal exiting anywhere renumbers the
+    // strip — including under a menu that is already open. Every scope but
+    // "all" is relative to a tab, and a stale index must close nothing rather
+    // than everything to one side of where that tab used to be.
+    for (const scope of ["this", "others", "left", "right"] as const) {
+      expect(tabsInCloseScope(2, 5, scope)).toEqual([]);
+      expect(tabsInCloseScope(2, -1, scope)).toEqual([]);
+    }
+    // "All" reads no index, so it still means every tab.
+    expect(tabsInCloseScope(2, 5, "all")).toEqual([0, 1]);
+  });
+});
+
+describe("closeQuestionScope", () => {
+  test("only the tab's own ✕ asks about this tab", () => {
+    // The gesture, not the count: "Close Other Tabs" beside one other tab asked
+    // "Close this tab?" once, which is a user agreeing to the opposite of what
+    // the row they picked does.
+    expect(closeQuestionScope("this")).toBe("tab");
+    for (const scope of ["others", "left", "right", "all"] as const) {
+      expect(closeQuestionScope(scope)).toBe("tabs");
+    }
   });
 });
 

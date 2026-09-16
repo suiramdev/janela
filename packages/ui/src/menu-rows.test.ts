@@ -160,20 +160,71 @@ describe("terminalMenuRows", () => {
   });
 });
 
+/** A tab's menu, recording what each row asks for. */
+function tabRows(
+  index: number,
+  tabCount: number,
+): { readonly rows: readonly MenuRow[]; readonly calls: string[] } {
+  const calls: string[] = [];
+  const rows = tabMenuRows({
+    newTerminal: () => calls.push("newTerminal"),
+    splitRight: () => calls.push("splitRight"),
+    splitDown: () => calls.push("splitDown"),
+    close: (scope) => calls.push(`close:${scope}`),
+    index,
+    tabCount,
+  });
+  return { rows, calls };
+}
+
 describe("tabMenuRows and windowMenuRows", () => {
   test("a tab's rows act on that tab", () => {
-    const calls: string[] = [];
-    const rows = tabMenuRows({
-      newTerminal: () => calls.push("newTerminal"),
-      splitRight: () => calls.push("splitRight"),
-      splitDown: () => calls.push("splitDown"),
-      closeTab: () => calls.push("closeTab"),
-    });
+    const { rows, calls } = tabRows(1, 3);
 
     for (const label of labels(rows)) row(rows, label).onSelect();
 
-    expect(calls).toEqual(["newTerminal", "splitRight", "splitDown", "closeTab"]);
-    expect(row(rows, "Close Tab").destructive).toBe(true);
+    expect(calls).toEqual([
+      "newTerminal",
+      "splitRight",
+      "splitDown",
+      "close:this",
+      "close:others",
+      "close:left",
+      "close:right",
+      "close:all",
+    ]);
+  });
+
+  test("every close is destructive: ending more must not look safer", () => {
+    const { rows } = tabRows(1, 3);
+
+    for (const closing of labels(rows).filter((each) => each.startsWith("Close"))) {
+      expect(row(rows, closing).destructive).toBe(true);
+    }
+  });
+
+  test("a middle tab of three can close either side, and the rest", () => {
+    const { rows } = tabRows(1, 3);
+
+    expect(row(rows, "Close Other Tabs").disabled).toBe(false);
+    expect(row(rows, "Close Tabs to the Left").disabled).toBe(false);
+    expect(row(rows, "Close Tabs to the Right").disabled).toBe(false);
+  });
+
+  test("a scope with nothing in it is dimmed, not missing", () => {
+    // Rows that came and went with the pointer's position could not be learned:
+    // the menu on the first tab has to be the same menu as on the last.
+    const first = tabRows(0, 2).rows;
+    const last = tabRows(1, 2).rows;
+    const only = tabRows(0, 1).rows;
+
+    expect(row(first, "Close Tabs to the Left").disabled).toBe(true);
+    expect(row(first, "Close Tabs to the Right").disabled).toBe(false);
+    expect(row(last, "Close Tabs to the Right").disabled).toBe(true);
+    expect(row(only, "Close Other Tabs").disabled).toBe(true);
+    // There is always this tab, so closing every tab is always something.
+    expect(row(only, "Close All Tabs").disabled).toBeUndefined();
+    expect(labels(only)).toEqual(labels(last));
   });
 
   test("the window's menu dispatches commands, and only the three that start something", () => {

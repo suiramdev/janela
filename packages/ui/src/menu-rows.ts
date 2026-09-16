@@ -1,4 +1,8 @@
 import {
+  ArrowLeftDoubleIcon,
+  ArrowRightDoubleIcon,
+  Cancel01Icon,
+  CancelCircleIcon,
   ClipboardPasteIcon,
   ComputerTerminal01Icon,
   Copy01Icon,
@@ -18,6 +22,7 @@ import { hugeicon } from "@janela/design";
 
 import type { CommandID } from "./commands.ts";
 import type { MenuRow } from "./context-menu-region.tsx";
+import type { TabCloseScope } from "./layout-edits.ts";
 import type { SidebarActions } from "./sidebar-actions.ts";
 
 /**
@@ -56,6 +61,13 @@ const ICON = {
   // picture of what it does to the pane.
   splitRight: hugeicon(LayoutTwoColumnIcon),
   splitDown: hugeicon(LayoutTwoRowIcon),
+  // The same ✕ the tab carries, for the row that does what the ✕ does; the
+  // arrows say which side of the pointed-at tab goes, which is the only thing
+  // the four bulk closes differ by.
+  closeTab: hugeicon(Cancel01Icon),
+  closeOthers: hugeicon(CancelCircleIcon),
+  closeLeft: hugeicon(ArrowLeftDoubleIcon),
+  closeRight: hugeicon(ArrowRightDoubleIcon),
 } as const;
 
 /** A project row in the sidebar. */
@@ -235,10 +247,30 @@ export interface TabMenuTarget {
   readonly newTerminal: () => void;
   readonly splitRight: () => void;
   readonly splitDown: () => void;
-  readonly closeTab: () => void;
+  /** Closes the tabs a scope names, this one included when it names it. */
+  readonly close: (scope: TabCloseScope) => void;
+  /** Where this tab sits in the strip, and how long the strip is. */
+  readonly index: number;
+  readonly tabCount: number;
 }
 
+/**
+ * A tab in the strip.
+ *
+ * The five closes are the reason this menu is worth opening on a tab you are
+ * not in: the ✕ closes one, and everything else — the rest, one side, all of
+ * them — is a gesture that would otherwise be a click per tab. They are one
+ * section because they do one thing in five sizes, and all five are marked
+ * destructive: a row that ends *more* programs must not look safer than the one
+ * above it.
+ *
+ * Availability is arithmetic, and dimmed rather than hidden: a menu whose rows
+ * move depending on where in the strip you clicked cannot be learned. The left
+ * and right rows are unavailable at the ends, "others" with nothing else open,
+ * and closing every tab is always possible because there is always this one.
+ */
 export function tabMenuRows(target: TabMenuTarget): readonly MenuRow[] {
+  const { close, index, tabCount } = target;
   return [
     {
       kind: "item",
@@ -252,9 +284,40 @@ export function tabMenuRows(target: TabMenuTarget): readonly MenuRow[] {
     {
       kind: "item",
       label: "Close Tab",
+      icon: ICON.closeTab,
+      destructive: true,
+      onSelect: () => close("this"),
+    },
+    {
+      kind: "item",
+      label: "Close Other Tabs",
+      icon: ICON.closeOthers,
+      destructive: true,
+      disabled: tabCount <= 1,
+      onSelect: () => close("others"),
+    },
+    {
+      kind: "item",
+      label: "Close Tabs to the Left",
+      icon: ICON.closeLeft,
+      destructive: true,
+      disabled: index <= 0,
+      onSelect: () => close("left"),
+    },
+    {
+      kind: "item",
+      label: "Close Tabs to the Right",
+      icon: ICON.closeRight,
+      destructive: true,
+      disabled: index >= tabCount - 1,
+      onSelect: () => close("right"),
+    },
+    {
+      kind: "item",
+      label: "Close All Tabs",
       icon: ICON.remove,
       destructive: true,
-      onSelect: target.closeTab,
+      onSelect: () => close("all"),
     },
   ];
 }

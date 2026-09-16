@@ -132,3 +132,41 @@ export function withFocusedTab(layout: SessionLayout, index: number): SessionLay
   const clamped = Math.min(layout.tabs.length - 1, Math.max(0, Math.trunc(index)));
   return clamped === layout.focusedTabIndex ? layout : { ...layout, focusedTabIndex: clamped };
 }
+
+/**
+ * Which tabs a close names, relative to the one the menu was opened on.
+ *
+ * `"this"` is the tab's own ✕; the other four are the strip's context menu. They
+ * differ only in which run of indices they mean, so the arithmetic is one
+ * function with a test rather than four handlers each deciding what "to the
+ * left" is.
+ *
+ * Indices come back in strip order, and one the layout does not have names
+ * nothing: the daemon owns the layout, so a terminal exiting anywhere can
+ * renumber the strip under a menu that is already open.
+ */
+export type TabCloseScope = "this" | "others" | "left" | "right" | "all";
+
+const NO_TABS: readonly number[] = [];
+
+export function tabsInCloseScope(
+  count: number,
+  index: number,
+  scope: TabCloseScope,
+): readonly number[] {
+  const every = Array.from({ length: Math.max(0, count) }, (_, at) => at);
+  // "All" is the one scope that does not read the tab it was opened on, so it
+  // still means every tab when that tab has just gone.
+  if (scope === "all") return every;
+  if (index < 0 || index >= count) return NO_TABS;
+  switch (scope) {
+    case "this":
+      return [index];
+    case "others":
+      return every.filter((at) => at !== index);
+    case "left":
+      return every.slice(0, index);
+    case "right":
+      return every.slice(index + 1);
+  }
+}

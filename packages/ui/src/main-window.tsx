@@ -71,6 +71,7 @@ import {
   createCommandDispatch,
   createTerminal,
   splitTerminal,
+  type CloseScope,
 } from "./command-dispatch.ts";
 import type { CommandID } from "./commands.ts";
 import { ConfirmationHost } from "./confirmation-dialog.tsx";
@@ -78,10 +79,12 @@ import { ConnectionBanner } from "./connection-banner.tsx";
 import { ContextMenuRegion, type MenuRow } from "./context-menu-region.tsx";
 import {
   resolveLocalLayout,
+  tabsInCloseScope,
   withFocusedTab,
   withFocusedTerminal,
   withSplitFraction,
   type PanePath,
+  type TabCloseScope,
 } from "./layout-edits.ts";
 import { tabMenuRows, terminalMenuRows, windowMenuRows } from "./menu-rows.ts";
 import { SettingsScreen } from "./settings-window.tsx";
@@ -339,6 +342,18 @@ export function tabTerminals(layout: SessionLayout, index: number): readonly Ter
 const NO_TERMINAL_IDS: readonly TerminalID[] = [];
 
 /**
+ * Which noun the confirmation asks in.
+ *
+ * The *gesture*, never the count: "Close Other Tabs" that happens to name one
+ * tab must still ask about tabs, because "Close this tab?" over a menu row that
+ * said "other" reads as the tab under the pointer — and that is a user agreeing
+ * to the opposite of what happens.
+ */
+export function closeQuestionScope(scope: TabCloseScope): CloseScope {
+  return scope === "this" ? "tab" : "tabs";
+}
+
+/**
  * A terminal's state, as words.
  *
  * An absent state reads as idle, which is what the daemon's `idle` means:
@@ -454,15 +469,18 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
     },
     [connection, sessionID],
   );
-  const closeTab = useCallback(
-    (index: number) => {
-      const closing = tabTerminals(layout, index);
+  const closeTabs = useCallback(
+    (index: number, scope: TabCloseScope) => {
+      const indices = tabsInCloseScope(layout.tabs.length, index, scope);
+      const closing = indices.flatMap((at) => tabTerminals(layout, at));
       if (session === undefined || closing.length === 0) return;
       void closeTerminals(
         { sessions: environment.sessions, connection, confirmations },
         session,
         closing,
-        "tab",
+        // One question for the whole gesture, and one round of removals: a
+        // question per tab is how a user agrees to something they did not read.
+        closeQuestionScope(scope),
       ).catch(swallowRequestFailure);
     },
     [confirmations, connection, environment.sessions, layout, session],
@@ -521,7 +539,7 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
           onNewTerminal={newTerminal}
           onSplitTab={splitTab}
           onMoveTab={moveTab}
-          onCloseTab={closeTab}
+          onCloseTabs={closeTabs}
         />
       )}
       <div className={PANE_REGION}>
@@ -582,9 +600,10 @@ function TabStrip(props: {
   readonly onNewTerminal: () => void;
   readonly onSplitTab: (index: number, axis: Axis) => void;
   readonly onMoveTab: (from: number, to: number) => void;
-  readonly onCloseTab: (index: number) => void;
+  readonly onCloseTabs: (index: number, scope: TabCloseScope) => void;
 }): ReactElement {
-  const { layout, terminals, onFocusTab, onNewTerminal, onSplitTab, onMoveTab, onCloseTab } = props;
+  const { layout, terminals, onFocusTab, onNewTerminal, onSplitTab, onMoveTab, onCloseTabs } =
+    props;
 
   // The tab primitive's value is a string; this strip's is an index into
   // `layout.tabs`, which is what every layout edit is written in terms of.
@@ -649,12 +668,13 @@ function TabStrip(props: {
             <TabItem
               key={tab.focusedTerminalID}
               index={index}
+              tabCount={layout.tabs.length}
               label={tabLabel(tab, terminals)}
               drag={drag}
               onDrag={setDrag}
               onDrop={onMoveTab}
               onDragEnd={endDrag}
-              onClose={onCloseTab}
+              onClose={onCloseTabs}
               onNewTerminal={onNewTerminal}
               onSplit={onSplitTab}
             />
@@ -713,20 +733,39 @@ export function dropSlot(
 
 function TabItem(props: {
   readonly index: number;
+  readonly tabCount: number;
   readonly label: string;
   readonly drag: TabDrag | undefined;
   readonly onDrag: (drag: TabDrag | undefined) => void;
   readonly onDrop: (from: number, to: number) => void;
   readonly onDragEnd: () => void;
-  readonly onClose: (index: number) => void;
+  readonly onClose: (index: number, scope: TabCloseScope) => void;
   readonly onNewTerminal: () => void;
   readonly onSplit: (index: number, axis: Axis) => void;
 }): ReactElement {
-  const { index, label, drag, onDrag, onDrop, onDragEnd, onClose, onNewTerminal, onSplit } = props;
+  const {
+    index,
+    tabCount,
+    label,
+    drag,
+    onDrag,
+    onDrop,
+    onDragEnd,
+    onClose,
+    onNewTerminal,
+    onSplit,
+  } = props;
 
+  const close = useCallback(
+    (scope: TabCloseScope) => {
+      onClose(index, scope);
+    },
+    [index, onClose],
+  );
+  // The ✕ is one of the menu's five scopes, not a second way to close a tab.
   const handleClose = useCallback(() => {
-    onClose(index);
-  }, [index, onClose]);
+    close("this");
+  }, [close]);
 
   // Every row names *this* tab, which is the point: the strip's own buttons act
   // on the tab showing, and this is the one that was pointed at.
@@ -737,8 +776,9 @@ function TabItem(props: {
     onSplit(index, "vertical");
   }, [index, onSplit]);
   const menuRows = useMemo(
-    () => tabMenuRows({ newTerminal: onNewTerminal, splitRight, splitDown, closeTab: handleClose }),
-    [handleClose, onNewTerminal, splitDown, splitRight],
+    () =>
+      tabMenuRows({ newTerminal: onNewTerminal, splitRight, splitDown, close, index, tabCount }),
+    [close, index, onNewTerminal, splitDown, splitRight, tabCount],
   );
 
   const handleDragStart = useCallback(
