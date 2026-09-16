@@ -9,10 +9,13 @@ import {
   reportedAvailable,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
+  DEFAULT_GLOBAL_SETTINGS,
   EMPTY_SETTINGS_DRAFT,
+  type GlobalSettings,
   type ProfileDraft,
   type SettingsDraft,
   profileDraft,
+  withDefaultProfileID,
   withDraftProfile,
   withoutDraftProfile,
 } from "../../../shared/model/index.ts";
@@ -63,16 +66,55 @@ function listMarkup(
   profiles: readonly LaunchProfile[],
   availability: LaunchProfileAvailability,
   draft: SettingsDraft = EMPTY_SETTINGS_DRAFT,
+  settings: GlobalSettings = DEFAULT_GLOBAL_SETTINGS,
 ): string {
   return renderToStaticMarkup(
     <SettingsProfiles
       profiles={profiles}
       availability={availability}
+      settings={settings}
+      onChangeSettings={noop}
       draft={draft}
       onChangeDraft={noop}
     />,
   );
 }
+
+describe("the global default", () => {
+  test("is chosen on this pane, beside the profiles it chooses from", () => {
+    const markup = listMarkup(SHELL_AND_AGENT, SHELL_AND_AGENT_AVAILABLE);
+
+    expect(markup).toContain("Default launch profile");
+    expect(markup).toContain("Your login shell");
+    expect(markup).toContain("Claude Code");
+    expect(markup).toContain("choice always wins");
+  });
+
+  test("marks the chosen profile in the list, and only that one", () => {
+    const chosen = withDefaultProfileID(DEFAULT_GLOBAL_SETTINGS, AGENT.id);
+    const markup = listMarkup(
+      SHELL_AND_AGENT,
+      SHELL_AND_AGENT_AVAILABLE,
+      EMPTY_SETTINGS_DRAFT,
+      chosen,
+    );
+
+    expect([...markup.matchAll(/>Default</g)]).toHaveLength(1);
+    expect(markup.indexOf(">Default<")).toBeGreaterThan(markup.indexOf("Claude Code"));
+  });
+
+  test("is unmarked while nothing is chosen", () => {
+    expect(listMarkup(SHELL_AND_AGENT, SHELL_AND_AGENT_AVAILABLE)).not.toContain(">Default<");
+  });
+
+  test("cannot be set to a profile that is not on PATH", () => {
+    const markup = listMarkup(SHELL_AND_MISSING, SHELL_AVAILABLE);
+    const picker = /<select[^>]*>(?<options>.*?)<\/select>/su.exec(markup)?.groups?.["options"];
+
+    expect(picker).toBeDefined();
+    expect(picker).not.toContain("OpenCode");
+  });
+});
 
 describe("the profile list", () => {
   test("shows an unavailable profile, and says why it is hidden elsewhere", () => {

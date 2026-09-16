@@ -110,7 +110,7 @@ describe("the settings screen's slot", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
     environment.view.openSheet({ kind: "commands" });
     const workspace = draw(environment);
-    environment.view.showSettings({ kind: "tab", tab: "general" });
+    environment.view.showSettings({ kind: "tab", tab: "terminal" });
     const settings = draw(environment);
 
     expect(settings).toContain('data-slot="settings-stub"');

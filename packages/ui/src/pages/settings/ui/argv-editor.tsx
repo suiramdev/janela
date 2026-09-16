@@ -13,7 +13,7 @@ import type { ChangeEvent, ReactElement } from "react";
 import { useCallback, useId } from "react";
 
 import { type ArgumentDraft, argumentsAppending } from "../../../shared/model/index.ts";
-import { Section } from "./fields.tsx";
+import { FieldSection } from "./fields.tsx";
 
 export interface ArgumentsEditorProps {
   readonly drafts: readonly ArgumentDraft[];
@@ -44,7 +44,7 @@ export function ArgumentsEditor(props: ArgumentsEditorProps): ReactElement {
   }, [drafts, onChange]);
 
   return (
-    <Section title={props.title} hint={props.hint}>
+    <FieldSection title={props.title} hint={props.hint}>
       {drafts.map((draft, index) => (
         <ArgumentRow
           key={draft.id}
@@ -60,7 +60,7 @@ export function ArgumentsEditor(props: ArgumentsEditorProps): ReactElement {
           Add Argument
         </Button>
       </div>
-    </Section>
+    </FieldSection>
   );
 }
 

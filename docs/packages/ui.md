@@ -631,11 +631,41 @@ positional shape is deliberate — a sidebar test reads better as
   knowing to right-click a row. So a project is a **route**, not a fifth tab: tabs are
   fixed data, projects are the mirror's list, and the sidebar's *Project Settings* row
   became a link to somewhere rather than a second editor.
+- **One subject per pane, and no General.** The panes are Terminal, Launch profiles,
+  Notifications and Daemon. There was a *General* holding three unrelated things — a
+  new-terminal default, a confirmation preference, and the controls that stop the
+  daemon and close the user's terminals — which is what a pane named after nothing
+  always becomes, and it put the most destructive surface in the product behind the
+  blandest label. Each of its three went to the pane that owns the subject: the
+  default to Launch profiles beside the list it picks from, the confirmation to
+  Terminal beside the thing it guards, the daemon to its own pane. A *Confirmations*
+  bucket was the alternative and was rejected: a question about closing a terminal is
+  findable under Terminal and not under a word the user has to guess. A second
+  silenceable question therefore goes beside *its* subject too.
+- **The sections are data, not markup.** `model/settings-index.ts` holds every pane,
+  its description, its sections and their field labels; the panes render from it and
+  the sidebar's search reads it. A table nothing renders drifts, so a test renders
+  each pane and asserts every advertised section title, field label and anchor is
+  really on it. `keywords` is the half that is deliberately *not* rendered: the words
+  a user types ("unregister", "hook", "janelad") are not always the words the product
+  says, and a match on one shows the section's own title rather than the keyword —
+  otherwise search would teach vocabulary the UI has retired.
+- **Search, because reading the sidebar is not finding.** Four panes and a row per
+  project is already more than the eye scans, and a project pane holds seven sections.
+  The results are one row per *pane*, not one per match: that keeps the list short,
+  keeps the `tablist` exactly as long as the number of panes it can reach, and leaves
+  every row a real tab with a unique id. The row says which pane and which section
+  matched, and picking it scrolls that section to the top and rings it for 1.4s —
+  a settings search that only opens the right pane has answered half the question.
+  Reveal is component state, not a route field: it is a one-shot gesture, and putting
+  it in `SettingsRoute` would make `sameRoute` lie and skip the scroll when the pane
+  was already showing.
 - The tabs are data for the same reason `COMMANDS` is: the navigation and anything
-  that opens a specific tab read one table.
+  that opens a specific tab read one table. Icons are the one thing the view adds —
+  copy is data, glyphs are presentation.
 - A real `tablist` across both groups, so a screen reader hears "tab, 5 of 6" and the
-  arrow keys are one sequence; the heading between the groups is a `presentation`
-  label inside the list rather than a row in it.
+  arrow keys are one sequence; the group headings are `presentation` labels inside
+  the list rather than rows in it.
 - **The sidebar primitive moves the keyboard.** It already rovers focus in DOM order
   and stops the event, so a second handler fights it — a hand-rolled one shipped in
   the first draft and the two disagreed the moment focus and selection were on
@@ -651,11 +681,24 @@ positional shape is deliberate — a sidebar test reads better as
   as *those* projects. Row glyphs and `NavRow`s are built once, because a component
   type made per render remounts the icon on every keystroke elsewhere in the window.
 - The pane is keyed by project, so switching rows opens the next form from the top. A
-  project the mirror no longer has renders nothing and sends navigation back to
-  General — derived rather than written back, because a store write during render
+  project the mirror no longer has renders nothing and sends navigation back to the
+  first pane — derived rather than written back, because a store write during render
   notifies subscribers mid-render.
-- The project pane reads the *draft's* profiles, so a profile renamed on the Profiles
-  tab reads the same here before either is saved.
+- The project pane reads the *draft's* profiles, so a profile renamed on Launch
+  profiles reads the same here before either is saved.
+- **Every pane is headed the same way**, by `PaneHeader`: title, then the directory
+  when it is a project, then one line saying what the pane is for. The project pane
+  used to build its own heading and the tab panes another, which is how the two
+  drifted into different type sizes; and the panel is now labelled by that heading
+  rather than by the selected row, so filtering the sidebar cannot leave
+  `aria-labelledby` pointing at a row that is no longer rendered.
+- **Sections are cards, groups are headings.** A section is `Elevated offset={1}` with
+  its legend inside, so grouping is carried by surface and shadow rather than by a
+  border whose only job was depth. Automation needed a third level — three event
+  sections that are siblings, not children — so `PaneGroup` is a heading with its own
+  explanation above a run of cards, instead of the card-inside-a-card the old nesting
+  produced. `FieldSection` is the flat fieldset that remains for a form *inside* a
+  card: the profile editor's Icon, Command and Environment blocks.
 - **The commit bar** is always visible: one that appears when something is dirty moves
   the content as the user types and hides that the screen has a commit model at all.
   At rest it is quiet; dirty, it says how many changes it would write, because with one
@@ -670,14 +713,20 @@ positional shape is deliberate — a sidebar test reads better as
   copy.
 - The Save bar is a sibling of the scroller, because it commits every tab's edits.
 
-### `ui/general-settings.tsx`
+### `ui/daemon-settings.tsx`
 
-- The service controls live here rather than in a menu because stopping the daemon
-  closes the user's terminals, and a destructive action behind a keyboard shortcut is
-  one that will be hit by accident. Settings is where you go on purpose.
-- Every "Don't ask again" needs a row in Confirmations or it is a one-way door: the
-  checkbox is ticked in the moment of wanting the dialog gone, and the place it is
-  regretted is Settings.
+- The daemon's controls live here rather than in a menu because stopping it closes the
+  user's terminals, and a destructive action behind a keyboard shortcut is one that
+  will be hit by accident. Settings is where you go on purpose. It is its own pane
+  rather than a paragraph under something blander, because the pane's name is the only
+  warning a user gets before reading it.
+- **It is called the daemon.** The copy said *Background Service*, which is a macOS
+  noun for the launchd registration, not our noun for `janelad` — and the vocabulary
+  table in `AGENTS.md` retires "service" precisely so one thing has one name. Login
+  Items & Extensions is still named where it is what the user must go and click.
+- Two cards, because the pane answers two questions: *Running now* states what would
+  be lost, *Stopping it* offers the two ways to lose it. One card mixing state with
+  destructive buttons reads as if the sentence were a label for them.
 - Neither service control acts on its first press: pressing one shows the cost from
   the mirror, and a second, differently-labelled button performs it.
 - `ServiceCostConfirmation` is exported because the version-skew banner owes the user
@@ -688,9 +737,12 @@ positional shape is deliberate — a sidebar test reads better as
 
 ### `ui/terminal-settings.tsx`
 
-One setting, deliberately: colours come from the appearance the system declares, size
-comes from the window, behaviour belongs to the program. The font is the one thing a
-developer has an opinion about that we cannot infer.
+Two sections: the font, and the question asked before a running terminal is closed.
+Colours come from the appearance the system declares, size comes from the window, and
+behaviour belongs to the program — so the font is the one thing a developer has an
+opinion about that we cannot infer. The confirmation is here rather than in a
+*Confirmations* list because `closeTerminals` is a question about a terminal, and the
+place a silenced dialog is regretted is the pane named after the thing it guarded.
 
 - Both fields reach every attached terminal through `TerminalPane`, which reads
   `view.settings` and hands the surface a `TerminalFont`. A save re-applies the font
@@ -998,9 +1050,9 @@ Everything here is this window's view of the mirror; none of it is on the wire, 
 session **selection** stays on `SessionStore`, where the sidebar already reads it.
 
 - Settings is a screen because a modal would leave the user reading settings through a
-  scrim, and the navigation it needs — four tabs *and* a row per project — has no room in
-  a dialog. A project is a route rather than a fifth tab because there are as many as the
-  user has added.
+  scrim, and the navigation it needs — a search field, four panes *and* a row per
+  project — has no room in a dialog. A project is a route rather than a fifth pane
+  because there are as many as the user has added.
 - `applyLayout` reads the mirror at the moment of the edit, not from a render: an edit
   applies to the layout on screen now.
 - `focusTerminal` on an unknown id does nothing and notifies nobody, because a

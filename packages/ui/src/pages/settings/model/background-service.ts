@@ -26,12 +26,12 @@ export interface ServiceControlOutcome {
 }
 
 export const SERVICE_REQUEST_TITLE = {
-  stop: "Stop Background Service",
+  stop: "Stop the Daemon",
   stopAndUnregister: "Stop and Unregister",
 } satisfies Record<ServiceRequest, string>;
 
 export const SERVICE_CONFIRM_TITLE = {
-  stop: "Stop the service",
+  stop: "Stop the daemon",
   stopAndUnregister: "Stop and unregister",
 } satisfies Record<ServiceRequest, string>;
 
@@ -92,7 +92,7 @@ export function serviceRequestCost(request: ServiceRequest, cost: ServiceStopCos
     return `${closing} Your sessions are kept and reopen idle next time.`;
   }
 
-  return `${closing} Janela will also stop starting the service automatically, so terminals will not survive closing the window until you turn it back on in Login Items & Extensions.`;
+  return `${closing} Janela will also stop starting the daemon automatically, so terminals will not survive closing the window until you turn it back on in Login Items & Extensions.`;
 }
 
 export function serviceControlReducer(

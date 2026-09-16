@@ -170,7 +170,7 @@ What this pass costs, and what you are promising to undo:
   are already there; record them first (`sqlite3 … 'select id,name from Session'`)
   so you can tell yours from theirs, and remove only yours afterwards.
 
-To undo it: **Settings > General > Background service > Stop and Unregister**, and
+To undo it: **Settings > Daemon > Stopping it > Stop and Unregister**, and
 confirm. Then verify — do not assume the call succeeded:
 
 ```bash

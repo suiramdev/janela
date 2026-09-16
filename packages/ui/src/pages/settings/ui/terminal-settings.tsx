@@ -4,11 +4,15 @@ import { useCallback } from "react";
 
 import {
   type GlobalSettings,
+  isConfirmationSilenced,
   TERMINAL_FONT_SIZE_BOUNDS,
+  withSilencedConfirmation,
   withTerminalFontFamily,
   withTerminalFontSize,
 } from "../../../shared/model/index.ts";
-import { NumberField, Section, TextField } from "./fields.tsx";
+import { TERMINAL_CLOSING_SECTION, TERMINAL_FONT_SECTION } from "../model/settings-index.ts";
+import { NumberField, SwitchField, TextField } from "./fields.tsx";
+import { Section } from "./pane.tsx";
 
 export interface SettingsTerminalProps {
   readonly settings: GlobalSettings;
@@ -32,9 +36,16 @@ export function SettingsTerminal(props: SettingsTerminalProps): ReactElement {
     [onChange, settings],
   );
 
+  const changeAsksBeforeClosing = useCallback(
+    (asks: boolean) => {
+      onChange(withSilencedConfirmation(settings, "closeTerminals", !asks));
+    },
+    [onChange, settings],
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <Section title="Font">
+    <>
+      <Section section={TERMINAL_FONT_SECTION}>
         <TextField
           label="Font family"
           value={settings.terminalFontFamily ?? ""}
@@ -52,6 +63,15 @@ export function SettingsTerminal(props: SettingsTerminalProps): ReactElement {
           hint="Changing this re-measures the cell, which resizes every attached terminal's grid."
         />
       </Section>
-    </div>
+
+      <Section section={TERMINAL_CLOSING_SECTION}>
+        <SwitchField
+          label="Ask before closing a running terminal"
+          isOn={!isConfirmationSilenced(settings, "closeTerminals")}
+          onChange={changeAsksBeforeClosing}
+          hint="Idle and finished terminals never ask. Turning this off is the same as ticking Don't ask again in the dialog."
+        />
+      </Section>
+    </>
   );
 }

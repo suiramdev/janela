@@ -17,7 +17,7 @@ export type Sheet =
   | { readonly kind: "commands" }
   | { readonly kind: "newSession"; readonly projectID?: ProjectID };
 
-export type SettingsTabID = "general" | "terminal" | "profiles" | "notifications";
+export type SettingsTabID = "terminal" | "profiles" | "notifications" | "daemon";
 
 export type SettingsRoute =
   | { readonly kind: "tab"; readonly tab: SettingsTabID }
@@ -65,7 +65,7 @@ const NO_LAYOUTS: ReadonlyMap<SessionID, LocalLayoutEntry> = new Map<SessionID, 
 
 const WORKSPACE: Screen = { kind: "workspace" };
 
-const GENERAL: SettingsRoute = { kind: "tab", tab: "general" };
+const FIRST_TAB: SettingsRoute = { kind: "tab", tab: "terminal" };
 
 export function sameRoute(left: SettingsRoute, right: SettingsRoute): boolean {
   return left.kind === "tab"
@@ -184,7 +184,7 @@ export function createViewState(sessions: SessionStore): ViewState {
     },
 
     showSettings(route: SettingsRoute | undefined): void {
-      const next = route ?? (screen.kind === "settings" ? screen.route : GENERAL);
+      const next = route ?? (screen.kind === "settings" ? screen.route : FIRST_TAB);
 
       if (screen.kind === "settings" && sameRoute(screen.route, next)) return;
 

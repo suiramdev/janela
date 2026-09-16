@@ -172,7 +172,7 @@ describe("sheets", () => {
 });
 
 describe("screens", () => {
-  test("settings opens on General, keeps its route when asked again, and goes back", () => {
+  test("settings opens on Terminal, keeps its route when asked again, and goes back", () => {
     const view = createViewState(fakeStore([]));
     let notifications = 0;
     view.subscribe(() => {
@@ -183,18 +183,18 @@ describe("screens", () => {
 
     view.showSettings();
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "general" } });
-
-    view.showSettings({ kind: "tab", tab: "terminal" });
-
     expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
+
+    view.showSettings({ kind: "tab", tab: "daemon" });
+
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "daemon" } });
 
     view.showSettings();
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "daemon" } });
 
     const settled = notifications;
-    view.showSettings({ kind: "tab", tab: "terminal" });
+    view.showSettings({ kind: "tab", tab: "daemon" });
 
     expect(notifications).toBe(settled);
 
@@ -227,14 +227,14 @@ describe("screens", () => {
   });
 
   test("two routes are the same route only when they name the same pane", () => {
-    const general = { kind: "tab", tab: "general" } as const;
+    const terminal = { kind: "tab", tab: "terminal" } as const;
     const project = { kind: "project", projectID: projectID("p") } as const;
 
-    expect(sameRoute(general, { kind: "tab", tab: "general" })).toBe(true);
-    expect(sameRoute(general, { kind: "tab", tab: "terminal" })).toBe(false);
+    expect(sameRoute(terminal, { kind: "tab", tab: "terminal" })).toBe(true);
+    expect(sameRoute(terminal, { kind: "tab", tab: "daemon" })).toBe(false);
     expect(sameRoute(project, { kind: "project", projectID: projectID("p") })).toBe(true);
     expect(sameRoute(project, { kind: "project", projectID: projectID("q") })).toBe(false);
-    expect(sameRoute(general, project)).toBe(false);
+    expect(sameRoute(terminal, project)).toBe(false);
   });
 });
 

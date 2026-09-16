@@ -11,15 +11,12 @@ import type {
   ProjectSettings,
 } from "@janela/core";
 import { absolutePath, AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
-import { Button, ButtonGroup, Empty, EmptyDescription, EmptyHeader, Item } from "@janela/design";
+import { Button, ButtonGroup, FieldDescription, Item } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import { type ArgumentDraft, argumentDrafts, argvOf } from "../../../shared/model/index.ts";
-import { PANE_COLUMN } from "../../../shared/ui/index.ts";
 import {
-  AUTOMATION_EVENT_HINT,
-  AUTOMATION_EVENT_TITLE,
   automationAppending,
   automationMoving,
   automationRemoving,
@@ -28,15 +25,15 @@ import {
   commandsForEvent,
   usesTimeout,
 } from "../model/automation-commands.ts";
-import { ArgumentsEditor } from "./argv-editor.tsx";
 import {
-  NumberField,
-  ProfileSelect,
-  Section,
-  SwitchField,
-  TextField,
-  Violations,
-} from "./fields.tsx";
+  AUTOMATION_SECTION,
+  PROJECT_AUTOMATION_SECTION,
+  PROJECT_SESSIONS_SECTION,
+  PROJECT_WORKTREES_SECTION,
+} from "../model/settings-index.ts";
+import { ArgumentsEditor } from "./argv-editor.tsx";
+import { NumberField, ProfileSelect, SwitchField, TextField, Violations } from "./fields.tsx";
+import { PaneGroup, Section } from "./pane.tsx";
 
 export interface ProjectSettingsPaneProps {
   readonly project: Project;
@@ -111,65 +108,57 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
   const violations = settings.automation.flatMap((command) => automationViolations(command));
 
   return (
-    <div className={PANE_COLUMN}>
-      <h2 className="text-base font-semibold">{project.name}</h2>
-      <p className="text-muted-foreground mt-0.5 truncate font-mono text-xs">{project.directory}</p>
-      <div className="mt-5 flex flex-col gap-6">
-        <Section title="General">
-          <ProfileSelect
-            label="Default launch profile"
-            profiles={props.profiles}
-            availability={props.availability}
-            value={settings.defaultProfileID}
-            onChange={changeDefaultProfile}
-            unsetTitle="Use the global default"
-            hint="What this project's new sessions start in."
-          />
+    <>
+      <Section section={PROJECT_SESSIONS_SECTION}>
+        <ProfileSelect
+          label="Default launch profile"
+          profiles={props.profiles}
+          availability={props.availability}
+          value={settings.defaultProfileID}
+          onChange={changeDefaultProfile}
+          unsetTitle="Use the global default"
+          hint="What this project's new sessions start in."
+        />
+        <SwitchField
+          label="Read pull request and check state"
+          isOn={settings.isForgeEnabled}
+          onChange={changeForge}
+          hint="Uses your own gh or glab. A missing or logged-out CLI means this is quietly absent, never an error."
+        />
+      </Section>
+
+      {supportsWorktrees(project) ? (
+        <Section section={PROJECT_WORKTREES_SECTION}>
           <SwitchField
-            label="Read pull request and check state"
-            isOn={settings.isForgeEnabled}
-            onChange={changeForge}
-            hint="Uses your own gh or glab. A missing or logged-out CLI means this is quietly absent, never an error."
+            label="Use a directory I choose"
+            isOn={settings.worktreeRoot.kind === "custom"}
+            onChange={changeCustomRoot}
+            hint="Off puts them in .worktrees beside the repository, which keeps relative paths short — build tools embed them."
           />
-        </Section>
-
-        {supportsWorktrees(project) ? (
-          <Section title="Worktrees" hint="Where sessions cut from a branch are created.">
-            <SwitchField
-              label="Use a directory I choose"
-              isOn={settings.worktreeRoot.kind === "custom"}
-              onChange={changeCustomRoot}
-              hint="Off puts them in .worktrees beside the repository, which keeps relative paths short — build tools embed them."
+          {settings.worktreeRoot.kind === "custom" ? (
+            <TextField
+              label="Worktree directory"
+              value={settings.worktreeRoot.directory}
+              onChange={changeRootPath}
+              isMonospaced
+              hint="Must be an absolute path."
             />
-            {settings.worktreeRoot.kind === "custom" ? (
-              <TextField
-                label="Worktree directory"
-                value={settings.worktreeRoot.directory}
-                onChange={changeRootPath}
-                isMonospaced
-                hint="Must be an absolute path."
-              />
-            ) : undefined}
-          </Section>
-        ) : undefined}
-
-        <Section
-          title="Automation"
-          hint="Commands Janela runs for you, each in a real terminal in the session you can watch and interrupt. They are stored here and never read from the repository."
-        >
-          {AUTOMATION_EVENTS.map((event) => (
-            <AutomationEventSection
-              key={event}
-              event={event}
-              commands={settings.automation}
-              onChange={changeCommands}
-            />
-          ))}
+          ) : undefined}
         </Section>
+      ) : undefined}
 
+      <PaneGroup section={PROJECT_AUTOMATION_SECTION}>
+        {AUTOMATION_EVENTS.map((event) => (
+          <AutomationEventSection
+            key={event}
+            event={event}
+            commands={settings.automation}
+            onChange={changeCommands}
+          />
+        ))}
         <Violations violations={violations} />
-      </div>
-    </div>
+      </PaneGroup>
+    </>
   );
 }
 
@@ -207,14 +196,8 @@ function AutomationEventSection(props: {
   );
 
   return (
-    <Section title={AUTOMATION_EVENT_TITLE[event]} hint={AUTOMATION_EVENT_HINT[event]}>
-      {forEvent.length === 0 ? (
-        <Empty className="p-4">
-          <EmptyHeader>
-            <EmptyDescription>Nothing runs.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : undefined}
+    <Section section={AUTOMATION_SECTION[event]}>
+      {forEvent.length === 0 ? <FieldDescription>Nothing runs.</FieldDescription> : undefined}
       {forEvent.map((command) => (
         <AutomationCommandEditor
           key={command.id}

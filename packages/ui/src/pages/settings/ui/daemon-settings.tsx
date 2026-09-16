@@ -1,22 +1,18 @@
-import type {
-  LaunchProfile,
-  LaunchProfileAvailability,
-  LaunchProfileID,
-  Session,
-  TerminalID,
-  TerminalState,
-} from "@janela/core";
-import { Alert, AlertDescription, AlertTitle, Button, FieldDescription } from "@janela/design";
+import type { Session, TerminalID, TerminalState } from "@janela/core";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  FieldDescription,
+  Item,
+  ItemContent,
+  ItemTitle,
+} from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useState } from "react";
 
-import {
-  type BackgroundServiceControlling,
-  type GlobalSettings,
-  isConfirmationSilenced,
-  withDefaultProfileID,
-  withSilencedConfirmation,
-} from "../../../shared/model/index.ts";
+import type { BackgroundServiceControlling } from "../../../shared/model/index.ts";
 import {
   NO_SERVICE_CONFIRMATION,
   SERVICE_CONFIRM_TITLE,
@@ -28,67 +24,35 @@ import {
   serviceRequestCost,
   serviceStopCost,
 } from "../model/background-service.ts";
-import { ProfileSelect, Section, SwitchField } from "./fields.tsx";
+import { DAEMON_STATE_SECTION, DAEMON_STOP_SECTION } from "../model/settings-index.ts";
+import { Section } from "./pane.tsx";
 
-export interface SettingsGeneralProps {
-  readonly settings: GlobalSettings;
-  readonly onChange: (settings: GlobalSettings) => void;
-  readonly profiles: readonly LaunchProfile[];
-  readonly availability: LaunchProfileAvailability;
+export interface SettingsDaemonProps {
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
 }
 
-export function SettingsGeneral(props: SettingsGeneralProps): ReactElement {
-  const { settings, onChange, service } = props;
+export function SettingsDaemon(props: SettingsDaemonProps): ReactElement {
+  const { service } = props;
   const cost = serviceStopCost(props.sessions, props.terminalStates);
 
-  const changeDefaultProfile = useCallback(
-    (profileID: LaunchProfileID | undefined) => {
-      onChange(withDefaultProfileID(settings, profileID));
-    },
-    [onChange, settings],
-  );
-
-  const changeAsksBeforeClosing = useCallback(
-    (asks: boolean) => {
-      onChange(withSilencedConfirmation(settings, "closeTerminals", !asks));
-    },
-    [onChange, settings],
-  );
-
   return (
-    <div className="flex flex-col gap-6">
-      <Section title="New terminals">
-        <ProfileSelect
-          label="Default launch profile"
-          profiles={props.profiles}
-          availability={props.availability}
-          value={settings.defaultProfileID}
-          onChange={changeDefaultProfile}
-          unsetTitle="Your login shell"
-          hint="Used when a project has not chosen one of its own. A project's choice always wins."
-        />
+    <>
+      <Section section={DAEMON_STATE_SECTION}>
+        <Item variant="muted" size="sm">
+          <ItemContent>
+            <ItemTitle>{cost.sentence}</ItemTitle>
+          </ItemContent>
+        </Item>
       </Section>
 
-      <Section title="Confirmations">
-        <SwitchField
-          label="Ask before closing a running terminal"
-          isOn={!isConfirmationSilenced(settings, "closeTerminals")}
-          onChange={changeAsksBeforeClosing}
-          hint="Closing a pane or a tab ends the programs in it. Idle and finished terminals never ask."
-        />
-      </Section>
-
-      {service === undefined ? undefined : (
-        <BackgroundServiceSection cost={cost} service={service} />
-      )}
-    </div>
+      {service === undefined ? undefined : <ServiceStopSection cost={cost} service={service} />}
+    </>
   );
 }
 
-function BackgroundServiceSection(props: {
+function ServiceStopSection(props: {
   readonly cost: ServiceStopCost;
   readonly service: BackgroundServiceControlling;
 }): ReactElement {
@@ -130,11 +94,7 @@ function BackgroundServiceSection(props: {
   }, []);
 
   return (
-    <Section
-      title="Background service"
-      hint="janelad runs your terminals, which is why they survive closing the window. It exits on its own when nothing is live."
-    >
-      <FieldDescription>Running now: {cost.sentence}.</FieldDescription>
+    <Section section={DAEMON_STOP_SECTION}>
       <div className="flex gap-2">
         <ServiceRequestButton request="stop" onRequest={request} />
         <ServiceRequestButton request="stopAndUnregister" onRequest={request} />
@@ -147,6 +107,10 @@ function BackgroundServiceSection(props: {
           onCancel={cancel}
         />
       )}
+      <FieldDescription>
+        Quitting Janela does not stop it. That is the point: a terminal you started keeps running
+        until you end it or the daemon has nothing left to run.
+      </FieldDescription>
     </Section>
   );
 }

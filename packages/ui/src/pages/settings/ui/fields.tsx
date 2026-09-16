@@ -188,14 +188,14 @@ export function Violations(props: { readonly violations: readonly string[] }): R
   );
 }
 
-export function Section(props: {
+export function FieldSection(props: {
   readonly title: string;
   readonly hint?: string | undefined;
   readonly children: ReactNode;
 }): ReactElement {
   return (
     <FieldSet>
-      <FieldLegend>{props.title}</FieldLegend>
+      <FieldLegend variant="label">{props.title}</FieldLegend>
       {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
       <FieldGroup>{props.children}</FieldGroup>
     </FieldSet>

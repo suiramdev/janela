@@ -214,7 +214,7 @@ describe("sheets and screens", () => {
     const { target, view } = harness({});
     await createCommandDispatch(target)("openSettings");
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "general" } });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
     expect(view.sheet).toBeUndefined();
   });
 

@@ -1,10 +1,13 @@
 import {
   ArrowLeft02Icon,
+  Cancel01Icon,
+  CpuIcon,
   Notification01Icon,
+  Search01Icon,
   SparklesIcon,
   TerminalIcon,
-  WrenchIcon,
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type {
   LaunchProfile,
   LaunchProfileAvailability,
@@ -20,6 +23,10 @@ import {
   Empty,
   EmptyDescription,
   hugeicon,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -33,8 +40,8 @@ import {
   type IconComponent,
 } from "@janela/design";
 import { Match } from "effect";
-import type { ReactElement } from "react";
-import { useCallback, useMemo, useState } from "react";
+import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   type BackgroundServiceControlling,
@@ -67,9 +74,19 @@ import {
   draftViolations,
   settingsDraftRequests,
 } from "../model/draft-save.ts";
-import { SettingsGeneral } from "./general-settings.tsx";
+import {
+  PROJECT_PANE_DESCRIPTION,
+  SETTINGS_TAB_INFO,
+  type SettingsSectionID,
+  routeKey,
+  sectionElementID,
+  settingsMatches,
+  tabInfo,
+} from "../model/settings-index.ts";
+import { SettingsDaemon } from "./daemon-settings.tsx";
 import { SettingsProfiles } from "./launch-profiles.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
+import { Pane, PaneHeader } from "./pane.tsx";
 import { ProjectSettingsPane } from "./project-settings.tsx";
 import { SettingsTerminal } from "./terminal-settings.tsx";
 
@@ -79,18 +96,27 @@ export interface SettingsTab {
   readonly icon: IconComponent;
 }
 
+export interface SettingsReveal {
+  readonly section: SettingsSectionID;
+  readonly at: number;
+}
+
+export type SettingsSelecting = (route: SettingsRoute, section?: SettingsSectionID) => void;
+
 export interface SettingsSidebarProps {
   readonly route: SettingsRoute;
   readonly projects: readonly Project[];
-  readonly onSelect: (route: SettingsRoute) => void;
+  readonly onSelect: SettingsSelecting;
   readonly onBack: () => void;
 }
 
 interface NavRow {
   readonly route: SettingsRoute;
   readonly title: string;
-  readonly icon?: IconComponent;
-  readonly project?: Project;
+  readonly icon?: IconComponent | undefined;
+  readonly project?: Project | undefined;
+  readonly detail?: string | undefined;
+  readonly section?: SettingsSectionID | undefined;
 }
 
 export interface SettingsPaneProps {
@@ -103,22 +129,30 @@ export interface SettingsPaneProps {
   readonly service: BackgroundServiceControlling | undefined;
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
+  readonly reveal?: SettingsReveal | undefined;
   readonly onChangeDraft: (draft: SettingsDraft) => void;
 }
 
-export const SETTINGS_TABS: readonly SettingsTab[] = [
-  { id: "general", title: "General", icon: hugeicon(WrenchIcon) },
-  { id: "terminal", title: "Terminal", icon: hugeicon(TerminalIcon) },
-  { id: "profiles", title: "Profiles", icon: hugeicon(SparklesIcon) },
-  { id: "notifications", title: "Notifications", icon: hugeicon(Notification01Icon) },
-];
+const TAB_ICON = {
+  terminal: hugeicon(TerminalIcon),
+  profiles: hugeicon(SparklesIcon),
+  notifications: hugeicon(Notification01Icon),
+  daemon: hugeicon(CpuIcon),
+} satisfies Record<SettingsTabID, IconComponent>;
+
+export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_TAB_INFO.map((info) => ({
+  id: info.id,
+  title: info.title,
+  icon: TAB_ICON[info.id],
+}));
 
 const PANEL_ID = "janela-settings-panel";
 
-const GENERAL_ROUTE: SettingsRoute = { kind: "tab", tab: "general" };
+const PANE_TITLE_ID = "janela-settings-pane-title";
 
-const routeKey = (route: SettingsRoute): string =>
-  route.kind === "tab" ? route.tab : `project-${route.projectID}`;
+const FIRST_ROUTE: SettingsRoute = { kind: "tab", tab: "terminal" };
+
+const REVEAL_MILLISECONDS = 1400;
 
 const rowElementID = (route: SettingsRoute): string => `janela-settings-tab-${routeKey(route)}`;
 
@@ -132,6 +166,7 @@ const BACK_ICON = hugeicon(ArrowLeft02Icon);
 
 export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
   const { route, projects, onSelect, onBack } = props;
+  const [query, setQuery] = useState("");
 
   const projectRows = useMemo<readonly NavRow[]>(
     () =>
@@ -143,6 +178,56 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
     [projects],
   );
 
+  const resultRows = useMemo<readonly NavRow[]>(
+    () =>
+      settingsMatches(query, projects).map((match) => {
+        const { route: matched } = match;
+
+        const project =
+          matched.kind === "project"
+            ? projects.find((candidate) => candidate.id === matched.projectID)
+            : undefined;
+
+        const tab = matched.kind === "tab" ? tabInfo(matched.tab) : undefined;
+
+        return {
+          route: matched,
+          title: project?.name ?? tab?.title ?? "Settings",
+          detail: match.detail,
+          section: match.section,
+          project,
+          icon: tab === undefined ? undefined : TAB_ICON[tab.id],
+        };
+      }),
+    [projects, query],
+  );
+
+  const isSearching = query.trim().length > 0;
+  const firstResult = resultRows[0];
+
+  const changeQuery = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setQuery(event.target.value);
+  }, []);
+
+  const clearQuery = useCallback(() => {
+    setQuery("");
+  }, []);
+
+  const keyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Escape") {
+        setQuery("");
+
+        return;
+      }
+
+      if (event.key !== "Enter" || firstResult === undefined) return;
+
+      onSelect(firstResult.route, firstResult.section);
+    },
+    [firstResult, onSelect],
+  );
+
   return (
     <Sidebar variant="inset" collapsible="offcanvas">
       <SidebarChromeHeader>
@@ -152,39 +237,84 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
           </h1>
           <SidebarTrigger />
         </SidebarTitleRow>
+        <InputGroup>
+          <InputGroupAddon>
+            <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+          </InputGroupAddon>
+          <InputGroupInput
+            value={query}
+            onChange={changeQuery}
+            onKeyDown={keyDown}
+            placeholder="Search settings"
+            aria-label="Search settings"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {isSearching ? (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={clearQuery}>
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+              </InputGroupButton>
+            </InputGroupAddon>
+          ) : undefined}
+        </InputGroup>
       </SidebarChromeHeader>
 
       <SidebarContent className={SIDEBAR_SCROLLER}>
         <SidebarMenu role="tablist" aria-orientation="vertical" aria-label="Settings">
-          <SidebarGroup className="py-1">
-            {TAB_ROWS.map((row) => (
-              <SettingsRow
-                key={row.title}
-                row={row}
-                isSelected={sameRoute(row.route, route)}
-                onSelect={onSelect}
-              />
-            ))}
-          </SidebarGroup>
+          {isSearching ? (
+            <SidebarGroup className="py-1">
+              <SidebarGroupLabel role="presentation">Results</SidebarGroupLabel>
+              {resultRows.length === 0 ? (
+                <Empty className="p-3" role="presentation">
+                  <EmptyDescription className="text-muted-foreground text-xs">
+                    Nothing matches “{query.trim()}”.
+                  </EmptyDescription>
+                </Empty>
+              ) : undefined}
+              {resultRows.map((row) => (
+                <SettingsRow
+                  key={routeKey(row.route)}
+                  row={row}
+                  isSelected={sameRoute(row.route, route)}
+                  onSelect={onSelect}
+                />
+              ))}
+            </SidebarGroup>
+          ) : (
+            <>
+              <SidebarGroup className="py-1">
+                <SidebarGroupLabel role="presentation">Janela</SidebarGroupLabel>
+                {TAB_ROWS.map((row) => (
+                  <SettingsRow
+                    key={row.title}
+                    row={row}
+                    isSelected={sameRoute(row.route, route)}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </SidebarGroup>
 
-          <SidebarGroup className="py-1">
-            <SidebarGroupLabel role="presentation">Projects</SidebarGroupLabel>
-            {projects.length === 0 ? (
-              <Empty className="p-3" role="presentation">
-                <EmptyDescription className="text-muted-foreground text-xs">
-                  No projects yet.
-                </EmptyDescription>
-              </Empty>
-            ) : undefined}
-            {projectRows.map((row) => (
-              <SettingsRow
-                key={row.project?.id}
-                row={row}
-                isSelected={sameRoute(row.route, route)}
-                onSelect={onSelect}
-              />
-            ))}
-          </SidebarGroup>
+              <SidebarGroup className="py-1">
+                <SidebarGroupLabel role="presentation">Projects</SidebarGroupLabel>
+                {projects.length === 0 ? (
+                  <Empty className="p-3" role="presentation">
+                    <EmptyDescription className="text-muted-foreground text-xs">
+                      No projects yet.
+                    </EmptyDescription>
+                  </Empty>
+                ) : undefined}
+                {projectRows.map((row) => (
+                  <SettingsRow
+                    key={row.project?.id}
+                    row={row}
+                    isSelected={sameRoute(row.route, route)}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </SidebarGroup>
+            </>
+          )}
         </SidebarMenu>
       </SidebarContent>
 
@@ -206,14 +336,14 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
 function SettingsRow(props: {
   readonly row: NavRow;
   readonly isSelected: boolean;
-  readonly onSelect: (route: SettingsRoute) => void;
+  readonly onSelect: SettingsSelecting;
 }): ReactElement {
   const { row, isSelected, onSelect } = props;
-  const { route, title, icon, project } = row;
+  const { route, title, icon, project, detail, section } = row;
 
   const show = useCallback(() => {
-    onSelect(route);
-  }, [onSelect, route]);
+    onSelect(route, section);
+  }, [onSelect, route, section]);
 
   return (
     <SidebarMenuItem role="presentation">
@@ -228,41 +358,66 @@ function SettingsRow(props: {
         onFocus={show}
       >
         {project === undefined ? undefined : <ProjectIcon project={project} />}
-        {title}
+        <span className="truncate">{title}</span>
+        {detail === undefined ? undefined : (
+          <span className="text-muted-foreground ml-auto max-w-[9rem] shrink-0 truncate text-[0.6875rem]">
+            {detail}
+          </span>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
 }
 
 export function SettingsPane(props: SettingsPaneProps): ReactElement {
-  const { route, projects } = props;
+  const { reveal, route, projects } = props;
 
   const project =
     route.kind === "project"
       ? projects.find((candidate) => candidate.id === route.projectID)
       : undefined;
 
-  const tab =
-    route.kind === "tab"
-      ? SETTINGS_TABS.find((candidate) => candidate.id === route.tab)
-      : undefined;
+  const info = route.kind === "tab" ? tabInfo(route.tab) : undefined;
+
+  useEffect(() => {
+    if (reveal === undefined) return undefined;
+
+    const element = document.getElementById(sectionElementID(reveal.section));
+
+    if (element === null) return undefined;
+
+    element.scrollIntoView({ block: "start" });
+    element.setAttribute("data-revealed", "true");
+
+    const timer = setTimeout(() => {
+      element.removeAttribute("data-revealed");
+    }, REVEAL_MILLISECONDS);
+
+    return () => {
+      clearTimeout(timer);
+      element.removeAttribute("data-revealed");
+    };
+  }, [reveal]);
 
   return (
     <section
       id={PANEL_ID}
       role="tabpanel"
-      aria-labelledby={rowElementID(route)}
+      aria-labelledby={PANE_TITLE_ID}
       className="min-h-0 flex-1 overflow-y-auto"
     >
-      {route.kind === "project" ? (
-        <PaneBody {...props} project={project} />
-      ) : (
-        <div className={PANE_COLUMN}>
-          <h2 className="text-base font-semibold">{tab?.title}</h2>
-          <div className="mt-5">
-            <PaneBody {...props} project={undefined} />
-          </div>
-        </div>
+      {route.kind === "project" && project === undefined ? undefined : (
+        <Pane>
+          <PaneHeader
+            id={PANE_TITLE_ID}
+            title={project?.name ?? info?.title ?? "Settings"}
+            description={
+              project === undefined ? (info?.description ?? "") : PROJECT_PANE_DESCRIPTION
+            }
+            directory={project?.directory}
+          />
+          <PaneBody {...props} project={project} />
+        </Pane>
       )}
     </section>
   );
@@ -307,17 +462,6 @@ function PaneBody(
   }
 
   return Match.value(props.route.tab).pipe(
-    Match.when("general", () => (
-      <SettingsGeneral
-        settings={settings}
-        onChange={changeSettings}
-        profiles={draftProfiles(draft, props.profiles)}
-        availability={props.availability}
-        sessions={props.sessions}
-        terminalStates={props.terminalStates}
-        service={props.service}
-      />
-    )),
     Match.when("terminal", () => (
       <SettingsTerminal settings={settings} onChange={changeSettings} />
     )),
@@ -325,12 +469,21 @@ function PaneBody(
       <SettingsProfiles
         profiles={props.profiles}
         availability={props.availability}
+        settings={settings}
+        onChangeSettings={changeSettings}
         draft={draft}
         onChangeDraft={onChangeDraft}
       />
     )),
     Match.when("notifications", () => (
       <SettingsNotifications settings={settings} onChange={changeSettings} />
+    )),
+    Match.when("daemon", () => (
+      <SettingsDaemon
+        sessions={props.sessions}
+        terminalStates={props.terminalStates}
+        service={props.service}
+      />
     )),
     Match.exhaustive,
   );
@@ -382,9 +535,7 @@ function swallowRequestFailure(): undefined {
 }
 
 function routeLabel(route: SettingsRoute, projects: readonly Project[]): string {
-  if (route.kind === "tab") {
-    return SETTINGS_TABS.find((tab) => tab.id === route.tab)?.title ?? "Settings";
-  }
+  if (route.kind === "tab") return tabInfo(route.tab)?.title ?? "Settings";
 
   return projects.find((project) => project.id === route.projectID)?.name ?? "Project";
 }
@@ -404,10 +555,12 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
   const isDirty = useStoreValue(view, () => view.hasUnsavedSettings);
 
   const [revision, setRevision] = useState(0);
+  const [reveal, setReveal] = useState<SettingsReveal | undefined>(undefined);
 
-  const select = useCallback(
-    (route: SettingsRoute) => {
-      view.showSettings(route);
+  const select = useCallback<SettingsSelecting>(
+    (next, section) => {
+      view.showSettings(next);
+      setReveal(section === undefined ? undefined : { section, at: Date.now() });
     },
     [view],
   );
@@ -451,7 +604,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
   const route: SettingsRoute =
     requested.kind === "project" &&
     !projects.some((candidate) => candidate.id === requested.projectID)
-      ? GENERAL_ROUTE
+      ? FIRST_ROUTE
       : requested;
 
   const violation = draftViolations(draft)[0];
@@ -485,6 +638,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             service={environment.local?.service}
             projects={projects}
             draft={draft}
+            reveal={reveal}
             onChangeDraft={changeDraft}
           />
           <SettingsCommitBar

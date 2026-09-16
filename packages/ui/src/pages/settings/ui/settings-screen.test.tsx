@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   environmentOver,
   fakeClientEnvironment,
+  fakeFolderProject,
   fakeProfile,
   fakeProject,
   fakeSession,
@@ -29,8 +30,10 @@ import {
   withDraftProfile,
   withDraftProjectSettings,
   withDraftSettings,
+  withSilencedConfirmation,
   withTerminalFontSize,
 } from "../../../shared/model/index.ts";
+import { SETTINGS_TAB_INFO, projectSections, sectionElementID } from "../model/settings-index.ts";
 import {
   SETTINGS_TABS,
   SettingsPane,
@@ -49,6 +52,8 @@ const JANELA = fakeProject({ name: "janela", directory: absolutePath("/Users/me/
 
 const API = fakeProject({ name: "api", directory: absolutePath("/Users/me/code/api") });
 
+const NOTES = fakeFolderProject({ name: "notes" });
+
 const PROJECTS: readonly Project[] = [JANELA, API];
 
 const tabRoute = (tab: SettingsTabID): SettingsRoute => ({ kind: "tab", tab });
@@ -59,10 +64,10 @@ const projectRoute = (project: Project): SettingsRoute => ({
 });
 
 const PANE_COPY = {
-  general: "Default launch profile",
   terminal: "Font family",
   profiles: "Launch profiles",
   notifications: "Notification Centre",
+  daemon: "Running now",
 } satisfies Record<SettingsTabID, string>;
 
 const withProjects = (): ClientEnvironment => environmentOver({ sessions: [], projects: PROJECTS });
@@ -71,7 +76,7 @@ const barButton = (markup: string, label: "Save" | "Revert"): string =>
   new RegExp(`<button[^>]*>${label}</button>`).exec(markup)?.[0] ?? "";
 
 function props(
-  route: SettingsRoute = tabRoute("general"),
+  route: SettingsRoute = tabRoute("terminal"),
   projects: readonly Project[] = PROJECTS,
   draft: SettingsDraft = EMPTY_SETTINGS_DRAFT,
 ): SettingsPaneProps {
@@ -90,7 +95,7 @@ function props(
 }
 
 function sidebar(
-  route: SettingsRoute = tabRoute("general"),
+  route: SettingsRoute = tabRoute("terminal"),
   projects: readonly Project[] = PROJECTS,
 ): string {
   return renderToStaticMarkup(
@@ -122,13 +127,20 @@ function screen(route: SettingsRoute, environment: ClientEnvironment): string {
 }
 
 describe("the tab table", () => {
-  test("is exactly General, Terminal, Profiles and Notifications", () => {
+  test("is one subject per pane: Terminal, Launch profiles, Notifications, Daemon", () => {
     expect(SETTINGS_TABS.map((tab) => tab.id)).toEqual([
-      "general",
       "terminal",
       "profiles",
       "notifications",
+      "daemon",
     ]);
+  });
+
+  test("has no General: a pane named after nothing collects everything", () => {
+    const titles: readonly string[] = SETTINGS_TABS.map((tab) => tab.title);
+
+    expect(titles).not.toContain("General");
+    expect(titles).not.toContain("Advanced");
   });
 
   test("has no Projects tab: the projects are rows, not a fifth pane", () => {
@@ -138,26 +150,62 @@ describe("the tab table", () => {
     expect(SETTINGS_TABS.some((tab) => tab.title === "Projects")).toBe(false);
   });
 
-  test("every tab has a title", () => {
-    for (const tab of SETTINGS_TABS) {
-      expect(tab.title.length).toBeGreaterThan(0);
+  test("every pane says what it is for, and holds at least one section", () => {
+    for (const info of SETTINGS_TAB_INFO) {
+      expect(info.title.length).toBeGreaterThan(0);
+      expect(info.description.length).toBeGreaterThan(0);
+      expect(info.sections.length).toBeGreaterThan(0);
     }
   });
 });
 
+describe("the section index", () => {
+  test("every global section it advertises is on the pane it names", () => {
+    for (const info of SETTINGS_TAB_INFO) {
+      const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute(info.id))} />);
+
+      for (const section of info.sections) {
+        expect(markup).toContain(sectionElementID(section.id));
+        expect(markup).toContain(section.title);
+
+        for (const field of section.fields) expect(markup).toContain(field);
+      }
+    }
+  });
+
+  test("every project section it advertises is on the project pane", () => {
+    const markup = renderToStaticMarkup(<SettingsPane {...props(projectRoute(JANELA))} />);
+
+    for (const section of projectSections(JANELA)) {
+      expect(markup).toContain(sectionElementID(section.id));
+      expect(markup).toContain(section.title);
+
+      for (const field of section.fields) expect(markup).toContain(field);
+    }
+  });
+
+  test("a folder project is offered no worktree section, and does not render one", () => {
+    const ids = projectSections(NOTES).map((section) => section.id);
+    const markup = renderToStaticMarkup(<SettingsPane {...props(projectRoute(NOTES), [NOTES])} />);
+
+    expect(ids).not.toContain("projectWorktrees");
+    expect(markup).not.toContain("Use a directory I choose");
+  });
+});
+
 describe("the sidebar", () => {
-  test("lists the four tabs and then every project, under a Projects heading", () => {
+  test("groups the global panes under Janela, then every project", () => {
     const markup = sidebar();
 
     expect(rowTitles(markup)).toEqual([
-      "General",
       "Terminal",
-      "Profiles",
+      "Launch profiles",
       "Notifications",
+      "Daemon",
       "janela",
       "api",
     ]);
-    expect(markup.indexOf("Projects")).toBeGreaterThan(markup.indexOf("Notifications"));
+    expect(markup.indexOf("Janela")).toBeLessThan(markup.indexOf("Projects"));
     expect(markup.indexOf("Projects")).toBeLessThan(markup.indexOf(`tab-project-${JANELA.id}`));
   });
 
@@ -165,6 +213,14 @@ describe("the sidebar", () => {
     const markup = sidebar();
 
     expect([...markup.matchAll(/role="tablist"/g)]).toHaveLength(1);
+  });
+
+  test("offers a search field above the groups", () => {
+    const markup = sidebar();
+
+    expect(markup).toContain('placeholder="Search settings"');
+    expect(markup.indexOf("Search settings")).toBeLessThan(markup.indexOf("Terminal"));
+    expect(markup).not.toContain('aria-label="Clear search"');
   });
 
   test("marks the showing project selected, and nothing else", () => {
@@ -181,18 +237,20 @@ describe("the sidebar", () => {
   test("marks the showing tab selected, and pins Back below the projects", () => {
     const markup = sidebar(tabRoute("profiles"));
 
-    expect(markup).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!<\/button>).)*Profiles/);
+    expect(markup).toMatch(
+      /role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!<\/button>).)*Launch profiles/,
+    );
     expect([...markup.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
     expect(markup).toContain('data-sidebar="footer"');
     expect(markup.indexOf("Back")).toBeGreaterThan(markup.indexOf(`tab-project-${API.id}`));
   });
 
   test("says which nothing it is when no project has been added", () => {
-    const markup = sidebar(tabRoute("general"), []);
+    const markup = sidebar(tabRoute("terminal"), []);
 
     expect(markup).toContain("Projects");
     expect(markup).toContain("No projects yet.");
-    expect(rowTitles(markup)).toEqual(["General", "Terminal", "Profiles", "Notifications"]);
+    expect(rowTitles(markup)).toEqual(["Terminal", "Launch profiles", "Notifications", "Daemon"]);
   });
 
   test("is the window's own surface, and collapses like the default sidebar", () => {
@@ -204,11 +262,13 @@ describe("the sidebar", () => {
 });
 
 describe("the pane", () => {
-  test("opens on General and states the background service", () => {
-    const markup = renderToStaticMarkup(<SettingsPane {...props()} />);
+  test("heads every pane with its title and what it is for", () => {
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("daemon"))} />);
 
-    expect(markup).toContain("Default launch profile");
-    expect(markup).toContain("Background service");
+    expect(markup).toContain('id="janela-settings-pane-title"');
+    expect(markup).toContain("Daemon");
+    expect(markup).toContain("janelad runs your terminals");
+    expect(markup).toContain('aria-labelledby="janela-settings-pane-title"');
   });
 
   test("every tab renders its own pane rather than an empty view", () => {
@@ -253,7 +313,7 @@ describe("the pane", () => {
   test("a profile renamed but not saved reads the same in every picker", () => {
     const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...claude, name: "Opus" }));
 
-    for (const route of [tabRoute("general"), projectRoute(JANELA)]) {
+    for (const route of [tabRoute("profiles"), projectRoute(JANELA)]) {
       const markup = renderToStaticMarkup(<SettingsPane {...props(route, PROJECTS, draft)} />);
 
       expect(markup).toContain("Opus");
@@ -283,6 +343,36 @@ describe("the Terminal pane", () => {
     expect(markup).toContain('min="8"');
     expect(markup).toContain('max="32"');
   });
+
+  test("holds the question asked before a terminal is closed", () => {
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+
+    expect(markup).toContain("Ask before closing a running terminal");
+    expect(markup).toContain("Idle and finished terminals never ask");
+  });
+
+  test("reads that question as off once it has been silenced", () => {
+    const asks = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+    const silenced = renderToStaticMarkup(
+      <SettingsPane
+        {...props(
+          tabRoute("terminal"),
+          PROJECTS,
+          withDraftSettings(
+            EMPTY_SETTINGS_DRAFT,
+            withSilencedConfirmation(DEFAULT_GLOBAL_SETTINGS, "closeTerminals", true),
+          ),
+        )}
+      />,
+    );
+
+    expect(/role="switch"[^>]*aria-checked="(?<state>[a-z]+)"/u.exec(asks)?.groups?.["state"]).toBe(
+      "true",
+    );
+    expect(
+      /role="switch"[^>]*aria-checked="(?<state>[a-z]+)"/u.exec(silenced)?.groups?.["state"],
+    ).toBe("false");
+  });
 });
 
 describe("the Notifications pane", () => {
@@ -303,11 +393,11 @@ describe("the Notifications pane", () => {
 
 describe("the screen", () => {
   test("fills the window the way the workspace does", () => {
-    const markup = screen(tabRoute("general"), withProjects());
+    const markup = screen(tabRoute("terminal"), withProjects());
 
     expect(markup).toContain('data-variant="inset"');
     expect(markup).toContain('data-slot="sidebar-inset"');
-    expect(markup).toContain("Background service");
+    expect(markup).toContain("Font family");
   });
 
   test("a project's settings are a pane in the screen, reached by route", () => {
@@ -318,17 +408,17 @@ describe("the screen", () => {
     expect(markup).toMatch(/aria-selected="true"[^>]*>(?:(?!<\/button>).)*janela/);
   });
 
-  test("a project the mirror does not have falls back to General, not to an empty pane", () => {
+  test("a project the mirror does not have falls back to the first pane", () => {
     const markup = screen(projectRoute(fakeProject({ name: "gone" })), withProjects());
 
-    expect(markup).toContain("Background service");
+    expect(markup).toContain("Font family");
     expect(markup).not.toContain("When a session is first opened");
     expect([...markup.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
   });
 
   describe("the commit bar", () => {
     test("is quiet at rest: nothing to save, and it does not say so twice", () => {
-      const markup = screen(tabRoute("general"), withProjects());
+      const markup = screen(tabRoute("terminal"), withProjects());
 
       expect(barButton(markup, "Save")).toContain('disabled=""');
       expect(barButton(markup, "Revert")).toContain('disabled=""');
