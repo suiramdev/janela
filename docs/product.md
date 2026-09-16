@@ -207,7 +207,7 @@ Committed scope. Each has a design section in
 | Capability | Shape |
 | --- | --- |
 | **Projects and sessions** | Sidebar with collapsible projects, sessions as buttons, standalone sessions above them |
-| **Worktree-backed sessions** | "New branch" creates the worktree; removal explains what it destroys |
+| **Worktree-backed sessions** | "New Session" creates the worktree, on a branch you pick or one you name; removal explains what it destroys |
 | **Splits and tabs** | Terminals arranged in a per-session layout tree, persisted |
 | **Notifications** | Terminal-signalled attention, badged in the sidebar and delivered to Notification Centre when you are elsewhere |
 | **GitHub / GitLab** | Branch and PR/MR state on a session, "new session from PR", via the user's `gh`/`glab` |
@@ -279,9 +279,9 @@ Listed so they can be pointed at, not re-litigated.
 A developer can:
 
 1. Add a repository as a project once.
-2. Press `⌘⇧B`, type a branch name, and be looking at a terminal in a fresh
-   worktree seconds later — with their `.env` already in place and `pnpm install`
-   already running, because the project said so.
+2. Press `⌘N`, type a branch name that does not exist yet, and be looking at a
+   terminal in a fresh worktree seconds later — with their `.env` already in
+   place and `pnpm install` already running, because the project said so.
 3. Press `⌘T` and have a shell in the right directory with their real `PATH`.
    Split the pane, start `claude` in one half and a dev server in the other.
 4. Switch to another session instantly, and be told — in the sidebar, and in

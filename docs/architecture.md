@@ -277,6 +277,35 @@ again, announces the shortened list, and rethrows git's own error. Everything af
 that is ordered because scripts depend on it: a `worktreeCreated` command that ran
 before the copy would find no `.env`.
 
+Four decisions live in the dialog that produces that message, and are worth
+finding here rather than in a diff:
+
+- **Two comboboxes, not five commands.** The branch and the worktree are each a
+  field that filters a list *and* accepts a name the list does not have
+  (`@janela/design`'s `Combobox`, item 14 of `packages/design/src/index.ts`).
+  That one control is what collapses the creation cases into one form: a branch
+  picked is an existing branch and a branch typed is created with its worktree;
+  a worktree picked is `adoptWorktree` and a worktree named is `newWorktree`.
+  The start point is the same field again — a branch from the list, or a tag or
+  a commit typed.
+- **One sheet, including for a new branch.** "New Session" is the only way a
+  session is made. There is no second command, sheet or accelerator for a new
+  branch, because a new branch was never a different kind of thing
+  (`docs/product.md` § The thesis).
+- **The radio is down to the one genuine fork**, the project's own directory or
+  a directory of its own, and only the first can be refused: git checks a
+  branch out in one place at a time. A *second worktree* of a held branch is
+  possible under `git worktree add --force`, so the worktree field takes a name
+  for one, says that a commit in one moves the other, and sets `shareBranch` —
+  the only thing in the system that asks for `--force`. The daemon never infers
+  it: a request that did not ask reaches git unforced and gets git's refusal,
+  which is also what a v6 daemon does with the field it does not know
+  (`packages/protocol/src/handshake.ts`).
+- **The worktree's name is the session's, and names its directory.** The leaf
+  only; the root stays the daemon's, from `ProjectSettings.worktreeRoot`. It
+  defaults to the branch, and it is what keeps two worktrees of one branch off
+  the same path without a `-2` nobody asked for.
+
 ### Starting a terminal
 
 ```text

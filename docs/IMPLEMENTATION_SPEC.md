@@ -1953,6 +1953,7 @@ export type SessionCreationRequest =
       readonly startPoint?: string;
       readonly directory?: AbsolutePath;
       readonly name?: string;
+      readonly shareBranch?: boolean;
     }
   | {
       readonly kind: "adoptWorktree";
@@ -2372,12 +2373,15 @@ is unused over the local socket, where the operating system vouches for the
 peer, and is carried from v1 because adding a field to a shipped protocol is a
 breaking change and this one costs nothing.
 
-Code versus spec: the shipped constants are `PROTOCOL_VERSION = 6` and
-`MINIMUM_SUPPORTED_VERSION = 6`. They have moved together at every bump for
-the reason the paragraph above gives — a change is compatible or it is not —
-and `packages/protocol/src/handshake.ts` carries the numbered history of what
-each version added, plus what an older peer does when it meets a newer one.
-The code wins.
+Code versus spec: the shipped constants are `PROTOCOL_VERSION = 7` and
+`MINIMUM_SUPPORTED_VERSION = 6`. They moved together up to 6, for the reason
+the paragraph above gives; v7 only adds optional fields to a message a v6 peer
+already decodes, so that peer degrades to git's own refusal instead of closing
+the connection — and refusing the handshake instead would take a user's live
+terminals away to prevent a worse error message.
+`packages/protocol/src/handshake.ts` carries the numbered history of what each
+version added, plus what an older peer does when it meets a newer one. The code
+wins.
 
 #### Messages
 
@@ -2524,6 +2528,7 @@ export type SessionCreationIntent =
       readonly branch: string;
       readonly startPoint?: string;
       readonly name?: string;
+      readonly shareBranch?: boolean;
     }
   | {
       readonly kind: "adoptWorktree";
@@ -2564,6 +2569,15 @@ the wire format is how a refactor becomes a breaking change for someone's
 script. The mirroring is not identity — the wire `newWorktree` has no
 `directory?` field, because where a new worktree lands is the daemon's
 decision from `ProjectSettings.worktreeRoot`, not the client's.
+
+Code versus spec: the wire `newWorktree` also carries `shareBranch?: boolean`
+(v7), which asks the daemon for `git worktree add --force` so a branch another
+checkout already holds can have a second worktree, and its `name?` now names
+the *directory* that worktree lands in as well as the session — the leaf only;
+the root is still the daemon's. Both exist because "create a new worktree"
+stays available for a branch that already has one, and two worktrees of one
+branch need two paths. The code wins.
+
 `AttentionSignal` is a fact, not a decision: policy lives in the client, and
 `id` is set by the daemon so two clients can suppress a signal they have both
 already delivered.
@@ -3350,7 +3364,6 @@ export type CommandID =
   | "openFolder"
   | "addProject"
   | "goToSession"
-  | "newBranchSession"
   | "nextSession"
   | "previousSession"
   | "revealInFinder"
@@ -3369,9 +3382,14 @@ export const COMMANDS: readonly Command[];
 
 #### Keyboard
 
-`COMMANDS`, in file order, from `packages/ui/src/commands.ts`. Eighteen
-commands; sixteen accelerators, written in Tauri's notation because the native
+`COMMANDS`, in file order, from `packages/ui/src/commands.ts`. Seventeen
+commands; fifteen accelerators, written in Tauri's notation because the native
 menu bar in `apps/desktop/src-tauri` is built from this table.
+
+Code versus spec: the shipped table carries five more (`openSettings`,
+`showCommands`, `nextTab`, `previousTab`, `closePane`) and no longer carries
+`newBranchSession` — ⌘⇧B and its sheet went when "New Session" became the one
+way a session is made, a session on a new branch included. The code wins.
 
 | Command id          | Title                | Accelerator            |
 | ------------------- | -------------------- | ---------------------- |
@@ -3380,7 +3398,6 @@ menu bar in `apps/desktop/src-tauri` is built from this table.
 | `openFolder`        | Open Folder…         | `CmdOrCtrl+O`          |
 | `addProject`        | Add Project…         | `CmdOrCtrl+Alt+O`      |
 | `goToSession`       | Go to Session…       | `CmdOrCtrl+Shift+O`    |
-| `newBranchSession`  | New Branch Session…  | `CmdOrCtrl+Shift+B`    |
 | `nextSession`       | Next Session         | `CmdOrCtrl+Shift+]`    |
 | `previousSession`   | Previous Session     | `CmdOrCtrl+Shift+[`    |
 | `revealInFinder`    | Reveal in Finder     | —                      |

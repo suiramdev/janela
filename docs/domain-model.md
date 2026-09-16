@@ -197,7 +197,7 @@ public enum SessionCreationRequest: Sendable {
     case standalone(directory: URL, name: String?)
     case inProject(ProjectID, name: String?)
     case newWorktree(project: ProjectID, branch: String, startPoint: String?,
-                     directory: URL?, name: String?)
+                     directory: URL?, name: String?, shareBranch: Bool)
     case adoptWorktree(project: ProjectID, directory: URL, name: String?)
     case fromPullRequest(project: ProjectID, reference: PullRequestReference)
 }
@@ -205,7 +205,19 @@ public enum SessionCreationRequest: Sendable {
 
 Worktree creation is *one case of that function*, not a separate feature with its
 own screen. If a second public creation method ever appears, the worktree-centric
-model has crept back in.
+model has crept back in. A branch that does not exist yet is not a case either:
+it is a `branch` no ref names, created with the worktree it arrives in.
+
+Two facts about `newWorktree` that the field list understates:
+
+- **`name` names the directory too.** The leaf of it — the root is the daemon's,
+  from `ProjectSettings.worktreeRoot`. It defaults to the branch, which is why a
+  worktree of `feature/x` lands in `.worktrees/feature-x`; a session the user
+  called something else lands under that instead. Nothing appends a number.
+- **A branch may back more than one worktree.** git allows it only under
+  `--force`, and `shareBranch` is the user having chosen it in the dialog, told
+  that a commit in one moves the other. `WorktreeBinding.branch` was never
+  unique, and now genuinely is not: two sessions may name the same branch.
 
 ---
 
