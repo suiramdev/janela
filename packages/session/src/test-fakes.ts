@@ -195,6 +195,7 @@ export interface FakeWorktrees {
     readonly directory: AbsolutePath;
     readonly branch?: string;
     readonly startPoint?: string;
+    readonly force?: boolean;
   }[];
   readonly removed: readonly {
     readonly directory: AbsolutePath;
@@ -228,6 +229,7 @@ export function fakeWorktrees(options?: {
     directory: AbsolutePath;
     branch?: string;
     startPoint?: string;
+    force?: boolean;
   }[] = [];
   const removed: { directory: AbsolutePath; repository: AbsolutePath; force: boolean }[] = [];
   const checkedOut: { repository: AbsolutePath; branch: string }[] = [];
@@ -254,6 +256,7 @@ export function fakeWorktrees(options?: {
           directory: request.directory,
           ...(request.branch === undefined ? {} : { branch: request.branch }),
           ...(request.startPoint === undefined ? {} : { startPoint: request.startPoint }),
+          ...(request.force === undefined ? {} : { force: request.force }),
         });
         if (options?.failCreate !== undefined) throw options.failCreate;
 

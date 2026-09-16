@@ -166,6 +166,41 @@ describe("createWorktree", () => {
     expect(created.branch).toBeUndefined();
     expect(created.head).toBe((await world.git("rev-parse", "HEAD")).trim());
   });
+
+  test("a branch another worktree holds needs force, and git says so without it", async () => {
+    await using world = await setup("wt-add-shared");
+    await world.git("branch", "feat/shared");
+    await world.service.createWorktree({
+      repository: world.repository,
+      directory: world.scratch("shared-first"),
+      branch: "feat/shared",
+    });
+
+    // git's own safeguard: one branch, one checkout. Unforced, this is the
+    // refusal the dialog promises rather than one it has to explain.
+    await expect(
+      world.service.createWorktree({
+        repository: world.repository,
+        directory: world.scratch("shared-second"),
+        branch: "feat/shared",
+      }),
+    ).rejects.toBeInstanceOf(GitFailure);
+
+    const forced = await world.service.createWorktree({
+      repository: world.repository,
+      directory: world.scratch("shared-second"),
+      branch: "feat/shared",
+      force: true,
+    });
+
+    expect(forced.branch).toBe("feat/shared");
+    // Both checkouts, on the one branch: exactly what the user was told the
+    // choice would do.
+    const holders = (await world.service.worktrees(world.repository)).filter(
+      (entry) => entry.branch === "feat/shared",
+    );
+    expect(holders).toHaveLength(2);
+  });
 });
 
 /** Gives the fixture an `origin` it can be up to date with. */

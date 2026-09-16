@@ -317,12 +317,27 @@ export type SessionCreationIntent =
       readonly branch?: string;
       readonly name?: string;
     }
+  /**
+   * A worktree of this project's repository, created for `branch`.
+   *
+   * `name` names the session *and* the leaf of the directory the daemon places
+   * it in, so a second worktree of one branch is told apart by the name its
+   * owner gave it. Where the worktree root is remains the daemon's decision.
+   */
   | {
       readonly kind: "newWorktree";
       readonly projectID: ProjectID;
       readonly branch: string;
       readonly startPoint?: string;
       readonly name?: string;
+      /**
+       * Create the worktree even though another checkout already holds `branch`.
+       * git refuses that by default, for the good reason that the two worktrees
+       * then move each other's `HEAD`; the flag exists because the dialog says
+       * so and the user may still want it. Absent is the safe default, and a
+       * daemon that predates this field simply lets git refuse.
+       */
+      readonly shareBranch?: boolean;
     }
   | {
       readonly kind: "adoptWorktree";

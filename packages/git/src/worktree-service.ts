@@ -70,15 +70,20 @@ export interface WorktreeServing {
    *   `~/` tidy and keeps relative paths short. Users can override per creation.
    * @param branch Branch to check out or create; absent for a detached worktree.
    * @param startPoint Commit-ish to branch from. Defaults to `HEAD` when absent.
+   * @param force `--force`, which git requires to check a branch out in a second
+   *   place. Never inferred here: git's safeguard exists because two worktrees
+   *   sharing a branch move each other's `HEAD`, so overriding it is a decision
+   *   the user makes in the dialog and this flag carries.
    * @returns The worktree as git reports it after creation.
    * @throws {GitFailure} when git refuses, most commonly because the branch is
-   *   already checked out in another worktree.
+   *   already checked out in another worktree and `force` was not asked for.
    */
   createWorktree(request: {
     readonly repository: AbsolutePath;
     readonly directory: AbsolutePath;
     readonly branch?: string;
     readonly startPoint?: string;
+    readonly force?: boolean;
   }): Promise<GitWorktree>;
 
   /**
@@ -260,13 +265,22 @@ export function worktreeService(git: GitRunning): WorktreeServing {
       await git.run(["checkout", branch], repository);
     },
 
-    async createWorktree({ repository, directory, branch, startPoint }): Promise<GitWorktree> {
+    async createWorktree({
+      repository,
+      directory,
+      branch,
+      startPoint,
+      force,
+    }): Promise<GitWorktree> {
       const start = startPoint === undefined ? [] : [startPoint];
+      // Only ever what the caller asked for. `--force` also silences "path is
+      // already assigned to a worktree", so it is never added defensively.
+      const forced = force === true ? ["--force"] : [];
 
       if (branch === undefined) {
         // `--detach` is not optional: a bare `worktree add <path>` invents a
         // branch named after the directory, which is not what "no branch" means.
-        await git.run(["worktree", "add", "--detach", directory, ...start], repository);
+        await git.run(["worktree", "add", ...forced, "--detach", directory, ...start], repository);
       } else {
         const existing = await git.probe(
           ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
@@ -275,8 +289,10 @@ export function worktreeService(git: GitRunning): WorktreeServing {
         if (existing.succeeded) {
           // Checked out, not created: `add -b <existing>` exits non-zero, and the
           // contract says an existing branch is checked out.
-          await git.run(["worktree", "add", directory, branch], repository);
+          await git.run(["worktree", "add", ...forced, directory, branch], repository);
         } else {
+          // A branch that does not exist yet is checked out nowhere, so there is
+          // nothing for `--force` to override here.
           await git.run(["worktree", "add", "-b", branch, directory, ...start], repository);
         }
       }

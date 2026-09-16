@@ -342,6 +342,47 @@ describe("createSession", () => {
     });
   });
 
+  test("newWorktree: the name the user gave it decides the directory", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "newWorktree",
+        projectID: fixture.project.id,
+        branch: "feature/x",
+        name: "review 2",
+      });
+
+      // Named, not numbered: this is what lets a second worktree of one branch
+      // exist without us inventing a path for it.
+      expect(fixture.worktrees.created[0]?.directory).toBe(
+        absolutePath("/Users/x/code/.worktrees/review-2"),
+      );
+      expect(session.name).toBe("review 2");
+      const backing = session.backing;
+      expect(backing.kind === "worktree" && backing.binding.branch).toBe("feature/x");
+    });
+  });
+
+  test("newWorktree: sharing a branch is forced only when it was asked for", async () => {
+    await withSessions({}, async (fixture) => {
+      await fixture.sessions.createSession({
+        kind: "newWorktree",
+        projectID: fixture.project.id,
+        branch: "feature/x",
+      });
+      await fixture.sessions.createSession({
+        kind: "newWorktree",
+        projectID: fixture.project.id,
+        branch: "feature/x",
+        name: "second",
+        shareBranch: true,
+      });
+
+      // git's safeguard is overridden for exactly the request that said so, and
+      // never on the daemon's own initiative.
+      expect(fixture.worktrees.created.map((request) => request.force)).toEqual([undefined, true]);
+    });
+  });
+
   test("the documented order: persist, worktree, copy, worktreeCreated, sessionStart, terminal", async () => {
     await withSessions(
       { automation: true, include: { paths: [".env"], copied: [".env"] } },

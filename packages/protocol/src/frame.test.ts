@@ -31,11 +31,13 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("the branch overview and tab reordering are a wire change: version 6", () => {
-    expect(PROTOCOL_VERSION).toBe(6);
-    // Equal, not merely ordered: a v5 peer's control decoder rejects an unknown
-    // message type and its read loop closes the connection, so the ranges must
-    // not overlap — a refusal a person can read beats a socket that drops.
+  test("a shared-branch worktree is a wire change: version 7, still speaking 6", () => {
+    expect(PROTOCOL_VERSION).toBe(7);
+    // Below the current version, unlike every bump up to 6: v7 adds optional
+    // fields to a message a v6 peer already decodes, so that peer degrades to
+    // git's own refusal instead of closing the connection. Refusing the
+    // handshake would take the user's live terminals away to prevent a worse
+    // error message.
     expect(MINIMUM_SUPPORTED_VERSION).toBe(6);
   });
 });

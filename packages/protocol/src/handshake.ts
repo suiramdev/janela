@@ -67,9 +67,18 @@ export type Credential = { readonly kind: "bearerToken"; readonly token: string 
  *    check out in the project's own directory. A "new session" dialog can then
  *    offer a branch and a place to put it, and a tab drag survives the next
  *    state snapshot because the daemon owns the order.
+ * 7  `SessionCreationIntent`'s `newWorktree` case gains `shareBranch`, which
+ *    asks the daemon for `git worktree add --force` so a branch already checked
+ *    out somewhere can have a second worktree, and its `name` now also names
+ *    the directory the daemon places that worktree in — which is what keeps two
+ *    worktrees of one branch from landing on the same path. A v6 daemon decodes
+ *    the message (the discriminant is unchanged) and ignores the flag, so the
+ *    request reaches git unforced and git refuses it with its own reason. A
+ *    degraded answer rather than a dropped connection, which is why
+ *    `MINIMUM_SUPPORTED_VERSION` stays at 6.
  * ```
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /**
  * Oldest version we still accept.
@@ -83,6 +92,13 @@ export const PROTOCOL_VERSION = 6;
  * client meeting a v5 daemon would lose its connection the moment a user opened
  * the new-session dialog, with no reply to correlate and no explanation. A
  * refusal a person can read beats a socket that drops on a menu click.
+ *
+ * Still 6 at v7, because that skew *does* degrade: v7 only adds optional fields
+ * to a message a v6 peer already decodes, so the one request affected reaches
+ * git without `--force` and comes back as git's own refusal. A shared-branch
+ * worktree the user does not get is a worse answer, not a lost connection, and
+ * refusing the handshake instead would take the user's live terminals off them
+ * to prevent it.
  *
  * As at v5: a v5 peer's `hello` is answered with `refused` /
  * `incompatibleVersion` carrying this range, the daemon keeps running and no

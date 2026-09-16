@@ -831,11 +831,15 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       const before = highestTick(await waitForText(probe, terminalID, "tick-0002"));
       const children = daemon.children();
 
-      // An app one wire version ahead of this daemon, which is what an update
-      // that has not restarted the background service looks like.
+      // An app whose *oldest* supported version is past this daemon's current
+      // one, which is what an update that has not restarted the background
+      // service looks like when the change between them was breaking. A client
+      // merely one version ahead still speaks this daemon's version — that is
+      // what `MINIMUM_SUPPORTED_VERSION` trailing `PROTOCOL_VERSION` buys — and
+      // is not the case under test.
       const newer = await probeClient(daemon, {
         protocolVersion: PROTOCOL_VERSION + 1,
-        minimumSupported: MINIMUM_SUPPORTED_VERSION + 1,
+        minimumSupported: PROTOCOL_VERSION + 1,
         clientName: "survival-probe-newer",
       });
       expect(newer.greeting).toEqual({

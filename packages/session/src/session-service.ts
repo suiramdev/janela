@@ -251,6 +251,10 @@ export type SessionCreationRequest =
   /**
    * "Give me a new branch to work on." Creates a worktree behind the scenes, placed
    * according to the project's `worktreeRoot` unless told otherwise.
+   *
+   * `name` is the session's name *and* the leaf of the directory the worktree
+   * lands in, so two worktrees of one branch are told apart by the name the user
+   * gave them rather than by a number we invented.
    */
   | {
       readonly kind: "newWorktree";
@@ -259,6 +263,13 @@ export type SessionCreationRequest =
       readonly startPoint?: string;
       readonly directory?: AbsolutePath;
       readonly name?: string;
+      /**
+       * Check the branch out even though another worktree holds it. git refuses
+       * that by default and we do not override it on the user's behalf: this is
+       * set only when they chose a new worktree for a branch already checked
+       * out, having been told the branch will be shared.
+       */
+      readonly shareBranch?: boolean;
     }
   /** "I already have this worktree, manage it too." Adopted, never deletable. */
   | {
@@ -343,24 +354,31 @@ export function createSessionService(
 }
 
 /**
- * A branch name as a directory name.
+ * A session's name as a directory name.
  *
  * Case is preserved: branch names are case-sensitive, and the user is going to
  * read this path in a shell prompt and in build output. Only characters that make
  * a path awkward are replaced.
  */
-export function worktreeSlug(branch: string): string {
-  const replaced = branch.replace(/[^A-Za-z0-9._-]/g, "-").replace(/-+/g, "-");
+export function worktreeSlug(name: string): string {
+  const replaced = name.replace(/[^A-Za-z0-9._-]/g, "-").replace(/-+/g, "-");
   const trimmed = replaced.replace(/^[-.]+/, "").replace(/[-.]+$/, "");
-  // A branch of only separators (`///`) would otherwise produce "", and a
+  // A name of only separators (`///`) would otherwise produce "", and a
   // worktree at the parent directory itself.
   return trimmed === "" ? "worktree" : trimmed;
 }
 
-/** Where a project's worktree for `branch` goes when the caller did not choose. */
-export function defaultWorktreeDirectory(project: Project, branch: string): AbsolutePath {
+/**
+ * Where a project's worktree goes when the caller did not choose.
+ *
+ * `name` is the session's name, which is the branch when the user did not say
+ * otherwise. Naming the directory after it rather than after the branch is what
+ * lets a second worktree of one branch exist: the user renames the session and
+ * the path follows, instead of us appending a `-2` nobody asked for.
+ */
+export function defaultWorktreeDirectory(project: Project, name: string): AbsolutePath {
   const root = project.settings.worktreeRoot;
-  const slug = worktreeSlug(branch);
+  const slug = worktreeSlug(name);
   return absolutePath(
     root.kind === "custom"
       ? join(root.directory, slug)
@@ -377,7 +395,12 @@ interface ResolvedRequest {
   readonly directory: AbsolutePath;
   readonly backing: Backing;
   /** Set only when a worktree still has to be created. */
-  readonly worktreePlan?: { readonly branch: string; readonly startPoint?: string };
+  readonly worktreePlan?: {
+    readonly branch: string;
+    readonly startPoint?: string;
+    /** Carried from the request: git's one-place-per-branch rule, overridden. */
+    readonly shareBranch?: boolean;
+  };
   /**
    * Set only when the project's own directory must be moved onto a branch
    * first. Carried out of `resolve` rather than done there, so resolution stays
@@ -802,10 +825,13 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
         const project = this.requireProject(request.projectID);
         if (!supportsWorktrees(project)) throw new WorktreesUnsupported(project.id);
 
-        const directory = request.directory ?? defaultWorktreeDirectory(project, request.branch);
+        // The name first, the branch second: the directory is named after what
+        // the user called the session, and the branch is only its default.
+        const name = request.name ?? request.branch;
+        const directory = request.directory ?? defaultWorktreeDirectory(project, name);
         return {
           project,
-          name: request.name ?? request.branch,
+          name,
           directory,
           backing: {
             kind: "worktree",
@@ -821,6 +847,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
           worktreePlan: {
             branch: request.branch,
             ...(request.startPoint === undefined ? {} : { startPoint: request.startPoint }),
+            ...(request.shareBranch === true ? { shareBranch: true } : {}),
           },
         };
       }
@@ -903,7 +930,11 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
   private async addWorktree(
     session: Session,
     project: Project,
-    plan: { readonly branch: string; readonly startPoint?: string },
+    plan: {
+      readonly branch: string;
+      readonly startPoint?: string;
+      readonly shareBranch?: boolean;
+    },
   ): Promise<void> {
     let created;
     try {
@@ -912,6 +943,9 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
         directory: session.directory,
         branch: plan.branch,
         ...(plan.startPoint === undefined ? {} : { startPoint: plan.startPoint }),
+        // The user was told the branch would be shared; git needs `--force` to
+        // allow it, and nothing else here asks for it.
+        ...(plan.shareBranch === true ? { force: true } : {}),
       });
     } catch (error) {
       this.known = this.known.filter((candidate) => candidate.id !== session.id);
