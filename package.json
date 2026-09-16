@@ -45,9 +45,9 @@
     "@jliocsar/begone-slop/effect": "4.0.0-rc.115"
   },
   "engines": {
-    "bun": ">=1.3.0",
+    "bun": ">=1.4.0",
     "node": ">=22.12.0"
   },
-  "packageManager": "bun@1.3.14",
-  "//": "overrides: @jliocsar/begone-slop pins effect@4.0.0-beta.100 while its own effect-oxlint dependency declares a peer of ^4.0.0-rc.112. Two copies make the oxlint plugin throw on every file (a beta SchemaAST read by an rc SchemaParser). One copy, at the version the workspace itself uses — scoped to that subtree, because @prisma/config wants effect 3 and v4 moved Either off the barrel."
+  "packageManager": "bun@1.4.2",
+  "//": "overrides: @jliocsar/begone-slop pins effect@4.0.0-beta.100 while its own effect-oxlint dependency declares a peer of ^4.0.0-rc.112. Two copies make the oxlint plugin throw on every file (a beta SchemaAST read by an rc SchemaParser). One copy, at the version the workspace itself uses — scoped to that subtree, because @prisma/config wants effect 3 and v4 moved Either off the barrel. A scoped override is what makes bun.lock lockfileVersion 3, so the bun floor is 1.4.0: anything older refuses to parse the lockfile at all."
 }
