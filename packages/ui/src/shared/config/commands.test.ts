@@ -45,15 +45,10 @@ describe("isCommandID", () => {
 });
 
 describe("availableCommands", () => {
-  test("a local shell unlocks exactly the four commands that need the Mac", () => {
+  test("a local shell unlocks exactly the two commands that need the Mac", () => {
     const missing = COMMANDS.filter((command) => !availableCommands(false).includes(command));
 
-    expect(missing.map((command) => command.id)).toEqual([
-      "openFolder",
-      "addProject",
-      "revealInFinder",
-      "openInTerminal",
-    ]);
+    expect(missing.map((command) => command.id)).toEqual(["revealInFinder", "openInTerminal"]);
     expect(availableCommands(true)).toBe(COMMANDS);
   });
 });

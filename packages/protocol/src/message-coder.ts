@@ -54,6 +54,7 @@ const CLIENT_MESSAGE_TYPES = exhaustiveLiterals<ClientMessage["type"]>()([
   "removeSession",
   "removalPlan",
   "projectBranches",
+  "listDirectory",
   "moveTab",
   "renameSession",
   "attach",

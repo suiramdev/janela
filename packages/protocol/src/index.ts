@@ -1,4 +1,5 @@
 export * from "./branch-overview.ts";
+export * from "./directory-listing.ts";
 export * from "./frame.ts";
 export * from "./handshake.ts";
 export * from "./message-coder.ts";

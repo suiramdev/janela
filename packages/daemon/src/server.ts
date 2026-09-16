@@ -20,6 +20,7 @@ import {
   type SubscriptionScope,
 } from "@janela/protocol";
 import type {
+  DirectoryBrowsing,
   LaunchProfileService,
   ProjectService,
   SessionService,
@@ -61,6 +62,7 @@ export interface DaemonServerOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
   readonly launchProfiles: LaunchProfileService;
+  readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
@@ -133,13 +135,14 @@ const DELIVERED = (): boolean => true;
 const SEND_FAILED = (): boolean => false;
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, launchProfiles, log } = options;
+  const { terminals, sessions, projects, launchProfiles, directories, log } = options;
   const dispatch =
     options.dispatch ??
     createRequestDispatch({
       sessions,
       projects,
       launchProfiles,
+      directories,
       terminals,
       log,
       announce: () =>

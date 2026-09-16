@@ -13,6 +13,7 @@ import {
   neverCommands,
   overlaidWindowControls,
   recordingConfirmations,
+  recordingDirectoryPicker,
   recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
@@ -79,6 +80,7 @@ export function fakeEnvironment(options: {
     commands: neverCommands(),
     windowControls: options.windowControls ?? overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
+    directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },

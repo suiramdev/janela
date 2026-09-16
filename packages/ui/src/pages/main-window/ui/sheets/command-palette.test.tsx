@@ -64,8 +64,8 @@ describe("rankedCommands", () => {
 
     expect(offered).not.toContain("revealInFinder");
     expect(offered).not.toContain("openInTerminal");
-    expect(offered).not.toContain("addProject");
-    expect(offered).not.toContain("openFolder");
+    expect(offered).toContain("addProject");
+    expect(offered).toContain("openFolder");
     expect(offered).toContain("newSession");
   });
 });

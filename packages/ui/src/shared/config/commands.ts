@@ -38,21 +38,13 @@ export const COMMANDS: readonly Command[] = [
 
   { id: "newSession", title: "New Session", accelerator: "CmdOrCtrl+N", menu: "file" },
   { id: "newTerminal", title: "New Terminal", accelerator: "CmdOrCtrl+T", menu: "file" },
-  {
-    id: "openFolder",
-    title: "Open Folder…",
-    accelerator: "CmdOrCtrl+O",
-    menu: "file",
-    section: 1,
-    localOnly: true,
-  },
+  { id: "openFolder", title: "Open Folder…", accelerator: "CmdOrCtrl+O", menu: "file", section: 1 },
   {
     id: "addProject",
     title: "Add Project…",
     accelerator: "CmdOrCtrl+Alt+O",
     menu: "file",
     section: 1,
-    localOnly: true,
   },
 
   { id: "showCommands", title: "Command Palette…", accelerator: "CmdOrCtrl+Shift+P", menu: "view" },

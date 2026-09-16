@@ -1,5 +1,6 @@
 import type { AbsolutePath, LaunchProfileID, ProjectID, SessionID, TerminalID } from "@janela/core";
-import { UserFacingError } from "@janela/support";
+import { UserFacingError, type Presentation } from "@janela/support";
+import { Match } from "effect";
 
 export class UnknownProject extends UserFacingError {
   override readonly summary = "That project no longer exists.";
@@ -114,4 +115,27 @@ export class NotAWorktree extends UserFacingError {
     super("directory is not a worktree of the project");
     this.directory = directory;
   }
+}
+
+export class DirectoryUnreadable extends UserFacingError {
+  override readonly summary = "Couldn't open that folder.";
+  readonly directory: AbsolutePath;
+  readonly code: string;
+
+  constructor(directory: AbsolutePath, code: string) {
+    super(`directory unreadable: ${code}`, directoryPresentation(code));
+    this.directory = directory;
+    this.code = code;
+  }
+}
+
+function directoryPresentation(code: string): Presentation {
+  return Match.value(code).pipe(
+    Match.when("ENOENT", () => ({ reason: "It doesn't exist." })),
+    Match.when("ENOTDIR", () => ({ reason: "It isn't a folder." })),
+    Match.whenOr("EACCES", "EPERM", () => ({
+      reason: "You don't have permission to read it.",
+    })),
+    Match.orElse(() => ({})),
+  );
 }

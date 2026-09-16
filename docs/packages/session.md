@@ -25,7 +25,7 @@ programs are run with `Effect.runPromise` inside the method that owns them.
 
 ## errors.ts
 
-Eleven `UserFacingError` subclasses and nothing else. They keep that base
+Twelve `UserFacingError` subclasses and nothing else. They keep that base
 because the `instanceof` contract crosses the daemon/client decision:
 `@janela/daemon` imports `UnknownTerminal` by name and turns anything
 `isUserFacing` into a `UserFacingFailure` on the wire. None of them carries a
@@ -68,6 +68,38 @@ The refusals are the interesting half:
   change when the forge integration lands is impossible to miss. An absent
   `ForgeServing` is this daemon having been composed without one, which from the
   user's side is the same thing.
+- `DirectoryUnreadable` — the folder a browser client asked to see could not be
+  read. The `reason` is chosen from the errno (`ENOENT`, `ENOTDIR`, `EACCES` /
+  `EPERM`) and nothing else, so what the user reads is one of three sentences
+  and the message carries the code, never the path.
+
+## directory-browser.ts
+
+`DirectoryBrowsing` answers protocol v8's `listDirectory` for a client that has
+no folder picker of its own — a browser page — with one folder of the daemon's
+filesystem. The Mac client never calls it; it has the real one.
+
+- **One folder per request, never a tree.** The client walks; the daemon reads
+  what it is asked for. Nothing is prefetched (§ Non-negotiables 5).
+- **Bounded** at `DIRECTORY_ENTRY_LIMIT` (1,000) entries *after* sorting, so the
+  cut is deterministic and the first thousand alphabetically are what a user sees
+  with `truncated: true`. A `node_modules` is read once, by name only, and never
+  serialised whole (§ Non-negotiables 9).
+- **Dotfiles are left out**, as Finder leaves them out, which also keeps `.git`,
+  `.ssh` and `.env` names off the wire.
+- **Symlinks take their target's kind**, resolved with one `stat` each — only for
+  the symlinks that survived the cut, so the cost is bounded by the limit too — and
+  a dangling one is dropped rather than shown as a folder that will not open.
+- **The path is resolved** (`..`, trailing slashes) before it is read *and* before
+  it is reported, so what a client shows in its path field is what it will send
+  back as a working directory. `undefined` means the home the daemon was given;
+  the listing carries `home` so the client can offer it without asking twice.
+- **The sort is `Intl.Collator` with `numeric`**, which is what Finder does:
+  `item2` before `item10`, and case does not split the list in two.
+
+It lives here rather than in `@janela/daemon` because it is a service the daemon
+composes — with a `home` injected, so a test walks a temporary tree — and its
+failure is one of this package's `UserFacingError`s.
 
 ## session-service.ts
 

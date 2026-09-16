@@ -10,12 +10,14 @@ import type {
   TerminalDescriptor,
   TerminalID,
 } from "@janela/core";
+import { absolutePath } from "@janela/core";
 import {
   FrameKind,
   decodeDaemonMessage,
   encodeClientMessage,
   encodeInput,
   parseBranchOverview,
+  parseDirectoryListing,
   parseRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -24,6 +26,7 @@ import {
   type SessionRemovalPreview,
 } from "@janela/protocol";
 import type {
+  DirectoryBrowsing,
   LaunchProfileService,
   NewTerminalOptions,
   ProjectBranchOverview,
@@ -37,6 +40,8 @@ import { UserFacingError } from "@janela/support";
 import { createDaemonServer, type DaemonServer } from "./server.ts";
 import {
   clientHello,
+  fakeDirectories,
+  fakeListing,
   fakeLaunchProfiles,
   fakeProfile,
   fakeProjects,
@@ -152,6 +157,7 @@ function fixture(
     readonly projectOverrides?: Partial<ProjectService>;
     readonly profiles?: readonly LaunchProfile[];
     readonly profileOverrides?: Partial<LaunchProfileService>;
+    readonly directories?: DirectoryBrowsing;
   } = {},
 ): Fixture {
   const registry = fakeRegistry(options.terminals ?? []);
@@ -163,6 +169,7 @@ function fixture(
     sessions: fakeSessions(options.sessions ?? [], options.sessionOverrides ?? {}),
     projects: fakeProjects(options.projects ?? [], options.projectOverrides ?? {}),
     launchProfiles: fakeLaunchProfiles(options.profiles ?? [], options.profileOverrides ?? {}),
+    directories: options.directories ?? fakeDirectories(),
     terminals: registry,
     log: logger,
     handshakeDeadlineMs: 250,
@@ -754,6 +761,87 @@ describe("sessions", () => {
       id: 1 as RequestID,
       failure: { summary: "This project isn't a git repository." },
     });
+  });
+
+  test("a directory listing round-trips as text, and no directory asks for the home", async () => {
+    const asked: (string | undefined)[] = [];
+    const listing = fakeListing();
+    const daemon = fixture({
+      directories: fakeDirectories((directory) => {
+        asked.push(directory);
+
+        return Promise.resolve(listing);
+      }),
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "listDirectory", id: 1 as RequestID }));
+    const home = await peer.reply(1 as RequestID);
+
+    await peer.send(
+      request({ type: "listDirectory", id: 2 as RequestID, directory: absolutePath("/tmp") }),
+    );
+    const named = await peer.reply(2 as RequestID);
+
+    if (home.type !== "text") throw new Error(`expected text, got ${home.type}`);
+
+    expect(parseDirectoryListing(home.text)).toEqual(listing);
+    expect(named.type).toBe("text");
+    expect(asked).toEqual([undefined, "/tmp"]);
+  });
+
+  test("a directory that is not absolute never reaches the filesystem", async () => {
+    const asked: (string | undefined)[] = [];
+    const daemon = fixture({
+      directories: fakeDirectories((directory) => {
+        asked.push(directory);
+
+        return Promise.resolve(fakeListing());
+      }),
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(wireControl({ type: "listDirectory", id: 1, directory: "code/../../etc" }));
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+    expect(asked).toEqual([]);
+  });
+
+  test("a folder the daemon cannot read is refused with its reason, and only its name is logged", async () => {
+    class Sealed extends UserFacingError {
+      override readonly summary = "Couldn't open that folder.";
+
+      constructor() {
+        super("directory unreadable: EACCES", {
+          reason: "You don't have permission to read it.",
+        });
+      }
+    }
+
+    const daemon = fixture({
+      directories: fakeDirectories(() => Promise.reject(new Sealed())),
+    });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "listDirectory",
+        id: 1 as RequestID,
+        directory: absolutePath("/Users/ada/sealed"),
+      }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({
+      type: "failed",
+      id: 1 as RequestID,
+      failure: {
+        summary: "Couldn't open that folder.",
+        reason: "You don't have permission to read it.",
+      },
+    });
+    expect(daemon.with("request failed").map((record) => record.fields)).toEqual([
+      { client: expect.any(String), type: "listDirectory", error: "Sealed" },
+    ]);
   });
 
   test("moveTab reaches the brain and is acknowledged", async () => {

@@ -10,6 +10,7 @@ import {
   neverCommands,
   overlaidWindowControls,
   recordingConfirmations,
+  recordingDirectoryPicker,
   recordingService,
 } from "./recording-ports.ts";
 
@@ -34,6 +35,7 @@ export function fakeClientEnvironment(): ClientEnvironment {
     commands: neverCommands(),
     windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
+    directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
@@ -66,6 +68,7 @@ export function environmentOver(state: {
     commands: neverCommands(),
     windowControls: overlaidWindowControls,
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
+    directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
     local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },

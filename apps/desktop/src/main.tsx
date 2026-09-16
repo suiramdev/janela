@@ -17,7 +17,7 @@ import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import { installNativeMenu, tauriCommandSource } from "./adapters/menu.ts";
-import { tauriNativeShell } from "./adapters/native.ts";
+import { tauriDirectoryPicker, tauriNativeShell } from "./adapters/native.ts";
 import { tauriWindowControls } from "./adapters/window-controls.ts";
 import { liveEnvironment } from "./environment.ts";
 
@@ -40,6 +40,7 @@ const clientEnvironment: ClientEnvironment = {
   commands: tauriCommandSource(),
   windowControls: tauriWindowControls(),
   confirmations,
+  directories: tauriDirectoryPicker(),
   clipboard: browserClipboard(),
   settings: settingsStore,
   local: {

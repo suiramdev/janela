@@ -27,6 +27,7 @@ import {
 import {
   clientHello,
   fakeDispatch,
+  fakeDirectories,
   fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
@@ -166,6 +167,7 @@ function fixture(
     sessions: fakeSessions(options.sessions ?? []),
     projects: fakeProjects(),
     launchProfiles: fakeLaunchProfiles(),
+    directories: fakeDirectories(),
     terminals: registry,
     log: logger,
     dispatch,

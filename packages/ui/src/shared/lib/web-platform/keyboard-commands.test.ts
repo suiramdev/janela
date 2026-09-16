@@ -18,6 +18,8 @@ interface RecordingTarget extends ChordTarget {
   readonly registered: Registration[];
 }
 
+const NEVER_HELD = (): boolean => false;
+
 const CHORD_FOR_ACCELERATOR = {
   "CmdOrCtrl+,": "Comma",
   "CmdOrCtrl+N": "KeyN",
@@ -139,7 +141,7 @@ describe("keyboardCommandSource", () => {
     const received: CommandID[] = [];
     const calls: string[] = [];
 
-    const unsubscribe = keyboardCommandSource(target, COMMANDS).subscribe((id) => {
+    const unsubscribe = keyboardCommandSource(target, COMMANDS, NEVER_HELD).subscribe((id) => {
       received.push(id);
     });
 
@@ -161,12 +163,32 @@ describe("keyboardCommandSource", () => {
     const received: CommandID[] = [];
     const calls: string[] = [];
 
-    keyboardCommandSource(target, COMMANDS).subscribe((id) => {
+    keyboardCommandSource(target, COMMANDS, NEVER_HELD).subscribe((id) => {
       received.push(id);
     });
     target.registered[0]?.listener(event(chord("KeyC"), calls));
 
     expect(received).toEqual([]);
     expect(calls).toEqual([]);
+  });
+
+  test("while a modal holds the keyboard, a chord is claimed but runs nothing", () => {
+    const target = recordingTarget();
+    const received: CommandID[] = [];
+    const calls: string[] = [];
+    let held = true;
+
+    keyboardCommandSource(target, COMMANDS, () => held).subscribe((id) => {
+      received.push(id);
+    });
+    target.registered[0]?.listener(event(chord("KeyN"), calls));
+
+    expect(received).toEqual([]);
+    expect(calls).toEqual(["preventDefault", "stopPropagation"]);
+
+    held = false;
+    target.registered[0]?.listener(event(chord("KeyN"), calls));
+
+    expect(received).toEqual(["newSession"]);
   });
 });

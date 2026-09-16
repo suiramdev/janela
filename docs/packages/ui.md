@@ -371,6 +371,42 @@ question is declined, never a silent yes. Initial focus is Cancel rather than th
 first tabbable element (the switch): a question is read and then answered, and the
 answer it opens on is the reversible one, so a ⌘W from muscle memory cancels.
 
+### `ui/directory-picker-host.tsx` and `ui/directory-browser.tsx`
+
+The browser client's folder picker: a Finder column view over `listDirectory`,
+shown by the host whenever `DirectoryPickerQueue.pending` is set. Mounted by the
+web root beside `MainWindow`, not inside it, because the Mac client has no such
+dialog to mount and `MainWindow` should not know which client it is.
+
+- **Columns, not a tree.** A folder chosen in one column opens the next; the deeper
+  columns are dropped when an earlier one changes, and the chosen folder is always
+  the deepest column's. That is `NSBrowser`'s model, and it means the daemon is
+  asked for exactly one folder per step (§ Non-negotiables 5). Listings are cached
+  for the dialog's life and never refetched while it is open.
+- **The keyboard is Finder's.** ↑/↓ move the selection and open its column, → moves
+  into it (selecting the first folder when nothing is), ← moves back without
+  closing anything, Enter chooses, Escape cancels. Focus is one listbox per column
+  with `aria-activedescendant`, so a screen reader hears the folder and the row.
+  The lit selection is the focused column's; the columns behind it keep theirs in
+  `bg-selected` grey, as Finder does, so the eye can find the keyboard.
+- **Files are shown, dimmed, and not choosable**, as in a folder-choosing
+  `NSOpenPanel`: knowing a folder holds `package.json` is how a person recognises
+  it. Dotfiles never arrive.
+- **The path field is the Go-to-Folder.** It follows the selection, accepts a typed
+  absolute path on Enter (trailing slashes stripped by `typedDirectory`, so the
+  column is labelled and the daemon is sent the same string), and is the way above
+  the home the picker opens on — besides the Enclosing Folder button, which
+  prepends the parent and keeps every column, and Home.
+- **A folder that will not open says why in its own column** — the daemon's
+  `DirectoryUnreadable` reason — and Choose is disabled until the deepest column has
+  loaded: a folder the daemon cannot read is not a folder a session can run in.
+  `truncated` listings end with a notice rather than pretending the folder ends.
+- The decisions are pure in `model/directory-columns.ts` and tested there; the
+  component holds only the listing cache, the draft in the path field, and the
+  scroll/focus effects. The column fade is 100 ms, opacity only, `motion-safe:`;
+  rows transition `background-color` only, 100 ms; the selection is a colour, so
+  nothing is visible only while animating.
+
 ### `ui/connection-banner.tsx`
 
 An inset strip rather than a modal: the user's terminals are still running and their
@@ -801,8 +837,13 @@ thing that can be wrong.
 - `CommandSource` is a port because the menu bar is native: views know a command
   happened, not that a `tauri://` event carried it, so a CLI or browser supplies its own
   source and every row still works.
-- `NativeShell` is down to the three things only the shell can do. Asking a question is
-  no longer one of them.
+- `NativeShell` is down to the two things only the shell can do: Finder and
+  Terminal.app. Asking a question is no longer one of them, and neither is choosing a
+  folder.
+- `DirectoryPicking` sits beside `confirmations` rather than under `local`, because
+  every client can answer it: the Mac with `NSOpenPanel`, a browser page with the
+  daemon's own listing (`directory-picker.ts`). That is what lets Open Folder… and
+  Add Project… stay in every palette.
 - `WindowControls` carries the *fact*, not a width: how much room three buttons need is
   the client's business, and a pixel count crossing this seam would put the window's
   layout in the shell.
@@ -841,6 +882,21 @@ nothing could assert on.
 - The queue takes `view` and `settings`, because a silenced question has to survive the
   window *and* take effect immediately. The storage write is best-effort: losing the
   preference costs one more question, not the answer just given.
+
+### `directory-picker.ts`
+
+The port a folder question goes through, and the queue a client without a native
+panel answers it with.
+
+- `DirectoryPicking` is one promise-returning method, the same shape `NativeShell`
+  carried until it was the last thing there a browser could also do. The Mac client
+  implements it with the real panel; there is no reason to draw a lesser Finder on
+  the machine that has Finder.
+- `DirectoryPickerQueue` is `ConfirmationQueue`'s shape without settings: one
+  request on screen, a second one answered `undefined` without being shown, for the
+  same reason — it is modal, and the only way to produce a second is a chord. The
+  web root composes it and mounts `DirectoryPickerHost` beside `MainWindow`;
+  `MainWindow` itself never learns which implementation it is talking to.
 
 ### `global-settings.ts`
 
@@ -1077,9 +1133,8 @@ were written again rather than reached for.
 
 The ports a standards-compliant browser implements on its own, so the desktop app and
 the browser client share one implementation rather than two drifting copies. They are
-exported from the package index; the Tauri-only ports (the directory picker, Finder,
-Terminal.app, `launchctl`) stay in `apps/desktop/src/adapters/` under
-`ClientEnvironment.local`.
+exported from the package index; the Tauri-only ports (Finder, Terminal.app,
+`launchctl`) stay in `apps/desktop/src/adapters/` under `ClientEnvironment.local`.
 
 - `clipboard.ts` — `navigator.clipboard`, no plugin: available to a WKWebView in a
   secure context, which `tauri://` is, and to a browser page over `https:` or
@@ -1111,7 +1166,10 @@ Terminal.app, `launchctl`) stay in `apps/desktop/src/adapters/` under
   ⌘,) never reach the page; the palette (⌘⇧P) lists every available command, so
   nothing is unreachable, only slower. It takes the command list as a parameter so
   the browser passes `availableCommands(false)` and never claims a chord for a
-  command it cannot run.
+  command it cannot run. The third argument, `held`, is the modal that owns the
+  keyboard: the source still claims the chord — a ⌘N over the folder picker must not
+  fall through to the browser's new-window — but runs nothing while a picker is on
+  screen, which is what a native panel does to the menu bar.
 
 ---
 

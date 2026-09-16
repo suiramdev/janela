@@ -47,17 +47,21 @@ have: the stores, one `createConnection` named `janela-web`, and `start()`. No
 attention routing — a browser page delivers no OS notification in this step, and
 the sidebar's attention state still arrives with the mirror. `main.tsx` fills the
 `ClientEnvironment` from `@janela/ui`'s web-platform ports (`browserClipboard`,
-`localStorageSettings`, `keyboardCommandSource` over `availableCommands(false)`),
-`NO_WINDOW_CONTROLS` because no title bar overlays a browser page, and
-`local: undefined`. The log sink is the console, level for level — the only
-`console.*` in the client, and the one place it is the right tool.
+`localStorageSettings`, `keyboardCommandSource` over `availableCommands(false)`,
+held while a folder picker is on screen), `NO_WINDOW_CONTROLS` because no title bar
+overlays a browser page, `local: undefined`, and `createDirectoryPickerQueue()` for
+`directories` — with `DirectoryPickerHost` mounted beside `MainWindow`, so Open
+Folder…, Add Project… and the session sheet's Choose… open the Finder-style column
+view over the daemon's `listDirectory` ([`ui.md`](ui.md) § directory-browser). The
+log sink is the console, level for level — the only `console.*` in the client, and
+the one place it is the right tool.
 
 ## What a browser user does not get
 
-- **Add Project…, Open Folder…, Reveal in Finder, Open in Terminal** are
-  `localOnly` commands: absent from the palette, unclaimed by the keyboard, no-ops
-  in dispatch. A standalone session is still one ⌘N away — the folder field is
-  typed. Adding a project remotely is deferred, not refused for ever.
+- **Reveal in Finder, Open in Terminal** are `localOnly` commands: absent from the
+  palette, unclaimed by the keyboard, no-ops in dispatch. Add Project… and Open
+  Folder… are not: the folder is chosen in the app's own column view, fed by the
+  daemon one folder at a time.
 - **The background-service controls and the restart-on-version-skew button** need
   `launchctl` on the Mac; the section and the button are not rendered.
 - **Browser-reserved chords.** ⌘W, ⌘N, ⌘T, ⌘Q and ⌘, never reach a page in Chrome

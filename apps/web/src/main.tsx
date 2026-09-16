@@ -1,12 +1,14 @@
 import { setLogSink } from "@janela/support";
 import {
   ClientEnvironmentProvider,
+  DirectoryPickerHost,
   MainWindow,
   NO_WINDOW_CONTROLS,
   SettingsScreen,
   availableCommands,
   browserClipboard,
   createConfirmationQueue,
+  createDirectoryPickerQueue,
   createViewState,
   keyboardCommandSource,
   localStorageSettings,
@@ -31,14 +33,21 @@ const settingsStore = localStorageSettings();
 
 const confirmations = createConfirmationQueue({ view, settings: settingsStore });
 
+const directories = createDirectoryPickerQueue();
+
 const clientEnvironment: ClientEnvironment = {
   projects: environment.projects,
   sessions: environment.sessions,
   connection: environment.connection,
   view,
-  commands: keyboardCommandSource(window, availableCommands(false)),
+  commands: keyboardCommandSource(
+    window,
+    availableCommands(false),
+    () => directories.pending !== undefined,
+  ),
   windowControls: NO_WINDOW_CONTROLS,
   confirmations,
+  directories,
   clipboard: browserClipboard(),
   settings: settingsStore,
   local: undefined,
@@ -58,6 +67,7 @@ function App(): ReactElement {
   return (
     <ClientEnvironmentProvider environment={clientEnvironment}>
       <MainWindow renderSettings={renderSettings} />
+      <DirectoryPickerHost picker={directories} />
     </ClientEnvironmentProvider>
   );
 }

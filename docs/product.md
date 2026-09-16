@@ -226,9 +226,10 @@ Since the client became a WebView, the second one has arrived in its first form:
 same views run as a browser page (`apps/web`) over a WebSocket to a gateway on the
 Mac (`apps/gateway`), sharing the mirror and the terminal surface with the desktop
 app rather than reimplementing them, and reached from another device through your
-own tailnet. The phone client proper is that page on a phone, and the affordances
-only the Mac can offer — the folder picker, Finder, `launchctl` — simply are not
-drawn there. Still nothing runs anywhere but your machine.
+own tailnet. The phone client proper is that page on a phone. Choosing a folder
+there is the daemon's job — it lists one folder at a time for a Finder-like column
+view — and the affordances only the Mac can offer — Finder, Terminal.app,
+`launchctl` — simply are not drawn. Still nothing runs anywhere but your machine.
 
 ---
 

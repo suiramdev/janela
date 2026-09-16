@@ -166,7 +166,7 @@ by accident.
 | `@janela/terminal-ui` | `TerminalRendering`, the surface that draws | Own a PTY or a child process |
 | `@janela/ui` | Views and presentation state, internally Feature-Sliced (below) | Reach past `@janela/client` |
 | `apps/desktop` | The Tauri shell, the object graph, the port adapters, menus, notifications, the socket bridge | Contain logic worth testing |
-| `apps/web` | The browser client: the object graph over a WebSocket transport, the console log sink | Name a port only the Mac can answer — `ClientEnvironment.local` is `undefined` here |
+| `apps/web` | The browser client: the object graph over a WebSocket transport, the in-app folder picker host, the console log sink | Name a port only the Mac can answer — `ClientEnvironment.local` is `undefined` here |
 
 *Planned* means designed and documented but not yet implemented.
 
@@ -375,12 +375,23 @@ sixth seam: the ports are declared in `packages/ui/src/shared/model/client-envir
 beside the views that consume them. The ones a standards-compliant browser can
 implement on its own — the clipboard, `localStorage` settings, keyboard chords —
 are implemented once in `packages/ui/src/shared/lib/web-platform/` and used by
-both apps; the ones only the Mac can answer — the directory picker, Finder,
-Terminal.app, `launchctl` — are grouped as `ClientEnvironment.local`, which the
-desktop app implements in `apps/desktop/src/adapters/` and the browser client
-leaves `undefined`. A view that needs `local` does not render its affordance
-without it, which is how "Reveal in Finder" and the background-service controls
-disappear in a browser rather than fail there.
+both apps; the ones only the Mac can answer — Finder, Terminal.app, `launchctl`
+— are grouped as `ClientEnvironment.local`, which the desktop app implements in
+`apps/desktop/src/adapters/` and the browser client leaves `undefined`. A view
+that needs `local` does not render its affordance without it, which is how
+"Reveal in Finder" and the background-service controls disappear in a browser
+rather than fail there.
+
+The directory picker is the port in between, and the reason it is a port rather
+than a member of `local`: the Mac answers it with `NSOpenPanel`, and a browser
+answers it with the daemon, which reads one folder at a time on request
+(protocol v8's `listDirectory`) for a Finder-style column view drawn by the
+client. The daemon gains a read of the user's filesystem by name only, one
+folder per request, bounded and with dotfiles left out
+([`packages/session.md`](packages/session.md) § directory-browser.ts) — and it
+is the same daemon the Mac client already trusts to *run things* in those
+folders. The upshot is that Open Folder… and Add Project… are commands of every
+client, not of the Mac.
 
 ---
 

@@ -37,6 +37,7 @@ export function MainWindow(props: MainWindowProps): ReactElement {
         connection: environment.connection,
         view,
         local: environment.local,
+        directories: environment.directories,
         confirmations: environment.confirmations,
       }),
     [environment, view],

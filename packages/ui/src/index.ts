@@ -1,10 +1,11 @@
-export { MainWindow } from "./pages/main-window/index.ts";
+export { DirectoryPickerHost, MainWindow } from "./pages/main-window/index.ts";
 
 export { SettingsScreen } from "./pages/settings/index.ts";
 
 export {
   ClientEnvironmentProvider,
   createConfirmationQueue,
+  createDirectoryPickerQueue,
   createViewState,
   CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
@@ -16,6 +17,8 @@ export {
   type Clipboard,
   type CommandSource,
   type ConfirmationKey,
+  type DirectoryPickerQueue,
+  type DirectoryPicking,
   type GlobalSettings,
   type LocalShell,
   type NativeShell,
