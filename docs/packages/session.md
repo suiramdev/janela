@@ -460,6 +460,33 @@ terminfo entry, so every existing tool works on day one; revisit only if we ship
 a terminfo file, and note that the client renderer and the daemon emulator are two
 different libraries that must agree on what they claim to be.
 
+`ConEmuANSI` is declared beside `TERM`, and it is the reason a session can show
+that an agent is mid-turn. `OSC 9;4` — the progress escape `@janela/terminal`
+parses — is a ConEmu extension, and every harness that emits it gates the
+emission on recognising the terminal first. Claude Code's gate takes
+`ConEmuANSI`, or `TERM_PROGRAM` being `ghostty` ≥ 1.2.0 or `iTerm.app` ≥ 3.6.6.
+Measured against Claude Code 2.1.274 in a real PTY: with nothing declared it
+emits no `9;4` at all; with `ConEmuANSI` it emits `9;4;3` on turn start and
+`9;4;0` at the end, and adds **no other escape sequence** to what it already
+sent. Claiming to be Ghostty also works and is worse: it makes the harness push
+kitty keyboard-protocol sequences (`CSI > … u`) at a renderer that has not
+agreed to them, which is the keyboard belonging to the terminal rather than to
+the running program — non-negotiable 4. So the declaration is the narrow one,
+and it is true: this terminal does understand the ConEmu progress extension.
+
+That declaration is all Janela can do, and it is not enough for every harness.
+What each one needs, measured:
+
+| Harness | Working (`9;4`) | Attention |
+| --- | --- | --- |
+| Claude Code 2.1.274 | yes, unlocked by `ConEmuANSI` | `preferredNotifChannel: "terminal_bell"`, or a `Notification` hook |
+| omp 18.2.4, and `pi` on its profile | only when the user sets `terminal.showProgress` (default off) | `ask.notify` |
+| Codex 0.153.4 | never — the binary contains no `9;4` | `tui.notifications` (default off) emits OSC 9 or BEL |
+
+A harness that stays silent leaves its session showing a live shell, which is
+what it is. Janela reports what the terminal told it and infers nothing, so the
+remaining gaps are settings in the user's own tools, not signals to guess at.
+
 An empty argv is the login shell, dash-prefixed — the case that makes the app feel
 like Terminal.app. Otherwise the executable is resolved against the captured
 `PATH` here rather than left to `execve`, so the user gets "Claude Code isn't

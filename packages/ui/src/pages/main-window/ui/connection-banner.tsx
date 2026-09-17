@@ -82,7 +82,7 @@ export function ConnectionBanner(): ReactElement | null {
         aria-live="polite"
         className="border-border bg-muted text-muted-foreground absolute inset-x-0 top-0 flex items-center justify-center gap-2 border-b px-2 py-1 text-xs"
       >
-        <Spinner aria-hidden="true" className="size-3" />
+        <Spinner aria-hidden="true" size={12} />
         {model.text}
       </output>
     );

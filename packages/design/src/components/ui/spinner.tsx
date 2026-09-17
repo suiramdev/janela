@@ -1,20 +1,22 @@
-import { Loading03Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "cn";
 
-// `strokeWidth` is a number here where an `<svg>` accepts a string too; the icon
-// component decides, so the prop is left out of what callers may pass.
-function Spinner({ className, ...props }: Omit<React.ComponentProps<"svg">, "strokeWidth">) {
+import { Dotm3x3_20 } from "./dotm-3x3-20.tsx";
+
+const DEFAULT_SIZE = 16;
+
+function Spinner({
+  className,
+  size = DEFAULT_SIZE,
+  ...props
+}: Omit<React.ComponentProps<"span">, "children"> & { readonly size?: number }) {
   return (
-    <HugeiconsIcon
-      icon={Loading03Icon}
-      strokeWidth={2}
+    <span
       data-slot="spinner"
-      role="status"
-      aria-label="Loading"
-      className={cn("size-4 animate-spin", className)}
+      className={cn("inline-flex shrink-0 items-center justify-center", className)}
       {...props}
-    />
+    >
+      <Dotm3x3_20 size={size} />
+    </span>
   );
 }
 

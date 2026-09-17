@@ -76,6 +76,8 @@ export const DEFAULT_LOGIN_SHELL = "/bin/zsh";
 
 export const DECLARED_TERM = "xterm-256color";
 
+export const DECLARED_CONEMU_ANSI = "ON";
+
 const CAPTURE_SCRIPT = "printf '\\0JANELA_ENVIRONMENT\\0'; /usr/bin/env -0";
 
 const CAPTURE_MARKER = "\0JANELA_ENVIRONMENT\0";

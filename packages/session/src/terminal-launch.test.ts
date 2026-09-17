@@ -143,7 +143,7 @@ describe("resolveTerminalLaunch", () => {
     expect(thrown.summary).toBe("Claude Code isn't installed.");
   });
 
-  test("TERM and the JANELA namespace win over a profile that sets them", async () => {
+  test("the terminal capabilities and the JANELA namespace win over a profile that sets them", async () => {
     const launch = await resolveTerminalLaunch({
       session,
       terminal: descriptor(),
@@ -152,6 +152,7 @@ describe("resolveTerminalLaunch", () => {
         command: [],
         environment: {
           TERM: "vt100",
+          ConEmuANSI: "OFF",
           JANELA_SESSION_NAME: "not this",
           ANTHROPIC_LOG: "debug",
         },
@@ -161,6 +162,7 @@ describe("resolveTerminalLaunch", () => {
     });
 
     expect(launch.environment["TERM"]).toBe("xterm-256color");
+    expect(launch.environment["ConEmuANSI"]).toBe("ON");
     expect(launch.environment["JANELA_SESSION_NAME"]).toBe("feature");
     expect(launch.environment["JANELA_PROJECT"]).toBe("janela");
     expect(launch.environment["ANTHROPIC_LOG"]).toBe("debug");

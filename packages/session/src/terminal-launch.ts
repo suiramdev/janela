@@ -11,6 +11,7 @@ import type { TerminalLaunch } from "@janela/terminal";
 
 import { LaunchProfileUnavailable } from "./errors.ts";
 import {
+  DECLARED_CONEMU_ANSI,
   DECLARED_TERM,
   janelaVariables,
   type JanelaVariablesInput,
@@ -50,6 +51,7 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
     ...input.shell.resolved,
     ...input.profile?.environment,
     TERM: DECLARED_TERM,
+    ConEmuANSI: DECLARED_CONEMU_ANSI,
     ...janelaVariables(variables),
   };
 
