@@ -51,29 +51,42 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run check:layers` | The layering gate alone | When you touched a dependency edge |
 | `bun run check:fsd` | The FSD structure gate alone (Steiger, inside `@janela/ui`) | When you moved a file inside `@janela/ui` |
 | `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
-| `bun run dev` | A `janelad` **and** the app, in one terminal | When you need to see it |
-| `bun run app` | The app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
+| `bun run desktop` | A `janelad` **and** the Tauri app, in one terminal | When you need to see the window |
+| `bun run desktop:only` | The Tauri app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
+| `bun run desktop:build` | `tauri build` — the signed bundle | To make a release |
 | `bun run web` | A `janelad`, the gateway **and** the browser client's Vite server, in one terminal | When you want the window in a browser at `http://localhost:1421` |
+| `bun run web:only` | The gateway and the Vite server alone — no daemon | When a daemon is already running |
+| `bun run web:isolated` | A `janelad`, the gateway **and** a watching web build under a private `HOME` in `/tmp/janela-iso/<id>` and a private port — never touches your own daemon | In an agent worktree, or whenever another checkout may be running |
 | `bun run web:build` | Build the browser client into `apps/web/dist` | Before `bun run gateway` |
 | `bun run gateway` | The gateway alone, serving `apps/web/dist` and `/ws` on `127.0.0.1:7411` | To reach the window from another device: `tailscale serve --bg 7411` |
+| `bun run daemon` | `janelad` alone, from source, in the foreground, against your real `HOME` | When you want the daemon without a client |
+| `bun run daemon:build` | Compile the `janelad` sidecar | Before `desktop:build`, or to run the compiled one by hand |
 | `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
+| `bun run daemon:status` | Which `janelad` is resident, from where, and who is connected | When two checkouts might be fighting |
+
+The grammar: the noun is the `apps/<dir>` it runs; bare runs it with a daemon,
+`:only` runs the client alone, `:build` builds it, `:isolated` runs it under a
+private `HOME`.
 
 **Prefer `bun run check` over building the app.** It covers everything except the
-Tauri shell and finishes in seconds; `bun run dev` drives cargo and takes minutes.
+Tauri shell and finishes in seconds; `bun run desktop` drives cargo and takes minutes.
 
-Three things that will bite you once each:
+Four things that will bite you once each:
 
 - **Nothing in the app starts the daemon.** An installed build does not need it to:
   launchd owns `janelad`, and a client that cannot connect runs `launchctl
   kickstart`. A development build has no bundle, so it registers nothing and there
-  is no service to start — `bun run dev` starts one for you, and `bun run app`
-  leaves you looking at a window that reconnects forever.
+  is no service to start — `bun run desktop` starts one for you, and
+  `bun run desktop:only` leaves you looking at a window that reconnects forever.
 - **A resident `janelad` from another checkout will serve your app.** That is by
   design — it holds the user's terminals — but during development it means you are
   testing code you did not build. `bun run daemon:status` says who is running, and
-  `bun run dev` reuses whatever is listening rather than fighting it.
+  `bun run desktop` reuses whatever is listening rather than fighting it.
 - **Prisma's CLI needs Node, not Bun**, and rejects unsupported versions. The pinned
   one is in `.node-version`. Nothing we ship uses it.
+- **`bun run daemon:restart` is `pkill -x janelad`**, and stops the **user's
+  installed** daemon from whichever worktree you run it in. It never reaches a
+  `bun run web:isolated` daemon — for an isolated run, Ctrl-C is the stop.
 
 ---
 

@@ -31,7 +31,7 @@ bun test packages/daemon/src/listener.test.ts
 
 `bun run check` — `lint` + `typecheck` + `test` — is exactly what CI runs. There is
 no separate UI-test target: the Tauri shell is exercised by hand with
-`bun run dev` ([`AGENTS.md`](../AGENTS.md) § Commands).
+`bun run desktop` ([`AGENTS.md`](../AGENTS.md) § Commands).
 
 ### Tests share one process
 

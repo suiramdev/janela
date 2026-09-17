@@ -30,7 +30,7 @@ Then, as needed:
 - **[`packages/`](packages/)** — one page per package: the decisions behind its
   modules, the constraints they were measured against, and what was deliberately
   left out. Read the page for a package before changing it.
-- **[`scripts.md`](scripts.md)** — the workspace tooling: `bun run dev`, the daemon
+- **[`scripts.md`](scripts.md)** — the workspace tooling: `bun run desktop`, the daemon
   helpers, the survival probe, and the gates that keep the build honest.
 - **[`research/`](research/)** — primary-source research behind the architecture and
   the technology choices.

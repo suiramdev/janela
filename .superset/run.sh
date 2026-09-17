@@ -1,27 +1,22 @@
 #!/usr/bin/env bash
 #
-# Superset run command: build and launch this workspace's app.
+# Superset run command: launch this workspace's app in isolation.
 #
-# This is the slow path on purpose — a Tauri bundle drives cargo and takes minutes,
-# which is why it is a run command and not part of setup. The day-to-day loop is
-# `bun run check`, which finishes in seconds.
+# The workspace runs against its own daemon, under a private HOME in
+# /tmp/janela-iso/<id> (the id is derived from this checkout's path), and is
+# reached in a browser at the port the banner prints. It never probes, reuses,
+# kickstarts or stops the user's own janelad, so any number of workspaces can run
+# side by side without touching the user's sessions, terminals or database.
+#
+# The isolated path is the web client: a janelad, the gateway that serves
+# apps/web/dist and relays /ws onto the daemon's socket, and a watching web build.
+# It compiles no Rust. Changes to the Tauri shell itself are verified by a human
+# from the root checkout with `bun run desktop`.
+#
+# It stays in the foreground and stops everything it started when you stop it.
+# `.superset/teardown.sh` removes the isolated HOME when the workspace is deleted.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Two clients sharing one daemon is by design, but a janelad built from a different
-# checkout serving this app is not: the app would render behaviour from code that
-# is not in this workspace. Say so rather than killing it — stopping the daemon
-# closes the user's terminals and is their call (`bun run daemon:restart`).
-resident="$(pgrep -lf janelad | grep -Fv -- "$PWD" || true)"
-if [[ -n "$resident" ]]; then
-    printf '\033[33mwarning:\033[0m a janelad from another checkout is resident:\n%s\n' "$resident"
-    echo "It will serve this app. Run 'bun run daemon:restart' to hand over to this build"
-    echo "(that closes the terminals it holds)."
-fi
-
-# `bun run dev` starts a daemon if nothing is listening — a dev build registers no
-# LaunchAgent, so nothing else will — then `tauri dev`: the Rust shell, Vite, and
-# the window. It stays in the foreground, reloads the frontend on change, and stops
-# the daemon it started when you stop it.
-exec bun run dev
+exec bun run web:isolated

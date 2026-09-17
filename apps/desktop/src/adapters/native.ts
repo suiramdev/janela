@@ -3,24 +3,52 @@ import type { DirectoryPicking, NativeShell } from "@janela/ui";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
-export function tauriDirectoryPicker(): DirectoryPicking {
+export interface DirectoryDialogOptions {
+  readonly directory: true;
+  readonly multiple: false;
+  readonly title: string;
+}
+
+export type DirectoryDialog = (options: DirectoryDialogOptions) => Promise<string | null>;
+
+export type PathOpener = (path: string, openWith: string) => Promise<void>;
+
+export type ItemRevealer = (path: string) => Promise<void>;
+
+interface DirectoryPickerDeps {
+  readonly open?: DirectoryDialog | undefined;
+}
+
+interface NativeShellDeps {
+  readonly openPath?: PathOpener | undefined;
+  readonly revealItemInDir?: ItemRevealer | undefined;
+}
+
+export const TERMINAL_APP = "Terminal";
+
+export function tauriDirectoryPicker(deps: DirectoryPickerDeps = {}): DirectoryPicking {
+  const openDialog = deps.open ?? open;
+
   return {
     async pickDirectory(request): Promise<AbsolutePath | undefined> {
-      const chosen = await open({ directory: true, multiple: false, title: request.title });
+      const chosen = await openDialog({ directory: true, multiple: false, title: request.title });
 
       return chosen === null ? undefined : absolutePath(chosen);
     },
   };
 }
 
-export function tauriNativeShell(): NativeShell {
+export function tauriNativeShell(deps: NativeShellDeps = {}): NativeShell {
+  const openWith = deps.openPath ?? openPath;
+  const reveal = deps.revealItemInDir ?? revealItemInDir;
+
   return {
     async revealInFinder(path): Promise<void> {
-      await revealItemInDir(path);
+      await reveal(path);
     },
 
     async openInTerminal(path): Promise<void> {
-      await openPath(path, "Terminal");
+      await openWith(path, TERMINAL_APP);
     },
   };
 }

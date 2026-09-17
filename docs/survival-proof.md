@@ -17,7 +17,7 @@ launchd at all:
 
 - **Pass A — dev build**, `apps/daemon/janelad` compiled from `04f3ea8` + this
   branch, started by hand under an isolated `HOME`. No LaunchAgent.
-- **Pass B — the installed, signed bundle**: `bun run app:build`, copied to
+- **Pass B — the installed, signed bundle**: `bun run desktop:build`, copied to
   `/Applications/Janela.app`, registered as a real Login Item, its sidecar owned
   by launchd, writing to the real `~/.janela` and the real `janela.sqlite`. This
   is the pass the verdicts below come from, and it required two fixes to the app
@@ -119,7 +119,7 @@ HOME=$ISO TMPDIR=$ISO apps/desktop/src-tauri/target/debug/janela
 ```
 
 Overriding `HOME` for `cargo` would make it re-download the registry, which is why
-the build and the run are separate commands rather than `bun run app`.
+the build and the run are separate commands rather than `bun run desktop:only`.
 
 Expect this in the app's log, and it is not a failure:
 
@@ -152,7 +152,7 @@ registered job. So this pass touches the real machine, and you must have the
 operator's consent before starting it.
 
 ```bash
-bun run app:build                     # ~50 s warm, several minutes cold
+bun run desktop:build                 # ~50 s warm, several minutes cold
 cp -R apps/desktop/src-tauri/target/release/bundle/macos/Janela.app /Applications/
 codesign --verify --strict /Applications/Janela.app
 open -a /Applications/Janela.app      # registers the Login Item on first start
@@ -727,7 +727,7 @@ remains untested is narrower.
 useful result — but a notarized, stapled build is a different code identity, and
 `smd` is entitled to treat it differently. Nothing about *this* run predicts a
 notarized one. What it takes: release credentials and
-`APPLE_SIGNING_IDENTITY=… bun run app:build`.
+`APPLE_SIGNING_IDENTITY=… bun run desktop:build`.
 
 **`requires-approval`.** Registration returned `registered` directly, so the
 approval path — `SMAppService` returning `RequiresApproval`, the app's degraded

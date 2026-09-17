@@ -294,11 +294,11 @@ stays down: the next client that fails to connect starts it again with
 no service to start — in development the daemon is **yours** to run:
 
 ```bash
-bun run dev                     # a daemon and the app together, in one terminal
-bun run --cwd apps/daemon dev   # the daemon alone: source, --foreground, your real HOME
+bun run desktop   # a daemon and the app together, in one terminal
+bun run daemon    # the daemon alone: source, --foreground, your real HOME
 ```
 
-`bun run dev` is the two commands above in one place, and it is held to the same
+`bun run desktop` is the two commands above in one place, and it is held to the same
 rule you are: it **reuses** a `janelad` that is already listening rather than
 killing it, because that daemon holds terminals and stopping them is the user's
 call. The one it started itself is stopped on the way out, and it says so — an
@@ -316,6 +316,27 @@ HOME=$ISO ./apps/daemon/janelad --foreground
 HOME=$ISO bun run scripts/survival-probe.ts    # a second client, from another shell
 tail -f $ISO/Library/Logs/sh.janela.Janela/janelad.log
 ```
+
+`bun run web:isolated` is that recipe packaged for the browser client, so agents
+working in parallel worktrees can each run the app without touching your daemon,
+sessions or database. It derives everything from the checkout's path: `HOME` is
+`/tmp/janela-iso/<id>`, `<id>` being the first eight hex digits of the sha256 of
+the absolute checkout path, and the gateway's preferred port is `7412 +` the next
+four hex digits modulo 1000 — stable across runs, never 7411, and the first free
+port above it if that one is taken. Under that `HOME` it starts a daemon from
+source, the gateway on the chosen port, and `vite build --watch` into
+`apps/web/dist`, then prints the URL and every path. The isolated home gets
+**symlinks** to your `.zshenv`, `.zprofile`, `.zshrc`, `.bashrc`, `.bash_profile`,
+`.profile` and `.gitconfig`, so terminals in it have your shell; it deliberately
+gets no `.ssh`, `.claude` or `.config` — nothing running under it can write into
+your own state, and `claude` and `gh` inside it are logged out. A live socket
+under that home is a previous isolated run of the same checkout and is reused;
+the home persists across runs by design, and `rm -rf` after stopping is the clean
+slate. The path is recorded in `.janela/isolated-home`, which is what
+`.superset/teardown.sh` removes when the workspace is deleted. The gateway's
+`launchctl kickstart` is inert here: a dev machine has no installed Janela to
+register a service, and if one is installed it only fires while the isolated
+daemon is down.
 
 There is **no `--socket` flag, deliberately**: it would move the socket and leave
 the database shared with the resident daemon, so two daemons would restore the same

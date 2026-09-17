@@ -1,9 +1,18 @@
 import { log } from "@janela/support";
 import { COMMANDS, isCommandID, type CommandID, type CommandSource } from "@janela/ui";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import { Effect, Result } from "effect";
 
 import type { BridgeInvoke } from "./transport.ts";
+
+export type CommandEventListener = (
+  event: string,
+  handler: EventCallback<string>,
+) => Promise<UnlistenFn>;
+
+interface CommandSourceDeps {
+  readonly listen?: CommandEventListener | undefined;
+}
 
 export const COMMAND_EVENT = "janela://command";
 
@@ -22,13 +31,15 @@ export async function installNativeMenu(invoke: BridgeInvoke): Promise<void> {
   }
 }
 
-export function tauriCommandSource(): CommandSource {
+export function tauriCommandSource(deps: CommandSourceDeps = {}): CommandSource {
+  const listenTo: CommandEventListener = deps.listen ?? listen;
+
   return {
     subscribe(listener: (id: CommandID) => void): () => void {
       let unlisten: (() => void) | undefined;
       let cancelled = false;
 
-      void listen<string>(COMMAND_EVENT, (event) => {
+      void listenTo(COMMAND_EVENT, (event) => {
         if (isCommandID(event.payload)) listener(event.payload);
       }).then(
         (release) => {
