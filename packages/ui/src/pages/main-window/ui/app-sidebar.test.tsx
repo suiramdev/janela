@@ -58,19 +58,38 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain("text-muted-foreground");
   });
 
-  test("a plain running session carries a dot, and no spinner at all", () => {
-    const running = session("chore/logs", { terminals: [terminal("t1")] });
+  test("a failed session spins like attention does, in the failure colour", () => {
+    const broken = session("fix/build", { terminals: [terminal("t1")] });
 
     const environment = fakeEnvironment({
-      sessions: [running],
-      states: { [terminalID("t1")]: { kind: "running" } },
+      sessions: [broken],
+      states: { [terminalID("t1")]: { kind: "exited", code: 1 } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="fix/build — failed"');
+    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).toContain("text-failure");
+  });
+
+  test("a session with nothing pending paints no indicator, but keeps the column", () => {
+    const running = session("chore/logs", { terminals: [terminal("t1")] });
+    const idle = session("chore/notes", { terminals: [terminal("t2")] });
+
+    const environment = fakeEnvironment({
+      sessions: [running, idle],
+      states: { [terminalID("t1")]: { kind: "running" }, [terminalID("t2")]: { kind: "idle" } },
     });
 
     const markup = renderSidebar(environment);
 
     expect(markup).toContain('aria-label="chore/logs — running"');
-    expect(markup).toContain("text-running");
-    expect(markup).not.toContain("dmx-matrix-3");
+    expect(markup).toContain('aria-label="chore/notes — idle"');
+    expect(markup).toContain("invisible");
+    expect(markup).not.toContain("text-running");
+    expect(markup).not.toContain("text-attention");
+    expect(markup).not.toContain("text-failure");
   });
 
   test("project rows are disclosures and the selected session is current", () => {

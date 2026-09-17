@@ -76,11 +76,11 @@ import {
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
 
 const STATUS_ICON = {
-  attention: spinnerIcon(Dotm3x3_15, "text-attention"),
-  working: spinnerIcon(Dotm3x3_20, "text-muted-foreground"),
-  running: dotIcon("text-running", true),
-  failed: dotIcon("text-failure", true),
-  idle: dotIcon("text-muted-foreground", false),
+  attention: statusGlyph(Dotm3x3_15, "text-attention", true),
+  working: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
+  failed: statusGlyph(Dotm3x3_15, "text-failure", true),
+  running: statusGlyph(Dotm3x3_20, "invisible", false),
+  idle: statusGlyph(Dotm3x3_20, "invisible", false),
 } satisfies Record<SessionStatus, IconComponent>;
 
 const PLUS_ICON = hugeicon(PlusSignIcon);
@@ -281,33 +281,15 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
   );
 }
 
-function dotIcon(tint: string, filled: boolean): IconComponent {
-  return function StatusDot({ size = 14, className }: IconComponentProps) {
-    return (
-      <svg
-        aria-hidden="true"
-        width={size}
-        height={size}
-        viewBox="0 0 14 14"
-        className={cn("shrink-0", className, tint)}
-      >
-        <circle
-          cx="7"
-          cy="7"
-          r={filled ? 3 : 2.5}
-          fill={filled ? "currentColor" : "none"}
-          stroke={filled ? "none" : "currentColor"}
-        />
-      </svg>
-    );
-  };
-}
-
-function spinnerIcon(Loader: ComponentType<Dotm3x3_20Props>, tint: string): IconComponent {
-  return function StatusSpinner({ size = 14, className }: IconComponentProps) {
+function statusGlyph(
+  Loader: ComponentType<Dotm3x3_20Props>,
+  tint: string,
+  animated: boolean,
+): IconComponent {
+  return function StatusGlyph({ size = 14, className }: IconComponentProps) {
     return (
       <span aria-hidden="true" className={cn("inline-flex shrink-0", className, tint)}>
-        <Loader size={size} />
+        <Loader size={size} boxSize={size} minSize={size} animated={animated} />
       </span>
     );
   };
