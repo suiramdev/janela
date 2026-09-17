@@ -76,9 +76,9 @@ import {
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
 
 const STATUS_ICON = {
-  attention: spinnerIcon(Dotm3x3_15, "text-attention", true),
-  working: spinnerIcon(Dotm3x3_20, "text-muted-foreground", true),
-  running: spinnerIcon(Dotm3x3_20, "text-running", false),
+  attention: spinnerIcon(Dotm3x3_15, "text-attention"),
+  working: spinnerIcon(Dotm3x3_20, "text-muted-foreground"),
+  running: dotIcon("text-running", true),
   failed: dotIcon("text-failure", true),
   idle: dotIcon("text-muted-foreground", false),
 } satisfies Record<SessionStatus, IconComponent>;
@@ -303,15 +303,11 @@ function dotIcon(tint: string, filled: boolean): IconComponent {
   };
 }
 
-function spinnerIcon(
-  Loader: ComponentType<Dotm3x3_20Props>,
-  tint: string,
-  animated: boolean,
-): IconComponent {
+function spinnerIcon(Loader: ComponentType<Dotm3x3_20Props>, tint: string): IconComponent {
   return function StatusSpinner({ size = 14, className }: IconComponentProps) {
     return (
       <span aria-hidden="true" className={cn("inline-flex shrink-0", className, tint)}>
-        <Loader size={size} animated={animated} />
+        <Loader size={size} />
       </span>
     );
   };

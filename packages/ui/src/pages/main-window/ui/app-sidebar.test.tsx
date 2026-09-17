@@ -58,7 +58,7 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain("text-muted-foreground");
   });
 
-  test("a plain running session shows the glyph at rest, tinted as running", () => {
+  test("a plain running session carries a dot, and no spinner at all", () => {
     const running = session("chore/logs", { terminals: [terminal("t1")] });
 
     const environment = fakeEnvironment({
@@ -70,7 +70,7 @@ describe("AppSidebar markup", () => {
 
     expect(markup).toContain('aria-label="chore/logs — running"');
     expect(markup).toContain("text-running");
-    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).not.toContain("dmx-matrix-3");
   });
 
   test("project rows are disclosures and the selected session is current", () => {
