@@ -1,7 +1,9 @@
 import type {
   AbsolutePath,
   Accent,
-  AutomationCommand,
+  AutomationEvent,
+  AutomationScript,
+  AutomationScripts,
   Axis,
   Forge,
   GitDescriptor,
@@ -71,10 +73,8 @@ export interface ProjectColumns {
 export interface AutomationColumns {
   readonly projectId: string;
   readonly event: string;
-  readonly command: string;
-  readonly isEnabled: boolean;
+  readonly script: string;
   readonly timeoutSeconds: number;
-  readonly position: number;
 }
 
 export interface SessionColumns {
@@ -300,18 +300,16 @@ export function encodeProject(project: Project): ProjectColumns {
 }
 
 export function encodeAutomation(
-  command: AutomationCommand,
+  automation: AutomationScripts,
   projectId: ProjectID,
-  position: number,
-): AutomationColumns {
-  return {
-    projectId,
-    event: command.event,
-    command: JSON.stringify(command.command),
-    isEnabled: command.isEnabled,
-    timeoutSeconds: command.timeoutSeconds,
-    position,
-  };
+): readonly AutomationColumns[] {
+  return AUTOMATION_EVENTS.flatMap((event) => {
+    const entry = automation[event];
+
+    return entry === undefined
+      ? []
+      : [{ projectId, event, script: entry.script, timeoutSeconds: entry.timeoutSeconds }];
+  });
 }
 
 function decodeForge(raw: string, id: string, log: Logger): Forge | undefined {
@@ -355,29 +353,22 @@ function decodeWorktreeRoot(
 function decodeAutomation(
   rows: readonly ProjectRow["automation"][number][],
   reasons: string[],
-): AutomationCommand[] {
-  const commands: AutomationCommand[] = [];
+): AutomationScripts {
+  const scripts: Partial<Record<AutomationEvent, AutomationScript>> = {};
 
-  for (const [index, row] of rows.toSorted((a, b) => a.position - b.position).entries()) {
-    const id = readIdentifier<"Automation">(row.id, `automation ${index}: id`, reasons);
+  for (const row of rows) {
     const event = AUTOMATION_EVENTS.find((candidate) => candidate === row.event);
 
-    if (event === undefined) reasons.push(`automation ${index}: event unknown`);
+    if (event === undefined) {
+      reasons.push(`automation ${row.event}: event unknown`);
 
-    const command = readArgv(row.command, `automation ${index}: command`, reasons);
+      continue;
+    }
 
-    if (id === undefined || event === undefined || command === undefined) continue;
-
-    commands.push({
-      id,
-      event,
-      command,
-      isEnabled: row.isEnabled,
-      timeoutSeconds: row.timeoutSeconds,
-    });
+    scripts[event] = { script: row.script, timeoutSeconds: row.timeoutSeconds };
   }
 
-  return commands;
+  return scripts;
 }
 
 export function decodeProject(row: ProjectRow, log: Logger): Project {

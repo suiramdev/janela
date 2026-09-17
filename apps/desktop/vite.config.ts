@@ -11,6 +11,7 @@ export default defineConfig({
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  worker: { format: "es" },
   build: {
     target: "safari18",
     sourcemap: true,

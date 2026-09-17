@@ -4,7 +4,6 @@ export type ProjectID = Identifier<"Project">;
 export type SessionID = Identifier<"Session">;
 export type TerminalID = Identifier<"Terminal">;
 export type LaunchProfileID = Identifier<"LaunchProfile">;
-export type AutomationID = Identifier<"Automation">;
 
 export type AbsolutePath = string & { readonly [brand]: "AbsolutePath" };
 
@@ -33,10 +32,6 @@ export function newTerminalID(): TerminalID {
 
 export function newLaunchProfileID(): LaunchProfileID {
   return fresh<"LaunchProfile">();
-}
-
-export function newAutomationID(): AutomationID {
-  return fresh<"Automation">();
 }
 
 export function identifier<Subject extends string>(raw: string): Identifier<Subject> {

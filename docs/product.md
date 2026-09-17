@@ -106,7 +106,7 @@ semantics from a byte stream.
 
 The same principle decides the integrations. Forge support shells out to the user's
 own `gh` and `glab`, already authenticated, rather than asking for a token.
-Automation commands run in a real terminal you can watch, rather than in a
+Automation scripts run in a real terminal you can watch, rather than in a
 hidden process whose output we invent a UI for.
 
 ### 3. Switching is the feature

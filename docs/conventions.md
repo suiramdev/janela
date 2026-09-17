@@ -122,7 +122,7 @@ missing `gh`, a logged-out `gh`, or a forge request that timed out means the app
 shows no pull-request information and says nothing at all. Rendering an optional
 feature's unavailability as an error is how a nice-to-have becomes an irritation.
 
-**A failing automation command is shown in its own terminal, not in a dialog.**
+**A failing automation script is shown in its own terminal, not in a dialog.**
 The user gets the real output, scrollback included, which is strictly better than
 anything we could summarise.
 

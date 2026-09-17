@@ -2,7 +2,8 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 
 import type {
-  AutomationCommand,
+  AutomationScript,
+  AutomationScripts,
   LaunchProfile,
   LaunchProfileID,
   Pane,
@@ -17,7 +18,6 @@ import {
   BUILT_IN_PROFILES,
   MAXIMUM_PANE_DEPTH,
   absolutePath,
-  newAutomationID,
   newLaunchProfileID,
   newProjectID,
   newSessionID,
@@ -48,6 +48,8 @@ interface Fixture {
   readonly records: readonly Record_[];
   corrupt(sql: string, parameters?: readonly (string | number | null)[]): void;
 }
+
+const DEV_SCRIPT: AutomationScript = { script: "pnpm dev", timeoutSeconds: 30 };
 
 function recordingLogger(): RecordingLogger {
   const records: Record_[] = [];
@@ -133,17 +135,6 @@ function profile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
   };
 }
 
-function automation(overrides: Partial<AutomationCommand> = {}): AutomationCommand {
-  return {
-    id: newAutomationID(),
-    event: "sessionStart",
-    command: ["pnpm", "dev"],
-    isEnabled: true,
-    timeoutSeconds: 30,
-    ...overrides,
-  };
-}
-
 function project(overrides: Partial<Project> = {}): Project {
   return {
     id: newProjectID(),
@@ -151,7 +142,7 @@ function project(overrides: Partial<Project> = {}): Project {
     directory: absolutePath(`/tmp/janela-${crypto.randomUUID()}`),
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
-      automation: [],
+      automation: {},
       isForgeEnabled: true,
     },
     accent: "none",
@@ -351,18 +342,24 @@ describe("launch profiles", () => {
 });
 
 describe("projects", () => {
-  test("a project round-trips with git, a custom worktree root and ordered automation", async () => {
+  test("a project round-trips with git, a custom worktree root and a script per event", async () => {
     await withDatabase(async ({ database }) => {
       const defaultProfile = profile();
       await database.launchProfiles.save(defaultProfile);
 
-      const first = automation({ event: "worktreeCreated", command: ["cp", ".env"] });
-      const second = automation({ event: "sessionTeardown", isEnabled: false, timeoutSeconds: 5 });
+      const teardown: AutomationScript = {
+        script: "# later\ndocker compose down",
+        timeoutSeconds: 5,
+      };
+      const automation: AutomationScripts = {
+        worktreeCreated: { script: 'cp "$JANELA_PROJECT_DIRECTORY/.env" .env', timeoutSeconds: 30 },
+        sessionTeardown: teardown,
+      };
       const value = project({
         git: { remoteURL: "git@github.com:x/y.git", defaultBranch: "main", forge: "gitHub" },
         settings: {
           worktreeRoot: { kind: "custom", directory: absolutePath("/tmp/worktrees") },
-          automation: [first, second],
+          automation,
           defaultProfileID: defaultProfile.id,
           isForgeEnabled: false,
         },
@@ -374,12 +371,13 @@ describe("projects", () => {
 
       expect(await database.projects.find(value.id)).toEqual(value);
 
+      const teardownOnly: AutomationScripts = { sessionTeardown: teardown };
       await database.projects.save({
         ...value,
-        settings: { ...value.settings, automation: [second] },
+        settings: { ...value.settings, automation: teardownOnly },
       });
 
-      expect((await database.projects.find(value.id))?.settings.automation).toEqual([second]);
+      expect((await database.projects.find(value.id))?.settings.automation).toEqual(teardownOnly);
     });
   });
 
@@ -435,7 +433,7 @@ describe("projects", () => {
       const value = project({
         settings: {
           worktreeRoot: { kind: "custom", directory: absolutePath("/tmp/worktrees") },
-          automation: [],
+          automation: {},
           isForgeEnabled: true,
         },
       });
@@ -453,15 +451,15 @@ describe("projects", () => {
       const value = project({
         settings: {
           worktreeRoot: { kind: "siblingDirectory" },
-          automation: [automation()],
+          automation: { sessionStart: DEV_SCRIPT },
           isForgeEnabled: true,
         },
       });
       await database.projects.save(value);
-      corrupt(`UPDATE AutomationCommand SET event = 'onTuesday'`);
+      corrupt(`UPDATE AutomationScript SET event = 'onTuesday'`);
 
       expect(reasonsOf(await failureOf(database.projects.find(value.id)))).toEqual([
-        "automation 0: event unknown",
+        "automation onTuesday: event unknown",
       ]);
     });
   });
@@ -619,7 +617,7 @@ describe("cascades", () => {
       const survivor = project({ name: "survivor" });
       await database.projects.save({
         ...doomed,
-        settings: { ...doomed.settings, automation: [automation()] },
+        settings: { ...doomed.settings, automation: { sessionStart: DEV_SCRIPT } },
       });
       await database.projects.save(survivor);
 
@@ -634,7 +632,7 @@ describe("cascades", () => {
       expect(await database.sessions.find(inDoomed.id)).toBeUndefined();
       expect(await database.sessions.find(inSurvivor.id)).toEqual(inSurvivor);
       expect(rowCount(database, "Terminal")).toBe(inSurvivor.terminals.length);
-      expect(rowCount(database, "AutomationCommand")).toBe(0);
+      expect(rowCount(database, "AutomationScript")).toBe(0);
     });
   });
 

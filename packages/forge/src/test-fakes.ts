@@ -120,7 +120,7 @@ export function fakeProject(overrides: Partial<Project> = {}): Project {
     name: "janela",
     directory: absolutePath("/Users/x/code/janela"),
     git: { forge: "gitHub", defaultBranch: "main" },
-    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: [], isForgeEnabled: true },
+    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
     accent: "none",
     isExpanded: true,
     addedAt: now(),

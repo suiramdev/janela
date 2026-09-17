@@ -142,6 +142,11 @@ export { Spinner } from "./components/ui/spinner.tsx";
 
 export { Switch } from "./components/ui/switch.tsx";
 
+export {
+  ShellScriptEditor,
+  type ShellScriptEditorProps,
+} from "./components/ui/shell-script-editor.tsx";
+
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 
 export {

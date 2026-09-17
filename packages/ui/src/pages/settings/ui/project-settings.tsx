@@ -1,37 +1,40 @@
-import { ArrowDown01Icon, ArrowUp01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type {
-  AutomationCommand,
   AutomationEvent,
-  AutomationID,
+  AutomationScripts,
   LaunchProfile,
   LaunchProfileAvailability,
   LaunchProfileID,
   Project,
   ProjectSettings,
 } from "@janela/core";
-import { absolutePath, AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
-import { Button, ButtonGroup, FieldDescription, Item } from "@janela/design";
-import type { ReactElement } from "react";
-import { useCallback, useMemo, useState } from "react";
-
-import { type ArgumentDraft, argumentDrafts, argvOf } from "../../../shared/model/index.ts";
 import {
-  automationAppending,
-  automationMoving,
-  automationRemoving,
-  automationReplacing,
+  absolutePath,
+  AUTOMATION_EVENTS,
+  AUTOMATION_VARIABLES,
+  supportsWorktrees,
+} from "@janela/core";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  ShellScriptEditor,
+} from "@janela/design";
+import type { ReactElement } from "react";
+import { useCallback, useId } from "react";
+
+import {
   automationViolations,
-  commandsForEvent,
   usesTimeout,
-} from "../model/automation-commands.ts";
+  withAutomationScript,
+  withAutomationTimeout,
+} from "../model/automation-scripts.ts";
 import {
   AUTOMATION_SECTION,
   PROJECT_AUTOMATION_SECTION,
   PROJECT_SESSIONS_SECTION,
   PROJECT_WORKTREES_SECTION,
 } from "../model/settings-index.ts";
-import { ArgumentsEditor } from "./argv-editor.tsx";
 import { NumberField, ProfileSelect, SwitchField, TextField, Violations } from "./fields.tsx";
 import { PaneGroup, Section } from "./pane.tsx";
 
@@ -42,6 +45,9 @@ export interface ProjectSettingsPaneProps {
   readonly availability: LaunchProfileAvailability;
   readonly onChange: (settings: ProjectSettings) => void;
 }
+
+const SCRIPT_PLACEHOLDER = `# Runs in your login shell, in the session's directory.
+cp "$JANELA_PROJECT_DIRECTORY/.env" "$JANELA_SESSION_DIRECTORY/.env"`;
 
 export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactElement {
   const { project, settings, onChange } = props;
@@ -91,14 +97,12 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
     [onChange, settings],
   );
 
-  const changeCommands = useCallback(
-    (automation: readonly AutomationCommand[]) => {
+  const changeAutomation = useCallback(
+    (automation: AutomationScripts) => {
       onChange({ ...settings, automation });
     },
     [onChange, settings],
   );
-
-  const violations = settings.automation.flatMap((command) => automationViolations(command));
 
   return (
     <>
@@ -135,166 +139,89 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
       ) : undefined}
 
       <PaneGroup section={PROJECT_AUTOMATION_SECTION}>
+        <AutomationVariables />
         {AUTOMATION_EVENTS.map((event) => (
-          <AutomationEventSection
+          <AutomationScriptSection
             key={event}
             event={event}
-            commands={settings.automation}
-            onChange={changeCommands}
+            automation={settings.automation}
+            onChange={changeAutomation}
           />
         ))}
-        <Violations violations={violations} />
+        <Violations violations={automationViolations(settings)} />
       </PaneGroup>
     </>
   );
 }
 
-function AutomationEventSection(props: {
-  readonly event: AutomationEvent;
-  readonly commands: readonly AutomationCommand[];
-  readonly onChange: (commands: readonly AutomationCommand[]) => void;
-}): ReactElement {
-  const { event, commands, onChange } = props;
-  const forEvent = useMemo(() => commandsForEvent(commands, event), [commands, event]);
-
-  const append = useCallback(() => {
-    onChange(automationAppending(commands, event));
-  }, [commands, event, onChange]);
-
-  const replace = useCallback(
-    (command: AutomationCommand) => {
-      onChange(automationReplacing(commands, command));
-    },
-    [commands, onChange],
-  );
-
-  const remove = useCallback(
-    (id: AutomationID) => {
-      onChange(automationRemoving(commands, id));
-    },
-    [commands, onChange],
-  );
-
-  const move = useCallback(
-    (id: AutomationID, delta: -1 | 1) => {
-      onChange(automationMoving(commands, id, delta));
-    },
-    [commands, onChange],
-  );
-
+function AutomationVariables(): ReactElement {
   return (
-    <Section section={AUTOMATION_SECTION[event]}>
-      {forEvent.length === 0 ? <FieldDescription>Nothing runs.</FieldDescription> : undefined}
-      {forEvent.map((command) => (
-        <AutomationCommandEditor
-          key={command.id}
-          command={command}
-          onChange={replace}
-          onRemove={remove}
-          onMove={move}
-        />
-      ))}
-      <div className="flex">
-        <Button variant="outline" size="sm" onClick={append}>
-          <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
-          Add Command
-        </Button>
-      </div>
-    </Section>
+    <div className="px-1">
+      <FieldDescription>
+        Every script sees these, on top of your shell&apos;s own environment:
+      </FieldDescription>
+      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+        {AUTOMATION_VARIABLES.map((variable) => (
+          <div key={variable.name} className="contents">
+            <dt className="font-mono">${variable.name}</dt>
+            <dd className="text-muted-foreground">{variable.meaning}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
-function AutomationCommandEditor(props: {
-  readonly command: AutomationCommand;
-  readonly onChange: (command: AutomationCommand) => void;
-  readonly onRemove: (id: AutomationID) => void;
-  readonly onMove: (id: AutomationID, delta: -1 | 1) => void;
+function AutomationScriptSection(props: {
+  readonly event: AutomationEvent;
+  readonly automation: AutomationScripts;
+  readonly onChange: (automation: AutomationScripts) => void;
 }): ReactElement {
-  const { command, onChange, onRemove, onMove } = props;
+  const { event, automation, onChange } = props;
+  const id = useId();
+  const entry = automation[event];
 
-  const [drafts, setDrafts] = useState<readonly ArgumentDraft[]>(() =>
-    argumentDrafts(command.command),
-  );
-
-  const changeArguments = useCallback(
-    (next: readonly ArgumentDraft[]) => {
-      setDrafts(next);
-      onChange({ ...command, command: argvOf(next) });
+  const changeScript = useCallback(
+    (script: string) => {
+      onChange(withAutomationScript(automation, event, script));
     },
-    [command, onChange],
-  );
-
-  const changeEnabled = useCallback(
-    (isEnabled: boolean) => {
-      onChange({ ...command, isEnabled });
-    },
-    [command, onChange],
+    [automation, event, onChange],
   );
 
   const changeTimeout = useCallback(
     (timeoutSeconds: number) => {
-      onChange({
-        ...command,
-        timeoutSeconds: Number.isFinite(timeoutSeconds) ? timeoutSeconds : 0,
-      });
+      onChange(withAutomationTimeout(automation, event, timeoutSeconds));
     },
-    [command, onChange],
+    [automation, event, onChange],
   );
 
-  const remove = useCallback(() => {
-    onRemove(command.id);
-  }, [command.id, onRemove]);
-
-  const moveEarlier = useCallback(() => {
-    onMove(command.id, -1);
-  }, [command.id, onMove]);
-
-  const moveLater = useCallback(() => {
-    onMove(command.id, 1);
-  }, [command.id, onMove]);
-
   return (
-    <Item variant="outline" className="flex-col items-stretch gap-3">
-      <SwitchField
-        label="Enabled"
-        isOn={command.isEnabled}
-        onChange={changeEnabled}
-        hint="New commands start disabled, so nothing runs because you added a row to read it."
-      />
+    <Section section={AUTOMATION_SECTION[event]}>
+      <Field>
+        <FieldContent>
+          <FieldLabel htmlFor={id}>Script</FieldLabel>
+          <FieldDescription>
+            Leave it empty and nothing runs. Lines starting with # are comments.
+          </FieldDescription>
+        </FieldContent>
+        <ShellScriptEditor
+          id={id}
+          value={entry?.script ?? ""}
+          onChange={changeScript}
+          placeholder={SCRIPT_PLACEHOLDER}
+        />
+      </Field>
 
-      <ArgumentsEditor
-        drafts={drafts}
-        onChange={changeArguments}
-        title="Command"
-        hint="The executable, then one field per argument. No shell runs, so nothing is re-quoted."
-      />
-
-      {usesTimeout(command.event) ? (
+      {usesTimeout(event) && entry !== undefined ? (
         <NumberField
           label="Deletion waits this long"
-          value={command.timeoutSeconds}
+          value={entry.timeoutSeconds}
           onChange={changeTimeout}
           minimum={1}
           maximum={600}
           hint="Seconds. Past it you are asked once whether to wait — deleting a session never hangs on a script."
         />
       ) : undefined}
-
-      <Violations violations={automationViolations(command)} />
-
-      <div className="flex items-center justify-end gap-2">
-        <ButtonGroup>
-          <Button variant="outline" size="sm" onClick={moveEarlier} aria-label="Run Earlier">
-            <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} />
-          </Button>
-          <Button variant="outline" size="sm" onClick={moveLater} aria-label="Run Later">
-            <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} />
-          </Button>
-        </ButtonGroup>
-        <Button variant="destructive" size="sm" onClick={remove}>
-          Remove
-        </Button>
-      </div>
-    </Item>
+    </Section>
   );
 }

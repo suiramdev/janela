@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type { AutomationCommand, AutomationEvent, LaunchProfile, Project } from "@janela/core";
-import { absolutePath, newAutomationID } from "@janela/core";
+import type { AutomationScripts, LaunchProfile, Project } from "@janela/core";
+import { absolutePath, AUTOMATION_VARIABLES } from "@janela/core";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -11,7 +11,6 @@ import {
   fakeShellProfile,
   reportedAvailable,
 } from "../../../shared/lib/test-fakes/index.ts";
-import { DEFAULT_AUTOMATION_TIMEOUT_SECONDS } from "../model/automation-commands.ts";
 import { ProjectSettingsPane } from "./project-settings.tsx";
 
 const noop = (): void => {};
@@ -34,52 +33,28 @@ const CUSTOM_ROOT = fakeProject({
   }),
 });
 
-const NO_COMMANDS = projectWith([]);
+const NO_SCRIPTS = projectWith({});
 
-const DEV = command("sessionStart", ["pnpm", "dev"]);
+const WITH_DEV = projectWith({ sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } });
 
-const INSTALL = command("worktreeCreated", ["pnpm", "install"]);
+const WITH_TEARDOWN = projectWith({
+  sessionTeardown: { script: "docker compose down", timeoutSeconds: 30 },
+});
 
-const DOWN = command("sessionTeardown", ["docker", "compose", "down"]);
+const WITH_NON_BLOCKING = projectWith({
+  sessionStart: { script: "pnpm dev", timeoutSeconds: 30 },
+  worktreeCreated: { script: "pnpm install", timeoutSeconds: 30 },
+});
 
-const DROPDB = command("sessionTeardown", ["dropdb", "scratch"]);
+const WITH_ZERO_TIMEOUT = projectWith({
+  sessionTeardown: { script: "docker compose down", timeoutSeconds: 0 },
+});
 
-const WITH_DEV = projectWith([DEV]);
+const WITH_COMMENTED_TEARDOWN = projectWith({
+  sessionTeardown: { script: "# docker compose down", timeoutSeconds: 0 },
+});
 
-const WITH_TEARDOWN = projectWith([DOWN]);
-
-const WITH_NON_BLOCKING = projectWith([DEV, INSTALL]);
-
-const WITH_TWO_TEARDOWNS = projectWith([DEV, DOWN, DROPDB]);
-
-const WITH_ZERO_TIMEOUT = projectWith([
-  command("sessionTeardown", ["docker"], { timeoutSeconds: 0 }),
-]);
-
-const WITH_BLANK_ENABLED = projectWith([command("sessionStart", [""])]);
-
-const WITH_BLANK_DISABLED = projectWith([command("sessionStart", [""], { isEnabled: false })]);
-
-const WITH_DEV_DISABLED = projectWith([
-  command("sessionStart", ["pnpm", "dev"], { isEnabled: false }),
-]);
-
-function command(
-  event: AutomationEvent,
-  argv: readonly string[],
-  overrides: Partial<AutomationCommand> = {},
-): AutomationCommand {
-  return {
-    id: newAutomationID(),
-    event,
-    command: argv,
-    isEnabled: true,
-    timeoutSeconds: DEFAULT_AUTOMATION_TIMEOUT_SECONDS,
-    ...overrides,
-  };
-}
-
-function projectWith(automation: readonly AutomationCommand[]): Project {
+function projectWith(automation: AutomationScripts): Project {
   return { ...REPOSITORY, settings: fakeSettings({ automation }) };
 }
 
@@ -95,59 +70,75 @@ function paneMarkup(project: Project, profiles: readonly LaunchProfile[] = PROFI
   );
 }
 
-function checkedCount(markup: string): number {
-  return [...markup.matchAll(/aria-checked="true"/g)].length;
+function editorValues(markup: string): readonly string[] {
+  return [...markup.matchAll(/<textarea[^>]*>([^<]*)<\/textarea>/g)].map((match) => match[1] ?? "");
 }
 
 describe("automation authoring", () => {
-  test("offers all three events, and only three", () => {
-    const markup = paneMarkup(NO_COMMANDS);
+  test("offers one script editor per event, and only three", () => {
+    const markup = paneMarkup(NO_SCRIPTS);
 
     expect(markup).toContain("When a worktree is created");
     expect(markup).toContain("When a session is first opened");
     expect(markup).toContain("When a session is deleted");
-    expect([...markup.matchAll(/Add Command/g)]).toHaveLength(3);
+    expect([...markup.matchAll(/data-slot="shell-script-editor"/g)]).toHaveLength(3);
   });
 
-  test("says plainly when an event runs nothing", () => {
-    expect([...paneMarkup(NO_COMMANDS).matchAll(/Nothing runs\./g)]).toHaveLength(3);
+  test("shows the script it is given, in the editor for its event, and blanks for the rest", () => {
+    expect(editorValues(paneMarkup(WITH_DEV))).toEqual(["", "pnpm dev", ""]);
   });
 
-  test("shows a command's argv one field per element", () => {
-    const markup = paneMarkup(WITH_DEV);
+  test("names every variable a script can read, with its meaning", () => {
+    const markup = paneMarkup(NO_SCRIPTS);
 
-    expect(markup).toContain('value="pnpm"');
-    expect(markup).toContain('value="dev"');
-    expect(markup).toContain("Executable");
-    expect(markup).toContain("Argument 1");
+    for (const variable of AUTOMATION_VARIABLES) {
+      expect(markup).toContain(`$${variable.name}`);
+      expect(markup).toContain(variable.meaning.replaceAll("'", "&#x27;"));
+    }
+  });
+
+  test("the placeholder shows the copy-a-file case, so the variables are learned by example", () => {
+    expect(paneMarkup(NO_SCRIPTS)).toContain("$JANELA_PROJECT_DIRECTORY/.env");
   });
 
   test("records the security property in the copy the user reads", () => {
-    expect(paneMarkup(NO_COMMANDS)).toContain("never read from the repository");
+    expect(paneMarkup(NO_SCRIPTS)).toContain("never read from the repository");
   });
 
-  test("promises the command runs in a terminal the user can watch", () => {
-    expect(paneMarkup(NO_COMMANDS)).toContain("watch and interrupt");
+  test("promises the script runs in a terminal the user can watch, by their login shell", () => {
+    const markup = paneMarkup(NO_SCRIPTS);
+
+    expect(markup).toContain("watch and interrupt");
+    expect(markup).toContain("login shell");
+  });
+
+  test("until Monaco mounts the editor is a real textarea holding the script, with prose helpers off", () => {
+    const markup = paneMarkup(WITH_DEV);
+
+    expect([...markup.matchAll(/data-editor="textarea"/g)]).toHaveLength(3);
+    expect(markup).toContain('spellCheck="false"');
+    expect(markup).toContain('autoCapitalize="off"');
   });
 });
 
 describe("the teardown timeout", () => {
-  test("is shown for the one blocking event", () => {
+  test("is shown for the one blocking event, once it has a script", () => {
     expect(paneMarkup(WITH_TEARDOWN)).toContain("Deletion waits this long");
+    expect(paneMarkup(NO_SCRIPTS)).not.toContain("Deletion waits this long");
   });
 
   test("is not shown for events that block nothing", () => {
     expect(paneMarkup(WITH_NON_BLOCKING)).not.toContain("Deletion waits this long");
   });
 
-  test("appears exactly once per teardown command", () => {
-    const markup = paneMarkup(WITH_TWO_TEARDOWNS);
-
-    expect([...markup.matchAll(/Deletion waits this long/g)]).toHaveLength(2);
+  test("a zero timeout on a script that runs something is named as a violation", () => {
+    expect(paneMarkup(WITH_ZERO_TIMEOUT)).toContain(
+      "A teardown timeout must be at least one second.",
+    );
   });
 
-  test("a zero timeout is named as a violation", () => {
-    expect(paneMarkup(WITH_ZERO_TIMEOUT)).toContain(
+  test("a zero timeout on a comment-only script is not, because nothing waits", () => {
+    expect(paneMarkup(WITH_COMMENTED_TEARDOWN)).not.toContain(
       "A teardown timeout must be at least one second.",
     );
   });
@@ -155,7 +146,7 @@ describe("the teardown timeout", () => {
 
 describe("the commit model", () => {
   test("the pane carries no Save of its own", () => {
-    const markup = paneMarkup(WITH_TWO_TEARDOWNS);
+    const markup = paneMarkup(WITH_TEARDOWN);
 
     expect(markup).not.toContain(">Save</button>");
     expect(markup).not.toContain(">Revert</button>");
@@ -164,41 +155,23 @@ describe("the commit model", () => {
   test("shows the settings it is given rather than a copy it took", () => {
     const markup = renderToStaticMarkup(
       <ProjectSettingsPane
-        project={NO_COMMANDS}
-        settings={fakeSettings({ automation: [DEV], isForgeEnabled: false })}
+        project={NO_SCRIPTS}
+        settings={fakeSettings({
+          automation: { sessionStart: { script: "make dev", timeoutSeconds: 30 } },
+        })}
         profiles={PROFILES}
         availability={AVAILABLE}
         onChange={noop}
       />,
     );
 
-    expect(markup).toContain('value="pnpm"');
-    expect(checkedCount(markup)).toBe(1);
-  });
-});
-
-describe("enabled state", () => {
-  test("an enabled command reads as checked, a disabled one does not", () => {
-    expect(checkedCount(paneMarkup(WITH_DEV))).toBe(1);
-    expect(checkedCount(paneMarkup(WITH_DEV_DISABLED))).toBe(0);
-  });
-
-  test("an enabled command with no executable is named as a violation", () => {
-    const markup = paneMarkup(WITH_BLANK_ENABLED);
-
-    expect(markup).toContain("An enabled command needs an executable.");
-  });
-
-  test("a disabled blank command is not a violation", () => {
-    expect(paneMarkup(WITH_BLANK_DISABLED)).not.toContain(
-      "An enabled command needs an executable.",
-    );
+    expect(editorValues(markup)).toEqual(["", "make dev", ""]);
   });
 });
 
 describe("worktree settings", () => {
   test("are offered for a repository", () => {
-    expect(paneMarkup(NO_COMMANDS)).toContain("Use a directory I choose");
+    expect(paneMarkup(NO_SCRIPTS)).toContain("Use a directory I choose");
   });
 
   test("are absent for a plain folder, which cannot have worktrees", () => {
@@ -212,6 +185,6 @@ describe("worktree settings", () => {
 
 describe("the project's default profile", () => {
   test("offers to fall back to the global default rather than to nothing", () => {
-    expect(paneMarkup(NO_COMMANDS)).toContain("Use the global default");
+    expect(paneMarkup(NO_SCRIPTS)).toContain("Use the global default");
   });
 });

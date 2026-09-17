@@ -542,7 +542,7 @@ export function fakeProject(id: string): Project {
     directory: absolutePath(`/tmp/${id}`),
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
-      automation: [],
+      automation: {},
       isForgeEnabled: false,
     },
     accent: "none",

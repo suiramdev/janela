@@ -400,7 +400,7 @@ export function fakeAutomation(options: FakeAutomationOptions = {}): FakeAutomat
           await request.attach(descriptor);
         }
 
-        return { event: request.event, commands: [] };
+        return { event: request.event };
       },
     },
     runs,

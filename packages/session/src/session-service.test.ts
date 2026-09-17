@@ -8,7 +8,7 @@ import type {
   SessionID,
   TerminalID,
 } from "@janela/core";
-import { absolutePath, newAutomationID, newLaunchProfileID, newProjectID, now } from "@janela/core";
+import { absolutePath, newLaunchProfileID, newProjectID, now } from "@janela/core";
 import type { TemporaryDatabase } from "@janela/db";
 import { temporaryDatabase } from "@janela/db";
 import { GitFailure, type GitWorktree, type WorktreeServing } from "@janela/git";
@@ -145,7 +145,7 @@ const projectRecord = (overrides: Partial<Project> = {}): Project => ({
   name: "janela",
   directory: repositoryDirectory,
   git: { defaultBranch: "main" },
-  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: [], isForgeEnabled: true },
+  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
   accent: "none",
   isExpanded: true,
   addedAt: now(),
@@ -741,15 +741,9 @@ describe("removalPlan", () => {
         project: {
           settings: {
             ...projectRecord().settings,
-            automation: [
-              {
-                id: newAutomationID(),
-                event: "sessionTeardown",
-                command: ["docker", "compose", "down"],
-                isEnabled: true,
-                timeoutSeconds: 30,
-              },
-            ],
+            automation: {
+              sessionTeardown: { script: "docker compose down", timeoutSeconds: 30 },
+            },
           },
         },
       },
@@ -893,15 +887,9 @@ describe("removeSession", () => {
             const project = projectRecord({
               settings: {
                 ...projectRecord().settings,
-                automation: [
-                  {
-                    id: newAutomationID(),
-                    event: "sessionTeardown",
-                    command: ["docker", "compose", "down"],
-                    isEnabled: true,
-                    timeoutSeconds: 30,
-                  },
-                ],
+                automation: {
+                  sessionTeardown: { script: "docker compose down", timeoutSeconds: 30 },
+                },
               },
             });
             await database.projects.save(project);

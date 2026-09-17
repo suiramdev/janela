@@ -32,6 +32,7 @@ export interface JanelaVariablesInput {
   readonly session: Session;
   readonly terminalID: TerminalID;
   readonly projectName?: string;
+  readonly projectDirectory?: string;
   readonly automationEvent?: AutomationEvent;
 }
 
@@ -41,6 +42,7 @@ export interface JanelaVariables {
   readonly JANELA_SESSION_DIRECTORY: string;
   readonly JANELA_TERMINAL_ID: string;
   readonly JANELA_PROJECT?: string;
+  readonly JANELA_PROJECT_DIRECTORY?: string;
   readonly JANELA_BRANCH?: string;
   readonly JANELA_AUTOMATION_EVENT?: AutomationEvent;
 }
@@ -131,6 +133,10 @@ export function janelaVariables(input: JanelaVariablesInput): JanelaVariables {
   };
 
   if (input.projectName !== undefined) variables.JANELA_PROJECT = input.projectName;
+
+  if (input.projectDirectory !== undefined) {
+    variables.JANELA_PROJECT_DIRECTORY = input.projectDirectory;
+  }
 
   if (branch !== undefined) variables.JANELA_BRANCH = branch;
 

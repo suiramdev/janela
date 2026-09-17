@@ -6,7 +6,7 @@ import {
   type SettingsRoute,
   profileOf,
 } from "../../../shared/model/index.ts";
-import { automationViolations } from "./automation-commands.ts";
+import { automationViolations } from "./automation-scripts.ts";
 import { profileViolations } from "./profile-rules.ts";
 
 export interface DraftViolation {
@@ -22,12 +22,10 @@ export function draftViolations(draft: SettingsDraft): readonly DraftViolation[]
   );
 
   const projects = draft.projects.flatMap((edit) =>
-    edit.settings.automation.flatMap((command) =>
-      automationViolations(command).map((message) => ({
-        route: { kind: "project", projectID: edit.projectID } as const,
-        message,
-      })),
-    ),
+    automationViolations(edit.settings).map((message) => ({
+      route: { kind: "project", projectID: edit.projectID } as const,
+      message,
+    })),
   );
 
   return [...profiles, ...projects];

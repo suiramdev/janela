@@ -81,7 +81,7 @@ export function fakeSession(overrides: Partial<Session> = {}): Session {
 export function fakeSettings(overrides: Partial<ProjectSettings> = {}): ProjectSettings {
   return {
     worktreeRoot: { kind: "siblingDirectory" },
-    automation: [],
+    automation: {},
     isForgeEnabled: true,
     ...overrides,
   };

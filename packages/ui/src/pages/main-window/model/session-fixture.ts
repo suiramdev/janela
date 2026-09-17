@@ -78,7 +78,7 @@ export function project(id: string, isExpanded: boolean): Project {
     directory: absolutePath(`/repos/${id}`),
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
-      automation: [],
+      automation: {},
       isForgeEnabled: false,
     },
     accent: "none",

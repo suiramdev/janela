@@ -18,6 +18,7 @@ import type {
 } from "@janela/core";
 import {
   absolutePath,
+  automationScriptOf,
   closeTerminal,
   emptyLayout,
   isLive,
@@ -439,9 +440,8 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       deletesDirectory: false,
       includedPaths: binding?.includedPaths ?? [],
       runsTeardownAutomation:
-        project?.settings.automation.some(
-          (command) => command.event === "sessionTeardown" && command.isEnabled,
-        ) ?? false,
+        project !== undefined &&
+        automationScriptOf(project.settings, "sessionTeardown") !== undefined,
       safety: await this.safetyFor(session, project, live),
     };
   }

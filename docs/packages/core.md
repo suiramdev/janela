@@ -151,14 +151,26 @@ because build tools embed them.
 
 ### Automation
 
-`AutomationCommand` lives in **Janela's database, never in the repository**: a
-committed file that runs commands makes cloning a repo a code-execution vector.
-`command` is an argv array, never handed to `sh -c` — same rule as
-`LaunchProfile`, same reason. `isEnabled` is off by default when created from a
-template, so nothing runs because the user clicked "add" to read the
-placeholder. `timeoutSeconds` bounds how long deletion waits for a
-`sessionTeardown` command and is ignored for the other events, which block
+`AutomationScripts` is a partial record from event to `AutomationScript`, and it
+lives in **Janela's database, never in the repository**: a committed file that
+runs commands makes cloning a repo a code-execution vector. `script` is a shell
+script, verbatim — the **one deliberate exception** to the argv rule
+`LaunchProfile.command` follows. A lifecycle hook is the user's own shell logic
+(pipes, `&&`, variables, a heredoc), and an argv array made them spell
+`["zsh", "-lc", "…"]` to get any of it; the daemon hands the string to their login
+shell with `-c` and adds nothing to it, so no quoting is ever Janela's. There is
+no `isEnabled`: an absent, blank or comment-only script runs nothing, which
+`scriptRunsAnything` decides and `automationScriptOf` applies, so the runner, the
+removal plan and the Settings violation all agree on what "nothing" is. A user who
+wants a hook off comments it out. `timeoutSeconds` bounds how long deletion waits
+for a `sessionTeardown` script and is ignored for the other events, which block
 nothing.
+
+`AUTOMATION_VARIABLES` is the documented `JANELA_*` namespace a script may read,
+as data: Settings renders it beside the editor, and `@janela/session` builds the
+real environment from the same names. `JANELA_PROJECT_DIRECTORY` exists because
+the first script anyone writes copies a file from the project into the worktree,
+and `JANELA_SESSION_DIRECTORY` alone could not say where *from*.
 
 Three events, and a fourth means changing `docs/product.md` § Non-goals first.
 This is not a task runner: no scheduling, no retry, no dependency graph, no

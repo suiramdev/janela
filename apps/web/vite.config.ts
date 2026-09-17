@@ -12,6 +12,7 @@ export default defineConfig({
       "/ws": { target: "ws://127.0.0.1:7411", ws: true },
     },
   },
+  worker: { format: "es" },
   build: {
     sourcemap: true,
     outDir: "dist",

@@ -2,26 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 
 import type {
-  AutomationCommand,
+  AutomationScripts,
   Project,
   ProjectID,
   Session,
   TerminalDescriptor,
 } from "@janela/core";
-import {
-  absolutePath,
-  emptyLayout,
-  newAutomationID,
-  newProjectID,
-  newSessionID,
-  now,
-} from "@janela/core";
+import { absolutePath, emptyLayout, newProjectID, newSessionID, now } from "@janela/core";
 import type { TerminalRegistry } from "@janela/terminal";
 import { createTerminalRegistry } from "@janela/terminal";
 import { temporaryDirectory } from "@janela/test-support";
 import { Duration, Effect } from "effect";
 
-import { automationRunner, type AutomationRunning } from "./automation-runner.ts";
+import { automationRunner, automationTitle, type AutomationRunning } from "./automation-runner.ts";
 import type { ShellEnvironment } from "./shell-environment.ts";
 import {
   eventLog,
@@ -44,7 +37,6 @@ interface Fixture {
 }
 
 interface FixtureOptions {
-  readonly which?: Readonly<Record<string, string>>;
   readonly attachFails?: boolean;
 }
 
@@ -58,12 +50,6 @@ const shell: ShellEnvironment = {
   loginShell: "/opt/homebrew/bin/fish",
   resolved: { PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/Users/x" },
   loginShellArguments: () => ["-fish"],
-};
-
-const installed = {
-  docker: "/usr/local/bin/docker",
-  pnpm: "/opt/homebrew/bin/pnpm",
-  make: "/usr/bin/make",
 };
 
 const sessionRecord = (overrides: Partial<Session> = {}): Session => ({
@@ -81,16 +67,7 @@ const sessionRecord = (overrides: Partial<Session> = {}): Session => ({
   ...overrides,
 });
 
-const commandRecord = (overrides: Partial<AutomationCommand> = {}): AutomationCommand => ({
-  id: newAutomationID(),
-  event: "worktreeCreated",
-  command: ["docker", "compose", "up", "-d"],
-  isEnabled: true,
-  timeoutSeconds: 30,
-  ...overrides,
-});
-
-const projectWith = (automation: readonly AutomationCommand[]): Project => ({
+const projectWith = (automation: AutomationScripts): Project => ({
   id: projectID,
   name: "janela",
   directory: absolutePath("/Users/x/code/janela"),
@@ -112,7 +89,7 @@ function fixture(options: FixtureOptions = {}): Fixture {
     runner: automationRunner({
       terminals,
       shell,
-      processes: scriptedProcesses({ which: options.which ?? installed }).processes,
+      processes: scriptedProcesses({ which: {} }).processes,
       createTerminal: factory.create,
       log: logger,
       pollIntervalMs: APPEARANCE_POLL_MS,
@@ -145,26 +122,21 @@ async function terminalsToAppear(factory: FakeTerminalFactory, count: number): P
   );
 }
 
-async function exitEachTerminal(
-  factory: FakeTerminalFactory,
-  codes: readonly number[],
-): Promise<void> {
-  for (const [index, code] of codes.entries()) {
-    // oxlint-disable-next-line no-await-in-loop
-    await terminalsToAppear(factory, index + 1);
-    factory.created[index]?.setState({ kind: "exited", code });
-  }
+async function exitFirstTerminal(factory: FakeTerminalFactory, code: number): Promise<void> {
+  await terminalsToAppear(factory, 1);
+  factory.created[0]?.setState({ kind: "exited", code });
 }
 
 describe("automationRunner", () => {
-  test("one automation-role terminal per enabled command, in order", async () => {
+  test("one automation-role terminal for the event's script, titled by its first command", async () => {
     const fake = fixture();
     const session = sessionRecord();
-    const project = projectWith([
-      commandRecord({ command: ["docker", "compose", "up", "-d"] }),
-      commandRecord({ command: ["make", "setup"], isEnabled: false }),
-      commandRecord({ command: ["pnpm", "install"] }),
-    ]);
+    const project = projectWith({
+      worktreeCreated: {
+        script: "# bring the stack up\ndocker compose up -d\npnpm install",
+        timeoutSeconds: 30,
+      },
+    });
 
     const report = await fake.runner.run({
       event: "worktreeCreated",
@@ -173,63 +145,82 @@ describe("automationRunner", () => {
       attach: fake.attach,
     });
 
-    expect(fake.attached.map((descriptor) => descriptor.title)).toEqual([
-      "docker compose up -d",
-      "pnpm install",
-    ]);
+    expect(fake.attached.map((descriptor) => descriptor.title)).toEqual(["docker compose up -d"]);
     expect(fake.attached[0]?.role).toEqual({ kind: "automation", event: "worktreeCreated" });
-    expect(fake.attached.map((descriptor) => descriptor.startsAutomatically)).toEqual([
-      false,
-      false,
-    ]);
+    expect(fake.attached[0]?.startsAutomatically).toBe(false);
     expect(fake.terminals.inSession(session.id).map((terminal) => terminal.id)).toEqual(
       fake.attached.map((descriptor) => descriptor.id),
     );
-    expect(fake.factory.created.map((handle) => handle.starts())).toEqual([1, 1]);
-    expect(fake.events.entries).toEqual(["attach", "terminal.create", "attach", "terminal.create"]);
-    expect(report.commands.map((entry) => entry.command.command[0])).toEqual(["docker", "pnpm"]);
+    expect(fake.factory.created.map((handle) => handle.starts())).toEqual([1]);
+    expect(fake.events.entries).toEqual(["attach", "terminal.create"]);
+    expect(report.outcome?.terminal).toBe(fake.attached[0]?.id);
   });
 
-  test("argv is executed directly, never through a shell", async () => {
+  test("the script is handed verbatim to the login shell, in the session's directory, with the namespace", async () => {
     const fake = fixture();
     const session = sessionRecord();
+    const script =
+      'cp "$JANELA_PROJECT_DIRECTORY/.env" "$JANELA_SESSION_DIRECTORY/.env"\npnpm install';
 
     await fake.runner.run({
       event: "worktreeCreated",
-      project: projectWith([commandRecord({ command: ["pnpm", "install", "--frozen-lockfile"] })]),
+      project: projectWith({ worktreeCreated: { script, timeoutSeconds: 30 } }),
       session,
       attach: fake.attach,
     });
 
     const launch = fake.factory.created[0]?.launch;
 
-    expect(launch?.executable).toBe("/opt/homebrew/bin/pnpm");
-    expect(launch?.arguments).toEqual(["pnpm", "install", "--frozen-lockfile"]);
+    expect(launch?.executable).toBe(shell.loginShell);
+    expect(launch?.arguments).toEqual([shell.loginShell, "-c", script]);
     expect(launch?.workingDirectory).toBe(session.directory);
     expect(launch?.environment["JANELA_AUTOMATION_EVENT"]).toBe("worktreeCreated");
+    expect(launch?.environment["JANELA_PROJECT_DIRECTORY"]).toBe("/Users/x/code/janela");
+    expect(launch?.environment["JANELA_SESSION_DIRECTORY"]).toBe(session.directory);
+    expect(launch?.environment["JANELA_PROJECT"]).toBe("janela");
+  });
+
+  test("an absent, blank or comment-only script runs nothing and creates no terminal", async () => {
+    for (const automation of [
+      {},
+      { sessionStart: { script: "", timeoutSeconds: 30 } },
+      { sessionStart: { script: "  \n\n", timeoutSeconds: 30 } },
+      { sessionStart: { script: "# nothing yet\n  # still nothing", timeoutSeconds: 30 } },
+    ] satisfies readonly AutomationScripts[]) {
+      const fake = fixture();
+
+      // oxlint-disable-next-line no-await-in-loop
+      const report = await fake.runner.run({
+        event: "sessionStart",
+        project: projectWith(automation),
+        session: sessionRecord(),
+        attach: fake.attach,
+      });
+
+      expect(report).toEqual({ event: "sessionStart" });
+      expect(fake.factory.created).toHaveLength(0);
+      expect(fake.events.entries).toEqual([]);
+    }
   });
 
   test("a non-teardown event returns after creation, not after completion", async () => {
     const fake = fixture();
-    const command = commandRecord({ event: "sessionStart", command: ["pnpm", "dev"] });
 
     const report = await fake.runner.run({
       event: "sessionStart",
-      project: projectWith([command]),
+      project: projectWith({ sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } }),
       session: sessionRecord(),
       attach: fake.attach,
     });
 
     expect(fake.factory.created[0]?.terminal.state).toEqual({ kind: "running" });
-    expect(report.commands).toHaveLength(1);
-    expect(report.commands[0]?.command).toBe(command);
-    expect(report.commands[0]?.terminal).toBe(fake.attached[0]?.id);
-    expect(report.commands[0]?.timedOut).toBe(false);
-    expect(report.commands[0]?.exitCode).toBeUndefined();
-    expect(report.commands[0]?.failure).toBeUndefined();
+    expect(report.outcome?.terminal).toBe(fake.attached[0]?.id);
+    expect(report.outcome?.timedOut).toBe(false);
+    expect(report.outcome?.exitCode).toBeUndefined();
+    expect(report.outcome?.failure).toBeUndefined();
   });
 
-  test("commands come only from the database, never from a file in the repository", async () => {
+  test("scripts come only from the database, never from a file in the repository", async () => {
     await using directory = await temporaryDirectory("automation-runner");
 
     await writeFile(
@@ -238,30 +229,24 @@ describe("automationRunner", () => {
       "utf8",
     );
     await mkdir(directory.join(".janela"), { recursive: true });
-    await writeFile(
-      directory.join(".janela/commands.json"),
-      JSON.stringify([{ event: "sessionStart", command: ["make", "hostile"] }]),
-      "utf8",
-    );
+    await writeFile(directory.join(".janela/sessionStart.sh"), "make hostile\n", "utf8");
     await writeFile(directory.join("Makefile"), "hostile:\n\t@echo no\n", "utf8");
 
     const fake = fixture();
     await fake.runner.run({
       event: "sessionStart",
-      project: projectWith([commandRecord({ event: "sessionStart", command: ["pnpm", "dev"] })]),
+      project: projectWith({ sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } }),
       session: sessionRecord({ directory: absolutePath(directory.path) }),
       attach: fake.attach,
     });
 
     expect(fake.factory.created).toHaveLength(1);
-    expect(fake.factory.created[0]?.launch.arguments).toEqual(["pnpm", "dev"]);
+    expect(fake.factory.created[0]?.launch.arguments).toEqual([shell.loginShell, "-c", "pnpm dev"]);
   });
 
   test("sessionStart fires once per session, across a daemon restart", async () => {
     const fake = fixture();
-    const project = projectWith([
-      commandRecord({ event: "sessionStart", command: ["pnpm", "dev"] }),
-    ]);
+    const project = projectWith({ sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } });
     const session = sessionRecord();
 
     await fake.runner.run({ event: "sessionStart", project, session, attach: fake.attach });
@@ -276,93 +261,51 @@ describe("automationRunner", () => {
       attach: fake.attach,
     });
 
-    expect(second.commands).toEqual([]);
+    expect(second.outcome).toBeUndefined();
     expect(fake.factory.created).toHaveLength(1);
     expect(fake.attached).toHaveLength(1);
   });
 
-  test("a teardown blocks, bounded by its own timeout, and does not kill the command", async () => {
+  test("a teardown blocks, bounded by its own timeout, and does not kill the script", async () => {
     const fake = fixture();
 
     const report = await fake.runner.run({
       event: "sessionTeardown",
-      project: projectWith([
-        commandRecord({
-          event: "sessionTeardown",
-          command: ["docker", "compose", "down"],
-          timeoutSeconds: 0.05,
-        }),
-      ]),
+      project: projectWith({
+        sessionTeardown: { script: "docker compose down", timeoutSeconds: 0.05 },
+      }),
       session: sessionRecord(),
       attach: fake.attach,
     });
 
-    expect(report.commands[0]?.timedOut).toBe(true);
-    expect(report.commands[0]?.exitCode).toBeUndefined();
+    expect(report.outcome?.timedOut).toBe(true);
+    expect(report.outcome?.exitCode).toBeUndefined();
     expect(fake.factory.created[0]?.stops()).toBe(0);
     expect(fake.records.map((record) => record.message)).toContain("automation teardown timed out");
   });
 
-  test("a failing teardown command is visible and does not stop the next one", async () => {
-    const fake = fixture();
-    const session = sessionRecord();
+  test("a teardown that exits reports its code, success or not", async () => {
+    for (const code of [0, 1]) {
+      const fake = fixture();
+      const session = sessionRecord();
 
-    const [report] = await Promise.all([
-      fake.runner.run({
-        event: "sessionTeardown",
-        project: projectWith([
-          commandRecord({
-            event: "sessionTeardown",
-            command: ["docker", "compose", "down"],
-            timeoutSeconds: 5,
-          }),
-          commandRecord({
-            event: "sessionTeardown",
-            command: ["make", "clean"],
-            timeoutSeconds: 5,
-          }),
-        ]),
-        session,
-        attach: fake.attach,
-      }),
-      exitEachTerminal(fake.factory, [1, 0]),
-    ]);
-
-    expect(report.commands.map((entry) => entry.exitCode)).toEqual([1, 0]);
-    expect(report.commands.map((entry) => entry.timedOut)).toEqual([false, false]);
-    expect(fake.terminals.inSession(session.id)).toHaveLength(2);
-  });
-
-  test("teardown commands run in order, never in parallel", async () => {
-    const fake = fixture();
-
-    const running = fake.runner.run({
-      event: "sessionTeardown",
-      project: projectWith([
-        commandRecord({
+      // oxlint-disable-next-line no-await-in-loop
+      const [report] = await Promise.all([
+        fake.runner.run({
           event: "sessionTeardown",
-          command: ["docker", "compose", "down"],
-          timeoutSeconds: 5,
+          project: projectWith({
+            sessionTeardown: { script: "docker compose down\nmake clean", timeoutSeconds: 5 },
+          }),
+          session,
+          attach: fake.attach,
         }),
-        commandRecord({ event: "sessionTeardown", command: ["make", "clean"], timeoutSeconds: 5 }),
-      ]),
-      session: sessionRecord(),
-      attach: fake.attach,
-    });
+        exitFirstTerminal(fake.factory, code),
+      ]);
 
-    await terminalsToAppear(fake.factory, 1);
-    await Effect.runPromise(Effect.sleep(Duration.millis(20)));
-
-    expect(fake.factory.created).toHaveLength(1);
-
-    fake.factory.created[0]?.setState({ kind: "exited", code: 0 });
-    await terminalsToAppear(fake.factory, 2);
-
-    expect(fake.factory.created).toHaveLength(2);
-
-    fake.factory.created[1]?.setState({ kind: "exited", code: 0 });
-
-    expect((await running).commands.map((entry) => entry.exitCode)).toEqual([0, 0]);
+      expect(report.outcome?.exitCode).toBe(code);
+      expect(report.outcome?.timedOut).toBe(false);
+      expect(fake.terminals.inSession(session.id)).toHaveLength(1);
+    }
   });
 
   test("a teardown runs to completion when the client that asked has gone", async () => {
@@ -371,57 +314,32 @@ describe("automationRunner", () => {
     const [report] = await Promise.all([
       fake.runner.run({
         event: "sessionTeardown",
-        project: projectWith([
-          commandRecord({
-            event: "sessionTeardown",
-            command: ["docker", "compose", "down"],
-            timeoutSeconds: 5,
-          }),
-          commandRecord({
-            event: "sessionTeardown",
-            command: ["make", "clean"],
-            timeoutSeconds: 5,
-          }),
-        ]),
+        project: projectWith({
+          sessionTeardown: { script: "docker compose down", timeoutSeconds: 5 },
+        }),
         session: sessionRecord(),
         attach: fake.attach,
       }),
-      exitEachTerminal(fake.factory, [0, 0]),
+      exitFirstTerminal(fake.factory, 0),
     ]);
 
-    expect(report.commands.map((entry) => entry.exitCode)).toEqual([0, 0]);
+    expect(report.outcome?.exitCode).toBe(0);
 
     const failures = fake.records.filter((record) => record.message === "automation attach failed");
 
-    expect(failures).toHaveLength(2);
-    expect(Object.keys(failures[0]?.fields ?? {}).toSorted()).toEqual([
-      "command",
-      "event",
-      "session",
-    ]);
+    expect(failures).toHaveLength(1);
+    expect(Object.keys(failures[0]?.fields ?? {}).toSorted()).toEqual(["event", "session"]);
+  });
+});
+
+describe("automationTitle", () => {
+  test("is the first line that is not blank or a comment", () => {
+    expect(automationTitle("sessionStart", "\n# setup\n\n  pnpm install\nmake")).toBe(
+      "pnpm install",
+    );
   });
 
-  test("a command whose executable is missing costs only that command", async () => {
-    const fake = fixture({ which: { pnpm: installed.pnpm } });
-    const missing = commandRecord({ command: ["docker", "compose", "up", "-d"] });
-    const present = commandRecord({ command: ["pnpm", "install"] });
-
-    const report = await fake.runner.run({
-      event: "worktreeCreated",
-      project: projectWith([missing, present]),
-      session: sessionRecord(),
-      attach: fake.attach,
-    });
-
-    expect(report.commands[0]?.command).toBe(missing);
-    expect(report.commands[0]?.failure).toBe("launch");
-    expect(report.commands[0]?.terminal).toBeUndefined();
-    expect(fake.attached).toHaveLength(1);
-    expect(report.commands[1]?.command).toBe(present);
-    expect(report.commands[1]?.terminal).toBe(fake.attached[0]?.id);
-    expect(report.commands[1]?.timedOut).toBe(false);
-    expect(report.commands[1]?.failure).toBeUndefined();
-    expect(fake.factory.created[0]?.launch.executable).toBe("/opt/homebrew/bin/pnpm");
-    expect(fake.records.map((record) => record.message)).toContain("automation launch failed");
+  test("falls back to the event when every line is blank or a comment", () => {
+    expect(automationTitle("sessionTeardown", "# soon\n\n")).toBe("sessionTeardown");
   });
 });

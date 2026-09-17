@@ -140,7 +140,7 @@ by accident.
 | Package | Owns | Must not |
 | --- | --- | --- |
 | `@janela/support` | `Log`, timing marks, `UserFacingError`, bounded buffers | Know anything about the domain. Its `/process` subpath is daemon-only, so the rest stays linkable into a WebView |
-| `@janela/core` | `Project`, `Session`, `TerminalDescriptor`, `SessionLayout`, `AutomationCommand`, `LaunchProfile` | Perform I/O, or hold anything that does not survive JSON |
+| `@janela/core` | `Project`, `Session`, `TerminalDescriptor`, `SessionLayout`, `AutomationScript`, `LaunchProfile` | Perform I/O, or hold anything that does not survive JSON |
 | `@janela/protocol` | Frames, messages, handshake, transport seam | Know how anything is *implemented* on either side |
 
 ### Daemon side

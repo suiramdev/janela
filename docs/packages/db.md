@@ -398,6 +398,19 @@ version is an empty database, and the cascade assertions live both in the shippe
 SQL (`ON DELETE CASCADE` ×3, `ON DELETE SET NULL` ×2) and in behavioural tests over
 a real store.
 
+**v2 — `20260917120000_automation_scripts`.** `AutomationCommand` (an argv row per
+command, with `isEnabled` and `position`) became `AutomationScript`, one row per
+`(projectId, event)` holding a shell script. The conversion is done in SQL so it
+runs inside the migration's transaction and needs nothing but SQLite: every argv
+element is single-quoted (`'` → `'\''`), the elements join with a space, a disabled
+row is prefixed `# `, and a project's rows for one event join with newlines in
+their old `position` order — the only place SQLite's `group_concat` ordering is
+relied on, and it is fed from an explicitly ordered temp table. The teardown
+timeout is the first row's. Quoting *every* element rather than only the ones that
+need it is the safe choice, and the script is the user's to tidy. The forward
+test seeds four argv rows at v1 and asserts the exact script text, quoting and
+order included.
+
 ## repositories.ts, prisma-repositories.ts
 
 `repositories.ts` is the interface half and names only `@janela/core` types;

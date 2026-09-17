@@ -283,6 +283,12 @@ export const GATED_MODULES: readonly GatedModule[] = [
       "The motion seam, and the same rule as @base-ui/react: one package names the library, and everything above composes what @janela/design exports. It arrived with Fluid Hover, whose highlight needs a spring; a view that animates by hand instead grows a second motion dialect, and the terminal path must stay free of per-frame React work (docs/performance.md).",
   },
   {
+    pattern: "monaco-editor*",
+    allowed: ["@janela/design"],
+    reason:
+      "The code-editor seam, same rule as @xterm/* and @base-ui/react: one package names the library. It arrived for the automation scripts, is loaded only when a script editor mounts, and everything above composes ShellScriptEditor.",
+  },
+  {
     pattern: "react-dom",
     allowed: ["@janela/ui", "@janela/desktop", "@janela/web"],
     reason:

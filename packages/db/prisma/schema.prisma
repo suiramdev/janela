@@ -2,7 +2,7 @@
 //
 // ## What lives here
 //
-// Projects, sessions, terminal descriptors, session layouts, automation commands,
+// Projects, sessions, terminal descriptors, session layouts, automation scripts,
 // launch profiles. Roughly: kilobytes. This database will never be large, and that
 // is a design constraint rather than an observation — if something wants to store
 // megabytes (scrollback, logs, agent transcripts) it does not belong here.
@@ -78,7 +78,7 @@ model Project {
   defaultProfile   LaunchProfile? @relation(fields: [defaultProfileId], references: [id], onDelete: SetNull)
 
   sessions   Session[]
-  automation AutomationCommand[]
+  automation AutomationScript[]
 }
 
 model Session {
@@ -138,19 +138,18 @@ model Terminal {
   @@index([sessionId, position])
 }
 
-/// Automation commands live here and never in the user's repository: a committed
+/// Automation scripts live here and never in the user's repository: a committed
 /// file that runs commands makes cloning a repo a code-execution vector.
-model AutomationCommand {
-  id        String  @id
+model AutomationScript {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  event   String
-  /// JSON array, never a shell string.
-  command String
-  isEnabled      Boolean @default(true)
-  timeoutSeconds Int     @default(30)
-  position       Int
+  /// One of the AutomationEvent names; one row per project and event.
+  event String
+  /// A shell script, verbatim, run by the user's login shell with `-c`. The one
+  /// place a shell string is stored — the script *is* the user's shell logic.
+  script         String
+  timeoutSeconds Int    @default(30)
 
-  @@index([projectId, event, position])
+  @@id([projectId, event])
 }

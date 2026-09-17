@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { Project } from "@janela/core";
-import { absolutePath, newAutomationID } from "@janela/core";
+import { absolutePath } from "@janela/core";
 import { SidebarProvider } from "@janela/design";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -454,7 +454,7 @@ describe("the screen", () => {
       environment.view.editSettingsDraft(
         withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, JANELA.id, {
           worktreeRoot: { kind: "siblingDirectory" },
-          automation: [],
+          automation: {},
           isForgeEnabled: true,
         }),
       );
@@ -471,15 +471,7 @@ describe("the screen", () => {
       environment.view.editSettingsDraft(
         withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, JANELA.id, {
           worktreeRoot: { kind: "siblingDirectory" },
-          automation: [
-            {
-              id: newAutomationID(),
-              event: "sessionStart",
-              command: [""],
-              isEnabled: true,
-              timeoutSeconds: 30,
-            },
-          ],
+          automation: { sessionTeardown: { script: "docker compose down", timeoutSeconds: 0 } },
           isForgeEnabled: false,
         }),
       );
@@ -487,7 +479,7 @@ describe("the screen", () => {
       const markup = screen(tabRoute("notifications"), environment);
 
       expect(barButton(markup, "Save")).toContain('disabled=""');
-      expect(markup).toContain("An enabled command needs an executable.");
+      expect(markup).toContain("A teardown timeout must be at least one second.");
       expect(markup).toContain("janela");
       expect(barButton(markup, "Revert")).not.toContain('disabled=""');
     });

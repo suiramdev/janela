@@ -44,7 +44,7 @@ const project: Project = {
   id: projectID,
   name: "janela",
   directory: "/Users/x/code/janela" as AbsolutePath,
-  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: [], isForgeEnabled: true },
+  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
   accent: "none",
   isExpanded: true,
   addedAt: now(),
@@ -165,6 +165,7 @@ describe("resolveTerminalLaunch", () => {
     expect(launch.environment["ConEmuANSI"]).toBe("ON");
     expect(launch.environment["JANELA_SESSION_NAME"]).toBe("feature");
     expect(launch.environment["JANELA_PROJECT"]).toBe("janela");
+    expect(launch.environment["JANELA_PROJECT_DIRECTORY"]).toBe("/Users/x/code/janela");
     expect(launch.environment["ANTHROPIC_LOG"]).toBe("debug");
     expect(launch.environment["EDITOR"]).toBe("hx");
   });
@@ -180,5 +181,26 @@ describe("resolveTerminalLaunch", () => {
     });
 
     expect(launch.workingDirectory).toBe("/Users/x/code/.worktrees/feature/packages/db");
+  });
+
+  test("a script is handed to the login shell as one -c argument, with no PATH lookup", async () => {
+    const fake = scriptedProcesses();
+    const script = 'cp "$JANELA_PROJECT_DIRECTORY/.env" .env\npnpm install';
+
+    const launch = await resolveTerminalLaunch({
+      session,
+      terminal: descriptor(),
+      project,
+      script,
+      automationEvent: "worktreeCreated",
+      shell,
+      processes: fake.processes,
+    });
+
+    expect(launch.executable).toBe(shell.loginShell);
+    expect(launch.arguments).toEqual([shell.loginShell, "-c", script]);
+    expect(launch.workingDirectory).toBe(session.directory);
+    expect(launch.environment["JANELA_AUTOMATION_EVENT"]).toBe("worktreeCreated");
+    expect(fake.whichCalls).toEqual([]);
   });
 });

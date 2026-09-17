@@ -24,6 +24,7 @@ export interface TerminalLaunchInput {
   readonly project?: Project;
   readonly profile?: LaunchProfile;
   readonly command?: readonly string[];
+  readonly script?: string;
   readonly automationEvent?: AutomationEvent;
   readonly shell: ShellEnvironment;
   readonly processes: ProcessRunning;
@@ -43,7 +44,10 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
     terminalID: input.terminal.id,
   };
 
-  if (input.project !== undefined) variables.projectName = input.project.name;
+  if (input.project !== undefined) {
+    variables.projectName = input.project.name;
+    variables.projectDirectory = input.project.directory;
+  }
 
   if (input.automationEvent !== undefined) variables.automationEvent = input.automationEvent;
 
@@ -56,6 +60,17 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
   };
 
   const workingDirectory = input.terminal.workingDirectoryOverride ?? input.session.directory;
+
+  if (input.script !== undefined) {
+    return {
+      executable: input.shell.loginShell,
+      arguments: [input.shell.loginShell, "-c", input.script],
+      workingDirectory,
+      environment,
+      initialSize: DEFAULT_INITIAL_SIZE,
+    };
+  }
+
   const argv = input.command ?? input.profile?.command ?? [];
   const first = argv[0];
 

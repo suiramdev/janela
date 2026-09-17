@@ -166,8 +166,10 @@ subpath to the daemon side and gates `node:child_process` to this package.
 
 **Arguments are always an array. There is no shell, so there is no quoting and no
 injection.** A caller who genuinely wants a shell writes `["zsh", "-lc", "…"]` and
-has chosen that explicitly — the same rule `LaunchProfile.command` and
-`AutomationCommand.command` follow, for the same reason.
+has chosen that explicitly — the same rule `LaunchProfile.command` follows, for
+the same reason. The one exception lives above this layer: an automation script
+is handed verbatim to the user's login shell, because a lifecycle hook *is* the
+user's shell logic (`AGENTS.md` § argv) — nothing here composes it.
 
 `ProcessRequest.executable` is resolved by the caller; this layer does not search
 `PATH` for `run`. `arguments` excludes `argv[0]`. An absent `environment` means an

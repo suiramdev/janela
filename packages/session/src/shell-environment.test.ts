@@ -335,6 +335,7 @@ describe("janelaVariables", () => {
       }),
       terminalID: terminal,
       projectName: "janela",
+      projectDirectory: "/Users/x/code/janela",
       automationEvent: "sessionStart",
     });
 
@@ -342,11 +343,13 @@ describe("janelaVariables", () => {
       "JANELA_AUTOMATION_EVENT",
       "JANELA_BRANCH",
       "JANELA_PROJECT",
+      "JANELA_PROJECT_DIRECTORY",
       "JANELA_SESSION_DIRECTORY",
       "JANELA_SESSION_ID",
       "JANELA_SESSION_NAME",
       "JANELA_TERMINAL_ID",
     ]);
+    expect(variables["JANELA_PROJECT_DIRECTORY"]).toBe("/Users/x/code/janela");
     expect(variables["JANELA_BRANCH"]).toBe("feature/x");
   });
 

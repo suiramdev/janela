@@ -33,7 +33,7 @@ export function projectRepository(client: PrismaClient, log: Logger): ProjectRep
   return {
     async all(): Promise<readonly Project[]> {
       const rows = await client.project.findMany({
-        include: { automation: BY_POSITION },
+        include: { automation: true },
         orderBy: { name: "asc" },
       });
 
@@ -43,7 +43,7 @@ export function projectRepository(client: PrismaClient, log: Logger): ProjectRep
     async find(id: ProjectID): Promise<Project | undefined> {
       const row = await client.project.findUnique({
         where: { id },
-        include: { automation: BY_POSITION },
+        include: { automation: true },
       });
 
       return row === null ? undefined : decodeProject(row, log);
@@ -51,8 +51,7 @@ export function projectRepository(client: PrismaClient, log: Logger): ProjectRep
 
     async save(project: Project): Promise<void> {
       const columns = encodeProject(project);
-      const commands = project.settings.automation;
-      const keep = commands.map((command) => command.id);
+      const scripts = encodeAutomation(project.settings.automation, project.id);
 
       await client.$transaction(async (tx) => {
         await tx.project.upsert({
@@ -61,22 +60,9 @@ export function projectRepository(client: PrismaClient, log: Logger): ProjectRep
           update: columns,
         });
 
-        const obsolete: Prisma.AutomationCommandWhereInput = { projectId: project.id };
+        await tx.automationScript.deleteMany({ where: { projectId: project.id } });
 
-        if (keep.length > 0) obsolete.id = { notIn: keep };
-
-        await tx.automationCommand.deleteMany({ where: obsolete });
-
-        for (const [position, command] of commands.entries()) {
-          const row = encodeAutomation(command, project.id, position);
-
-          // oxlint-disable-next-line no-await-in-loop
-          await tx.automationCommand.upsert({
-            where: { id: command.id },
-            create: { id: command.id, ...row },
-            update: row,
-          });
-        }
+        if (scripts.length > 0) await tx.automationScript.createMany({ data: [...scripts] });
       });
     },
 

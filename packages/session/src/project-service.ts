@@ -129,7 +129,7 @@ class BrainProjectService implements ProjectService {
       directory: request.directory,
       settings: {
         worktreeRoot: { kind: "siblingDirectory" },
-        automation: [],
+        automation: {},
         isForgeEnabled: true,
       },
       accent: "none",

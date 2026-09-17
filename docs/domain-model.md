@@ -90,7 +90,7 @@ The only per-scope settings that exist. Everything else is global.
 ```swift
 public struct ProjectSettings: Hashable, Sendable, Codable {
     public var worktreeRoot: WorktreeRoot        // where new worktrees are placed
-    public var automation: [AutomationCommand]   // see below
+    public var automation: [AutomationEvent: AutomationScript]   // see below
     public var defaultProfileID: LaunchProfileID?
     public var forge: ForgeSettings              // enabled, host override
 }
@@ -366,14 +366,11 @@ rather than shown broken. Adding one must never require code changes elsewhere.
 
 These are not concepts a user learns. They are fields.
 
-### `AutomationCommand`
+### `AutomationScript`
 
 ```swift
-public struct AutomationCommand: Identifiable, Hashable, Sendable, Codable {
-    public let id: AutomationID
-    public var event: AutomationEvent
-    public var command: [String]          // argv, never a shell string
-    public var isEnabled: Bool
+public struct AutomationScript: Hashable, Sendable, Codable {
+    public var script: String             // a shell script, verbatim
     public var timeout: Duration          // teardown only; default 30 s
 }
 
@@ -384,6 +381,13 @@ public enum AutomationEvent: String, Hashable, Sendable, Codable, CaseIterable {
 }
 ```
 
+One script per event, keyed by the event. There is no list, no ordering and no
+enabled flag: the script *is* the ordering, a commented line is a disabled one,
+and an absent, blank or comment-only script runs nothing. It is the **one place a
+shell string exists** in the domain: the script is handed verbatim to the user's
+login shell (`$SHELL -c script`) because a lifecycle hook is precisely the user's
+shell logic, and an argv array made them write `["zsh", "-lc", "…"]` to get a pipe.
+
 Ordering when creating a worktree-backed session is fixed and documented because
 scripts depend on it:
 
@@ -392,17 +396,23 @@ git worktree add
    ↓
 .worktreeinclude copy          (files are in place before anything runs)
    ↓
-.worktreeCreated commands      (install dependencies, generate config)
+worktreeCreated script         (install dependencies, generate config)
    ↓
-.sessionStart commands         (start the dev server)
+sessionStart script            (start the dev server)
    ↓
 the user's own terminals
 ```
 
-Each command runs in a terminal with `role == .automation(event)`, in the session's
-directory, with the session's environment. Failure is visible and non-fatal:
-the terminal stays open showing a non-zero exit, and the session is still usable.
-Teardown is the one exception — deletion waits for it, bounded by `timeout`.
+Each script runs in a terminal with `role == .automation(event)`, in the session's
+directory, with the session's environment and the `JANELA_*` namespace — in
+particular `JANELA_PROJECT_DIRECTORY` (the project's own directory) and
+`JANELA_SESSION_DIRECTORY` (the worktree, when there is one), so
+`cp "$JANELA_PROJECT_DIRECTORY/.env" "$JANELA_SESSION_DIRECTORY/.env"` is the
+whole answer to the most common hook. The list of variables is `AUTOMATION_VARIABLES`
+in `@janela/core`, and Settings renders it beside the editor. Failure is visible
+and non-fatal: the terminal stays open showing a non-zero exit, and the session is
+still usable. Teardown is the one exception — deletion waits for it, bounded by
+`timeout`.
 
 These live in Janela's database rather than in a committed repo file.
 
@@ -479,7 +489,7 @@ model erodes.
 | split | pane, division |
 | launch profile | agent, command, tool, preset |
 | directory | folder, path, cwd |
-| automation command | hook, script, task, job |
+| automation script | hook, command, task, job |
 | daemon, `janelad` | server, backend, service, agent |
 | client | frontend, UI (when you mean the process) |
 | attach / detach | connect, open, subscribe (when you mean one terminal) |

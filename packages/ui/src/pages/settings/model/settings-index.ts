@@ -3,7 +3,7 @@ import { AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
 
 import { fuzzyScore } from "../../../shared/lib/fuzzy-match/index.ts";
 import type { SettingsRoute, SettingsTabID } from "../../../shared/model/index.ts";
-import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-commands.ts";
+import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scripts.ts";
 
 export type SettingsSectionID =
   | "appearanceFont"
@@ -174,12 +174,25 @@ export const PROJECT_WORKTREES_SECTION: SettingsSection = {
 export const PROJECT_AUTOMATION_SECTION: SettingsSection = {
   id: "projectAutomation",
   title: "Automation",
-  hint: "Commands Janela runs for you, each in a real terminal in the session you can watch and interrupt. They are stored here and never read from the repository.",
+  hint: "A shell script for each moment in a session's life, run by your login shell in a real terminal you can watch and interrupt. Scripts are stored here and never read from the repository.",
   fields: [],
-  keywords: ["automation", "command", "run", "setup", "install", "bootstrap", "teardown"],
+  keywords: [
+    "automation",
+    "script",
+    "shell",
+    "hook",
+    "lifecycle",
+    "run",
+    "setup",
+    "install",
+    "bootstrap",
+    "teardown",
+    "environment",
+    "variable",
+  ],
 };
 
-const AUTOMATION_KEYWORDS: readonly string[] = ["automation", "command", "timeout", "enabled"];
+const AUTOMATION_KEYWORDS: readonly string[] = ["automation", "script", "shell", "timeout"];
 
 export const AUTOMATION_SECTION = {
   worktreeCreated: {

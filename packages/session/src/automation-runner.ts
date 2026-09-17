@@ -1,13 +1,13 @@
 import type {
-  AutomationCommand,
   AutomationEvent,
+  AutomationScript,
   Project,
   Session,
   TerminalDescriptor,
   TerminalID,
   TerminalState,
 } from "@janela/core";
-import { newTerminalID, now } from "@janela/core";
+import { automationScriptOf, newTerminalID, now } from "@janela/core";
 import type { Logger } from "@janela/support";
 import { processRunner, type ProcessRunning } from "@janela/support/process";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
@@ -31,13 +31,14 @@ export interface AutomationRequest {
 
 export interface AutomationReport {
   readonly event: AutomationEvent;
-  readonly commands: readonly {
-    readonly command: AutomationCommand;
-    readonly terminal?: TerminalID;
-    readonly exitCode?: number;
-    readonly timedOut: boolean;
-    readonly failure?: "launch";
-  }[];
+  readonly outcome?: AutomationOutcome;
+}
+
+export interface AutomationOutcome {
+  readonly terminal?: TerminalID;
+  readonly exitCode?: number;
+  readonly timedOut: boolean;
+  readonly failure?: "launch";
 }
 
 export interface AutomationRunnerDependencies {
@@ -49,18 +50,24 @@ export interface AutomationRunnerDependencies {
   readonly pollIntervalMs?: number;
 }
 
-type CommandReport = AutomationReport["commands"][number];
-
-type CommandShape = {
+type ScriptShape = {
   readonly session: Session["id"];
   readonly event: AutomationEvent;
-  readonly command: AutomationCommand["id"];
 };
 
 export const DEFAULT_AUTOMATION_POLL_MS = 50;
 
 export function automationRunner(deps: AutomationRunnerDependencies): AutomationRunning {
   return new VisibleAutomationRunner(deps);
+}
+
+export function automationTitle(event: AutomationEvent, script: string): string {
+  const first = script
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !line.startsWith("#"));
+
+  return first ?? event;
 }
 
 function settledState(state: TerminalState): TerminalState | undefined {
@@ -92,34 +99,30 @@ class VisibleAutomationRunner implements AutomationRunning {
     if (alreadyRan) {
       this.log.info("sessionStart automation already ran", { session: session.id });
 
-      return { event, commands: [] };
+      return { event };
     }
 
-    const commands = request.project.settings.automation.filter(
-      (candidate) => candidate.event === event && candidate.isEnabled,
-    );
+    const script = automationScriptOf(request.project.settings, event);
 
-    const reports: CommandReport[] = [];
+    if (script === undefined) return { event };
 
-    for (const command of commands) {
-      // oxlint-disable-next-line no-await-in-loop
-      reports.push(await this.runCommand({ ...request, command }));
-    }
+    const outcome = await this.runScript(request, script);
 
-    this.log.info("automation ran", { session: session.id, event, commands: reports.length });
+    this.log.info("automation ran", { session: session.id, event });
 
-    return { event, commands: reports };
+    return { event, outcome };
   }
 
-  private async runCommand(
-    input: AutomationRequest & { readonly command: AutomationCommand },
-  ): Promise<CommandReport> {
-    const { command, event, project, session } = input;
-    const shape: CommandShape = { session: session.id, event, command: command.id };
+  private async runScript(
+    request: AutomationRequest,
+    script: AutomationScript,
+  ): Promise<AutomationOutcome> {
+    const { event, project, session } = request;
+    const shape: ScriptShape = { session: session.id, event };
 
     const descriptor: TerminalDescriptor = {
       id: newTerminalID(),
-      title: command.command.join(" "),
+      title: automationTitle(event, script.script),
       startsAutomatically: false,
       role: { kind: "automation", event },
       createdAt: now(),
@@ -133,7 +136,7 @@ class VisibleAutomationRunner implements AutomationRunning {
               session,
               terminal: descriptor,
               project,
-              command: command.command,
+              script: script.script,
               automationEvent: event,
               shell: this.deps.shell,
               processes: this.processes,
@@ -146,12 +149,12 @@ class VisibleAutomationRunner implements AutomationRunning {
     if (launch === undefined) {
       this.log.warning("automation launch failed", shape);
 
-      return { command, timedOut: false, failure: "launch" };
+      return { timedOut: false, failure: "launch" };
     }
 
     const attached = await Effect.runPromise(
       Effect.tryPromise({
-        try: () => input.attach(descriptor),
+        try: () => request.attach(descriptor),
         catch: (cause: unknown) => cause,
       }).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true })),
     );
@@ -177,26 +180,26 @@ class VisibleAutomationRunner implements AutomationRunning {
     if (!started) {
       this.log.warning("automation start failed", shape);
 
-      return { command, terminal: descriptor.id, timedOut: false, failure: "launch" };
+      return { terminal: descriptor.id, timedOut: false, failure: "launch" };
     }
 
     if (event !== "sessionTeardown") {
-      return { command, terminal: descriptor.id, timedOut: false };
+      return { terminal: descriptor.id, timedOut: false };
     }
 
-    const state = await this.awaitExit(live, command.timeoutSeconds);
+    const state = await this.awaitExit(live, script.timeoutSeconds);
 
     if (state === undefined) {
       this.log.notice("automation teardown timed out", shape);
 
-      return { command, terminal: descriptor.id, timedOut: true };
+      return { terminal: descriptor.id, timedOut: true };
     }
 
     if (state.kind !== "exited") {
-      return { command, terminal: descriptor.id, timedOut: false, failure: "launch" };
+      return { terminal: descriptor.id, timedOut: false, failure: "launch" };
     }
 
-    return { command, terminal: descriptor.id, exitCode: state.code, timedOut: false };
+    return { terminal: descriptor.id, exitCode: state.code, timedOut: false };
   }
 
   private awaitExit(

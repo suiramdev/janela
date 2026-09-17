@@ -820,21 +820,34 @@ no permission.
 
 ### `ui/project-settings.tsx`
 
-- **The security property.** Automation commands exist only because a human typed them
+- **The security property.** Automation scripts exist only because a human typed them
   here. They are never read from the repository, because a committed file that runs
   commands makes cloning a repo from a stranger a code-execution vector — the one
   property that cannot be added later. This editor is not a convenience over a config
   file; it is the whole mechanism.
+- **One script per event, in a real editor.** The first cut was a list of argv rows per
+  event with Enabled switches and Earlier/Later buttons. It was faithful to the argv
+  rule and hostile to the one thing every hook needs — a pipe, a `cd`, an `if`, a
+  second command that waits for the first — which the user got only by typing
+  `zsh -lc` into the first three fields. A shell script is the list, its order and its
+  enabled flag (`#`) in a form every user already knows, so the pane is now one
+  `ShellScriptEditor` per event (Monaco, shell-highlighted; a textarea until it loads)
+  and nothing else. Leaving one empty is how it is off.
+- **The variables are taught, not hidden.** `AUTOMATION_VARIABLES` from core renders
+  as a definition list above the three editors, and the placeholder is the copy-a-file
+  case written out with `$JANELA_PROJECT_DIRECTORY` and `$JANELA_SESSION_DIRECTORY`.
+  A user's first script is that one, and reading it in the empty field is how the
+  namespace gets learned.
 - It holds no state of its own. The pane is the most obvious reason the draft exists —
-  applied per keystroke, `pnpm ins` would reach the daemon, which stores commands that
-  *run* — but it does not own it.
+  applied per keystroke, `pnpm ins` would reach the daemon, which stores scripts that
+  *run* — but it does not own it. The editor is controlled: a Revert writes the
+  stored text back into Monaco without remounting it.
+- The timeout field appears for teardown only, and only once that script has text: a
+  timeout on an empty script guards nothing and would imply something waits.
 - The worktree-root field is guarded rather than thrown: a user halfway through typing
   `/Users/…` has a relative path for a keystroke.
 - The directory is shown under the name, because two clones of one repository are two
   projects with the same name.
-- A command sheet's argv drafts are local and initialised once, so removing argument 1
-  of three does not remount the others and drop the caret.
-- The order controls read as one control with two directions; Remove stands apart.
 
 ### `ui/fields.tsx`
 
@@ -859,11 +872,13 @@ nothing about that. Keyboard-reachable with the platform focus ring left alone, 
 
 ### `ui/argv-editor.tsx`
 
-There is no field that takes `claude --model opus` and splits it: splitting a string
-into argv has no correct implementation — `zsh -lc "echo 'a b'"` has no right answer —
-and every wrong one is a quoting bug in a program the user cares about. Position is the
-label, and the inputs are monospaced because a trailing space or an l/1 confusion is
-the bug being looked for.
+Launch profiles only, now. There is no field that takes `claude --model opus` and
+splits it: splitting a string into argv has no correct implementation —
+`zsh -lc "echo 'a b'"` has no right answer — and every wrong one is a quoting bug in a
+program the user cares about. Position is the label, and the inputs are monospaced
+because a trailing space or an l/1 confusion is the bug being looked for. Automation
+used to share this editor and does not any more, for the reason given under
+`project-settings.tsx`: a hook wants a shell, and a profile wants exactly not one.
 
 ### `ui/profile-icon.tsx`
 
@@ -893,24 +908,26 @@ screen that enforces them.
 - `profileTitle` exists because a row with no title reads as a list that failed to
   render rather than a form waiting for a word.
 
-### `model/automation-commands.ts`
+### `model/automation-scripts.ts`
 
-The list is authored here and executed by the daemon. Two load-bearing properties:
-`command` is an **argv array**, never a shell string; and the commands live in Janela's
-database and never in the repository, for the same code-execution reason as above.
+The scripts are authored here and executed by the daemon. Two load-bearing
+properties: a script is a **shell string, verbatim**, the one such string in the
+product (`AGENTS.md` § argv); and the scripts live in Janela's database and never in
+the repository, for the same code-execution reason as above.
 
 - `sessionTeardown` is the only blocking event, so it is the only one whose timeout
   means anything — a timeout field on the others would imply a guarantee that does not
   exist. The default waits 30 s, then asks.
-- A new command is appended **disabled**: nothing may run because the user clicked
-  "add" to see what the field looked like.
-- Commands for one event run in sequence and do not gate each other, so the list's
-  order is the whole scheduling model.
-- `automationMoving` moves within its own event: the stored list is flat and mixes
-  events, so a naive index swap would trade places with a neighbour from another event.
-  A command at its end is returned unchanged, because a run order is not a carousel.
-- `automationViolations` catches the case worth catching: an *enabled* command with no
-  executable would fail at every session creation, visibly, forever.
+- `withAutomationScript` with empty text **removes** the event, so an editor the user
+  cleared stores nothing rather than an empty row; with text it keeps whatever timeout
+  the user had set, because editing the script is not a reason to reset the wait.
+- `withAutomationTimeout` on an event with no script is a no-op rather than inventing
+  a script to hang the timeout on.
+- `automationViolations` catches the one case worth catching: a teardown that *runs
+  something* and would never time out, which would make every deletion hang on a
+  script. A comment-only teardown with a zero timeout is not a violation, because
+  nothing waits — `scriptRunsAnything` in core is the single definition of "runs
+  something", shared with the daemon so the pane and the runner cannot disagree.
 
 ### `model/background-service.ts`
 

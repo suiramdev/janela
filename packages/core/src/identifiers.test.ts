@@ -4,7 +4,6 @@ import {
   absolutePath,
   identifier,
   instant,
-  newAutomationID,
   newLaunchProfileID,
   newProjectID,
   newSessionID,
@@ -45,7 +44,6 @@ describe("identifier", () => {
       newSessionID(),
       newTerminalID(),
       newLaunchProfileID(),
-      newAutomationID(),
       newSessionID(),
     ];
 

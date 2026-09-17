@@ -32,6 +32,20 @@ omissions:
 - `spring` / `exitFallbackMs` are the motion ladder; `exitFallbackMs` is derived from
   the tier so a deferred unmount's guard cannot drift from its exit. The CSS half of
   the same ladder is `--spring-*` in `src/styles.css`.
+- `ShellScriptEditor` is the one editor, and Monaco is gated to this package the way
+  `@xterm/*` is gated to the two terminal seams: one package names the library.
+  **Monaco is imported dynamically, inside the mount effect, and that is the one
+  place in the client where a static import would be wrong.** `monaco-editor` reads
+  `document` and `window` at module evaluation, and this package is consumed under
+  `bun test` with no DOM by every markup test in `@janela/ui` — a static import
+  would take all of them down, and would also put ~4 MB in the initial chunk of a
+  window that shows an editor only on one settings pane. Until the import resolves
+  the component is a real `<textarea>` holding the value, which is also what
+  static markup renders and what a browser without workers gets; `data-editor`
+  says which one is showing. The worker is constructed with
+  `new Worker(new URL(…, import.meta.url), { type: "module" })`, the form Vite
+  bundles without a plugin, which is why both apps set `worker.format = "es"`. The
+  theme follows `prefers-color-scheme` live, because the rest of the window does.
 
 ## `tokens.ts`
 
@@ -55,7 +69,7 @@ system became custom properties that adapt through `prefers-color-scheme` and
 - `TERMINAL_INSETS` is asymmetric on purpose: the extra leading space keeps text off
   the window edge without making the first column look indented.
 - `failure` is text and glyphs for a terminal that exited non-zero, including a failed
-  automation command, whose terminal stays open showing exactly why.
+  automation script, whose terminal stays open showing exactly why.
 - `TERMINAL_FONT_STACK` is only the default — Settings overrides it, and
   `xtermRendering` is what applies either one. SF Mono first because it ships with
   macOS, has the coverage agents need and hints well at small sizes; then a stack,

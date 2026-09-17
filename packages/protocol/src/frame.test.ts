@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("moving a pane is a new request, so it is a wire change: version 9, speaking 9 only", () => {
-    expect(PROTOCOL_VERSION).toBe(9);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(9);
+  test("automation became one script per event inside ProjectSettings, so it is a wire change: version 10, speaking 10 only", () => {
+    expect(PROTOCOL_VERSION).toBe(10);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(10);
   });
 });
 

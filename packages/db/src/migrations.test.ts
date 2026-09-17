@@ -140,7 +140,7 @@ describe("migrate", () => {
       await database.migrate();
 
       expect(tableNames(path)).toEqual([
-        "AutomationCommand",
+        "AutomationScript",
         "LaunchProfile",
         "Project",
         "Session",
@@ -150,14 +150,18 @@ describe("migrate", () => {
 
       const applied = migrationRows(path);
 
-      expect(applied).toHaveLength(1);
-      expect(applied[0]?.migration_name).toBe(MIGRATIONS[0]?.name);
-      expect(applied[0]?.finished_at).not.toBeNull();
+      expect(applied).toHaveLength(MIGRATIONS.length);
+      expect(applied.map((row) => row.migration_name)).toEqual(
+        MIGRATIONS.map((migration) => migration.name),
+      );
+      expect(applied.every((row) => row.finished_at !== null)).toBe(true);
 
       await database.migrate();
 
-      expect(migrationRows(path)).toHaveLength(1);
-      expect(records.filter((record) => record.message === "migration applied")).toHaveLength(1);
+      expect(migrationRows(path)).toHaveLength(MIGRATIONS.length);
+      expect(records.filter((record) => record.message === "migration applied")).toHaveLength(
+        MIGRATIONS.length,
+      );
 
       await database.close();
     });
@@ -183,18 +187,76 @@ describe("migrate", () => {
   });
 
   test("cascades are in the shipped SQL, because they are the product rules", () => {
-    const sql = MIGRATIONS[0]?.sql ?? "";
+    const initial = MIGRATIONS[0]?.sql ?? "";
 
     for (const constraint of [
       "Session_projectId_fkey",
       "Terminal_sessionId_fkey",
       "AutomationCommand_projectId_fkey",
     ]) {
-      expect(sql).toContain(`CONSTRAINT "${constraint}"`);
+      expect(initial).toContain(`CONSTRAINT "${constraint}"`);
     }
 
-    expect(sql.match(/ON DELETE CASCADE/g)).toHaveLength(3);
-    expect(sql.match(/ON DELETE SET NULL/g)).toHaveLength(2);
+    expect(initial.match(/ON DELETE CASCADE/g)).toHaveLength(3);
+    expect(initial.match(/ON DELETE SET NULL/g)).toHaveLength(2);
+
+    const scripts = MIGRATIONS[1]?.sql ?? "";
+
+    expect(scripts).toContain('CONSTRAINT "AutomationScript_projectId_fkey"');
+    expect(scripts.match(/ON DELETE CASCADE/g)).toHaveLength(1);
+  });
+
+  test("argv rows at the first schema become one script per event, quoted and in order", async () => {
+    await withTemporaryDirectory(async (directory) => {
+      const path = join(directory, "janela.sqlite");
+      const { logger } = recordingLogger();
+      const first = MIGRATIONS[0];
+
+      if (first === undefined) throw new Error("no initial migration");
+
+      const connection: SqlDriverAdapter = await janelaSqliteAdapter({ path }).connect();
+
+      expect(await applyMigrations(connection, [first], logger)).toBe(1);
+
+      const seed = new Database(path);
+      seed.run(
+        `INSERT INTO "Project" (id, name, directory, addedAt) VALUES ('p', 'janela', '/tmp/janela', 0)`,
+      );
+      seed.run(
+        `INSERT INTO "AutomationCommand" (id, projectId, event, command, isEnabled, timeoutSeconds, position)
+           VALUES ('a', 'p', 'worktreeCreated', '["cp",".env","it''s here"]', 1, 30, 1),
+                  ('b', 'p', 'worktreeCreated', '["pnpm","install"]', 0, 30, 0),
+                  ('c', 'p', 'sessionTeardown', '["docker","compose","down"]', 1, 12, 0),
+                  ('d', 'p', 'sessionTeardown', '["make","clean"]', 1, 99, 1)`,
+      );
+      seed.close();
+
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 1);
+
+      const rows = readOnly(path, (database) =>
+        database
+          .query<{ event: string; script: string; timeoutSeconds: number }, []>(
+            `SELECT event, script, timeoutSeconds FROM "AutomationScript" ORDER BY event`,
+          )
+          .all(),
+      );
+
+      expect(rows).toEqual([
+        {
+          event: "sessionTeardown",
+          script: "'docker' 'compose' 'down'\n'make' 'clean'",
+          timeoutSeconds: 12,
+        },
+        {
+          event: "worktreeCreated",
+          script: "# 'pnpm' 'install'\n'cp' '.env' 'it'\\''s here'",
+          timeoutSeconds: 30,
+        },
+      ]);
+      expect(tableNames(path)).not.toContain("AutomationCommand");
+
+      await connection.dispose();
+    });
   });
 
   test("an edited shipped migration is refused rather than re-run", async () => {
@@ -241,7 +303,7 @@ describe("migrate", () => {
       expect(await tablesVisibleTo(connection)).toEqual(["_prisma_migrations"]);
       expect(migrationRows(path)).toHaveLength(0);
       expect(records.filter((record) => record.message === "migration applied")).toHaveLength(0);
-      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(1);
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length);
       expect(tableNames(path)).toContain("Session");
 
       await connection.dispose();

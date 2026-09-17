@@ -188,7 +188,7 @@ describe("addProject", () => {
       expect(added.name).toBe(fixture.directory.split("/").at(-1) ?? "");
       expect(added.settings).toEqual({
         worktreeRoot: { kind: "siblingDirectory" },
-        automation: [],
+        automation: {},
         isForgeEnabled: true,
       });
     });
@@ -278,7 +278,7 @@ describe("updateSettings", () => {
 
       await fixture.projects.updateSettings(added.id, {
         worktreeRoot,
-        automation: [],
+        automation: {},
         isForgeEnabled: false,
       });
 

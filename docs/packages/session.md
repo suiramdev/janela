@@ -308,41 +308,51 @@ removal plan is the only path that deletes files, and it asks first.
 
 ## automation-runner.ts
 
-**Automation is visible.** Each command runs in a real terminal the user can
+**Automation is visible.** The event's script runs in a real terminal the user can
 watch, scroll back through and Ctrl-C, with `role: automation(event)`, in the
 session's directory, with the session's environment. That is a product rule, and
 it is why this type creates terminals rather than capturing output. A failing
-command is shown in its own terminal, never in a dialog.
+script is shown in its own terminal, never in a dialog.
 
 What it is not: a task runner. No scheduling, no retry, no dependency graph, no
-conditional execution. Three events, a command each, in order — sequential by
-contract, because "in order" is the only scheduling this has.
+conditional execution — those belong to the script, which is a shell's. Three
+events, **one script each**. The script used to be a list of argv commands with
+per-row enabled flags and ordering buttons; a shell script is the list, the order
+and the flag (`#`) in a form every user already knows, and it can do the things
+the list could not — a pipe, an `if`, a `cd`.
 
-Commands come from `project.settings.automation` and from nowhere else. There is
-no filesystem import in this file, deliberately: a checkout that can add commands
+The script is handed to the user's login shell as `[$SHELL, "-c", script]`
+through `resolveTerminalLaunch`'s `script` branch: no `which`, no argv, nothing
+Janela composed. `automationTitle` names the terminal after the first line that is
+not blank or a comment, so the tab reads `docker compose up -d` rather than the
+event's identifier. A script that runs nothing — absent, blank, comment-only,
+decided by `automationScriptOf` in core — creates no terminal at all, which is the
+same rule `removalPlan` uses to decide whether deletion will wait.
+
+Scripts come from `project.settings.automation` and from nowhere else. There is
+no filesystem import in this file, deliberately: a checkout that can add a hook
 makes cloning a repository a code-execution vector. There is a test that writes a
-`janela.toml`, a `.janela/commands.json` and a hostile `Makefile` next to the
+`janela.toml`, a `.janela/sessionStart.sh` and a hostile `Makefile` next to the
 session and proves none of them is read.
 
 `attach` is a sink rather than a return value, because a teardown terminal
 published only once teardown finished is a terminal the user could never watch.
 It is called *before* the process starts. A failure there is the
-disconnected-client path: it is logged and the command still runs.
+disconnected-client path: it is logged and the script still runs.
 
 `sessionStart` fires once per session, and the record that it fired is the
 persisted automation-role descriptor itself. A terminal with
 `role: automation(sessionStart)` in `session.terminals` is what "it ran" looks
 like from the database, and it survives a daemon restart for free — restarting
-Janela does not re-run `pnpm dev`. It is checked once per `run`, not per command,
-because the sink appends this run's own descriptors as it goes.
+Janela does not re-run `pnpm dev`.
 
-`worktreeCreated` and `sessionStart` return once the terminals have been
+`worktreeCreated` and `sessionStart` return once the terminal has been
 *created*; nothing waits for `pnpm dev` to exit. `sessionTeardown` is the one
-blocking event, bounded by each command's own `timeoutSeconds` through
-`Effect.timeoutOption`. A command that overruns is **not** stopped here:
+blocking event, bounded by the script's own `timeoutSeconds` through
+`Effect.timeoutOption`. A script that overruns is **not** stopped here:
 `removeSession`'s stop-all loop is next, and killing it twice would only make the
 report lie about which of us did. A zero or negative `timeoutSeconds` still gets
-one look at the state, so a command that exited instantly is reported as exited
+one look at the state, so a script that exited instantly is reported as exited
 rather than as timed out.
 
 The wait polls `LiveTerminal.state` rather than subscribing, because
@@ -351,10 +361,9 @@ claiming it here would silently cost the user their notifications. The daemon's
 frame loop is what advances `state` in production. `DEFAULT_AUTOMATION_POLL_MS`
 is 50 ms, far below the time any teardown script takes.
 
-The `automation` log category records which event fired, which command and its
-exit status — never the command's argv beyond the descriptor title the user can
-already see, and never its output. See
-[`support.md`](support.md) § log.ts.
+The `automation` log category records which event fired and its exit status —
+never the script's text beyond the descriptor title the user can already see, and
+never its output. See [`support.md`](support.md) § log.ts.
 
 ## shell-environment.ts
 
@@ -488,12 +497,17 @@ what it is. Janela reports what the terminal told it and infers nothing, so the
 remaining gaps are settings in the user's own tools, not signals to guess at.
 
 An empty argv is the login shell, dash-prefixed — the case that makes the app feel
-like Terminal.app. Otherwise the executable is resolved against the captured
-`PATH` here rather than left to `execve`, so the user gets "Claude Code isn't
-installed." instead of an errno, and the name in that sentence is the profile's,
-not the binary's. A command containing `/` is taken as written. `argv` reaches the
-child verbatim, so `argv[0]` is what the user wrote and a program printing its own
-usage line reports the right name.
+like Terminal.app. A `script` is the login shell too, as `[$SHELL, "-c", script]`,
+with no lookup: the shell exists by construction, and the executables the script
+names are the shell's to find on the captured `PATH`, exactly as they would be at
+a prompt. Otherwise the executable is resolved against the captured `PATH` here
+rather than left to `execve`, so the user gets "Claude Code isn't installed."
+instead of an errno, and the name in that sentence is the profile's, not the
+binary's. A command containing `/` is taken as written. `argv` reaches the child
+verbatim, so `argv[0]` is what the user wrote and a program printing its own usage
+line reports the right name. `JANELA_PROJECT_DIRECTORY` joins the namespace
+whenever a project is known, for every terminal and not only automation, so a
+user's own prompt can read it too.
 
 `DEFAULT_INITIAL_SIZE` is 80×24 because something has to be chosen:
 `negotiatedSize([])` has no answer and the child may print before the first

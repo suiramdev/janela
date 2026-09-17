@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { newAutomationID } from "@janela/core";
-
 import {
   fakeProfile,
   fakeProject,
@@ -37,13 +35,7 @@ const PROJECT = fakeProject();
 
 const OTHER = fakeProject({ name: "api" });
 
-const command = (argv: readonly string[], isEnabled = true) => ({
-  id: newAutomationID(),
-  event: "sessionStart" as const,
-  command: argv,
-  isEnabled,
-  timeoutSeconds: 30,
-});
+const HANGING_TEARDOWN = { sessionTeardown: { script: "docker compose down", timeoutSeconds: 0 } };
 
 describe("what blocks a save", () => {
   test("nothing, for a draft that has not broken anything", () => {
@@ -58,26 +50,26 @@ describe("what blocks a save", () => {
     ]);
   });
 
-  test("a staged automation command with no executable, named with its project", () => {
+  test("a staged teardown that would never time out, named with its project", () => {
     const draft = withDraftProjectSettings(
       EMPTY_SETTINGS_DRAFT,
       PROJECT.id,
-      fakeSettings({ automation: [command([""])] }),
+      fakeSettings({ automation: HANGING_TEARDOWN }),
     );
 
     expect(draftViolations(draft)).toEqual([
       {
         route: { kind: "project", projectID: PROJECT.id },
-        message: "An enabled command needs an executable.",
+        message: "A teardown timeout must be at least one second.",
       },
     ]);
   });
 
-  test("not a project's stored commands, which this save would not write", () => {
-    const broken = fakeProject({ settings: fakeSettings({ automation: [command([""])] }) });
+  test("not a project's stored scripts, which this save would not write", () => {
+    const broken = fakeProject({ settings: fakeSettings({ automation: HANGING_TEARDOWN }) });
 
     expect(draftViolations(EMPTY_SETTINGS_DRAFT)).toEqual([]);
-    expect(draftProjectSettings(EMPTY_SETTINGS_DRAFT, broken).automation).toHaveLength(1);
+    expect(draftProjectSettings(EMPTY_SETTINGS_DRAFT, broken).automation).toEqual(HANGING_TEARDOWN);
   });
 });
 
