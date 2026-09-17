@@ -3,6 +3,7 @@ import type {
   SessionID,
   TerminalDescriptor,
   TerminalID,
+  TerminalProgress,
   TerminalState,
 } from "@janela/core";
 import {
@@ -41,7 +42,17 @@ export interface LiveTerminal {
   fullRepaintFor(client: string): Uint8Array;
   snapshotText(options: { readonly includeScrollback: boolean }): string;
 
-  events: TerminalEventSink | undefined;
+  events: TerminalEvents | undefined;
+}
+
+export interface TerminalEvents extends TerminalEventSink {
+  onPromptFinished(completion: PromptCompletion): void;
+  onFailure(message: string): void;
+}
+
+export interface PromptCompletion {
+  readonly durationSeconds: number;
+  readonly exitCode?: number;
 }
 
 export interface TerminalLaunch {
@@ -75,6 +86,8 @@ interface AttachedClient {
 const EMPTY = new Uint8Array(0);
 
 const NO_PIXEL_SIZE = { pixelWidth: 0, pixelHeight: 0 } as const;
+
+const MILLISECONDS_PER_SECOND = 1000;
 
 export function negotiatedSize(viewports: readonly GridSize[]): GridSize {
   const first = viewports[0];
@@ -126,7 +139,7 @@ class PtyLiveTerminal implements LiveTerminal {
   readonly sessionID: SessionID;
   readonly descriptor: TerminalDescriptor;
 
-  events: TerminalEventSink | undefined;
+  events: TerminalEvents | undefined;
 
   reportedWorkingDirectory?: string;
 
@@ -145,6 +158,8 @@ class PtyLiveTerminal implements LiveTerminal {
   private exit: { readonly code: number } | undefined;
   private failure: string | undefined;
   private attention = false;
+  private progress: TerminalProgress | undefined;
+  private commandStartedAt: number | undefined;
 
   private readonly clients = new Map<string, AttachedClient>();
 
@@ -162,7 +177,34 @@ class PtyLiveTerminal implements LiveTerminal {
       this.events?.onAttention(notification);
     },
     onPromptMark: (mark) => {
+      if (mark.kind === "commandStart") {
+        this.commandStartedAt = Date.now();
+      }
+
       this.events?.onPromptMark(mark);
+
+      if (mark.kind !== "commandFinished") {
+        return;
+      }
+
+      const startedAt = this.commandStartedAt;
+      this.commandStartedAt = undefined;
+
+      if (startedAt === undefined) {
+        return;
+      }
+
+      const durationSeconds = (Date.now() - startedAt) / MILLISECONDS_PER_SECOND;
+
+      this.events?.onPromptFinished(
+        mark.exitCode === undefined
+          ? { durationSeconds }
+          : { durationSeconds, exitCode: mark.exitCode },
+      );
+    },
+    onProgress: (progress) => {
+      this.progress = progress;
+      this.events?.onProgress(progress);
     },
     onExit: () => {
       throw new Error("the emulator knows nothing about processes; drain() emits onExit");
@@ -193,7 +235,13 @@ class PtyLiveTerminal implements LiveTerminal {
       return { kind: "idle" };
     }
 
-    return this.attention ? { kind: "needsAttention" } : { kind: "running" };
+    if (this.attention) {
+      return { kind: "needsAttention" };
+    }
+
+    const progress = this.progress;
+
+    return progress === undefined ? { kind: "running" } : { kind: "running", progress };
   }
 
   get displayTitle(): string {
@@ -208,6 +256,8 @@ class PtyLiveTerminal implements LiveTerminal {
     this.exit = undefined;
     this.failure = undefined;
     this.attention = false;
+    this.progress = undefined;
+    this.commandStartedAt = undefined;
     this.title = undefined;
     delete this.reportedWorkingDirectory;
     this.emulator?.dispose();
@@ -401,9 +451,12 @@ class PtyLiveTerminal implements LiveTerminal {
         : undefined;
 
       this.failure = readFailure.summary;
+      this.progress = undefined;
+      this.commandStartedAt = undefined;
       this.log?.warning("terminal read failed", readFailureFields(this.id, errno, code));
       pty.close();
       this.pty = undefined;
+      this.events?.onFailure(readFailure.summary);
 
       return;
     }
@@ -413,6 +466,8 @@ class PtyLiveTerminal implements LiveTerminal {
     }
 
     this.exit = { code };
+    this.progress = undefined;
+    this.commandStartedAt = undefined;
     pty.close();
     this.pty = undefined;
     this.log?.debug("terminal exited", { terminal: this.id, code });

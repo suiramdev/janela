@@ -59,6 +59,7 @@ function fakeRegistry(liveCount = 0): FakeRegistry {
       get: (): LiveTerminal | undefined => undefined,
       register: (): void => {},
       remove: (): void => {},
+      watch: (): void => {},
       inSession: (_id: SessionID): readonly LiveTerminal[] => [],
 
       get liveCount(): number {

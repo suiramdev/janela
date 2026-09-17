@@ -10,6 +10,7 @@ import { Predicate } from "effect";
 
 import {
   parseNotification,
+  parseProgress,
   parsePromptMark,
   parseUrxvtNotification,
   parseWorkingDirectory,
@@ -242,6 +243,14 @@ export class HeadlessEmulator implements TerminalEmulating {
       return true;
     });
     this.terminal.parser.registerOscHandler(9, (payload) => {
+      const progress = parseProgress(payload);
+
+      if (progress !== undefined) {
+        this.events?.onProgress(progress.kind === "cleared" ? undefined : progress.progress);
+
+        return true;
+      }
+
       const notification = parseNotification(payload);
 
       if (notification !== undefined) {

@@ -15,9 +15,15 @@ export type TerminalRole =
   | { readonly kind: "user" }
   | { readonly kind: "automation"; readonly event: AutomationEvent };
 
+export type TerminalProgress =
+  | { readonly kind: "indeterminate" }
+  | { readonly kind: "normal"; readonly percent: number }
+  | { readonly kind: "error"; readonly percent: number }
+  | { readonly kind: "warning"; readonly percent: number };
+
 export type TerminalState =
   | { readonly kind: "idle" }
-  | { readonly kind: "running" }
+  | { readonly kind: "running"; readonly progress?: TerminalProgress }
   | { readonly kind: "needsAttention" }
   | { readonly kind: "exited"; readonly code: number }
   | { readonly kind: "failed"; readonly message: string };

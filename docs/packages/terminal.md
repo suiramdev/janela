@@ -121,6 +121,21 @@ truncated path is a wrong path.
 sub-commands, of which `9 ; 4 ; …` is a progress bar; treating those as
 notifications would badge a session once per percent of a download.
 
+`parseProgress` reads the one sub-command that has a meaning here, `9 ; 4`. The
+state field is ConEmu's: `0` clears, `1` is `normal`, `2` is `error`, `3` is
+`indeterminate`, `4` is `warning`. A percent accompanies the three determinate
+states, is clamped to 0–100 and defaults to `0` when it is absent or empty —
+a program that says `error` without a number has still said `error`, and
+refusing the whole report over a missing field would lose the part it got right.
+Anything else is malformed and returns `undefined`: an unknown state, a
+non-integer percent. `cleared` is a report in its own right rather than an
+absence, because "the download finished" and "this program never had a progress
+bar" are different facts and only one of them should erase a bar already on
+screen. Plain `OSC 9 ; <text>` is untouched by all of this and stays a
+notification — the split is decided by whether the first field is a bare
+sub-command number, which is why the two parsers can disagree about the same
+sequence without either being wrong.
+
 `parsePromptMark` returns only the three marks Janela acts on. `B` (end of
 prompt) and kitty's `P` property extension are perfectly valid and simply carry
 nothing this layer can use, so they are ignored rather than treated as malformed.
@@ -400,6 +415,31 @@ invented here would be a code no process ever produced. `restart()` does not awa
 the old child's status — its reader thread reaps it, and `start()` clears the exit
 and failure it would have reported.
 
+### `TerminalEvents`, and why the timing happens here
+
+The emulator reports through `TerminalEventSink`; a `LiveTerminal` reports through
+`TerminalEvents`, which extends it with the two things only a process has.
+`onFailure` carries a read failure's summary — the emulator has no file
+descriptor to lose. `onPromptFinished` carries a `PromptCompletion`: the seconds a
+command ran, and its exit code when OSC 133 D supplied one.
+
+The duration is measured **here**, between the `C` mark and the `D` mark, rather
+than by whoever consumes it. The alternative — forwarding both marks and letting
+the daemon subtract — would mean the daemon holding a start time per terminal, and
+a `commandStartedAt` in two places is a `commandStartedAt` that disagrees across a
+restart. Doing it here also keeps the layering honest: a completion is a number
+and an optional code, both plain, so `@janela/terminal` never names a protocol
+type to describe what finished. A `D` with no `C` before it — the first prompt
+after attaching, a shell that emits marks unevenly — reports nothing rather than a
+duration measured from a time nobody recorded.
+
+**Progress does not survive the process that reported it.** `start()`, the read
+failure path and the exit path each clear it, alongside `commandStartedAt`, so a
+restarted terminal does not inherit the last run's 80% and an exited one does not
+leave a bar on screen forever. `OSC 9 ; 4 ; 0` clears it the same way from the
+other direction, which is a program saying it is done rather than a program
+ending.
+
 ### Size negotiation
 
 `negotiatedSize` is the **minimum of all attached viewports**, which is tmux's rule
@@ -534,6 +574,15 @@ no clients connected, and that asymmetry is the entire feature.
 identity, so there is no legitimate second one, and replacing one silently would
 orphan a live child. `remove` of something that was never there is a no-op, which
 is how a teardown path stays simple.
+
+`watch` installs **one** `TerminalRegistryObserving`, and registering a second
+replaces the first. There is exactly one consumer — the daemon, wiring each
+terminal's `events` as it appears — and a list would be a fan-out nobody asked
+for, with a removal path to get wrong. Installing one **replays the terminals
+already held**, so the observer sees a registry as it is rather than only what
+happens next: the daemon calls `watch` during startup, after terminals may
+already have been restored, and an observer that missed them would leave live
+terminals reporting to nothing.
 
 `hangUpAll` is called on `SIGTERM` at logout and on an explicit "Stop Background
 Service". It is **never** called because a client disconnected (non-negotiable 7).

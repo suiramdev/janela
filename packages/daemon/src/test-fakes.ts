@@ -34,7 +34,7 @@ import type {
   SessionService,
 } from "@janela/session";
 import type { LogRecord, Logger } from "@janela/support";
-import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
+import type { LiveTerminal, TerminalRegistry, TerminalRegistryObserving } from "@janela/terminal";
 import { Match } from "effect";
 
 import type { ClientConnection, RequestDispatching } from "./dispatch.ts";
@@ -90,6 +90,7 @@ export interface FakeTerminal extends LiveTerminal {
   readonly sendCalls: Uint8Array[];
   readonly stopCalls: { count: number };
   readonly startCalls: { count: number };
+  setState(state: TerminalState): void;
 }
 
 export interface FakeRegistry extends TerminalRegistry {
@@ -206,6 +207,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
   const stopCalls = { count: 0 };
   const startCalls = { count: 0 };
   const attachCalls: { client: string; viewport: GridSize }[] = [];
+  let current: TerminalState = options.state ?? { kind: "running" };
 
   const descriptor: TerminalDescriptor = {
     id,
@@ -219,7 +221,12 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     id,
     sessionID: options.sessionID ?? fixtureIdentifier<"Session">("session"),
     descriptor,
-    state: options.state ?? { kind: "running" },
+    get state(): TerminalState {
+      return current;
+    },
+    setState: (state) => {
+      current = state;
+    },
     displayTitle: "fake",
     repaintCalls,
     fullRepaintCalls,
@@ -287,20 +294,29 @@ export function fakeRegistry(terminals: readonly LiveTerminal[] = []): FakeRegis
   );
   const registerCalls = { count: 0 };
   const hangUpAllCalls = { count: 0 };
+  let observer: TerminalRegistryObserving | undefined;
+
+  const hold = (terminal: LiveTerminal): void => {
+    held.set(terminal.id, terminal);
+    observer?.terminalRegistered(terminal);
+  };
 
   return {
     registerCalls,
     hangUpAllCalls,
-    add: (terminal) => {
-      held.set(terminal.id, terminal);
-    },
+    add: hold,
     get: (id) => held.get(id),
+    watch: (watcher) => {
+      observer = watcher;
+
+      for (const terminal of held.values()) watcher.terminalRegistered(terminal);
+    },
     register: (terminal) => {
       registerCalls.count += 1;
-      held.set(terminal.id, terminal);
+      hold(terminal);
     },
     remove: (id) => {
-      held.delete(id);
+      if (held.delete(id)) observer?.terminalRemoved(id);
     },
     inSession: (id) => [...held.values()].filter((terminal) => terminal.sessionID === id),
     get liveCount(): number {

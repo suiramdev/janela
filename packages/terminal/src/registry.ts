@@ -9,6 +9,12 @@ export interface TerminalRegistry {
   inSession(id: SessionID): readonly LiveTerminal[];
   readonly liveCount: number;
   hangUpAll(): Promise<void>;
+  watch(observer: TerminalRegistryObserving): void;
+}
+
+export interface TerminalRegistryObserving {
+  terminalRegistered(terminal: LiveTerminal): void;
+  terminalRemoved(id: TerminalID): void;
 }
 
 export function createTerminalRegistry(): TerminalRegistry {
@@ -18,8 +24,18 @@ export function createTerminalRegistry(): TerminalRegistry {
 class MapTerminalRegistry implements TerminalRegistry {
   private readonly terminals = new Map<TerminalID, LiveTerminal>();
 
+  private observer: TerminalRegistryObserving | undefined;
+
   get(id: TerminalID): LiveTerminal | undefined {
     return this.terminals.get(id);
+  }
+
+  watch(observer: TerminalRegistryObserving): void {
+    this.observer = observer;
+
+    for (const terminal of this.terminals.values()) {
+      observer.terminalRegistered(terminal);
+    }
   }
 
   register(terminal: LiveTerminal): void {
@@ -28,10 +44,13 @@ class MapTerminalRegistry implements TerminalRegistry {
     }
 
     this.terminals.set(terminal.id, terminal);
+    this.observer?.terminalRegistered(terminal);
   }
 
   remove(id: TerminalID): void {
-    this.terminals.delete(id);
+    if (this.terminals.delete(id)) {
+      this.observer?.terminalRemoved(id);
+    }
   }
 
   inSession(id: SessionID): readonly LiveTerminal[] {

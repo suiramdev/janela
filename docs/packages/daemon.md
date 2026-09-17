@@ -445,6 +445,58 @@ terminal the frame names** ([`protocol.md`](protocol.md) § FrameError).
 logged the interesting part: the reason a connection failed or stalled is a field on
 that record, and logging the close again would put two records where one belongs.
 
+## terminal-events.ts
+
+What a terminal did, turned into frames a client can read. `@janela/terminal`
+reports to one `TerminalEvents` per terminal and knows nothing about connections;
+this file is the whole of the translation, and the only place attention becomes a
+message.
+
+It is installed once, through `terminals.watch(terminalEvents)`, and assigns each
+terminal's `events` as it is registered. That is the reason the registry replays
+what it already holds: terminals restored before the server was listening are
+exactly the ones whose reports would otherwise go nowhere.
+
+Three kinds of thing go out, all through `broadcast`, which encodes once and hands
+the frame to every state-scoped connection's `enqueueControl` — the bounded,
+never-dropped queue above, not a path of its own. A client that is not subscribed
+to state gets none of it, and a client that has stopped reading is disconnected by
+the same rule as any other control traffic.
+
+- A **partial `StateUpdate`** carrying one terminal's state:
+  `isFullSnapshot: false`, every other collection empty. A state change is a fact
+  about one terminal, and re-sending the projects and sessions to say a percent
+  moved would put the cost of a snapshot on the most frequent message the daemon
+  sends.
+- An **`attention`** signal for a bell, a notification, or a finished prompt, each
+  with the terminal and session it came from, an id, and the time it happened. The
+  state frame goes first: a client that renders the signal before it has the state
+  behind it would badge a terminal it still believes is idle.
+- A **`terminalExited`** frame after the state frame, for the same reason.
+
+**A state frame is sent only when the state actually changed**, which is decided by
+comparing a `stateSignature` string against the last one published for that
+terminal. This is not an optimisation of an edge case. `OSC 9 ; 4` is commonly
+emitted on a timer — a 1 Hz keepalive repeating the same percent is ordinary
+behaviour — and without the comparison a single downloading terminal would send
+sixty identical frames a minute to every connected client, each one a wake-up and
+an encode. With it, an unchanged keepalive costs one map lookup and produces
+nothing. The signature includes the progress kind and percent, so a *real* change
+still goes out on the next report.
+
+The map is keyed by terminal id and cleared in `terminalRemoved`, so a terminal
+that is removed and re-registered publishes its first state rather than being
+deduped against a predecessor's.
+
+`server.ts` also calls `reconcile` directly after `dispatch.input`: sending input
+clears attention on the terminal, and that is a state change no terminal event will
+announce, because it originated on this side.
+
+**Notification bodies are never logged** (non-negotiable 11). The relay carries
+them to clients and writes only shapes to the log: a terminal id, the attention's
+kind, an exit code. The body passes through `attentionKind` and into the frame
+without ever reaching `log`.
+
 ## Tests
 
 The daemon boundary's failure modes are the ones that did not exist before the

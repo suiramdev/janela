@@ -259,7 +259,7 @@ process with a bespoke output view.
 ```swift
 public enum TerminalState: Hashable, Sendable {
     case idle                    // configured, nothing spawned. Costs ~nothing.
-    case running
+    case running(progress: TerminalProgress?) // optional, and only if the program said so
     case needsAttention          // the terminal asked for it
     case exited(code: Int32)
     case failed(message: String)
@@ -273,6 +273,19 @@ cheap, and it is why allocation happens in `start()` rather than `init`.
 reversing a deliberate decision rather than filling a gap. Janela reports what
 the *terminal* told it — BEL, OSC 9/777, OSC 133 — and never infers agent
 semantics from a byte stream.
+
+`progress` is the one thing `.running` carries, and it is terminal-reported in
+exactly the sense BEL is: a program writes `OSC 9 ; 4`, and Janela relays the
+report. It is `TerminalProgress` — `indeterminate`, or `normal`, `error` or
+`warning` with a `percent` from 0 to 100 — and it is absent far more often than
+it is present, because most programs never emit it. A running terminal without
+progress is the normal case, not a degraded one.
+
+That is an addition to the sentence above, not an exception to it. Progress is
+still the program's own claim about itself, carried verbatim; it is not a
+measurement Janela takes and not a signal it reads anything into. A build that
+reports 80% is a build that *said* 80%, and a terminal that reports nothing is a
+terminal Janela has nothing to say about — never one it guesses at.
 
 A session's status is **derived** from its terminals, never stored: a session is
 running if any terminal is running, and wants attention if any unfocused terminal

@@ -236,6 +236,15 @@ to correlate. Refusing the handshake instead costs the user one restart of the
 background service — which the skew banner offers, and which never touches a
 terminal.
 
+`TerminalState.running` gained an optional `progress` field **without a version
+bump**, and by the rule at the top of this section that is what compatible means.
+It is v7's case exactly: an optional field inside a message both peers already
+decode, and only the `type` discriminant is schema-checked in `message-coder.ts`,
+so a v9 peer that predates the field ignores it and shows a plain "running"
+terminal — the progress bar is the thing it does not get, not the connection.
+`attention` and `terminalExited` needed nothing at all: both were already in the
+v9 discriminant table.
+
 ## removal-plan.ts, branch-overview.ts, directory-listing.ts
 
 All three are wire mirrors of daemon-side types (`SessionRemovalPlan` and

@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 
-import type { GridSize, Instant, SessionID, TerminalDescriptor, TerminalID } from "@janela/core";
+import type {
+  GridSize,
+  Instant,
+  SessionID,
+  TerminalDescriptor,
+  TerminalID,
+  TerminalProgress,
+} from "@janela/core";
 import {
   PseudoTerminalFailure,
   ReadFailed,
@@ -19,20 +26,20 @@ import {
   createLiveTerminal,
   negotiatedSize,
   type LiveTerminal,
+  type PromptCompletion,
+  type TerminalEvents,
   type TerminalLaunch,
 } from "./live-terminal.ts";
-import type {
-  PromptMark,
-  TerminalEmulating,
-  TerminalEventSink,
-  TerminalNotification,
-} from "./terminal-emulating.ts";
+import type { PromptMark, TerminalEmulating, TerminalNotification } from "./terminal-emulating.ts";
 
-interface RecordingSink extends TerminalEventSink {
+interface RecordingSink extends TerminalEvents {
   readonly titles: string[];
   readonly directories: string[];
   readonly notifications: TerminalNotification[];
   readonly marks: PromptMark[];
+  readonly progress: (TerminalProgress | undefined)[];
+  readonly completions: PromptCompletion[];
+  readonly failures: string[];
   readonly exits: number[];
 }
 
@@ -151,6 +158,9 @@ function recordingSink(): RecordingSink {
   const directories: string[] = [];
   const notifications: TerminalNotification[] = [];
   const marks: PromptMark[] = [];
+  const progress: (TerminalProgress | undefined)[] = [];
+  const completions: PromptCompletion[] = [];
+  const failures: string[] = [];
   const exits: number[] = [];
 
   return {
@@ -158,11 +168,17 @@ function recordingSink(): RecordingSink {
     directories,
     notifications,
     marks,
+    progress,
+    completions,
+    failures,
     exits,
     onTitle: (title) => titles.push(title),
     onWorkingDirectory: (path) => directories.push(path),
     onAttention: (notification) => notifications.push(notification),
     onPromptMark: (mark) => marks.push(mark),
+    onProgress: (reported) => progress.push(reported),
+    onPromptFinished: (completion) => completions.push(completion),
+    onFailure: (message) => failures.push(message),
     onExit: (code) => exits.push(code),
   };
 }
@@ -437,6 +453,115 @@ describe("attention", () => {
 
     expect(sink.notifications).toEqual([{ body: "JANELA_SECRET_BODY" }]);
     expect(JSON.stringify(logger.records)).not.toContain("JANELA_SECRET_BODY");
+  });
+});
+
+describe("progress", () => {
+  test("OSC 9;4 rides on the running state, and 9;4;0 clears it", async () => {
+    const terminal = live(
+      "t-progress",
+      shellLaunch("stty raw -echo; printf '\\033]9;4;3\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.progress.length > 0, "the progress report");
+
+    expect(sink.progress).toEqual([{ kind: "indeterminate" }]);
+    expect(terminal.state).toEqual({ kind: "running", progress: { kind: "indeterminate" } });
+
+    terminal.send(encoder.encode("\x1b]9;4;0\x07"));
+
+    await drainUntil(terminal, () => sink.progress.length > 1, "the cleared progress");
+
+    expect(sink.progress).toEqual([{ kind: "indeterminate" }, undefined]);
+    expect(terminal.state).toEqual({ kind: "running" });
+  });
+
+  test("a percentage arrives with its state, and an exit drops it", async () => {
+    const terminal = live(
+      "t-progress-percent",
+      shellLaunch("stty raw -echo; printf '\\033]9;4;1;40\\007'; read _; exit 0"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.progress.length > 0, "the progress report");
+
+    expect(terminal.state).toEqual({
+      kind: "running",
+      progress: { kind: "normal", percent: 40 },
+    });
+
+    terminal.send(new Uint8Array([0x0a]));
+
+    await drainUntil(terminal, () => sink.exits.length > 0, "the child to finish");
+
+    expect(terminal.state).toEqual({ kind: "exited", code: 0 });
+  });
+
+  test("a bell during progress still wins, because attention outranks working", async () => {
+    const terminal = live(
+      "t-progress-bell",
+      shellLaunch("stty raw -echo; printf '\\033]9;4;3\\007\\a'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.notifications.length > 0, "the bell");
+
+    expect(terminal.state).toEqual({ kind: "needsAttention" });
+
+    terminal.send(new Uint8Array([0x0a]));
+
+    expect(terminal.state).toEqual({ kind: "running", progress: { kind: "indeterminate" } });
+  });
+});
+
+describe("prompt marks", () => {
+  test("a finished command is timed from its start and carries its exit code", async () => {
+    const terminal = live(
+      "t-prompt",
+      shellLaunch(
+        "stty raw -echo; printf '\\033]133;C\\007'; read _; printf '\\033]133;D;3\\007'; exec cat",
+      ),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.marks.length > 0, "the command start");
+
+    terminal.send(new Uint8Array([0x0a]));
+
+    await drainUntil(terminal, () => sink.completions.length > 0, "the command to finish");
+
+    const completion = sink.completions[0];
+
+    expect(completion?.exitCode).toBe(3);
+    expect(completion?.durationSeconds).toBeGreaterThanOrEqual(0);
+    expect(sink.marks).toEqual([
+      { kind: "commandStart" },
+      { kind: "commandFinished", exitCode: 3 },
+    ]);
+  });
+
+  test("a finish with no start before it is not timed at all", async () => {
+    const terminal = live(
+      "t-prompt-orphan",
+      shellLaunch("stty raw -echo; printf '\\033]133;D;0\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.marks.length > 0, "the orphan finish");
+
+    expect(sink.marks).toEqual([{ kind: "commandFinished", exitCode: 0 }]);
+    expect(sink.completions).toEqual([]);
   });
 });
 

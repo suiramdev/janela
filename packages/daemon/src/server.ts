@@ -39,6 +39,7 @@ import {
 } from "./dispatch.ts";
 import type { PeerCredential } from "./endpoint.ts";
 import { createFrameLoop, type FrameLoop } from "./frame-loop.ts";
+import { createTerminalEvents } from "./terminal-events.ts";
 
 export interface DaemonServer extends StateObserving {
   serve(listener: ConnectionListening, signal: AbortSignal): Promise<void>;
@@ -197,6 +198,18 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
 
     void connection.control.push(frame);
   };
+
+  const broadcast = (message: DaemonMessage): void => {
+    const frame = encodeDaemonMessage(message);
+
+    for (const connection of connections.values()) {
+      if (connection.hasStateScope) enqueueControl(connection, frame);
+    }
+  };
+
+  const terminalEvents = createTerminalEvents({ broadcast, log });
+
+  terminals.watch(terminalEvents);
 
   async function closeConnection(connection: Connection, reason: CloseReason): Promise<void> {
     if (connection.closed) return;
@@ -484,6 +497,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       }
 
       dispatch.input(connection, terminal, input.bytes);
+      terminalEvents.reconcile(terminal);
     }
   }
 
@@ -579,12 +593,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
 
     publish(update: StateUpdate): Promise<void> {
       frameLoop.wake();
-
-      const frame = encodeDaemonMessage({ type: "state", update });
-
-      for (const connection of connections.values()) {
-        if (connection.hasStateScope) enqueueControl(connection, frame);
-      }
+      broadcast({ type: "state", update });
 
       return Promise.resolve();
     },

@@ -2,6 +2,7 @@ import { Option } from "effect";
 
 import {
   MAX_OSC_TEXT_LENGTH,
+  type ProgressReport,
   type PromptMark,
   type TerminalNotification,
 } from "./terminal-emulating.ts";
@@ -12,6 +13,20 @@ const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/gu;
 const DECIMAL_INTEGER = /^-?\d+$/u;
 
 const CONEMU_SUBCOMMAND = /^\d+;/u;
+
+const PROGRESS_SUBCOMMAND = "4";
+
+const PROGRESS_CLEARED = "0";
+
+const PROGRESS_INDETERMINATE = "3";
+
+const MAX_PERCENT = 100;
+
+const PROGRESS_NORMAL = "1";
+
+const PROGRESS_ERROR = "2";
+
+const PROGRESS_WARNING = "4";
 
 const parseUrl = Option.liftThrowable((text: string) => new URL(text));
 
@@ -65,6 +80,48 @@ export function parseNotification(payload: string): TerminalNotification | undef
   const body = sanitiseOscText(payload);
 
   return body === "" ? {} : { body };
+}
+
+export function parseProgress(payload: string): ProgressReport | undefined {
+  const fields = payload.split(";");
+
+  if (fields[0] !== PROGRESS_SUBCOMMAND) {
+    return undefined;
+  }
+
+  const state = fields[1];
+
+  if (state === PROGRESS_CLEARED) {
+    return { kind: "cleared" };
+  }
+
+  if (state === PROGRESS_INDETERMINATE) {
+    return { kind: "reported", progress: { kind: "indeterminate" } };
+  }
+
+  const kind =
+    state === PROGRESS_NORMAL
+      ? "normal"
+      : state === PROGRESS_ERROR
+        ? "error"
+        : state === PROGRESS_WARNING
+          ? "warning"
+          : undefined;
+
+  if (kind === undefined) {
+    return undefined;
+  }
+
+  const raw = fields[2];
+
+  if (raw !== undefined && raw !== "" && !DECIMAL_INTEGER.test(raw)) {
+    return undefined;
+  }
+
+  const percent =
+    raw === undefined || raw === "" ? 0 : Math.min(MAX_PERCENT, Math.max(0, Number(raw)));
+
+  return { kind: "reported", progress: { kind, percent } };
 }
 
 export function parseUrxvtNotification(payload: string): TerminalNotification | undefined {

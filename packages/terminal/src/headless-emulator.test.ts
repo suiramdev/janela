@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { TerminalProgress } from "@janela/core";
 import { Terminal } from "@xterm/headless";
 import { Predicate } from "effect";
 
@@ -27,6 +28,7 @@ interface RecordingSink extends TerminalEventSink {
   readonly directories: string[];
   readonly notifications: TerminalNotification[];
   readonly marks: PromptMark[];
+  readonly progress: (TerminalProgress | undefined)[];
 }
 
 const encoder = new TextEncoder();
@@ -141,16 +143,19 @@ function recordingSink(): RecordingSink {
   const directories: string[] = [];
   const notifications: TerminalNotification[] = [];
   const marks: PromptMark[] = [];
+  const progress: (TerminalProgress | undefined)[] = [];
 
   return {
     titles,
     directories,
     notifications,
     marks,
+    progress,
     onTitle: (title) => titles.push(title),
     onWorkingDirectory: (path) => directories.push(path),
     onAttention: (notification) => notifications.push(notification),
     onPromptMark: (mark) => marks.push(mark),
+    onProgress: (reported) => progress.push(reported),
     onExit: () => {
       throw new Error("the emulator knows nothing about processes and must never emit onExit");
     },
@@ -245,7 +250,7 @@ describe("events", () => {
     expect(sink.notifications).toEqual([{}]);
   });
 
-  test("OSC 9 and OSC 777 are attention with text, and a ConEmu progress bar is neither", () => {
+  test("OSC 9 and OSC 777 are attention with text, and a ConEmu progress bar is progress", () => {
     const target = emulator(20, 3);
     const sink = recordingSink();
     target.events = sink;
@@ -253,6 +258,28 @@ describe("events", () => {
     feed(target, "\x1b]9;hi\x07\x1b]777;notify;t;b\x07\x1b]9;4;1;50\x07");
 
     expect(sink.notifications).toEqual([{ body: "hi" }, { title: "t", body: "b" }]);
+    expect(sink.progress).toEqual([{ kind: "normal", percent: 50 }]);
+  });
+
+  test("OSC 9;4 reports every state, clears on 0, and ignores malformed payloads", () => {
+    const target = emulator(20, 3);
+    const sink = recordingSink();
+    target.events = sink;
+
+    feed(
+      target,
+      "\x1b]9;4;3\x07\x1b]9;4;2;101\x07\x1b]9;4;4;-5\x07\x1b]9;4;1\x07" +
+        "\x1b]9;4;0\x07\x1b]9;4;9;50\x07\x1b]9;4;1;half\x07",
+    );
+
+    expect(sink.progress).toEqual([
+      { kind: "indeterminate" },
+      { kind: "error", percent: 100 },
+      { kind: "warning", percent: 0 },
+      { kind: "normal", percent: 0 },
+      undefined,
+    ]);
+    expect(sink.notifications).toEqual([]);
   });
 
   test("OSC 133 marks arrive with their exit code", () => {
