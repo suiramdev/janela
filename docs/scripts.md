@@ -4,9 +4,9 @@ Workspace tooling. Each script is a `bun run` entry point; none is imported by
 shipped code. The layering gate (`check-layers.ts`) and the module graph
 (`layers.ts`) are described in [`architecture.md`](architecture.md) § Packages.
 
-## `dev.ts` — `bun run dev`
+## `dev.ts` — `bun run desktop`, `bun run web`, `bun run web:isolated`
 
-`bun run app` is `tauri dev`, and nothing in it starts `janelad`. An installed
+`bun run desktop:only` is `tauri dev`, and nothing in it starts `janelad`. An installed
 build does not need it to: the app registers a LaunchAgent, launchd owns the
 daemon's lifecycle, and a client that cannot connect runs `launchctl kickstart`
 and retries. A development build has no `.app` bundle, so `SMAppService` reports
@@ -30,7 +30,7 @@ The rules it is held to:
 - **It starts nothing else.** No watcher restarts the daemon on a source change:
   that would hang up the terminals it holds every time you save.
 
-- `SOCKET_PATH` is the same path `@janela/daemon`'s `defaultSocketPath()`
+- `socketPathUnder(home)` is the same path `@janela/daemon`'s `defaultSocketPath()`
   computes, spelled out rather than imported: a script is held to the layering
   rule too, and this one is a client's neighbour, not a daemon package.
 - `daemonIsListening` closes the connection immediately without a handshake, which
@@ -38,7 +38,7 @@ The rules it is held to:
   left during handshake` record in the log it probed. That is the whole cost of
   asking, and it is the only honest way to ask.
 - The daemon is started **from source, in the foreground, against the real
-  `HOME`**: the same daemon `bun run --cwd apps/daemon dev` starts, so there is one
+  `HOME`**: the same daemon `bun run daemon` starts, so there is one
   dev daemon and not a second flavour of it. No compile step, so an edit costs a
   restart rather than a build. Its entry point is absolute so the checkout it came
   from is visible in `ps`: a daemon run from source has no `janelad` in its command
@@ -69,6 +69,37 @@ The rules it is held to:
   before a filename. It asserts liveness with a connect rather than an
   `existsSync`, for the reason above.
 
+`--web` (`bun run web`) swaps `desktop:only` for `web:only` — the gateway and the
+browser client's Vite server;
+`--isolated` (`bun run web:isolated`) runs the web client under a private `HOME`
+so parallel worktrees never share a daemon, a database or a port:
+
+- The home is `/tmp/janela-iso/<id>`, in `/tmp` for the `sun_path` reason above.
+  `<id>` and the preferred gateway port both come from the sha256 of the resolved
+  checkout path, so two worktrees never share a home or a preferred port, and the
+  URL of one worktree is the same on every run. The port search walks upward
+  from the preferred one; `PORT_ATTEMPTS` bounds it.
+- The daemon and the gateway are spawned with the moved `HOME`; every address
+  they use derives from it (`defaultSocketPath`, `defaultDatabasePath`,
+  `defaultLogPath`). The web build keeps the real environment: it only writes
+  `apps/web/dist`.
+- The page is served from `apps/web/dist` through `vite build --watch` rather
+  than the Vite dev server, so one port carries the page and `/ws` — the browser
+  client connects to `ws://<location.host>/ws` — and the gateway's production
+  `staticResponse` path is what gets exercised. Until the first build lands the
+  gateway answers 503; the script waits for `dist/index.html` before printing the
+  banner and warns instead of failing if it takes too long.
+- The gateway's entry point is absolute for the same reason the daemon's is:
+  `.superset/teardown.sh` finds its orphans by grepping `ps` for the workspace
+  path.
+- `seedDotfiles` links the shell rc files and `.gitconfig` from the real home and
+  nothing else — no directories, so `.ssh`, `.claude` and `.config` stay out of
+  reach — and never replaces an entry already in the isolated home.
+- The gateway takes the app's place in the shutdown logic; the web build is a
+  companion: it is stopped on the way out, and its exiting on its own is
+  announced but does not end the run, because the gateway keeps serving the last
+  build.
+
 ## `daemon-restart.ts` — `bun run daemon:restart`
 
 The footgun of the two-process design is an old daemon staying resident while you iterate on a
@@ -83,7 +114,7 @@ Two clients sharing one daemon is by design; a daemon built from a *different* c
 not, and it is the thing to check first when the app behaves like code you have not
 written. It matches two spellings, because there are two ways to start one: the
 compiled sidecar, whose command line contains `janelad`, and the source entry point
-behind `bun run dev`, which never mentions the word.
+behind `bun run desktop`, which never mentions the word.
 
 ## `survival-probe.ts`
 

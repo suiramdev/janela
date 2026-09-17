@@ -4403,8 +4403,8 @@ bun run bootstrap        # install, generate the database client, build the nati
 bun run generate         # after touching packages/db/prisma/schema.prisma
 bun run build:native     # after touching packages/pty/native/src/lib.rs
 bun run check:layers     # the layering gate alone, after touching a dependency edge
-bun run dev              # a daemon and the app together; the loop when you need the window
-bun run app              # the app alone; drives cargo, takes minutes, and starts no daemon
+bun run desktop          # a daemon and the app together; the loop when you need the window
+bun run desktop:only     # the app alone; drives cargo, takes minutes, and starts no daemon
 bun run daemon:restart   # stop janelad so the next connection starts your build
 bun run daemon:status    # which janelad is resident, and from where
 ```

@@ -232,8 +232,8 @@ workflow becomes tribal knowledge.
 | `make format` | `bun run format` | `oxfmt` + `oxlint --fix` |
 | `make check` | `bun run check` | `lint` + `typecheck` + `test`. Exactly what CI runs |
 | `make generate` | `bun run generate` | Was XcodeGen; now the Prisma client |
-| `make app-build` | `bun run app:build` | `tauri build` — the signed bundle |
-| `make app-run` | `bun run app` | `tauri dev` — builds and opens the window |
+| `make app-build` | `bun run desktop:build` | `tauri build` — the signed bundle |
+| `make app-run` | `bun run desktop:only` | `tauri dev` — builds and opens the window; `bun run desktop` also starts a daemon |
 | `make daemon-restart` | `bun run daemon:restart` | Unchanged in purpose, including printing what it costs |
 | `make daemon-status` | `bun run daemon:status` | |
 | `make clean` | `bun run clean` | |
