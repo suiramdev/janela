@@ -76,6 +76,37 @@ describe("SessionDetail markup", () => {
     expect(markup).toContain('aria-label="New Terminal"');
   });
 
+  test("attention is not badged on the pane, only carried by its label", () => {
+    const withTerminal = session("s", {
+      terminals: [terminal("t1", "zsh")],
+      layout: singleTerminalLayout(terminalID("t1")),
+    });
+
+    const attention = renderDetail(
+      fakeEnvironment({
+        sessions: [withTerminal],
+        states: { [terminalID("t1")]: { kind: "needsAttention" } },
+        status: { kind: "connected" },
+      }),
+      "s",
+    );
+
+    expect(attention).toContain('aria-label="Terminal: zsh — needs attention"');
+    expect(attention).not.toContain('data-slot="badge"');
+
+    const exited = renderDetail(
+      fakeEnvironment({
+        sessions: [withTerminal],
+        states: { [terminalID("t1")]: { kind: "exited", code: 1 } },
+        status: { kind: "connected" },
+      }),
+      "s",
+    );
+
+    expect(exited).toContain('data-slot="badge"');
+    expect(exited).toContain("exited (1)");
+  });
+
   test("each tab and each terminal carries its own close control", () => {
     const split = session("s", {
       terminals: [terminal("t1", "zsh"), terminal("t2", "bash")],

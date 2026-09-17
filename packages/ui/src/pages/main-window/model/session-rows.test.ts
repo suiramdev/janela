@@ -25,6 +25,41 @@ describe("sessionStatus", () => {
     ).toBe("attention");
   });
 
+  test("a running terminal reporting progress is working, and one without it is not", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running", progress: { kind: "indeterminate" } },
+      }),
+    ).toBe("working");
+    expect(sessionStatus(withTerminals, { [terminalID("a")]: { kind: "running" } })).toBe(
+      "running",
+    );
+  });
+
+  test("working wins over a plain running terminal and over a failure", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running" },
+        [terminalID("b")]: { kind: "running", progress: { kind: "normal", percent: 40 } },
+      }),
+    ).toBe("working");
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "exited", code: 1 },
+        [terminalID("b")]: { kind: "running", progress: { kind: "error", percent: 80 } },
+      }),
+    ).toBe("working");
+  });
+
+  test("attention beats working", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running", progress: { kind: "indeterminate" } },
+        [terminalID("b")]: { kind: "needsAttention" },
+      }),
+    ).toBe("attention");
+  });
+
   test("running wins over a failure", () => {
     expect(
       sessionStatus(withTerminals, {

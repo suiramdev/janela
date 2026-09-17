@@ -274,7 +274,7 @@ export function TerminalPane(props: {
         <span className="text-foreground/70 min-w-0 flex-1 truncate text-xs font-medium">
           {title}
         </span>
-        {state?.kind === "running" ? null : (
+        {state?.kind === "running" || state?.kind === "needsAttention" ? null : (
           <Badge variant={isFailureState(state) ? "destructive" : "secondary"}>{stateText}</Badge>
         )}
         <Button

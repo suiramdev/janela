@@ -13,6 +13,7 @@ export interface FilteredSidebar {
 export const SESSION_FILTERS: readonly SessionFilter[] = [
   "all",
   "attention",
+  "working",
   "running",
   "failed",
   "idle",
@@ -21,6 +22,7 @@ export const SESSION_FILTERS: readonly SessionFilter[] = [
 export const SESSION_FILTER_TITLE = {
   all: "All Sessions",
   attention: "Needs Attention",
+  working: "Working",
   running: "Running",
   failed: "Failed",
   idle: "Idle",

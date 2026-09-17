@@ -28,7 +28,7 @@ function renderSidebar(environment: ClientEnvironment): string {
 }
 
 describe("AppSidebar markup", () => {
-  test("a session needing attention says so in its name", () => {
+  test("a session needing attention says so in its name, and spins for it", () => {
     const withAttention = session("fix/pty", { terminals: [terminal("t1")] });
 
     const environment = fakeEnvironment({
@@ -39,7 +39,38 @@ describe("AppSidebar markup", () => {
     const markup = renderSidebar(environment);
 
     expect(markup).toContain('aria-label="fix/pty — needs attention"');
+    expect(markup).toContain("dmx-matrix-3");
     expect(markup).toContain("text-attention");
+  });
+
+  test("a session whose agent is mid-turn is working, and spins muted for it", () => {
+    const midTurn = session("feat/spinner", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [midTurn],
+      states: { [terminalID("t1")]: { kind: "running", progress: { kind: "indeterminate" } } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="feat/spinner — working"');
+    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).toContain("text-muted-foreground");
+  });
+
+  test("a plain running session shows the glyph at rest, tinted as running", () => {
+    const running = session("chore/logs", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [running],
+      states: { [terminalID("t1")]: { kind: "running" } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="chore/logs — running"');
+    expect(markup).toContain("text-running");
+    expect(markup).toContain("dmx-matrix-3");
   });
 
   test("project rows are disclosures and the selected session is current", () => {

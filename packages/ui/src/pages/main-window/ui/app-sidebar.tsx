@@ -14,6 +14,8 @@ import {
   Badge,
   Button,
   cn,
+  Dotm3x3_15,
+  Dotm3x3_20,
   DropdownContent,
   DropdownLabel,
   DropdownMenu,
@@ -38,10 +40,11 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  type Dotm3x3_20Props,
   type IconComponent,
   type IconComponentProps,
 } from "@janela/design";
-import type { ReactElement } from "react";
+import type { ComponentType, ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { CommandID } from "../../../shared/config/index.ts";
@@ -73,8 +76,9 @@ import {
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
 
 const STATUS_ICON = {
-  attention: dotIcon("text-attention", true),
-  running: dotIcon("text-running", true),
+  attention: spinnerIcon(Dotm3x3_15, "text-attention", true),
+  working: spinnerIcon(Dotm3x3_20, "text-muted-foreground", true),
+  running: spinnerIcon(Dotm3x3_20, "text-running", false),
   failed: dotIcon("text-failure", true),
   idle: dotIcon("text-muted-foreground", false),
 } satisfies Record<SessionStatus, IconComponent>;
@@ -295,6 +299,20 @@ function dotIcon(tint: string, filled: boolean): IconComponent {
           stroke={filled ? "none" : "currentColor"}
         />
       </svg>
+    );
+  };
+}
+
+function spinnerIcon(
+  Loader: ComponentType<Dotm3x3_20Props>,
+  tint: string,
+  animated: boolean,
+): IconComponent {
+  return function StatusSpinner({ size = 14, className }: IconComponentProps) {
+    return (
+      <span aria-hidden="true" className={cn("inline-flex shrink-0", className, tint)}>
+        <Loader size={size} animated={animated} />
+      </span>
     );
   };
 }

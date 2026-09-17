@@ -29,6 +29,11 @@
    own `prefers-color-scheme` variant, which is the rule below. */
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+/* The keyframes and `--dmx-*` variables the vendored dot-matrix loaders
+   (`Dotm3x3_15`, `Dotm3x3_20`) animate against. The registry ships them as a
+   plain stylesheet beside the components; it decides no appearance — every dot
+   paints `currentColor` — and the Reduce Motion rule below stops all of it. */
+@import "./components/dotmatrix-loader.css";
 
 /* Workspace packages are symlinked under node_modules, which Tailwind's source
    detection ignores; name the client view packages explicitly. */
@@ -91,7 +96,7 @@
   --spring-slow-exit: 160ms;
 
   --janela-terminal-background: #ffffff;
-  --janela-attention: #ff9500;
+  --janela-attention: #007aff;
   --janela-running: #34c759;
   --janela-failure: #ff3b30;
 
@@ -209,7 +214,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --janela-terminal-background: #1e1e1e;
-    --janela-attention: #ff9f0a;
+    --janela-attention: #0a84ff;
     --janela-running: #30d158;
     --janela-failure: #ff453a;
 
@@ -313,7 +318,7 @@
 @media (prefers-contrast: more) {
   :root {
     --janela-terminal-background: #ffffff;
-    --janela-attention: #c93400;
+    --janela-attention: #0040dd;
     --janela-running: #248a3d;
     --janela-failure: #d70015;
 
@@ -341,7 +346,7 @@
 @media (prefers-color-scheme: dark) and (prefers-contrast: more) {
   :root {
     --janela-terminal-background: #000000;
-    --janela-attention: #ffb340;
+    --janela-attention: #409cff;
     --janela-running: #30db5b;
     --janela-failure: #ff6961;
 

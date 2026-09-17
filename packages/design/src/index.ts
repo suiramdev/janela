@@ -56,6 +56,10 @@ export {
   DialogTrigger,
 } from "./components/ui/dialog.tsx";
 
+export { Dotm3x3_15, type Dotm3x3_15Props } from "./components/ui/dotm-3x3-15.tsx";
+
+export { Dotm3x3_20, type Dotm3x3_20Props } from "./components/ui/dotm-3x3-20.tsx";
+
 export {
   Empty,
   EmptyContent,

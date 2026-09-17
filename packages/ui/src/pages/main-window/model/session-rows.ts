@@ -1,6 +1,6 @@
 import type { Project, ProjectID, Session, TerminalID, TerminalState } from "@janela/core";
 
-export type SessionStatus = "attention" | "running" | "failed" | "idle";
+export type SessionStatus = "attention" | "working" | "running" | "failed" | "idle";
 
 export type SidebarRow =
   | {
@@ -13,6 +13,7 @@ export type SidebarRow =
 
 const STATUS_TEXT = {
   attention: "needs attention",
+  working: "working",
   running: "running",
   failed: "failed",
   idle: "idle",
@@ -22,6 +23,7 @@ export function sessionStatus(
   session: Session,
   states: Readonly<Record<TerminalID, TerminalState>>,
 ): SessionStatus {
+  let working = false;
   let running = false;
   let failed = false;
 
@@ -32,10 +34,14 @@ export function sessionStatus(
 
     if (state.kind === "needsAttention") return "attention";
 
-    if (state.kind === "running") running = true;
-    else if (state.kind === "failed") failed = true;
+    if (state.kind === "running") {
+      if (state.progress === undefined) running = true;
+      else working = true;
+    } else if (state.kind === "failed") failed = true;
     else if (state.kind === "exited" && state.code !== 0) failed = true;
   }
+
+  if (working) return "working";
 
   if (running) return "running";
 

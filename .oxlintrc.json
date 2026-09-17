@@ -456,6 +456,23 @@
         "no-console": "off",
         "no-await-in-loop": "off"
       }
+    },
+    {
+      // ---- The dot-matrix loaders (`@dotmatrix` registry). The one place the
+      // block above cannot claim "the registry copies pass `no-!` as shipped":
+      // every `!` in these two files indexes an array the file itself built at
+      // a fixed length (`buildSnakeOrderToIndexMap`, `rotate3x3`, the timeout
+      // list), which `noUncheckedIndexedAccess` cannot see and which upstream
+      // states with `!` rather than a guard. Narrowed to the two files so the
+      // rule stays on for every other vendored copy.
+      "files": [
+        "packages/design/src/lib/dotmatrix-core.tsx",
+        "packages/design/src/lib/dotmatrix-hooks.ts"
+      ],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "unicorn/no-useless-fallback-in-spread": "off"
+      }
     }
   ]
 }
