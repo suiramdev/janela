@@ -1456,10 +1456,10 @@ bare terminal as 1.
    the tree exists in `session.terminals` exactly once.
 8. **Closing collapses.** `closeTerminal` promotes the removed pane's
    sibling into the parent's place; closing the last terminal in a tab closes
-   the tab. Closing the last tab returns `emptyLayout`, and the "the session
-   is left holding one idle terminal, never zero" half of the rule belongs to
-   the caller in `@janela/session`, because creating a terminal is not
-   something a pure function may do.
+   the tab. Closing the last tab returns `emptyLayout`, and that is where it
+   stops: `@janela/session` saves the empty layout rather than replacing it
+   with a terminal nobody asked for, and the client draws an empty state that
+   offers to start one.
 9. **Focus traversal is spatial**: `focusNeighbour(layout, direction)` with
    `"left" | "right" | "up" | "down"`, returning the layout unchanged at an
    edge. This replaces the earlier `focusNext` / `focusPrevious` pair — the

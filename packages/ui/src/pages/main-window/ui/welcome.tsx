@@ -13,7 +13,7 @@ import {
 import { useCallback, type ReactElement } from "react";
 
 import type { CommandID } from "../../../shared/config/index.ts";
-import { ContentCard, ShowSidebarBar } from "../../../shared/ui/index.ts";
+import { ContentCard, ShowSidebarBar, WindowBackdrop } from "../../../shared/ui/index.ts";
 
 export function WelcomeScreen(props: { readonly dispatch: (id: CommandID) => void }): ReactElement {
   const { dispatch } = props;
@@ -30,7 +30,8 @@ export function WelcomeScreen(props: { readonly dispatch: (id: CommandID) => voi
     <>
       <ShowSidebarBar />
       <ContentCard>
-        <Empty className="h-full">
+        <WindowBackdrop />
+        <Empty className="relative h-full">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <HugeiconsIcon icon={ComputerTerminal01Icon} strokeWidth={2} />

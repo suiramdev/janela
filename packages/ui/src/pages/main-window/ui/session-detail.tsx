@@ -7,7 +7,7 @@ import {
   type TerminalDescriptor,
   type TerminalID,
 } from "@janela/core";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@janela/design";
+import { Empty, EmptyHeader, EmptyTitle } from "@janela/design";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import {
@@ -29,6 +29,7 @@ import {
   splitTerminal,
 } from "../model/command-dispatch.ts";
 import { closeQuestionScope, tabTerminals } from "../model/tab-rows.ts";
+import { EmptySessionScreen } from "./empty-session.tsx";
 import { PaneView } from "./pane-view.tsx";
 import { TabStrip } from "./tab-strip.tsx";
 
@@ -36,15 +37,6 @@ const SESSION_NOT_FOUND = (
   <Empty className="h-full">
     <EmptyHeader>
       <EmptyTitle>Session not found</EmptyTitle>
-    </EmptyHeader>
-  </Empty>
-);
-
-const NO_TERMINALS_IN_SESSION = (
-  <Empty className="h-full">
-    <EmptyHeader>
-      <EmptyTitle>No terminals in this session</EmptyTitle>
-      <EmptyDescription>Press ⌘T, or use the + in the tab bar, to start one.</EmptyDescription>
     </EmptyHeader>
   </Empty>
 );
@@ -192,45 +184,39 @@ export function SessionDetail(props: { readonly sessionID: SessionID }): ReactEl
     );
   }
 
+  if (tab === undefined) return <EmptySessionScreen onNewTerminal={newTerminal} />;
+
   return (
     <>
-      {layout.tabs.length === 0 ? (
-        <ShowSidebarBar />
-      ) : (
-        <TabStrip
-          layout={layout}
+      <TabStrip
+        layout={layout}
+        terminals={terminals}
+        onFocusTab={focusTab}
+        onNewTerminal={newTerminal}
+        onSplitTab={splitTab}
+        onMoveTab={moveTab}
+        onCloseTabs={closeTabs}
+        draggedTerminalID={draggedTerminalID}
+        onDropTerminal={dropTerminal}
+      />
+      <div className={PANE_REGION}>
+        <PaneView
+          pane={tab.root}
+          path={ROOT_PATH}
+          focusedTerminalID={tab.focusedTerminalID}
           terminals={terminals}
-          onFocusTab={focusTab}
+          states={states}
+          connection={connection}
+          isConnected={isConnected}
+          onFocusTerminal={focusTerminal}
+          onFraction={setFraction}
+          onClosePane={closePane}
+          onSplitPane={splitPane}
           onNewTerminal={newTerminal}
-          onSplitTab={splitTab}
-          onMoveTab={moveTab}
-          onCloseTabs={closeTabs}
           draggedTerminalID={draggedTerminalID}
+          onDragTerminal={setDraggedTerminalID}
           onDropTerminal={dropTerminal}
         />
-      )}
-      <div className={PANE_REGION}>
-        {tab === undefined ? (
-          NO_TERMINALS_IN_SESSION
-        ) : (
-          <PaneView
-            pane={tab.root}
-            path={ROOT_PATH}
-            focusedTerminalID={tab.focusedTerminalID}
-            terminals={terminals}
-            states={states}
-            connection={connection}
-            isConnected={isConnected}
-            onFocusTerminal={focusTerminal}
-            onFraction={setFraction}
-            onClosePane={closePane}
-            onSplitPane={splitPane}
-            onNewTerminal={newTerminal}
-            draggedTerminalID={draggedTerminalID}
-            onDragTerminal={setDraggedTerminalID}
-            onDropTerminal={dropTerminal}
-          />
-        )}
       </div>
     </>
   );

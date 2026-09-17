@@ -220,9 +220,9 @@ the pane they touch and reuse every untouched subtree by reference.
   named one (a terminal appears in a layout exactly once), or when the split
   would exceed `MAXIMUM_PANE_DEPTH`.
 - `closeTerminal` — closing the last terminal in a tab closes the tab, and
-  closing the last tab returns an empty layout. The caller owns the "leaves one
-  idle terminal" rule, because creating a terminal is not something a pure
-  function may do. Focus moves to the first terminal of the promoted sibling only
+  closing the last tab returns an empty layout, which is a state a session is
+  allowed to be in: a session is a directory, and its terminals are what happens
+  to be open in it. Focus moves to the first terminal of the promoted sibling only
   when the closed terminal held it.
 - `focusNeighbour` — walks tab-then-tree order, the order `layoutTerminalIDs`
   returns, wrapping at both ends. `focusedTabIndex` follows across a tab

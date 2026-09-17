@@ -1227,7 +1227,7 @@ describe("removeTerminal", () => {
     });
   });
 
-  test("removing the only terminal leaves one new idle terminal", async () => {
+  test("removing the only terminal leaves the session empty, and the session itself alone", async () => {
     await withSessions({}, async (fixture) => {
       const session = await fixture.sessions.createSession({
         kind: "inProject",
@@ -1239,10 +1239,29 @@ describe("removeTerminal", () => {
 
       const stored = await fixture.database.sessions.find(session.id);
 
-      expect(stored?.terminals).toHaveLength(1);
-      expect(stored?.terminals[0]?.id).not.toBe(only);
-      expect(stored?.layout.tabs).toHaveLength(1);
+      expect(stored?.terminals).toEqual([]);
+      expect(stored?.layout.tabs).toEqual([]);
       expect(fixture.terminals.liveCount).toBe(0);
+      expect(fixture.sessions.sessions.map((candidate) => candidate.id)).toContain(session.id);
+    });
+  });
+
+  test("a session emptied of terminals takes the next one as a fresh first tab", async () => {
+    await withSessions({}, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
+      const only = session.terminals[0]?.id as TerminalID;
+
+      await fixture.sessions.removeTerminal(only);
+      const added = await fixture.sessions.createTerminal(session.id);
+
+      const stored = await fixture.database.sessions.find(session.id);
+
+      expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([added.id]);
+      expect(stored?.layout.tabs).toHaveLength(1);
+      expect(stored?.layout.focusedTabIndex).toBe(0);
     });
   });
 

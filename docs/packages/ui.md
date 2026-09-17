@@ -248,9 +248,10 @@ nothing (§ Non-negotiables 5).
   how a user agrees to something they did not read.
 - The unmount-only focus-clearing effect is separate on purpose; folded into the
   focus effect it would send `undefined` between every two focus changes.
-- A session with no tabs still needs something holding the window's top-left corner
-  — the bar the other empty screens use, carrying the window-control room and the
-  way back from an off-screen sidebar.
+- A session with no terminals is `EmptySessionScreen`, not a bare pane region: this
+  is a state the user arrives at by closing the last tab, and a blank rectangle
+  would read as a bug. The whole screen is replaced, tab strip included, because a
+  strip with no tabs is chrome for nothing.
 
 ### `ui/sheets/sheet-host.tsx`
 
@@ -451,6 +452,38 @@ The first screen of a fresh install and the screen after removing a last session
 so it carries the two creation actions rather than describing them. Both are
 `CommandID`s, so there is one implementation of "start a session".
 
+The backdrop is `shared/ui/window-backdrop.tsx`, described below.
+
+### `ui/empty-session.tsx`
+
+The screen a session shows once its last terminal is closed. It exists because
+closing the last tab no longer conjures a replacement (§ Non-negotiables 5,
+`docs/packages/session.md`): the session is a directory and is still there, so the
+screen says so and offers ⌘T. The action is `onNewTerminal` from `SessionDetail`
+rather than a `CommandID`, because it acts on the session being drawn and not on
+the selection — the same reason `model/sidebar-actions.ts` exists. It carries the
+same backdrop as the welcome screen: the two screens are the same situation seen
+from two distances — a window with nothing running in it — and a user who reaches
+one by closing tabs and the other by deselecting should not find two different
+rooms.
+
+### `shared/ui/window-backdrop.tsx`
+
+`FaultyTerminal` from `@janela/design`, with the settings and the composition both
+empty screens use — one component rather than one class string in two files, so
+the two cannot drift apart by a tuning nobody repeated.
+
+It is behind the empty screens and not behind every screen: these are the two
+places the window has nothing to say, and once terminals are on screen they are
+the thing to look at — an animated field behind them is noise. It is masked to a
+ring and held at low opacity so the copy above it stays legible, and it is
+`aria-hidden`: it carries no information, which is the point. The opacity is per
+appearance (`0.07` light, `0.28` dark) because `mix-blend-exclusion` inverts —
+the same value that reads as a faint glow on near-black reads as a wall of grey
+glyphs on paper — and Increase Contrast drops it entirely (`contrast-more:hidden`),
+because that appearance exists to make text maximally legible and a decorative
+field works against it.
+
 ### `model/command-dispatch.ts`
 
 An exhaustive `Record<CommandID, …>`, so a command added to the table without an
@@ -481,8 +514,8 @@ action fails `typecheck` rather than being a menu item that does nothing.
   says the user is told. Idle, exited and failed terminals close without a word. The
   removals go out together on one queue and are awaited with `allSettled`, because a
   tab of six panes should not take six round trips and a rejection must not leave its
-  siblings unobserved. A session that loses its last terminal is given a fresh idle
-  shell by the daemon.
+  siblings unobserved. A session that loses its last terminal keeps existing with
+  none, and `SessionDetail` draws `EmptySessionScreen` rather than the pane region.
 - `CLOSE_WORDS` is a table so the three spellings of one scope cannot disagree.
 - `closingCost` is the one question offering "Don't ask again": anyone working in
   splits meets it several times an hour and what it guards is recoverable. Removing a

@@ -320,7 +320,9 @@ Design constraints, all of them enforceable and tested:
   unbounded recursive `Codable` type is a decoding hazard.
 - **Closing a terminal collapses its split**, promoting the sibling. Closing the
   last terminal in a tab closes the tab; closing the last tab leaves the session
-  with one idle terminal, not zero.
+  with no terminals at all. A session outlives its terminals — it is a directory,
+  and the client shows an empty state offering to start another. Nothing spawns a
+  process the user did not ask for (§ Non-negotiables 5).
 
 Why this is modelled at all, when the old model refused to model layout: splits and
 tabs are v1 scope, and "wherever you left it" only works if "where you left it"

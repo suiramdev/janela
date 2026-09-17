@@ -197,12 +197,13 @@ describe("SessionDetail markup", () => {
     expect(renderDetail(environment, "ghost")).toContain("Session not found");
   });
 
-  test("a session with no terminals has no tab strip and says why", () => {
+  test("a session with no terminals has no tab strip, and offers to start one", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
 
     const markup = renderDetail(environment, "s");
 
     expect(markup).toContain("No terminals in this session");
+    expect(markup).toContain("New Terminal");
     expect(markup).not.toContain('role="tablist"');
   });
 });

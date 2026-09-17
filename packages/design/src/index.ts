@@ -65,6 +65,8 @@ export {
   EmptyTitle,
 } from "./components/ui/empty.tsx";
 
+export { FaultyTerminal, type FaultyTerminalProps } from "./components/faulty-terminal.tsx";
+
 export {
   Field,
   FieldContent,

@@ -147,6 +147,9 @@ registry, not authored here, and `.oxlintrc.json` turns every evidence rule off 
   two packages rather than a wrapper here.
 - `components/dither-kit/*` — Dither Kit (`npx @dither-kit/cli add avatar`), which is
   how a project gets an icon without anyone drawing one.
+- `components/faulty-terminal.tsx` — React Bits' Faulty Terminal background, and the
+  one vendored component whose *renderer* was replaced rather than adapted; see
+  item 15.
 
 ### Edits made on the way in
 
@@ -260,3 +263,24 @@ Vendored files are edited on the way in, and only in ways worth the drift.
     here the list imports it directly to paint one background across a run of adjacent
     picks, so pruning it would be a rewrite of the primitive rather than an omission —
     the file is vendored whole and `ComboboxChips` is simply not exported.
+15. Faulty Terminal is a background rather than a control, and only the shader
+    survived the trip. Two things were done to it, both large enough to say out loud:
+    - **`ogl` is not a dependency.** Upstream draws through it, and what it draws is
+      one fullscreen triangle with one program and eight uniforms. Importing a WebGL
+      library to issue nine calls is a dependency the lockfile would carry into both
+      apps for as long as the file exists, so the calls are made directly. The shader
+      is upstream's, verbatim except for the uniforms below.
+    - **Eleven props became four.** Chromatic aberration, the dither grain and the
+      light-mode inversion were dropped with the uniforms that fed them; scanline,
+      curvature, flicker, noise and the grid multiplier are `const`s in the shader.
+      A background with fourteen knobs is fourteen ways for two screens to disagree
+      about what the application looks like, and `scale`, `digitSize`, `timeScale`,
+      `brightness` and `tint` are the five a caller has a reason to turn.
+
+    Two behaviours are this package's, not upstream's. **Reduce Motion paints one
+    still frame** — the blanket rule in `styles.css` reaches animations and
+    transitions, and a canvas driven by `requestAnimationFrame` hears neither, so it
+    reads the query itself. And **the loop stops** when the canvas leaves the
+    viewport or the window is hidden, an `IntersectionObserver` and
+    `visibilitychange` away: a background nobody is looking at costing 60 wakeups a
+    second is AGENTS.md § Non-negotiables 5 in the form the user notices, on battery.

@@ -603,12 +603,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     session.terminals = session.terminals.filter((terminal) => terminal.id !== id);
     session.layout = closeTerminal(session.layout, id);
 
-    if (session.layout.tabs.length === 0) {
-      await this.addFirstTerminal(session, this.projectOf(session));
-
-      return;
-    }
-
     await this.deps.repository.save(session);
     await this.publish();
   }

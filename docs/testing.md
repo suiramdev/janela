@@ -191,7 +191,7 @@ constraint it enforces is a test:
 
 - splitting a pane keeps every existing terminal id present, exactly once
 - closing a terminal promotes its sibling; closing the last one in a tab closes the
-  tab; closing the last tab leaves one idle terminal, never zero
+  tab; closing the last tab leaves an empty layout, and the session keeps it
 - a layout referencing a terminal that no longer exists is **repaired on load**,
   not rejected — assert the session opens
 - depth beyond 6 and fractions outside `0.05...0.95` are refused or clamped

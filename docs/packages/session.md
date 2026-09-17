@@ -235,8 +235,13 @@ it believes is already running and do nothing at all.
 
 `stopTerminal` on an unknown id is a no-op — a second click on "stop" must not be
 an error, and a terminal that already exited is not registered. `removeTerminal`
-never leaves a session with zero terminals: the last close leaves one fresh idle
-shell honouring the project's default profile.
+leaves a session with zero terminals when that is what the user asked for. The
+session is the directory; its terminals are what happens to be open in it, and
+replacing the one just closed with a fresh shell would both spawn a process
+nobody asked for (§ Non-negotiables 5) and hide the close. The empty session is
+saved and announced like any other, and the client draws an empty state offering
+⌘T. Only `createSession` seeds a first terminal from the project's default
+profile.
 
 `moveTab` lives here because tab order is part of `SessionLayout`, which the
 daemon owns; a client that rearranged its mirror would lose the drag on the next
