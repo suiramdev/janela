@@ -210,6 +210,17 @@ row should have its leading space back. Only the shell can answer that.
   it beats dispatching a guess. A failed install is logged and nothing else: every
   command is still reachable from ⌘⇧P. `COMMAND_EVENT` is paired with the Rust
   constant of the same name.
+- **Testing:** both files take the plugin function they call as an optional
+  dependency — `open`, `openPath`, `revealItemInDir`, `listen` — defaulting to the
+  real `@tauri-apps/*` export, the same shape as `LiveEnvironmentDeps.invoke`.
+  `menu.test.ts` and `native.test.ts` drive them with fakes under `bun test`, so
+  nothing here needs a window: the cancelled-dialog answer, the Terminal.app target,
+  the unknown-id drop, and the unsubscribe-before-registered race (a listener
+  released *after* the subscriber has gone would otherwise leak for the window's
+  lifetime). This is the full extent of what the shell's TypeScript can prove
+  headlessly; the assembled window — real `WKWebView`, real menu bar, real IPC —
+  is a human with `bun run desktop`, and the launchd half is
+  [`survival-proof.md`](../survival-proof.md).
 - **Clipboard and settings storage** are not Tauri's: they are web-platform ports,
   implemented once in `@janela/ui`'s `shared/lib/web-platform/` and shared with the
   browser client ([`ui.md`](ui.md) § web-platform). The stylesheet and its token
@@ -272,7 +283,7 @@ passes `cargo build` and `tauri build` happily:
   the identity is contained in the certificate's name.
 - Notarization and stapling happen *inside* `tauri build` (`notarytool submit --wait`,
   then stapling unless `--skip-stapling`). There is no separate step and no release
-  workflow yet; a release is produced by running `bun run app:build` from the
+  workflow yet; a release is produced by running `bun run desktop:build` from the
   repository root with `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and
   `APPLE_TEAM_ID` set.
 - `sidecar.ts` runs before `tauri dev`, `tauri build` and the CI shell job, because
