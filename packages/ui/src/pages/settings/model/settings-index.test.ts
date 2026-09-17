@@ -45,15 +45,15 @@ describe("searching", () => {
   test("finds a field by its label, and says which one matched", () => {
     const [first] = settingsMatches("font size", PROJECTS);
 
-    expect(first?.route).toEqual({ kind: "tab", tab: "terminal" });
-    expect(first?.section).toBe("terminalFont");
+    expect(first?.route).toEqual({ kind: "tab", tab: "appearance" });
+    expect(first?.section).toBe("appearanceFont");
     expect(first?.detail).toBe("Font size");
   });
 
   test("finds a pane by a word it never displays", () => {
     const [first] = settingsMatches("janelad", PROJECTS);
 
-    expect(first?.route).toEqual({ kind: "tab", tab: "daemon" });
+    expect(first?.route).toEqual({ kind: "tab", tab: "permissions" });
   });
 
   test("names a section rather than the keyword that matched", () => {

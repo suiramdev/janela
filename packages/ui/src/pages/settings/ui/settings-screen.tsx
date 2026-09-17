@@ -1,11 +1,13 @@
 import {
+  AccessibilityIcon,
   ArrowLeft02Icon,
   Cancel01Icon,
-  CpuIcon,
+  ColorsIcon,
+  FlaskConicalIcon,
   Notification01Icon,
+  PlugSocketIcon,
   Search01Icon,
-  SparklesIcon,
-  TerminalIcon,
+  SecurityCheckIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type {
@@ -83,12 +85,12 @@ import {
   settingsMatches,
   tabInfo,
 } from "../model/settings-index.ts";
-import { SettingsDaemon } from "./daemon-settings.tsx";
-import { SettingsProfiles } from "./launch-profiles.tsx";
+import { SettingsAppearance } from "./appearance-settings.tsx";
+import { SettingsIntegrations } from "./integrations-settings.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
-import { Pane, PaneHeader } from "./pane.tsx";
+import { EmptyPane, Pane, PaneHeader } from "./pane.tsx";
+import { SettingsPermissions } from "./permissions-settings.tsx";
 import { ProjectSettingsPane } from "./project-settings.tsx";
-import { SettingsTerminal } from "./terminal-settings.tsx";
 
 export interface SettingsTab {
   readonly id: SettingsTabID;
@@ -134,10 +136,12 @@ export interface SettingsPaneProps {
 }
 
 const TAB_ICON = {
-  terminal: hugeicon(TerminalIcon),
-  profiles: hugeicon(SparklesIcon),
+  appearance: hugeicon(ColorsIcon),
+  accessibility: hugeicon(AccessibilityIcon),
   notifications: hugeicon(Notification01Icon),
-  daemon: hugeicon(CpuIcon),
+  integrations: hugeicon(PlugSocketIcon),
+  experimental: hugeicon(FlaskConicalIcon),
+  permissions: hugeicon(SecurityCheckIcon),
 } satisfies Record<SettingsTabID, IconComponent>;
 
 export const SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_TAB_INFO.map((info) => ({
@@ -150,7 +154,7 @@ const PANEL_ID = "janela-settings-panel";
 
 const PANE_TITLE_ID = "janela-settings-pane-title";
 
-const FIRST_ROUTE: SettingsRoute = { kind: "tab", tab: "terminal" };
+const FIRST_ROUTE: SettingsRoute = { kind: "tab", tab: "appearance" };
 
 const REVEAL_MILLISECONDS = 1400;
 
@@ -426,7 +430,7 @@ export function SettingsPane(props: SettingsPaneProps): ReactElement {
 function PaneBody(
   props: SettingsPaneProps & { readonly project: Project | undefined },
 ): ReactElement | null {
-  const { draft, onChangeDraft, project } = props;
+  const { draft, onChangeDraft, project, projects } = props;
   const settings = draftSettings(draft, props.settings);
   const projectID = project?.id;
 
@@ -462,11 +466,21 @@ function PaneBody(
   }
 
   return Match.value(props.route.tab).pipe(
-    Match.when("terminal", () => (
-      <SettingsTerminal settings={settings} onChange={changeSettings} />
+    Match.when("appearance", () => (
+      <SettingsAppearance settings={settings} onChange={changeSettings} />
     )),
-    Match.when("profiles", () => (
-      <SettingsProfiles
+    Match.when("accessibility", () => (
+      <EmptyPane>
+        Nothing to set here yet. Every accessibility setting Janela honours is the system's, and it
+        reads them as they change.
+      </EmptyPane>
+    )),
+    Match.when("notifications", () => (
+      <SettingsNotifications settings={settings} onChange={changeSettings} />
+    )),
+    Match.when("integrations", () => (
+      <SettingsIntegrations
+        projects={projects}
         profiles={props.profiles}
         availability={props.availability}
         settings={settings}
@@ -475,11 +489,11 @@ function PaneBody(
         onChangeDraft={onChangeDraft}
       />
     )),
-    Match.when("notifications", () => (
-      <SettingsNotifications settings={settings} onChange={changeSettings} />
-    )),
-    Match.when("daemon", () => (
-      <SettingsDaemon
+    Match.when("experimental", () => <EmptyPane>Nothing is behind a flag right now.</EmptyPane>),
+    Match.when("permissions", () => (
+      <SettingsPermissions
+        settings={settings}
+        onChange={changeSettings}
         sessions={props.sessions}
         terminalStates={props.terminalStates}
         service={props.service}

@@ -14,7 +14,7 @@ export interface DraftViolation {
   readonly message: string;
 }
 
-const PROFILES_ROUTE: SettingsRoute = { kind: "tab", tab: "profiles" };
+const PROFILES_ROUTE: SettingsRoute = { kind: "tab", tab: "integrations" };
 
 export function draftViolations(draft: SettingsDraft): readonly DraftViolation[] {
   const profiles = draft.profiles.flatMap((entry) =>

@@ -64,10 +64,12 @@ const projectRoute = (project: Project): SettingsRoute => ({
 });
 
 const PANE_COPY = {
-  terminal: "Font family",
-  profiles: "Launch profiles",
-  notifications: "Notification Centre",
-  daemon: "Running now",
+  appearance: "Font family",
+  accessibility: "Nothing to set here yet",
+  notifications: "rings the bell",
+  integrations: "GitHub and GitLab",
+  experimental: "Nothing is behind a flag",
+  permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
 
 const withProjects = (): ClientEnvironment => environmentOver({ sessions: [], projects: PROJECTS });
@@ -76,7 +78,7 @@ const barButton = (markup: string, label: "Save" | "Revert"): string =>
   new RegExp(`<button[^>]*>${label}</button>`).exec(markup)?.[0] ?? "";
 
 function props(
-  route: SettingsRoute = tabRoute("terminal"),
+  route: SettingsRoute = tabRoute("appearance"),
   projects: readonly Project[] = PROJECTS,
   draft: SettingsDraft = EMPTY_SETTINGS_DRAFT,
 ): SettingsPaneProps {
@@ -95,7 +97,7 @@ function props(
 }
 
 function sidebar(
-  route: SettingsRoute = tabRoute("terminal"),
+  route: SettingsRoute = tabRoute("appearance"),
   projects: readonly Project[] = PROJECTS,
 ): string {
   return renderToStaticMarkup(
@@ -127,12 +129,14 @@ function screen(route: SettingsRoute, environment: ClientEnvironment): string {
 }
 
 describe("the tab table", () => {
-  test("is one subject per pane: Terminal, Launch profiles, Notifications, Daemon", () => {
+  test("is one subject per pane, in the order the sidebar shows", () => {
     expect(SETTINGS_TABS.map((tab) => tab.id)).toEqual([
-      "terminal",
-      "profiles",
+      "appearance",
+      "accessibility",
       "notifications",
-      "daemon",
+      "integrations",
+      "experimental",
+      "permissions",
     ]);
   });
 
@@ -143,19 +147,22 @@ describe("the tab table", () => {
     expect(titles).not.toContain("Advanced");
   });
 
-  test("has no Projects tab: the projects are rows, not a fifth pane", () => {
+  test("has no Projects tab: the projects are rows, not a seventh pane", () => {
     const ids: readonly string[] = SETTINGS_TABS.map((tab) => tab.id);
 
     expect(ids).not.toContain("projects");
     expect(SETTINGS_TABS.some((tab) => tab.title === "Projects")).toBe(false);
   });
 
-  test("every pane says what it is for, and holds at least one section", () => {
+  test("every pane says what it is for; only two hold no setting yet", () => {
     for (const info of SETTINGS_TAB_INFO) {
       expect(info.title.length).toBeGreaterThan(0);
       expect(info.description.length).toBeGreaterThan(0);
-      expect(info.sections.length).toBeGreaterThan(0);
     }
+
+    expect(
+      SETTINGS_TAB_INFO.filter((info) => info.sections.length === 0).map((info) => info.id),
+    ).toEqual(["accessibility", "experimental"]);
   });
 });
 
@@ -198,10 +205,12 @@ describe("the sidebar", () => {
     const markup = sidebar();
 
     expect(rowTitles(markup)).toEqual([
-      "Terminal",
-      "Launch profiles",
+      "Appearance",
+      "Accessibility",
       "Notifications",
-      "Daemon",
+      "Integrations",
+      "Experimental",
+      "Permissions",
       "janela",
       "api",
     ]);
@@ -219,7 +228,7 @@ describe("the sidebar", () => {
     const markup = sidebar();
 
     expect(markup).toContain('placeholder="Search settings"');
-    expect(markup.indexOf("Search settings")).toBeLessThan(markup.indexOf("Terminal"));
+    expect(markup.indexOf("Search settings")).toBeLessThan(markup.indexOf("Appearance"));
     expect(markup).not.toContain('aria-label="Clear search"');
   });
 
@@ -235,10 +244,10 @@ describe("the sidebar", () => {
   });
 
   test("marks the showing tab selected, and pins Back below the projects", () => {
-    const markup = sidebar(tabRoute("profiles"));
+    const markup = sidebar(tabRoute("integrations"));
 
     expect(markup).toMatch(
-      /role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!<\/button>).)*Launch profiles/,
+      /role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!<\/button>).)*Integrations/,
     );
     expect([...markup.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
     expect(markup).toContain('data-sidebar="footer"');
@@ -246,11 +255,18 @@ describe("the sidebar", () => {
   });
 
   test("says which nothing it is when no project has been added", () => {
-    const markup = sidebar(tabRoute("terminal"), []);
+    const markup = sidebar(tabRoute("appearance"), []);
 
     expect(markup).toContain("Projects");
     expect(markup).toContain("No projects yet.");
-    expect(rowTitles(markup)).toEqual(["Terminal", "Launch profiles", "Notifications", "Daemon"]);
+    expect(rowTitles(markup)).toEqual([
+      "Appearance",
+      "Accessibility",
+      "Notifications",
+      "Integrations",
+      "Experimental",
+      "Permissions",
+    ]);
   });
 
   test("is the window's own surface, and collapses like the default sidebar", () => {
@@ -263,11 +279,11 @@ describe("the sidebar", () => {
 
 describe("the pane", () => {
   test("heads every pane with its title and what it is for", () => {
-    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("daemon"))} />);
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
 
     expect(markup).toContain('id="janela-settings-pane-title"');
-    expect(markup).toContain("Daemon");
-    expect(markup).toContain("janelad runs your terminals");
+    expect(markup).toContain("Permissions");
+    expect(markup).toContain("What Janela asks before it acts");
     expect(markup).toContain('aria-labelledby="janela-settings-pane-title"');
   });
 
@@ -303,7 +319,7 @@ describe("the pane", () => {
     );
 
     expect(
-      renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"), PROJECTS, draft)} />),
+      renderToStaticMarkup(<SettingsPane {...props(tabRoute("appearance"), PROJECTS, draft)} />),
     ).toContain('value="21"');
     expect(
       renderToStaticMarkup(<SettingsPane {...props(projectRoute(JANELA), PROJECTS, draft)} />),
@@ -313,7 +329,7 @@ describe("the pane", () => {
   test("a profile renamed but not saved reads the same in every picker", () => {
     const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...claude, name: "Opus" }));
 
-    for (const route of [tabRoute("profiles"), projectRoute(JANELA)]) {
+    for (const route of [tabRoute("integrations"), projectRoute(JANELA)]) {
       const markup = renderToStaticMarkup(<SettingsPane {...props(route, PROJECTS, draft)} />);
 
       expect(markup).toContain("Opus");
@@ -329,34 +345,43 @@ describe("the pane", () => {
   });
 });
 
-describe("the Terminal pane", () => {
+describe("the Appearance pane", () => {
   test("shows the default stack as a placeholder rather than as a value", () => {
-    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("appearance"))} />);
 
     expect(markup).toContain('placeholder="&quot;SF Mono&quot;');
     expect(markup).toContain('value=""');
   });
 
   test("bounds the font size", () => {
-    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("appearance"))} />);
 
     expect(markup).toContain('min="8"');
     expect(markup).toContain('max="32"');
   });
+});
 
+describe("the Permissions pane", () => {
   test("holds the question asked before a terminal is closed", () => {
-    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
 
     expect(markup).toContain("Ask before closing a running terminal");
     expect(markup).toContain("Idle and finished terminals never ask");
   });
 
-  test("reads that question as off once it has been silenced", () => {
-    const asks = renderToStaticMarkup(<SettingsPane {...props(tabRoute("terminal"))} />);
+  test("states how the notification permission is asked, without a control", () => {
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
+
+    expect(markup).toContain("Notification Centre");
+    expect(markup).toContain("sidebar keeps working");
+  });
+
+  test("reads the closing question as off once it has been silenced", () => {
+    const asks = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
     const silenced = renderToStaticMarkup(
       <SettingsPane
         {...props(
-          tabRoute("terminal"),
+          tabRoute("permissions"),
           PROJECTS,
           withDraftSettings(
             EMPTY_SETTINGS_DRAFT,
@@ -381,7 +406,6 @@ describe("the Notifications pane", () => {
 
     expect(markup).toContain("Notify when a terminal rings the bell");
     expect(markup).toContain("always deliver");
-    expect(markup).toContain("sidebar keeps working");
   });
 
   test("is one switch, not a rule builder", () => {
@@ -393,7 +417,7 @@ describe("the Notifications pane", () => {
 
 describe("the screen", () => {
   test("fills the window the way the workspace does", () => {
-    const markup = screen(tabRoute("terminal"), withProjects());
+    const markup = screen(tabRoute("appearance"), withProjects());
 
     expect(markup).toContain('data-variant="inset"');
     expect(markup).toContain('data-slot="sidebar-inset"');
@@ -418,7 +442,7 @@ describe("the screen", () => {
 
   describe("the commit bar", () => {
     test("is quiet at rest: nothing to save, and it does not say so twice", () => {
-      const markup = screen(tabRoute("terminal"), withProjects());
+      const markup = screen(tabRoute("appearance"), withProjects());
 
       expect(barButton(markup, "Save")).toContain('disabled=""');
       expect(barButton(markup, "Revert")).toContain('disabled=""');
@@ -435,7 +459,7 @@ describe("the screen", () => {
         }),
       );
 
-      const markup = screen(tabRoute("terminal"), environment);
+      const markup = screen(tabRoute("appearance"), environment);
 
       expect(markup).toContain("1 unsaved change");
       expect(barButton(markup, "Save")).not.toContain('disabled=""');

@@ -179,8 +179,8 @@ describe("the commit model", () => {
 
 describe("enabled state", () => {
   test("an enabled command reads as checked, a disabled one does not", () => {
-    expect(checkedCount(paneMarkup(WITH_DEV))).toBe(2);
-    expect(checkedCount(paneMarkup(WITH_DEV_DISABLED))).toBe(1);
+    expect(checkedCount(paneMarkup(WITH_DEV))).toBe(1);
+    expect(checkedCount(paneMarkup(WITH_DEV_DISABLED))).toBe(0);
   });
 
   test("an enabled command with no executable is named as a violation", () => {

@@ -17,7 +17,13 @@ export type Sheet =
   | { readonly kind: "commands" }
   | { readonly kind: "newSession"; readonly projectID?: ProjectID };
 
-export type SettingsTabID = "terminal" | "profiles" | "notifications" | "daemon";
+export type SettingsTabID =
+  | "appearance"
+  | "accessibility"
+  | "notifications"
+  | "integrations"
+  | "experimental"
+  | "permissions";
 
 export type SettingsRoute =
   | { readonly kind: "tab"; readonly tab: SettingsTabID }
@@ -65,7 +71,7 @@ const NO_LAYOUTS: ReadonlyMap<SessionID, LocalLayoutEntry> = new Map<SessionID, 
 
 const WORKSPACE: Screen = { kind: "workspace" };
 
-const FIRST_TAB: SettingsRoute = { kind: "tab", tab: "terminal" };
+const FIRST_TAB: SettingsRoute = { kind: "tab", tab: "appearance" };
 
 export function sameRoute(left: SettingsRoute, right: SettingsRoute): boolean {
   return left.kind === "tab"

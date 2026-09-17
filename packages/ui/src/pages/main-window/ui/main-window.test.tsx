@@ -74,7 +74,7 @@ describe("MainWindow markup", () => {
   test("the window's own chrome drags it, not only the rows inside it", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
     const workspace = draw(environment);
-    environment.view.showSettings({ kind: "tab", tab: "general" });
+    environment.view.showSettings({ kind: "tab", tab: "appearance" });
     const settings = draw(environment);
     const gutter = `data-tauri-drag-region="${WINDOW_GUTTER_REGION}"`;
 
@@ -110,7 +110,7 @@ describe("the settings screen's slot", () => {
     const environment = fakeEnvironment({ sessions: [session("s")] });
     environment.view.openSheet({ kind: "commands" });
     const workspace = draw(environment);
-    environment.view.showSettings({ kind: "tab", tab: "terminal" });
+    environment.view.showSettings({ kind: "tab", tab: "appearance" });
     const settings = draw(environment);
 
     expect(settings).toContain('data-slot="settings-stub"');

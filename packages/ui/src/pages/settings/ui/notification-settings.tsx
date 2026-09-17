@@ -1,4 +1,3 @@
-import { FieldDescription } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback } from "react";
 
@@ -30,10 +29,6 @@ export function SettingsNotifications(props: SettingsNotificationsProps): ReactE
         onChange={changeNotifiesOnBell}
         hint="Off by default: a bell badges the sidebar but does not interrupt. Programs that ask for a notification by name always deliver, whatever this is set to."
       />
-      <FieldDescription>
-        Permission is asked for the first time a notification would actually be sent, not at launch.
-        Declining is fine — the sidebar keeps working.
-      </FieldDescription>
     </Section>
   );
 }

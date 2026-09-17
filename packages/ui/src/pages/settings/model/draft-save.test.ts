@@ -54,7 +54,7 @@ describe("what blocks a save", () => {
     const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...CLAUDE, name: " " }));
 
     expect(draftViolations(draft)).toEqual([
-      { route: { kind: "tab", tab: "profiles" }, message: "A profile needs a name." },
+      { route: { kind: "tab", tab: "integrations" }, message: "A profile needs a name." },
     ]);
   });
 

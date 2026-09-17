@@ -61,13 +61,6 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
     [onChange, settings],
   );
 
-  const changeForge = useCallback(
-    (isForgeEnabled: boolean) => {
-      onChange({ ...settings, isForgeEnabled });
-    },
-    [onChange, settings],
-  );
-
   const changeCustomRoot = useCallback(
     (isCustom: boolean) => {
       if (!isCustom) {
@@ -118,12 +111,6 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
           onChange={changeDefaultProfile}
           unsetTitle="Use the global default"
           hint="What this project's new sessions start in."
-        />
-        <SwitchField
-          label="Read pull request and check state"
-          isOn={settings.isForgeEnabled}
-          onChange={changeForge}
-          hint="Uses your own gh or glab. A missing or logged-out CLI means this is quietly absent, never an error."
         />
       </Section>
 

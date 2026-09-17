@@ -183,18 +183,18 @@ describe("screens", () => {
 
     view.showSettings();
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "terminal" } });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "appearance" } });
 
-    view.showSettings({ kind: "tab", tab: "daemon" });
+    view.showSettings({ kind: "tab", tab: "permissions" });
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "daemon" } });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "permissions" } });
 
     view.showSettings();
 
-    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "daemon" } });
+    expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "permissions" } });
 
     const settled = notifications;
-    view.showSettings({ kind: "tab", tab: "daemon" });
+    view.showSettings({ kind: "tab", tab: "permissions" });
 
     expect(notifications).toBe(settled);
 
@@ -227,14 +227,14 @@ describe("screens", () => {
   });
 
   test("two routes are the same route only when they name the same pane", () => {
-    const terminal = { kind: "tab", tab: "terminal" } as const;
+    const appearance = { kind: "tab", tab: "appearance" } as const;
     const project = { kind: "project", projectID: projectID("p") } as const;
 
-    expect(sameRoute(terminal, { kind: "tab", tab: "terminal" })).toBe(true);
-    expect(sameRoute(terminal, { kind: "tab", tab: "daemon" })).toBe(false);
+    expect(sameRoute(appearance, { kind: "tab", tab: "appearance" })).toBe(true);
+    expect(sameRoute(appearance, { kind: "tab", tab: "permissions" })).toBe(false);
     expect(sameRoute(project, { kind: "project", projectID: projectID("p") })).toBe(true);
     expect(sameRoute(project, { kind: "project", projectID: projectID("q") })).toBe(false);
-    expect(sameRoute(terminal, project)).toBe(false);
+    expect(sameRoute(appearance, project)).toBe(false);
   });
 });
 

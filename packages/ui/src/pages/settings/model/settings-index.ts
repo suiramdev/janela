@@ -6,11 +6,14 @@ import type { SettingsRoute, SettingsTabID } from "../../../shared/model/index.t
 import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-commands.ts";
 
 export type SettingsSectionID =
-  | "terminalFont"
-  | "terminalClosing"
+  | "appearanceFont"
+  | "notificationsBell"
+  | "forgeReading"
   | "profilesDefault"
   | "profilesList"
-  | "notificationsBell"
+  | "closingConfirmation"
+  | "notificationPermission"
+  | "daemon"
   | "daemonState"
   | "daemonStop"
   | "projectSessions"
@@ -57,19 +60,34 @@ interface ScoredMatch {
   readonly order: number;
 }
 
-export const TERMINAL_FONT_SECTION: SettingsSection = {
-  id: "terminalFont",
-  title: "Font",
+export const APPEARANCE_FONT_SECTION: SettingsSection = {
+  id: "appearanceFont",
+  title: "Terminal font",
   fields: ["Font family", "Font size"],
   keywords: ["appearance", "typeface", "monospace", "size", "zoom", "theme", "colours"],
 };
 
-export const TERMINAL_CLOSING_SECTION: SettingsSection = {
-  id: "terminalClosing",
+export const CLOSING_CONFIRMATION_SECTION: SettingsSection = {
+  id: "closingConfirmation",
   title: "Closing a terminal",
   hint: "Closing a pane or a tab ends the programs in it, so the question is asked while there is still something to lose.",
   fields: ["Ask before closing a running terminal"],
   keywords: ["confirmation", "confirm", "ask again", "prompt", "warning", "dialog"],
+};
+
+export const NOTIFICATION_PERMISSION_SECTION: SettingsSection = {
+  id: "notificationPermission",
+  title: "Notification Centre",
+  fields: [],
+  keywords: ["permission", "allow", "authorise", "authorize", "declined", "system settings"],
+};
+
+export const FORGE_SECTION: SettingsSection = {
+  id: "forgeReading",
+  title: "GitHub and GitLab",
+  hint: "Pull request and check state, read through your own gh or glab for each project hosted there. A missing or logged-out CLI means this is quietly absent, never an error.",
+  fields: [],
+  keywords: ["forge", "github", "gitlab", "gh", "glab", "pull request", "merge request", "checks"],
 };
 
 export const PROFILES_DEFAULT_SECTION: SettingsSection = {
@@ -100,9 +118,17 @@ export const PROFILES_LIST_SECTION: SettingsSection = {
 
 export const NOTIFICATIONS_BELL_SECTION: SettingsSection = {
   id: "notificationsBell",
-  title: "Notification Centre",
+  title: "Bell",
   fields: ["Notify when a terminal rings the bell"],
-  keywords: ["bell", "alert", "badge", "banner", "permission", "sound", "attention"],
+  keywords: ["bell", "alert", "badge", "banner", "notification centre", "sound", "attention"],
+};
+
+export const DAEMON_SECTION: SettingsSection = {
+  id: "daemon",
+  title: "Daemon",
+  hint: "janelad runs your terminals, which is why they survive closing the window. It exits on its own when nothing is live.",
+  fields: [],
+  keywords: ["janelad", "background", "service"],
 };
 
 export const DAEMON_STATE_SECTION: SettingsSection = {
@@ -132,9 +158,9 @@ export const DAEMON_STOP_SECTION: SettingsSection = {
 export const PROJECT_SESSIONS_SECTION: SettingsSection = {
   id: "projectSessions",
   title: "Sessions",
-  hint: "What this project's sessions start in, and what Janela may read about them.",
-  fields: ["Default launch profile", "Read pull request and check state"],
-  keywords: ["profile", "forge", "github", "gitlab", "gh", "glab", "pull request", "checks"],
+  hint: "What this project's sessions start in.",
+  fields: ["Default launch profile"],
+  keywords: ["profile", "default", "shell", "agent"],
 };
 
 export const PROJECT_WORKTREES_SECTION: SettingsSection = {
@@ -181,17 +207,18 @@ export const AUTOMATION_SECTION = {
 
 export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
   {
-    id: "terminal",
-    title: "Terminal",
-    description: "How a terminal reads, and what it asks before you end one.",
-    sections: [TERMINAL_FONT_SECTION, TERMINAL_CLOSING_SECTION],
+    id: "appearance",
+    title: "Appearance",
+    description:
+      "How a terminal reads. Light, dark and Increase contrast are macOS settings, and Janela follows them rather than keeping its own.",
+    sections: [APPEARANCE_FONT_SECTION],
   },
   {
-    id: "profiles",
-    title: "Launch profiles",
+    id: "accessibility",
+    title: "Accessibility",
     description:
-      "What Janela starts in a new terminal. A profile is a command, not an integration: Janela does not wrap, parse or manage what it launches.",
-    sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
+      "Janela follows the macOS settings: Reduce motion stops the cursor blinking and every animation, Increase contrast raises the terminal's. Nothing here overrides them.",
+    sections: [],
   },
   {
     id: "notifications",
@@ -201,11 +228,31 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     sections: [NOTIFICATIONS_BELL_SECTION],
   },
   {
-    id: "daemon",
-    title: "Daemon",
+    id: "integrations",
+    title: "Integrations",
     description:
-      "janelad runs your terminals, which is why they survive closing the window. It exits on its own when nothing is live.",
-    sections: [DAEMON_STATE_SECTION, DAEMON_STOP_SECTION],
+      "The tools Janela reaches: gh and glab for pull request state, and the launch profiles that start claude, codex or a shell. Janela starts them and reads from them; it does not wrap, parse or manage what they do.",
+    sections: [FORGE_SECTION, PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
+  },
+  {
+    id: "experimental",
+    title: "Experimental",
+    description:
+      "Nothing is behind a flag. What Janela ships, it ships for everyone; a feature that is not ready for that will be switched on here.",
+    sections: [],
+  },
+  {
+    id: "permissions",
+    title: "Permissions",
+    description:
+      "What Janela asks before it acts, what macOS asks on its behalf, and the daemon that outlives the window.",
+    sections: [
+      CLOSING_CONFIRMATION_SECTION,
+      NOTIFICATION_PERMISSION_SECTION,
+      DAEMON_SECTION,
+      DAEMON_STATE_SECTION,
+      DAEMON_STOP_SECTION,
+    ],
   },
 ];
 

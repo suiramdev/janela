@@ -631,17 +631,26 @@ positional shape is deliberate — a sidebar test reads better as
   knowing to right-click a row. So a project is a **route**, not a fifth tab: tabs are
   fixed data, projects are the mirror's list, and the sidebar's *Project Settings* row
   became a link to somewhere rather than a second editor.
-- **One subject per pane, and no General.** The panes are Terminal, Launch profiles,
-  Notifications and Daemon. There was a *General* holding three unrelated things — a
-  new-terminal default, a confirmation preference, and the controls that stop the
-  daemon and close the user's terminals — which is what a pane named after nothing
-  always becomes, and it put the most destructive surface in the product behind the
-  blandest label. Each of its three went to the pane that owns the subject: the
-  default to Launch profiles beside the list it picks from, the confirmation to
-  Terminal beside the thing it guards, the daemon to its own pane. A *Confirmations*
-  bucket was the alternative and was rejected: a question about closing a terminal is
-  findable under Terminal and not under a word the user has to guess. A second
-  silenceable question therefore goes beside *its* subject too.
+- **The panes are the questions a user arrives with, and no General.** Appearance,
+  Accessibility, Notifications, Integrations, Experimental, Permissions. The first
+  cut was one pane per *product noun* — Terminal, Launch profiles, Notifications,
+  Daemon — which read well from inside the codebase and badly from outside it:
+  nobody arrives thinking "daemon", they arrive thinking "why did it ask me that"
+  (Permissions) or "connect it to GitHub" (Integrations). There was also a *General*
+  before either cut, holding three unrelated things, which is what a pane named
+  after nothing always becomes, and it put the most destructive surface in the
+  product behind the blandest label. The map now: the terminal font under
+  Appearance; the bell under Notifications; forge reading and launch profiles under
+  Integrations — both are "the tools Janela reaches", and a profile is still a
+  command, not a wrapper; the close-terminal confirmation, the notification
+  permission's explanation and the daemon's stop controls under Permissions,
+  because all three are "what may it do, and what does it ask first".
+- **Two panes are honestly empty.** Accessibility and Experimental render an empty
+  state saying why — Janela follows the system's accessibility settings rather than
+  keeping its own, and nothing is currently behind a flag. They exist because their
+  absence would be read as "Janela ignores accessibility", and because a category
+  that will exist eventually is cheaper to ship empty than to renumber the panes
+  around later. The empty copy is load-bearing: it states the policy.
 - **The sections are data, not markup.** `model/settings-index.ts` holds every pane,
   its description, its sections and their field labels; the panes render from it and
   the sidebar's search reads it. A table nothing renders drifts, so a test renders
@@ -715,11 +724,13 @@ positional shape is deliberate — a sidebar test reads better as
 
 ### `ui/daemon-settings.tsx`
 
-- The daemon's controls live here rather than in a menu because stopping it closes the
-  user's terminals, and a destructive action behind a keyboard shortcut is one that
-  will be hit by accident. Settings is where you go on purpose. It is its own pane
-  rather than a paragraph under something blander, because the pane's name is the only
-  warning a user gets before reading it.
+- The daemon's controls live in Settings rather than in a menu because stopping it
+  closes the user's terminals, and a destructive action behind a keyboard shortcut is
+  one that will be hit by accident. Settings is where you go on purpose. The controls
+  render inside the **Permissions** pane under a *Daemon* group heading — the pane's
+  subject is "what Janela may do", and outliving the window is the biggest thing it
+  does — but they stay this component, owned whole, because the confirmation dance
+  below is one piece.
 - **It is called the daemon.** The copy said *Background Service*, which is a macOS
   noun for the launchd registration, not our noun for `janelad` — and the vocabulary
   table in `AGENTS.md` retires "service" precisely so one thing has one name. Login
@@ -735,14 +746,12 @@ positional shape is deliberate — a sidebar test reads better as
   dialog, because a modal asking "are you sure" trains people to dismiss it while a
   cost sentence where the button was gets read. `role="alert"` announces it.
 
-### `ui/terminal-settings.tsx`
+### `ui/appearance-settings.tsx`
 
-Two sections: the font, and the question asked before a running terminal is closed.
-Colours come from the appearance the system declares, size comes from the window, and
-behaviour belongs to the program — so the font is the one thing a developer has an
-opinion about that we cannot infer. The confirmation is here rather than in a
-*Confirmations* list because `closeTerminals` is a question about a terminal, and the
-place a silenced dialog is regretted is the pane named after the thing it guarded.
+One section: the font. Colours come from the appearance the system declares, size
+comes from the window, and behaviour belongs to the program — so the font is the one
+thing a developer has an opinion about that we cannot infer. The close-terminal
+question that used to sit beside it moved to Permissions with the other questions.
 
 - Both fields reach every attached terminal through `TerminalPane`, which reads
   `view.settings` and hands the surface a `TerminalFont`. A save re-applies the font
@@ -752,6 +761,24 @@ place a silenced dialog is regretted is the pane named after the thing it guarde
   is not a compromise: the default stack ends in the symbols font the application
   ships (`packages/design/src/tokens.ts` § `TERMINAL_SYMBOL_FONT`), so the icons
   are there either way.
+
+### `ui/permissions-settings.tsx`
+
+The pane that answers "what does Janela ask, and what did macOS ask for it". The
+close-terminal confirmation is a switch; the notification permission is a paragraph,
+because macOS owns that toggle and a control here would be a lie — the copy says
+where the real one is. The daemon group renders `SettingsDaemon` below both, since
+its stop controls are the largest permission of all.
+
+### `ui/integrations-settings.tsx`
+
+GitHub and GitLab first, then the launch profiles. The forge rows are **per
+project** — `isForgeEnabled` stays a project setting, and this pane is a second door
+to the same value the project pane no longer shows — because "connect GitHub" is
+asked per repository, but *looked for* under Integrations. Each row edits the
+project's draft through `withDraftProjectSettings`, so the commit bar counts it like
+any project edit. A project without a forge is not listed: there is nothing to
+switch.
 
 ### `ui/notification-settings.tsx`
 
@@ -1050,8 +1077,8 @@ Everything here is this window's view of the mirror; none of it is on the wire, 
 session **selection** stays on `SessionStore`, where the sidebar already reads it.
 
 - Settings is a screen because a modal would leave the user reading settings through a
-  scrim, and the navigation it needs — a search field, four panes *and* a row per
-  project — has no room in a dialog. A project is a route rather than a fifth pane
+  scrim, and the navigation it needs — a search field, six panes *and* a row per
+  project — has no room in a dialog. A project is a route rather than a seventh pane
   because there are as many as the user has added.
 - `applyLayout` reads the mirror at the moment of the edit, not from a render: an edit
   applies to the layout on screen now.
