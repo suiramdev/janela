@@ -14,6 +14,12 @@
 // hear the `prefers-reduced-motion` rule in styles.css), and the loop stops
 // while the element is off-screen or the window is hidden, so an idle window
 // costs no wakeups.
+//
+// The effect cleanup deletes the program and buffers but does not call
+// `WEBGL_lose_context.loseContext()`. A canvas keeps its context for life, and
+// React's StrictMode runs mount → cleanup → mount on the same element: a lost
+// context handed to the second mount cannot link a program, and the backdrop is
+// blank for the whole session. The context goes when the canvas does.
 
 import { cn } from "cn";
 import { useEffect, useRef, type ReactElement } from "react";
@@ -454,8 +460,6 @@ function run(
 
     if (position !== null) gl.deleteBuffer(position);
     if (coordinates !== null) gl.deleteBuffer(coordinates);
-
-    gl.getExtension("WEBGL_lose_context")?.loseContext();
   };
 }
 
