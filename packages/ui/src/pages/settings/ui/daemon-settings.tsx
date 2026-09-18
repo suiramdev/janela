@@ -12,18 +12,18 @@ import {
 import type { ReactElement } from "react";
 import { useCallback, useState } from "react";
 
-import type { BackgroundServiceControlling } from "../../../shared/model/index.ts";
 import {
   NO_SERVICE_CONFIRMATION,
   SERVICE_CONFIRM_TITLE,
   SERVICE_REQUEST_TITLE,
+  type BackgroundServiceControlling,
   type ServiceConfirmation,
   type ServiceRequest,
   type ServiceStopCost,
   serviceControlReducer,
   serviceRequestCost,
   serviceStopCost,
-} from "../model/background-service.ts";
+} from "../../../shared/model/index.ts";
 import { DAEMON_STATE_SECTION, DAEMON_STOP_SECTION } from "../model/settings-index.ts";
 import { Section } from "./pane.tsx";
 

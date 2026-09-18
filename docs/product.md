@@ -206,6 +206,12 @@ either.** Your agent keeps working, your dev server keeps serving, and reopening
 puts you back where you were, scrollback intact. A background daemon owns the
 processes, so quitting Janela is not a decision about your work.
 
+Which is a promise that has to be visible from outside the window, so the daemon
+keeps a menu bar item: show Janela, quit it, or stop the daemon on purpose. It is
+the only place that says work is still running when nothing of Janela is on screen,
+and stopping the daemon from there asks the same question with the same counts as
+anywhere else.
+
 The honest limit: this survives the app, not the machine. Logging out or rebooting
 ends your terminals, and sessions come back idle.
 

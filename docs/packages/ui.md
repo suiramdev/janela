@@ -561,6 +561,12 @@ action fails `typecheck` rather than being a menu item that does nothing.
   splits meets it several times an hour and what it guards is recoverable. Removing a
   session is the opposite on both counts.
 - Clear Scrollback is this client's view only, which is what makes it safe by reflex.
+- `stopDaemon` is the status item's row and the app menu's, and it is here rather
+  than in the shell because the cost it must state — sessions and live terminals —
+  is only in the mirror. It reuses `serviceStopCost` and the Daemon pane's wording,
+  so the two surfaces cannot come to different numbers, and it offers no "Don't ask
+  again": what it ends is every terminal the user has, which is the opposite of
+  recoverable. Without `local` it does nothing, not even ask.
 
 ### `model/sidebar-actions.ts`
 
@@ -1013,25 +1019,6 @@ the repository, for the same code-execution reason as above.
   nothing waits — `scriptRunsAnything` in core is the single definition of "runs
   something", shared with the daemon so the pane and the runner cannot disagree.
 
-### `model/background-service.ts`
-
-Stopping the daemon terminates the user's terminals — never something Janela does to
-make its own life easier — so both controls are explicit user choices, and an explicit
-choice made without knowing the cost is not a choice.
-
-- `serviceStopCost` reads what the daemon reported: a terminal with no reported state
-  is idle, not live, so an unknown id is deliberately not counted. Its `sentence` is a
-  fragment so the two controls and the version-skew banner can embed it without three
-  near-identical counting implementations drifting.
-- Both cost strings name the terminals explicitly: "Are you sure?" is not a stated cost,
-  and the number is what makes someone stop and read. The confirm label says what
-  happens, not "OK".
-- `serviceControlReducer`'s load-bearing line is the `request` case: pressing a control
-  **performs nothing**, it only reveals what pressing it again would cost. A `confirm`
-  for a request that is not pending is inert, which is what stops a stale click — "Stop"
-  pressed, read, then "Stop and unregister" — from performing the request the user
-  walked away from.
-
 ### `model/draft-save.ts`
 
 - A violation carries its route, because with one Save for every tab a blank executable
@@ -1076,6 +1063,29 @@ markup and this is testable without rendering one.
 ---
 
 ## `shared/model`
+
+### `background-service.ts`
+
+Stopping the daemon terminates the user's terminals — never something Janela does to
+make its own life easier — so every control that does it is an explicit user choice,
+and an explicit choice made without knowing the cost is not a choice. It sits in
+`shared/model` beside `BackgroundServiceControlling`, the port it counts the cost
+for, because two pages ask: the Daemon pane's two buttons, and **Stop the Daemon…**
+in the app menu and the status item, which is `command-dispatch`'s one use of
+`serviceStopCost`.
+
+- `serviceStopCost` reads what the daemon reported: a terminal with no reported state
+  is idle, not live, so an unknown id is deliberately not counted. Its `sentence` is a
+  fragment so the two controls and the version-skew banner can embed it without three
+  near-identical counting implementations drifting.
+- Both cost strings name the terminals explicitly: "Are you sure?" is not a stated cost,
+  and the number is what makes someone stop and read. The confirm label says what
+  happens, not "OK".
+- `serviceControlReducer`'s load-bearing line is the `request` case: pressing a control
+  **performs nothing**, it only reveals what pressing it again would cost. A `confirm`
+  for a request that is not pending is inert, which is what stops a stale click — "Stop"
+  pressed, read, then "Stop and unregister" — from performing the request the user
+  walked away from.
 
 ### `client-environment.tsx`
 
@@ -1315,6 +1325,15 @@ no Rust change — the property that stops the two lists drifting.
   Window hold only predefined items and are not represented.
 - `section` is what puts a menu's separators in this table rather than re-deciding them in
   Rust.
+- `tray` marks a row the status item shows as well, which is a second *place* rather
+  than a second table: the shell reads the flag and knows no more than it did. Only
+  `stopDaemon` carries it, because the status item exists for the daemon and nothing
+  else there is worth the two rows around it. A row in both places is drawn twice,
+  and the status item's copy is built with no accelerator, because a chord there is
+  either dead or a second registration of one the menu bar already owns
+  ([`desktop.md`](desktop.md) § the status item).
+- `localOnly` is the browser client's filter, and `stopDaemon` carries it for the
+  same reason "Reveal in Finder" does: there is no `launchctl` in a tab.
 - ⌘⇧O is the one shortcut worth spending, because it is how you get anywhere without the
   sidebar. The bracket pair is spent one level up from a multiplexer's: ⌘⇧[ / ⌘⇧] switch
   **sessions**, ⌘[ / ⌘] switch tabs, because switching sessions is what this app is judged

@@ -14,12 +14,16 @@ import type { SessionCreationIntent } from "@janela/protocol";
 
 import type { CommandID } from "../../../shared/config/index.ts";
 import {
+  SERVICE_CONFIRM_TITLE,
+  SERVICE_REQUEST_TITLE,
   type ConfirmationRequest,
   type Confirming,
   type DirectoryPicking,
   type LocalShell,
   type ViewState,
   resolveLocalLayout,
+  serviceRequestCost,
+  serviceStopCost,
   withFocusedTab,
 } from "../../../shared/model/index.ts";
 
@@ -160,7 +164,7 @@ function closingCost(
 }
 
 export function createCommandDispatch(target: CommandTarget): (id: CommandID) => Promise<void> {
-  const { projects, sessions, connection, view, local, directories } = target;
+  const { projects, sessions, connection, view, local, directories, confirmations } = target;
 
   const currentSession = (): Session | undefined =>
     sessions.sessions.find((session) => session.id === sessions.selection);
@@ -247,6 +251,21 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
   const actions = {
     openSettings: () => {
       view.showSettings();
+    },
+
+    stopDaemon: async () => {
+      if (local === undefined) return;
+
+      const cost = serviceStopCost(sessions.sessions, sessions.terminalStates);
+
+      const agreed = await confirmations.confirm({
+        title: SERVICE_CONFIRM_TITLE.stop,
+        message: serviceRequestCost("stop", cost),
+        confirmLabel: SERVICE_REQUEST_TITLE.stop,
+        destructive: true,
+      });
+
+      if (agreed) local.service.stop();
     },
 
     newSession: () => {

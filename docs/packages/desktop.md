@@ -261,6 +261,44 @@ row should have its leading space back. Only the shell can answer that.
   browser client ([`ui.md`](ui.md) § web-platform). The stylesheet and its token
   test live in `@janela/design` for the same reason ([`design.md`](design.md)).
 
+## `src-tauri/src/tray.rs` — the status item
+
+The daemon outlives the app, which leaves a user who has quit with nothing on screen
+that says their terminals are still running. The status item is where that fact
+lives: **Show Janela**, the rows `COMMANDS` marks `tray`, and **Quit Janela**.
+
+- **Show and Quit are the shell's own, and exist from `setup`** rather than from the
+  page load the menu bar waits for. They are what a user reaches for when the WebView
+  is slow, blank or wedged, and a status item that appeared only after a successful
+  load would be missing exactly then. The table's rows arrive with `install_menu` and
+  replace the menu; replacing a status item's menu is safe in the way replacing the
+  main menu is not, because these rows carry no accelerator.
+- **The rows carry no chord on purpose.** A chord on this copy is wrong either way:
+  dead, because a status item's menu is not the main menu bar, or a second AppKit
+  registration of a chord the bar already owns — `stopDaemon` is in both menus — and
+  that is the ⌘D-splits-twice bug from the other direction. The menu bar's copy is
+  the one `set_menu_accelerators` edits; this one is built with `None`.
+- **A status-item row raises the window before its id goes over**, which is why the
+  copies are `janela://tray/row/<id>` rather than the bare id: it is the one thing
+  the shell can tell about a click that the client cannot. Stopping the daemon is
+  answered by the window's own confirmation, which counts the sessions and live
+  terminals at risk — a count only the client has — so the row has to arrive
+  somewhere visible. `row_command` strips the namespace and the client receives the
+  same `CommandID` the menu bar sends.
+- **Quit is the predefined item**, so it is AppKit's `terminate:` and the daemon is
+  untouched: quitting has never been what ends a terminal, and the tooltip says so.
+- **The glyph is computed, not an asset.** A status item wants a template image — an
+  alpha mask macOS tints itself, which is what makes one mark correct in a light menu
+  bar, a dark one and under increased contrast. The app icon is the wrong shape for
+  that: a dithered mark on an opaque white square, mud at 18 pt, with no alpha to
+  tint. The alternative was `tauri`'s `image-png` feature, which pulls the `image`
+  crate into the shell to decode 1,296 pixels. So `mark` is three signed distances —
+  a rounded frame, a chevron, a cursor bar — sampled 3×3 per pixel, run once per
+  launch. 36 px because `tray-icon` scales whatever it is handed to 18 pt, so that is
+  two device pixels per point and no resampling.
+- **A status item that fails to build is logged and nothing else.** The menu bar's
+  extras are the user's to remove, and the window is not worth refusing over one.
+
 ## `scripts/` — the bundle gate
 
 The bundle's shape is a contract between three places that cannot import each other:

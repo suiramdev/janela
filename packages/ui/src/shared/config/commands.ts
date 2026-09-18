@@ -5,12 +5,14 @@ export interface Command {
   readonly menu: CommandMenu;
   readonly section?: number;
   readonly localOnly?: true;
+  readonly tray?: true;
 }
 
 export type CommandMenu = "app" | "file" | "view" | "session" | "terminal";
 
 export type CommandID =
   | "openSettings"
+  | "stopDaemon"
   | "newSession"
   | "newTerminal"
   | "openFolder"
@@ -35,6 +37,14 @@ export type CommandID =
 
 export const COMMANDS: readonly Command[] = [
   { id: "openSettings", title: "Settings…", accelerator: "CmdOrCtrl+,", menu: "app" },
+  {
+    id: "stopDaemon",
+    title: "Stop the Daemon…",
+    menu: "app",
+    section: 1,
+    localOnly: true,
+    tray: true,
+  },
 
   { id: "newSession", title: "New Session", accelerator: "CmdOrCtrl+N", menu: "file" },
   { id: "newTerminal", title: "New Terminal", accelerator: "CmdOrCtrl+T", menu: "file" },

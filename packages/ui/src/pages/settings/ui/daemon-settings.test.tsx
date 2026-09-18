@@ -13,7 +13,7 @@ import {
   SERVICE_CONFIRM_TITLE,
   SERVICE_REQUEST_TITLE,
   serviceStopCost,
-} from "../model/background-service.ts";
+} from "../../../shared/model/index.ts";
 import { ServiceCostConfirmation, SettingsDaemon } from "./daemon-settings.tsx";
 
 const noop = (): void => {};

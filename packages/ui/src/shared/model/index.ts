@@ -1,3 +1,5 @@
+export * from "./background-service.ts";
+
 export * from "./client-environment.tsx";
 
 export * from "./command-shortcuts.ts";
