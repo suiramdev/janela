@@ -701,7 +701,7 @@ describe("createSession", () => {
     });
   });
 
-  test("the first terminal takes the project's default profile", async () => {
+  test("the first terminal is always the login shell, whatever profiles exist", async () => {
     const profile: LaunchProfile = {
       id: newLaunchProfileID(),
       name: "Claude Code",
@@ -712,21 +712,15 @@ describe("createSession", () => {
       isBuiltIn: false,
     };
 
-    await withSessions(
-      {
-        profiles: [profile],
-        project: { settings: { ...projectRecord().settings, defaultProfileID: profile.id } },
-      },
-      async (fixture) => {
-        const session = await fixture.sessions.createSession({
-          kind: "inProject",
-          projectID: fixture.project.id,
-        });
+    await withSessions({ profiles: [profile] }, async (fixture) => {
+      const session = await fixture.sessions.createSession({
+        kind: "inProject",
+        projectID: fixture.project.id,
+      });
 
-        expect(session.terminals[0]?.title).toBe("Claude Code");
-        expect(session.terminals[0]?.profileID).toBe(profile.id);
-      },
-    );
+      expect(session.terminals[0]?.title).toBe("Shell");
+      expect(session.terminals[0]?.profileID).toBeUndefined();
+    });
   });
 });
 

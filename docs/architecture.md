@@ -221,9 +221,9 @@ Two rules decide where a file goes, and they are not the same rule:
   many callers it has: no business logic, no knowledge of any screen.
   `fuzzy-match`, `find-surface` and `context-menu-region` are shared with one
   consuming page each, because they name no domain type and would read the same in
-  a browser client. The settings panes' labelled fields are not, because
-  `ProfileSelect` takes a `LaunchProfile` and the rest encodes how that screen's
-  forms read.
+  a browser client. The settings panes' labelled fields are not: a *labelled* field is
+  a decision about how one screen's forms read, which is exactly the knowledge
+  `@janela/design` refuses to hold.
 
 `apps/desktop/src` is the FSD **`app` layer**: the entry point, the object graph
 (`liveEnvironment`), and `adapters/` — the Tauri implementations of every port

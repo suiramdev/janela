@@ -24,7 +24,6 @@ import { useCallback, useId, useState } from "react";
 import { PROFILE_ICON_NAMES } from "../../../shared/config/index.ts";
 import {
   type ArgumentDraft,
-  type GlobalSettings,
   type ProfileDraft,
   type SettingsDraft,
   type VariableDraft,
@@ -33,7 +32,6 @@ import {
   profileDraft,
   profileOf,
   variablesAppending,
-  withDefaultProfileID,
   withDraftProfile,
   withoutDraftProfile,
 } from "../../../shared/model/index.ts";
@@ -44,17 +42,15 @@ import {
   profileTitle,
   profileViolations,
 } from "../model/profile-rules.ts";
-import { PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION } from "../model/settings-index.ts";
+import { PROFILES_LIST_SECTION } from "../model/settings-index.ts";
 import { ArgumentsEditor } from "./argv-editor.tsx";
-import { FieldSection, ProfileSelect, SwitchField, TextField, Violations } from "./fields.tsx";
+import { FieldSection, SwitchField, TextField, Violations } from "./fields.tsx";
 import { PaneCard, Section } from "./pane.tsx";
 import { ProfileIcon } from "./profile-icon.tsx";
 
 export interface SettingsProfilesProps {
   readonly profiles: readonly LaunchProfile[];
   readonly availability: LaunchProfileAvailability;
-  readonly settings: GlobalSettings;
-  readonly onChangeSettings: (settings: GlobalSettings) => void;
   readonly draft: SettingsDraft;
   readonly onChangeDraft: (draft: SettingsDraft) => void;
 }
@@ -63,7 +59,7 @@ export interface SettingsProfilesProps {
 const PROFILE_ROW = <button type="button" />;
 
 export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
-  const { profiles, availability, settings, onChangeSettings, draft, onChangeDraft } = props;
+  const { profiles, availability, draft, onChangeDraft } = props;
   const [editor, setEditor] = useState<ProfileDraft | undefined>(undefined);
 
   const listed = draftProfiles(draft, profiles);
@@ -104,27 +100,8 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
     [draft, onChangeDraft, profiles],
   );
 
-  const changeDefault = useCallback(
-    (profileID: LaunchProfileID | undefined) => {
-      onChangeSettings(withDefaultProfileID(settings, profileID));
-    },
-    [onChangeSettings, settings],
-  );
-
   return (
     <>
-      <Section section={PROFILES_DEFAULT_SECTION}>
-        <ProfileSelect
-          label="Default launch profile"
-          profiles={listed}
-          availability={availability}
-          value={settings.defaultProfileID}
-          onChange={changeDefault}
-          unsetTitle="Your login shell"
-          hint="What a new terminal starts when its project has not chosen one of its own. A project's choice always wins."
-        />
-      </Section>
-
       <Section section={PROFILES_LIST_SECTION}>
         <ItemGroup>
           {listed.map((profile) => (
@@ -133,7 +110,6 @@ export function SettingsProfiles(props: SettingsProfilesProps): ReactElement {
               profile={profile}
               isAvailable={isProfileAvailable(profile, availability)}
               isSelected={profile.id === selectedID}
-              isDefault={profile.id === settings.defaultProfileID}
               onSelect={select}
             />
           ))}
@@ -164,7 +140,6 @@ function ProfileListRow(props: {
   readonly profile: LaunchProfile;
   readonly isAvailable: boolean;
   readonly isSelected: boolean;
-  readonly isDefault: boolean;
   readonly onSelect: (profileID: LaunchProfileID) => void;
 }): ReactElement {
   const { profile, onSelect } = props;
@@ -193,12 +168,9 @@ function ProfileListRow(props: {
         <ItemTitle>{profileTitle(profile)}</ItemTitle>
       </ItemContent>
       <ItemActions>
-        {props.isDefault ? <Badge>Default</Badge> : undefined}
         {profile.isAgent ? <Badge variant="secondary">Agent</Badge> : undefined}
         {profile.isBuiltIn ? <Badge variant="outline">Built-in</Badge> : undefined}
-        {props.isAvailable ? undefined : (
-          <Badge variant="destructive">Not on your PATH — hidden from the picker</Badge>
-        )}
+        {props.isAvailable ? undefined : <Badge variant="destructive">Not on your PATH</Badge>}
       </ItemActions>
     </Item>
   );
@@ -296,8 +268,8 @@ export function ProfileEditor(props: {
       {props.isAvailable ? undefined : (
         <Alert variant="destructive">
           <AlertDescription>
-            {draft.argumentDrafts[0]?.value ?? ""} is not on your PATH, so this profile is hidden
-            from the picker. Give it an absolute path, or install it.
+            {draft.argumentDrafts[0]?.value ?? ""} is not on your PATH, so a terminal created with
+            this profile would fail to start. Give it an absolute path, or install it.
           </AlertDescription>
         </Alert>
       )}

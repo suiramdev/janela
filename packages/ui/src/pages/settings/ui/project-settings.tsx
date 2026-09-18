@@ -1,12 +1,4 @@
-import type {
-  AutomationEvent,
-  AutomationScripts,
-  LaunchProfile,
-  LaunchProfileAvailability,
-  LaunchProfileID,
-  Project,
-  ProjectSettings,
-} from "@janela/core";
+import type { AutomationEvent, AutomationScripts, Project, ProjectSettings } from "@janela/core";
 import {
   absolutePath,
   AUTOMATION_EVENTS,
@@ -32,17 +24,14 @@ import {
 import {
   AUTOMATION_SECTION,
   PROJECT_AUTOMATION_SECTION,
-  PROJECT_SESSIONS_SECTION,
   PROJECT_WORKTREES_SECTION,
 } from "../model/settings-index.ts";
-import { NumberField, ProfileSelect, SwitchField, TextField, Violations } from "./fields.tsx";
+import { NumberField, SwitchField, TextField, Violations } from "./fields.tsx";
 import { PaneGroup, Section } from "./pane.tsx";
 
 export interface ProjectSettingsPaneProps {
   readonly project: Project;
   readonly settings: ProjectSettings;
-  readonly profiles: readonly LaunchProfile[];
-  readonly availability: LaunchProfileAvailability;
   readonly onChange: (settings: ProjectSettings) => void;
 }
 
@@ -52,20 +41,6 @@ cp "$JANELA_PROJECT_DIRECTORY/.env" "$JANELA_SESSION_DIRECTORY/.env"`;
 export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactElement {
   const { project, settings, onChange } = props;
   const projectDirectory = project.directory;
-
-  const changeDefaultProfile = useCallback(
-    (profileID: LaunchProfileID | undefined) => {
-      if (profileID === undefined) {
-        const { defaultProfileID: _removed, ...rest } = settings;
-        onChange(rest);
-
-        return;
-      }
-
-      onChange({ ...settings, defaultProfileID: profileID });
-    },
-    [onChange, settings],
-  );
 
   const changeCustomRoot = useCallback(
     (isCustom: boolean) => {
@@ -106,18 +81,6 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
 
   return (
     <>
-      <Section section={PROJECT_SESSIONS_SECTION}>
-        <ProfileSelect
-          label="Default launch profile"
-          profiles={props.profiles}
-          availability={props.availability}
-          value={settings.defaultProfileID}
-          onChange={changeDefaultProfile}
-          unsetTitle="Use the global default"
-          hint="What this project's new sessions start in."
-        />
-      </Section>
-
       {supportsWorktrees(project) ? (
         <Section section={PROJECT_WORKTREES_SECTION}>
           <SwitchField

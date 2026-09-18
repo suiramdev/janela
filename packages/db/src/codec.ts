@@ -66,7 +66,6 @@ export interface ProjectColumns {
   readonly accent: string;
   readonly isExpanded: boolean;
   readonly addedAt: Date;
-  readonly defaultProfileId: string | null;
 }
 
 export interface AutomationColumns {
@@ -293,7 +292,6 @@ export function encodeProject(project: Project): ProjectColumns {
     accent: project.accent,
     isExpanded: project.isExpanded,
     addedAt: toDate(project.addedAt),
-    defaultProfileId: project.settings.defaultProfileID ?? null,
   };
 }
 
@@ -377,12 +375,6 @@ export function decodeProject(row: ProjectRow, log: Logger): Project {
   const worktreeRoot = decodeWorktreeRoot(row.worktreeRoot, row.worktreeRootPath, reasons);
   const automation = decodeAutomation(row.automation, reasons);
 
-  const defaultProfileID =
-    row.defaultProfileId === null
-      ? undefined
-      : readIdentifier<"LaunchProfile">(row.defaultProfileId, "defaultProfileId", reasons);
-  const defaultProfileMissing = row.defaultProfileId !== null && defaultProfileID === undefined;
-
   const hasGit = row.remoteURL !== null || row.defaultBranch !== null || row.forge !== null;
   const forge = row.forge === null ? undefined : decodeForge(row.forge, row.id, log);
 
@@ -390,8 +382,7 @@ export function decodeProject(row: ProjectRow, log: Logger): Project {
     id === undefined ||
     directory === undefined ||
     addedAt === undefined ||
-    worktreeRoot === undefined ||
-    defaultProfileMissing
+    worktreeRoot === undefined
   ) {
     throw new CorruptRecord("Project", row.id, reasons);
   }
@@ -402,8 +393,6 @@ export function decodeProject(row: ProjectRow, log: Logger): Project {
     worktreeRoot,
     automation,
   };
-
-  if (defaultProfileID !== undefined) settings.defaultProfileID = defaultProfileID;
 
   const project: Project = {
     id,

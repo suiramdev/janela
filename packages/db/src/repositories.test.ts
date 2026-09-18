@@ -343,9 +343,6 @@ describe("launch profiles", () => {
 describe("projects", () => {
   test("a project round-trips with git, a custom worktree root and a script per event", async () => {
     await withDatabase(async ({ database }) => {
-      const defaultProfile = profile();
-      await database.launchProfiles.save(defaultProfile);
-
       const teardown: AutomationScript = {
         script: "# later\ndocker compose down",
         timeoutSeconds: 5,
@@ -359,7 +356,6 @@ describe("projects", () => {
         settings: {
           worktreeRoot: { kind: "custom", directory: absolutePath("/tmp/worktrees") },
           automation,
-          defaultProfileID: defaultProfile.id,
         },
         accent: "blue",
         isExpanded: false,
@@ -654,10 +650,7 @@ describe("cascades", () => {
       const owner = project();
       const profileValue = profile();
       await database.launchProfiles.save(profileValue);
-      await database.projects.save({
-        ...owner,
-        settings: { ...owner.settings, defaultProfileID: profileValue.id },
-      });
+      await database.projects.save(owner);
 
       const attached = terminal({ profileID: profileValue.id });
       const value = worktreeSession(owner.id, {
@@ -672,7 +665,6 @@ describe("cascades", () => {
 
       expect(read?.terminals).toHaveLength(1);
       expect(read?.terminals[0]?.profileID).toBeUndefined();
-      expect((await database.projects.find(owner.id))?.settings.defaultProfileID).toBeUndefined();
     });
   });
 });

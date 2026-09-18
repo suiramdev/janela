@@ -1,5 +1,5 @@
 import type { Accent } from "./accent.ts";
-import type { AbsolutePath, Instant, LaunchProfileID, ProjectID } from "./identifiers.ts";
+import type { AbsolutePath, Instant, ProjectID } from "./identifiers.ts";
 
 export interface Project {
   readonly id: ProjectID;
@@ -23,7 +23,6 @@ export type Forge = "gitHub" | "gitLab";
 export interface ProjectSettings {
   worktreeRoot: WorktreeRoot;
   automation: AutomationScripts;
-  defaultProfileID?: LaunchProfileID;
 }
 
 export type WorktreeRoot =

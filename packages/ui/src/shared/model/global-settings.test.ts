@@ -1,21 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
-import { newLaunchProfileID } from "@janela/core";
-
 import {
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_SIZE_BOUNDS,
   attentionPreferences,
-  withDefaultProfileID,
   withTerminalFontFamily,
   withTerminalFontSize,
 } from "./global-settings.ts";
 
 describe("the defaults", () => {
-  test("declare no font override and no default profile", () => {
+  test("declare no font override", () => {
     expect(Object.hasOwn(DEFAULT_GLOBAL_SETTINGS, "terminalFontFamily")).toBe(false);
-    expect(Object.hasOwn(DEFAULT_GLOBAL_SETTINGS, "defaultProfileID")).toBe(false);
   });
 
   test("leave the bell quiet", () => {
@@ -71,22 +67,6 @@ describe("withTerminalFontSize", () => {
     const settings = withTerminalFontFamily(DEFAULT_GLOBAL_SETTINGS, "Menlo");
 
     expect(withTerminalFontSize(settings, 16).terminalFontFamily).toBe("Menlo");
-  });
-});
-
-describe("withDefaultProfileID", () => {
-  test("sets a profile", () => {
-    const profileID = newLaunchProfileID();
-
-    expect(withDefaultProfileID(DEFAULT_GLOBAL_SETTINGS, profileID).defaultProfileID).toBe(
-      profileID,
-    );
-  });
-
-  test("clearing removes the key, so 'no default' survives a round trip", () => {
-    const set = withDefaultProfileID(DEFAULT_GLOBAL_SETTINGS, newLaunchProfileID());
-
-    expect(Object.hasOwn(withDefaultProfileID(set, undefined), "defaultProfileID")).toBe(false);
   });
 });
 

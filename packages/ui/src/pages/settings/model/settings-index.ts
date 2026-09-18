@@ -11,7 +11,6 @@ export type SettingsSectionID =
   | "notificationsBell"
   | "notificationsAgents"
   | "shortcuts"
-  | "profilesDefault"
   | "profilesList"
   | "integrationsHooks"
   | "closingConfirmation"
@@ -19,7 +18,6 @@ export type SettingsSectionID =
   | "daemon"
   | "daemonState"
   | "daemonStop"
-  | "projectSessions"
   | "projectWorktrees"
   | "projectAutomation"
   | "automationWorktreeCreated"
@@ -93,18 +91,14 @@ export const SHORTCUTS_SECTION: SettingsSection = {
   keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
 };
 
-export const PROFILES_DEFAULT_SECTION: SettingsSection = {
-  id: "profilesDefault",
-  title: "New terminals",
-  fields: ["Default launch profile"],
-  keywords: ["default", "shell", "login shell", "zsh", "bash", "fallback"],
-};
-
 export const PROFILES_LIST_SECTION: SettingsSection = {
   id: "profilesList",
   title: "Profiles",
+  hint: "A profile is a saved command and environment. Every new terminal starts your login shell; a profile is what a session's terminal was created with.",
   fields: [],
   keywords: [
+    "profile",
+    "login shell",
     "agent",
     "command",
     "argument",
@@ -204,14 +198,6 @@ export const DAEMON_STOP_SECTION: SettingsSection = {
   ],
 };
 
-export const PROJECT_SESSIONS_SECTION: SettingsSection = {
-  id: "projectSessions",
-  title: "Sessions",
-  hint: "What this project's sessions start in.",
-  fields: ["Default launch profile"],
-  keywords: ["profile", "default", "shell", "agent"],
-};
-
 export const PROJECT_WORKTREES_SECTION: SettingsSection = {
   id: "projectWorktrees",
   title: "Worktrees",
@@ -293,8 +279,8 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     id: "integrations",
     title: "Integrations",
     description:
-      "The launch profiles that start claude, codex, omp or a shell in a new terminal, and the hooks those agents can use to tell Janela what they are doing. Janela starts them and listens; it does not wrap, parse or manage what they do.",
-    sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION, INTEGRATIONS_HOOKS_SECTION],
+      "The launch profiles that name a command for claude, codex, omp or a shell, and the hooks those agents can use to tell Janela what they are doing. Janela starts them and listens; it does not wrap, parse or manage what they do.",
+    sections: [PROFILES_LIST_SECTION, INTEGRATIONS_HOOKS_SECTION],
   },
   {
     id: "permissions",
@@ -316,7 +302,6 @@ export const PROJECT_PANE_DESCRIPTION =
 
 export function projectSections(project: Project): readonly SettingsSection[] {
   return [
-    PROJECT_SESSIONS_SECTION,
     ...(supportsWorktrees(project) ? [PROJECT_WORKTREES_SECTION] : []),
     PROJECT_AUTOMATION_SECTION,
     ...AUTOMATION_EVENTS.map((event) => AUTOMATION_SECTION[event]),

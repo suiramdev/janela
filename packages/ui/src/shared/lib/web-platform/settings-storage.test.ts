@@ -53,6 +53,15 @@ describe("parseSettings", () => {
     expect(settings.notifiesWhenAgentWaits).toBe(true);
   });
 
+  test("a file written when there was a default profile reads as the defaults, not as a default", () => {
+    const settings = parseSettings(
+      JSON.stringify({ defaultProfileID: "1b4e28ba-2fa1-11d2-883f-0016d3cca427" }),
+    );
+
+    expect(settings).toEqual(DEFAULT_GLOBAL_SETTINGS);
+    expect(Object.hasOwn(settings, "defaultProfileID")).toBe(false);
+  });
+
   test("a font size from another era is clamped rather than trusted", () => {
     expect(parseSettings(JSON.stringify({ terminalFontSize: 400 })).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.maximum,

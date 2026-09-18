@@ -51,7 +51,6 @@ import {
   type SettingsDraft,
   type SettingsRoute,
   type SettingsTabID,
-  draftProfiles,
   draftProjectSettings,
   draftSettings,
   sameRoute,
@@ -461,8 +460,6 @@ function PaneBody(
         key={project.id}
         project={project}
         settings={draftProjectSettings(draft, project)}
-        profiles={draftProfiles(draft, props.profiles)}
-        availability={props.availability}
         onChange={changeProject}
       />
     );
@@ -487,8 +484,6 @@ function PaneBody(
         <SettingsProfiles
           profiles={props.profiles}
           availability={props.availability}
-          settings={settings}
-          onChangeSettings={changeSettings}
           draft={draft}
           onChangeDraft={onChangeDraft}
         />

@@ -67,7 +67,7 @@ const PANE_COPY = {
   appearance: "Font family",
   notifications: "rings the bell",
   shortcuts: "Close Pane",
-  integrations: "Default launch profile",
+  integrations: "saved command and environment",
   permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
 
@@ -321,15 +321,14 @@ describe("the pane", () => {
     ).toContain('value="/tmp/trees"');
   });
 
-  test("a profile renamed but not saved reads the same in every picker", () => {
+  test("a profile renamed but not saved reads renamed in the list", () => {
     const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...claude, name: "Opus" }));
+    const markup = renderToStaticMarkup(
+      <SettingsPane {...props(tabRoute("integrations"), PROJECTS, draft)} />,
+    );
 
-    for (const route of [tabRoute("integrations"), projectRoute(JANELA)]) {
-      const markup = renderToStaticMarkup(<SettingsPane {...props(route, PROJECTS, draft)} />);
-
-      expect(markup).toContain("Opus");
-      expect(markup).not.toContain("Claude Code");
-    }
+    expect(markup).toContain("Opus");
+    expect(markup).not.toContain("Claude Code");
   });
 
   test("carries no Save of its own: the bar is a sibling of the panel", () => {

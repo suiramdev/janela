@@ -37,6 +37,8 @@ const OTHER = fakeProject({ name: "api" });
 
 const HANGING_TEARDOWN = { sessionTeardown: { script: "docker compose down", timeoutSeconds: 0 } };
 
+const DEV_SCRIPT = { sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } };
+
 describe("what blocks a save", () => {
   test("nothing, for a draft that has not broken anything", () => {
     expect(draftViolations(EMPTY_SETTINGS_DRAFT)).toEqual([]);
@@ -131,9 +133,9 @@ describe("what a save writes", () => {
     expect(draftSettingsToSave(draft, NOTHING_SAVED)).toBe(DEFAULT_GLOBAL_SETTINGS);
   });
 
-  test("one message per edit, profiles before the projects that may name them", () => {
+  test("one message per edit, profiles before the projects saved beside them", () => {
     const added = profileDraft(fakeProfile({ name: "Codex" }));
-    const settings = fakeSettings({ defaultProfileID: added.profile.id });
+    const settings = fakeSettings({ automation: DEV_SCRIPT });
 
     const draft = withDraftProjectSettings(
       withoutDraftProfile(withDraftProfile(EMPTY_SETTINGS_DRAFT, added), CLAUDE.id, STORED),
@@ -184,14 +186,14 @@ describe("what a save writes", () => {
     const again = withDraftProjectSettings(
       saved,
       PROJECT.id,
-      fakeSettings({ defaultProfileID: CLAUDE.id }),
+      fakeSettings({ automation: DEV_SCRIPT }),
     );
 
     expect(settingsDraftRequests(again, saved)).toEqual([
       {
         type: "updateProjectSettings",
         projectID: PROJECT.id,
-        settings: fakeSettings({ defaultProfileID: CLAUDE.id }),
+        settings: fakeSettings({ automation: DEV_SCRIPT }),
       },
     ]);
   });

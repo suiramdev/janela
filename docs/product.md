@@ -71,10 +71,15 @@ Every concept a user must learn is a tax. Janela's concept budget:
 | **Project** | The thing you add once so that "new branch" and "run the setup script" are one step. |
 | **Session** | The thing you switch between. Unavoidable. |
 | **Terminal** | A running program. Unavoidable. |
-| **Launch profile** | Makes "start Claude Code here" a keystroke. |
+| **Launch profile** | Names a command and its environment once, so a terminal can be created with it rather than typed into. |
 
 That is four. Adding a fifth requires deleting one, or an argument written down
 here for why the tax is worth it.
+
+A launch profile is never chosen on the user's behalf. There is no global default and
+no per-project default: every new terminal, a session's first and every split
+included, starts the user's login shell. A profile is what a terminal was *created
+with*, which is a fact about that terminal — not a setting that decides for one.
 
 Note what the hierarchy is *not*: arbitrary nesting. It is exactly two levels deep,
 always, and the second level is flat. Sessions do not contain sessions, projects do

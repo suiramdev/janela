@@ -704,7 +704,7 @@ positional shape is deliberate — a sidebar test reads better as
   says, and a match on one shows the section's own title rather than the keyword —
   otherwise search would teach vocabulary the UI has retired.
 - **Search, because reading the sidebar is not finding.** Four panes and a row per
-  project is already more than the eye scans, and a project pane holds seven sections.
+  project is already more than the eye scans, and a project pane holds five sections.
   The results are one row per *pane*, not one per match: that keeps the list short,
   keeps the `tablist` exactly as long as the number of panes it can reach, and leaves
   every row a real tab with a unique id. The row says which pane and which section
@@ -737,8 +737,6 @@ positional shape is deliberate — a sidebar test reads better as
   project the mirror no longer has renders nothing and sends navigation back to the
   first pane — derived rather than written back, because a store write during render
   notifies subscribers mid-render.
-- The project pane reads the *draft's* profiles, so a profile renamed on Launch
-  profiles reads the same here before either is saved.
 - **Every pane is headed the same way**, by `PaneHeader`: title, then the directory
   when it is a project, then one line saying what the pane is for. The project pane
   used to build its own heading and the tab panes another, which is how the two
@@ -893,10 +891,18 @@ daemon's and needs no permission.
 
 ### `ui/launch-profiles.tsx`
 
-- **Unavailable profiles are visible here** although the picker hides them: hiding
-  exists so the user is never offered something that cannot start, and this is the one
-  surface where the problem can be *fixed*. A profile you cannot see is a profile you
-  cannot repair — hence dimmed, not hidden.
+- **Unavailable profiles are marked, not hidden.** A profile whose executable is not on
+  the user's `PATH` is dimmed and badged here rather than dropped: this is the one
+  surface where the problem can be *fixed*, and a profile you cannot see is a profile
+  you cannot repair.
+- **There is no default to choose.** The pane used to open with a *New terminals*
+  section holding a global default-profile select, and the list marked the chosen row
+  with a Default badge. Both are gone, because every new terminal — a session's first
+  included — starts the user's login shell. The Profiles section's hint now says what a
+  profile *is* (a saved command and environment, and what a session's terminal was
+  created with) rather than naming a fallback nothing reads. No client surface sends
+  `profileID` on `createTerminal` any more; the field stays on the wire for a caller
+  that names one on purpose.
 - Built-ins are editable (the ones we ship are guesses about the user's setup), and
   neither deletable nor renamable — both consequences of seeding by name on every open.
 - The pane takes the draft rather than a value and a callback, because adding,
@@ -950,6 +956,12 @@ daemon's and needs no permission.
   `/Users/…` has a relative path for a keystroke.
 - The directory is shown under the name, because two clones of one repository are two
   projects with the same name.
+- **It chooses nothing about what a terminal starts.** The pane's first section was
+  *Sessions*, one field wide: a default launch profile falling back to the global one.
+  The section is deleted rather than left empty — a card with a heading and no control
+  is a question the user cannot answer, and search would offer a row that scrolls to
+  nothing. A repository's pane is Worktrees and Automation; a plain folder's is
+  Automation alone.
 
 ### `ui/fields.tsx`
 
@@ -962,10 +974,6 @@ nothing about that. Keyboard-reachable with the platform focus ring left alone, 
   default rather than a broken `font-size`.
 - The switch's `htmlFor` reaches the hidden checkbox Base UI mirrors, while
   `aria-labelledby` names the visible switch, which is what a screen reader lands on.
-- `ProfileSelect` lists available profiles only — an uninstalled tool is an advert —
-  plus the selected one even if it became unavailable, because a select that silently
-  drops the stored value shows the user a setting they never made. The chosen id is
-  matched against the rendered options, so the lookup is both validation and conversion.
 - `Violations` renders a list even for one entry, so a second violation does not change
   the shape of the surface under the user's eyes.
 - `Section` is a `fieldset`/`legend`, because a screen reader announces the group when
@@ -1181,15 +1189,15 @@ than a repository, and there is deliberately no per-session tier.
 
 **Why client state, not daemon state.** Every field is about rendering or interrupting,
 and both are facts only a client holds. A CLI has no use for any of it, which is the
-test for whether something belongs on the wire. `defaultProfileID` looks shared and is
-not: it is the fallback for a project that expressed no preference, and the project's own
-`defaultProfileID` — which *is* daemon state — wins.
+test for whether something belongs on the wire.
 
+- There is no default-profile field. It was the fallback for a project that expressed
+  no preference, with the project's own choice winning; both are gone, and every new
+  terminal starts the user's login shell.
 - An absent `terminalFontFamily` is the default stack, which is not the same as an empty
   string. The key is *removed* rather than set to `undefined`, because
   `exactOptionalPropertyTypes` makes those different types and a persisted
-  `{"terminalFontFamily": null}` would read back as an override to nothing. Same rule for
-  `defaultProfileID`.
+  `{"terminalFontFamily": null}` would read back as an override to nothing.
 - `notifiesOnBell` is off by default, because programs ring the bell for reasons the user
   has not agreed are important. An explicit OSC 9 or OSC 777 delivers regardless.
 - `notifiesWhenAgentFinishes` and `notifiesWhenAgentWaits` are on by default, and the
@@ -1472,7 +1480,8 @@ exported from the package index; the Tauri-only ports (Finder, Terminal.app,
   than every setting; the font size goes through `withTerminalFontSize`, so the
   bounds are enforced in one place. A silenced-confirmation key this build does not
   know is dropped rather than carried — a question that no longer exists must not
-  silence the one that replaced it.
+  silence the one that replaced it. A default-profile id an older build wrote is not in
+  the schema at all, so it is read past and dropped with it.
 - `keyboard-commands.ts` — a `CommandSource` over `keydown`, for a client with no
   native menu bar to own the accelerators. `commandForChord` matches
   `Command.accelerator` against `KeyboardEvent.code` (layout-independent: `⌘⇧]` is

@@ -34,6 +34,20 @@ describe("the index", () => {
     expect(projectSections(NOTES).map((section) => section.id)).not.toContain("projectWorktrees");
     expect(projectSections(JANELA).map((section) => section.id)).toContain("projectWorktrees");
   });
+
+  test("the Integrations tab lists the profiles and the hooks, and no default", () => {
+    const integrations = SETTINGS_TAB_INFO.find((info) => info.id === "integrations");
+
+    expect(integrations?.sections.map((section) => section.id)).toEqual([
+      "profilesList",
+      "integrationsHooks",
+    ]);
+  });
+
+  test("nothing is searchable for a default launch profile, because there is none", () => {
+    expect(settingsMatches("default launch profile", PROJECTS)).toEqual([]);
+    expect(settingsMatches("default profile", PROJECTS)).toEqual([]);
+  });
 });
 
 describe("searching", () => {

@@ -352,7 +352,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
       await this.runAutomation("sessionStart", resolved.project, session);
     }
 
-    await this.addFirstTerminal(session, resolved.project);
+    await this.addFirstTerminal(session);
 
     this.log.info("session created", {
       session: session.id,
@@ -899,19 +899,14 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     await this.publish();
   }
 
-  private async addFirstTerminal(session: Session, project: Project | undefined): Promise<void> {
-    const profileID = project?.settings.defaultProfileID;
-    const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
-
+  private async addFirstTerminal(session: Session): Promise<void> {
     const descriptor: TerminalDescriptor = {
       id: newTerminalID(),
-      title: profile?.name ?? "Shell",
+      title: "Shell",
       startsAutomatically: true,
       role: { kind: "user" },
       createdAt: now(),
     };
-
-    if (profile !== undefined) descriptor.profileID = profile.id;
 
     this.appendTerminalTab(session, descriptor, { focus: true });
     await this.deps.repository.save(session);

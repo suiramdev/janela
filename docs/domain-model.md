@@ -91,9 +91,13 @@ The only per-scope settings that exist. Everything else is global.
 public struct ProjectSettings: Hashable, Sendable, Codable {
     public var worktreeRoot: WorktreeRoot        // where new worktrees are placed
     public var automation: [AutomationEvent: AutomationScript]   // see below
-    public var defaultProfileID: LaunchProfileID?
 }
 ```
+
+There is no per-project default launch profile, and no global one either: every
+new terminal, a session's first included, starts the user's login shell. A launch
+profile is what a terminal was created with, never what a project or a setting
+decides on the user's behalf.
 
 Per-*project* settings earn their place because a project is where the differences
 actually live: one repo needs `pnpm install`, another needs a Python venv, a third

@@ -1,5 +1,4 @@
 import type { AttentionPreferences } from "@janela/client";
-import type { LaunchProfileID } from "@janela/core";
 
 import type { CommandID } from "../config/index.ts";
 
@@ -15,8 +14,6 @@ export interface GlobalSettings {
   readonly notifiesWhenAgentFinishes: boolean;
 
   readonly notifiesWhenAgentWaits: boolean;
-
-  readonly defaultProfileID?: LaunchProfileID;
 
   readonly silencedConfirmations?: readonly ConfirmationKey[];
 
@@ -74,19 +71,6 @@ export function withTerminalFontSize(settings: GlobalSettings, size: number): Gl
   );
 
   return { ...settings, terminalFontSize: clamped };
-}
-
-export function withDefaultProfileID(
-  settings: GlobalSettings,
-  profileID: LaunchProfileID | undefined,
-): GlobalSettings {
-  if (profileID === undefined) {
-    const { defaultProfileID: _removed, ...rest } = settings;
-
-    return rest;
-  }
-
-  return { ...settings, defaultProfileID: profileID };
 }
 
 export function isConfirmationSilenced(settings: GlobalSettings, key: ConfirmationKey): boolean {

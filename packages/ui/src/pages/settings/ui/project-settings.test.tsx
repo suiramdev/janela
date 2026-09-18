@@ -1,27 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import type { AutomationScripts, LaunchProfile, Project } from "@janela/core";
+import type { AutomationScripts, Project } from "@janela/core";
 import { absolutePath, AUTOMATION_VARIABLES } from "@janela/core";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import {
-  fakeProfile,
-  fakeProject,
-  fakeSettings,
-  fakeShellProfile,
-  reportedAvailable,
-} from "../../../shared/lib/test-fakes/index.ts";
+import { fakeProject, fakeSettings } from "../../../shared/lib/test-fakes/index.ts";
 import { ProjectSettingsPane } from "./project-settings.tsx";
 
 const noop = (): void => {};
-
-const SHELL = fakeShellProfile();
-
-const CLAUDE = fakeProfile({ name: "Claude Code" });
-
-const PROFILES = [SHELL, CLAUDE];
-
-const AVAILABLE = reportedAvailable(SHELL, CLAUDE);
 
 const REPOSITORY = fakeProject();
 
@@ -58,15 +44,9 @@ function projectWith(automation: AutomationScripts): Project {
   return { ...REPOSITORY, settings: fakeSettings({ automation }) };
 }
 
-function paneMarkup(project: Project, profiles: readonly LaunchProfile[] = PROFILES): string {
+function paneMarkup(project: Project): string {
   return renderToStaticMarkup(
-    <ProjectSettingsPane
-      project={project}
-      settings={project.settings}
-      profiles={profiles}
-      availability={AVAILABLE}
-      onChange={noop}
-    />,
+    <ProjectSettingsPane project={project} settings={project.settings} onChange={noop} />,
   );
 }
 
@@ -159,8 +139,6 @@ describe("the commit model", () => {
         settings={fakeSettings({
           automation: { sessionStart: { script: "make dev", timeoutSeconds: 30 } },
         })}
-        profiles={PROFILES}
-        availability={AVAILABLE}
         onChange={noop}
       />,
     );
@@ -180,11 +158,5 @@ describe("worktree settings", () => {
 
   test("a custom root shows its directory", () => {
     expect(paneMarkup(CUSTOM_ROOT)).toContain('value="/Users/me/trees"');
-  });
-});
-
-describe("the project's default profile", () => {
-  test("offers to fall back to the global default rather than to nothing", () => {
-    expect(paneMarkup(NO_SCRIPTS)).toContain("Use the global default");
   });
 });

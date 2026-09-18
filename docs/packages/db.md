@@ -416,6 +416,23 @@ plain `ALTER TABLE … DROP COLUMN`, which SQLite has had since 3.35 and the bun
 engine is well past. The forward test seeds a project at v2 with the switch off and
 asserts its other settings survive and the column is gone.
 
+**v4 — `20260918110000_drop_default_profile`.** `Project.defaultProfileId` is
+dropped: every new terminal starts the login shell, so no project names a profile.
+The column was a foreign key, and SQLite refuses to `DROP COLUMN` a column named
+in a `FOREIGN KEY` clause, so the table is rebuilt the way Prisma's own
+`RedefineTables` does it — create `new_Project`, copy, drop, rename, recreate the
+unique index. The trap is the drop: with `foreign_keys = ON`, `DROP TABLE "Project"`
+performs an implicit `DELETE FROM`, and that delete *cascades* into every session
+and automation script (measured on a seeded copy: the session count went from 1 to
+0). A `PRAGMA foreign_keys` cannot change inside a transaction, so the runner turns
+it off *before* the transaction for any migration that says `rebuildsTables: true`,
+runs `PRAGMA foreign_key_check` after the script and refuses to commit if a row
+would dangle, and turns enforcement back on afterwards whatever happened. The
+forward test seeds a project with a default profile and a session at v3 and asserts
+the session survives, the column is gone and `PRAGMA foreign_keys` reads 1 again;
+flipping `rebuildsTables` off makes that test and the v2 forward test fail, which
+is the cascade doing exactly what it is meant to do.
+
 ## repositories.ts, prisma-repositories.ts
 
 `repositories.ts` is the interface half and names only `@janela/core` types;

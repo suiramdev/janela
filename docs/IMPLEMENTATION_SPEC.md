@@ -1263,9 +1263,12 @@ export function forgeExecutable(forge: Forge): string;
 export interface ProjectSettings {
   worktreeRoot: WorktreeRoot;
   automation: readonly AutomationCommand[];
-  defaultProfileID?: LaunchProfileID;
   isForgeEnabled: boolean;
 }
+
+// Shipped: `automation` became `AutomationScripts` (protocol 10), `isForgeEnabled`
+// left (v3 migration), and a `defaultProfileID` that once sat here left with it
+// (protocol 12, v4 migration) — every new terminal starts the login shell.
 
 export type WorktreeRoot =
   | { readonly kind: "siblingDirectory" }
@@ -4261,11 +4264,12 @@ in `packages/db/src/repositories.ts`, and reads back through them:
   `packages/core/src/session.ts` — plus a project with its own session; remove
   the project; assert `sessions.standalone()` still returns it. It belongs to
   no project, so nothing done to a project can take it away.
-- **Deleting a launch profile nulls a project's default.** Point a project's
-  `defaultProfileID` at a profile (`defaultProfileId` with `onDelete: SetNull`
-  in the schema), remove the profile, assert `projects.find` returns the
-  project with no default rather than failing to load. A dangling default must
-  degrade to "no default", never to an unreadable project.
+- **Deleting a launch profile keeps the terminal that used it.** Point a
+  terminal's `profileID` at a profile, remove the profile, assert
+  `sessions.find` returns the terminal with no profile rather than failing to
+  load. A dangling reference must degrade to "no profile", never to an
+  unreadable record. (A project used to carry a default profile with the same
+  rule; the field is gone — every new terminal starts the login shell.)
 - **Forward from the previous version.** Open a database at the schema version
   before the change, migrate, and assert the data survived. This is the test
   that stops us destroying a user's session list, and every migration gets one.

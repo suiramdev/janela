@@ -1,10 +1,4 @@
 import {
-  availableProfiles,
-  type LaunchProfile,
-  type LaunchProfileAvailability,
-  type LaunchProfileID,
-} from "@janela/core";
-import {
   Field,
   FieldContent,
   FieldDescription,
@@ -14,8 +8,6 @@ import {
   FieldLegend,
   FieldSet,
   Input,
-  NativeSelect,
-  NativeSelectOption,
   Switch,
 } from "@janela/design";
 import type { ChangeEvent, ReactElement, ReactNode } from "react";
@@ -46,16 +38,6 @@ export interface SwitchFieldProps {
   readonly isOn: boolean;
   readonly onChange: (isOn: boolean) => void;
   readonly hint?: string | undefined;
-}
-
-export interface ProfileSelectProps {
-  readonly label: string;
-  readonly profiles: readonly LaunchProfile[];
-  readonly availability: LaunchProfileAvailability;
-  readonly value: LaunchProfileID | undefined;
-  readonly onChange: (profileID: LaunchProfileID | undefined) => void;
-  readonly unsetTitle: string;
-  readonly hint?: string;
 }
 
 export function TextField(props: TextFieldProps): ReactElement {
@@ -138,38 +120,6 @@ export function SwitchField(props: SwitchFieldProps): ReactElement {
         {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
       </FieldContent>
       <Switch id={id} aria-labelledby={labelID} checked={props.isOn} onCheckedChange={handle} />
-    </Field>
-  );
-}
-
-export function ProfileSelect(props: ProfileSelectProps): ReactElement {
-  const { onChange, profiles, value } = props;
-  const id = useId();
-  const pickable = availableProfiles(profiles, props.availability);
-  const stored = profiles.find((profile) => profile.id === value);
-
-  const listed =
-    stored === undefined || pickable.includes(stored) ? pickable : [stored, ...pickable];
-
-  const handle = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      onChange(profiles.find((profile) => profile.id === event.target.value)?.id);
-    },
-    [onChange, profiles],
-  );
-
-  return (
-    <Field>
-      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
-      <NativeSelect id={id} className="w-full" value={value ?? ""} onChange={handle}>
-        <NativeSelectOption value="">{props.unsetTitle}</NativeSelectOption>
-        {listed.map((profile) => (
-          <NativeSelectOption key={profile.id} value={profile.id}>
-            {profile.name}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
-      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
     </Field>
   );
 }

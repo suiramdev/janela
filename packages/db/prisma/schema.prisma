@@ -52,7 +52,6 @@ model LaunchProfile {
   isAgent    Boolean @default(false)
   isBuiltIn  Boolean @default(false)
 
-  projects  Project[]
   terminals Terminal[]
 }
 
@@ -72,9 +71,6 @@ model Project {
   accent           String  @default("none")
   isExpanded       Boolean @default(true)
   addedAt          DateTime
-
-  defaultProfileId String?
-  defaultProfile   LaunchProfile? @relation(fields: [defaultProfileId], references: [id], onDelete: SetNull)
 
   sessions   Session[]
   automation AutomationScript[]

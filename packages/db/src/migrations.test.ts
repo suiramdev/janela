@@ -303,6 +303,59 @@ describe("migrate", () => {
     });
   });
 
+  test("a project at the third schema loses its default profile and keeps every session", async () => {
+    await withTemporaryDirectory(async (directory) => {
+      const path = join(directory, "janela.sqlite");
+      const { logger } = recordingLogger();
+      const priors = MIGRATIONS.slice(0, 3);
+
+      const connection: SqlDriverAdapter = await janelaSqliteAdapter({ path }).connect();
+
+      expect(await applyMigrations(connection, priors, logger)).toBe(3);
+
+      const seed = new Database(path);
+      seed.run(
+        `INSERT INTO "LaunchProfile" (id, name, iconName, command, environment)
+           VALUES ('lp', 'Claude Code', 'sparkles', '["claude"]', '{}')`,
+      );
+      seed.run(
+        `INSERT INTO "Project" (id, name, directory, addedAt, defaultProfileId)
+           VALUES ('p', 'janela', '/tmp/janela', 0, 'lp')`,
+      );
+      seed.run(
+        `INSERT INTO "Session" (id, projectId, name, directory, backingKind, layout, position, createdAt, lastActiveAt)
+           VALUES ('s', 'p', 'feature', '/tmp/janela', 'projectDirectory', '{}', 0, 0, 0)`,
+      );
+      seed.close();
+
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 3);
+
+      const columns = readOnly(path, (database) =>
+        database
+          .query<{ name: string }, []>(`SELECT name FROM pragma_table_info('Project')`)
+          .all()
+          .map((column) => column.name),
+      );
+      const sessions = readOnly(path, (database) =>
+        database
+          .query<{ id: string; projectId: string }, []>(`SELECT id, projectId FROM "Session"`)
+          .all(),
+      );
+      const foreignKeys = await connection.queryRaw({
+        sql: "PRAGMA foreign_keys",
+        args: [],
+        argTypes: [],
+      });
+
+      expect(columns).not.toContain("defaultProfileId");
+      expect(columns).toContain("directory");
+      expect(sessions).toEqual([{ id: "s", projectId: "p" }]);
+      expect(foreignKeys.rows).toEqual([[1]]);
+
+      await connection.dispose();
+    });
+  });
+
   test("an edited shipped migration is refused rather than re-run", async () => {
     await withTemporaryDirectory(async (directory) => {
       const path = join(directory, "janela.sqlite");

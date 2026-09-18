@@ -29,6 +29,8 @@ const PROJECT = fakeProject();
 
 const OTHER = fakeProject({ name: "api" });
 
+const DEV_SCRIPT = { sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } };
+
 describe("global settings", () => {
   test("read as the stored value until they are edited", () => {
     expect(draftSettings(EMPTY_SETTINGS_DRAFT, DEFAULT_GLOBAL_SETTINGS)).toBe(
@@ -113,10 +115,10 @@ describe("a project's settings", () => {
     const draft = withDraftProjectSettings(
       EMPTY_SETTINGS_DRAFT,
       PROJECT.id,
-      fakeSettings({ defaultProfileID: CLAUDE.id }),
+      fakeSettings({ automation: DEV_SCRIPT }),
     );
 
-    expect(draftProjectSettings(draft, PROJECT).defaultProfileID).toBe(CLAUDE.id);
+    expect(draftProjectSettings(draft, PROJECT).automation).toEqual(DEV_SCRIPT);
     expect(draftProjectSettings(draft, OTHER)).toBe(OTHER.settings);
   });
 
@@ -126,10 +128,10 @@ describe("a project's settings", () => {
     const twice = withDraftProjectSettings(
       once,
       PROJECT.id,
-      fakeSettings({ defaultProfileID: CLAUDE.id }),
+      fakeSettings({ automation: DEV_SCRIPT }),
     );
 
     expect(twice.projects).toHaveLength(1);
-    expect(draftProjectSettings(twice, PROJECT).defaultProfileID).toBe(CLAUDE.id);
+    expect(draftProjectSettings(twice, PROJECT).automation).toEqual(DEV_SCRIPT);
   });
 });

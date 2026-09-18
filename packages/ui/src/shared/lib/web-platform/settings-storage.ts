@@ -1,4 +1,3 @@
-import { identifier } from "@janela/core";
 import { Effect, Option, Result, Schema } from "effect";
 
 import { isCommandID, parseAccelerator } from "../../config/index.ts";
@@ -21,9 +20,6 @@ const StoredSettings = Schema.Struct({
   notifiesOnBell: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
   notifiesWhenAgentFinishes: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
   notifiesWhenAgentWaits: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
-  defaultProfileID: Schema.optionalKey(Schema.String.check(Schema.isUUID())).pipe(
-    Schema.catchDecoding(absent),
-  ),
   silencedConfirmations: Schema.optionalKey(Schema.Array(Schema.String)).pipe(
     Schema.catchDecoding(absent),
   ),
@@ -81,13 +77,6 @@ export function parseSettings(raw: string | null): GlobalSettings {
 
   if (fields.terminalFontFamily !== undefined && fields.terminalFontFamily.length > 0) {
     settings = { ...settings, terminalFontFamily: fields.terminalFontFamily };
-  }
-
-  if (fields.defaultProfileID !== undefined) {
-    settings = {
-      ...settings,
-      defaultProfileID: identifier<"LaunchProfile">(fields.defaultProfileID),
-    };
   }
 
   if (silenced.length > 0) settings = { ...settings, silencedConfirmations: silenced };
