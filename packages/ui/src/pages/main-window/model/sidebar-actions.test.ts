@@ -180,6 +180,20 @@ describe("createSidebarActions", () => {
 
     expect(sent).toEqual([{ type: "removeProject", projectID: projectID("p") }]);
   });
+
+  test("marking a session is one request carrying the verdict, with nothing to confirm", async () => {
+    const { target, sent, confirmations } = harness({ agrees: false });
+
+    createSidebarActions(target).markSession(sessionID("s"), true);
+    createSidebarActions(target).markSession(sessionID("s"), false);
+    await tick();
+
+    expect(sent).toEqual([
+      { type: "markSession", sessionID: sessionID("s"), unread: true },
+      { type: "markSession", sessionID: sessionID("s"), unread: false },
+    ]);
+    expect(confirmations.titles).toEqual([]);
+  });
 });
 
 describe("sessionRemovalPrompt", () => {

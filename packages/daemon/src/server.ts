@@ -158,6 +158,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
             terminals,
           }),
         ),
+      settled: (terminal) => terminalEvents.reconcile(terminal),
     });
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
@@ -170,24 +171,6 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       yield* terminals.inSession(session.id);
     }
   };
-
-  const frameLoop = createFrameLoop({
-    terminals,
-    liveTerminals: everyTerminal,
-    log,
-    hasRoom: (client) => {
-      const connection = connections.get(client);
-
-      return connection !== undefined && connection.output.size < connection.output.capacity;
-    },
-    deliver: (client, terminalID, bytes) => {
-      const connection = connections.get(client);
-
-      if (connection !== undefined) {
-        void connection.output.push(encodeOutput({ terminalID, bytes }));
-      }
-    },
-  });
 
   const enqueueControl = (connection: Connection, frame: Frame): void => {
     if (connection.closed) return;
@@ -213,6 +196,25 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
   const terminalEvents = createTerminalEvents({ broadcast, log });
 
   terminals.watch(terminalEvents);
+
+  const frameLoop = createFrameLoop({
+    terminals,
+    liveTerminals: everyTerminal,
+    log,
+    hasRoom: (client) => {
+      const connection = connections.get(client);
+
+      return connection !== undefined && connection.output.size < connection.output.capacity;
+    },
+    deliver: (client, terminalID, bytes) => {
+      const connection = connections.get(client);
+
+      if (connection !== undefined) {
+        void connection.output.push(encodeOutput({ terminalID, bytes }));
+      }
+    },
+    settled: terminalEvents.reconcile,
+  });
 
   async function closeConnection(connection: Connection, reason: CloseReason): Promise<void> {
     if (connection.closed) return;

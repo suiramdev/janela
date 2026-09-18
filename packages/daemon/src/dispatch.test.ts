@@ -654,6 +654,85 @@ describe("sessions", () => {
     expect(plans).toHaveLength(2);
   });
 
+  test("marking a session read lowers attention on each live terminal and announces it", async () => {
+    const session = fakeSession("s1");
+    const bell = fakeTerminal(terminalID(), {
+      sessionID: session.id,
+      state: { kind: "needsAttention" },
+    });
+    const finished = fakeTerminal(terminalID(), {
+      sessionID: session.id,
+      state: { kind: "needsAttention", activity: { kind: "finished", outcome: "completed" } },
+    });
+    const elsewhere = fakeTerminal(terminalID(), { state: { kind: "needsAttention" } });
+    const daemon = fixture({ sessions: [session], terminals: [bell, finished, elsewhere] });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
+    await peer.reply(1 as RequestID);
+    await peer.send(
+      request({ type: "markSession", id: 2 as RequestID, sessionID: session.id, unread: false }),
+    );
+
+    expect(await peer.reply(2 as RequestID)).toEqual({ type: "acknowledged", id: 2 as RequestID });
+    expect(bell.state).toEqual({ kind: "running" });
+    expect(finished.state).toEqual({
+      kind: "running",
+      activity: { kind: "finished", outcome: "completed" },
+    });
+    expect(elsewhere.markCalls).toEqual([]);
+
+    const announced = peer.controls.filter(
+      (message) => message.type === "state" && !message.update.isFullSnapshot,
+    );
+
+    expect(
+      announced.map((message) => (message.type === "state" ? message.update.terminalStates : {})),
+    ).toEqual([{ [bell.id]: { kind: "running" } }, { [finished.id]: finished.state }]);
+  });
+
+  test("marking a session unread raises attention on a quiet terminal", async () => {
+    const session = fakeSession("s1");
+    const shell = fakeTerminal(terminalID(), { sessionID: session.id });
+    const daemon = fixture({ sessions: [session], terminals: [shell] });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({ type: "markSession", id: 1 as RequestID, sessionID: session.id, unread: true }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("acknowledged");
+    expect(shell.state).toEqual({ kind: "needsAttention" });
+  });
+
+  test("marking an unknown session fails, and a verdict that is not a boolean is refused", async () => {
+    const session = fakeSession("s1");
+    const shell = fakeTerminal(terminalID(), { sessionID: session.id });
+    const daemon = fixture({ sessions: [session], terminals: [shell] });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "markSession",
+        id: 1 as RequestID,
+        sessionID: "nobody" as SessionID,
+        unread: true,
+      }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+
+    for (const [index, unread] of ["true", 1, null].entries()) {
+      const id = (index + 2) as RequestID;
+      // oxlint-disable-next-line no-await-in-loop
+      await peer.send(wireControl({ type: "markSession", id, sessionID: session.id, unread }));
+      // oxlint-disable-next-line no-await-in-loop
+      expect((await peer.reply(id)).type).toBe("failed");
+    }
+
+    expect(shell.markCalls).toEqual([]);
+  });
+
   test("a failure crosses the wire as a summary, and stderr appears nowhere", async () => {
     const daemon = fixture({
       sessionOverrides: {

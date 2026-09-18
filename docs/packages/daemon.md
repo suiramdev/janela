@@ -329,6 +329,15 @@ worktree. Only the answer to "also delete the directory" is theirs. `snapshotTex
 requires no attachment — reading what is on screen is the CLI's whole job, and it
 never renders.
 
+`markSession` is the one request that moves attention by hand. It checks the
+session exists and that `unread` decodes as a boolean — `decodeClientMessage`
+stops at the discriminant, so a peer could send `"true"` — then calls
+`markAttention` on every terminal the registry holds for that session and
+`settled` on each, because a flag moved here is a state change no emulator
+event will announce. Terminals with no process take the call and show nothing
+for it: `state` answers `idle` before it reads the flag, so "Mark as Unread" on a
+session whose terminals have all exited is a no-op the client already greys out.
+
 `integrations` answers with a **text** reply carrying
 `serializeIntegrationOverview`, the same shape as `removalPlan` and
 `projectBranches`: a report per harness, read from the user's own configuration
@@ -520,7 +529,14 @@ identical state, so a `working` heartbeat costs one map lookup, while a repeated
 
 `server.ts` also calls `reconcile` directly after `dispatch.input`: sending input
 clears attention on the terminal, and that is a state change no terminal event will
-announce, because it originated on this side.
+announce, because it originated on this side. Two more call sites exist for the
+same reason. The frame loop's `settled` hook is `reconcile`, invoked once per
+**full** repaint and never per delta: a full repaint is the moment
+`fullRepaintFor` lowers the flag, and before the hook existed the daemon knew a
+session had been looked at while every client kept drawing it unread until the
+next unrelated event. And `dispatch`'s `settled` option is the same function,
+which `markSession` calls per terminal after `markAttention` — a request that
+moves state the emulator will never announce.
 
 **Notification bodies are never logged** (non-negotiable 11). The relay carries
 them to clients and writes only shapes to the log: a terminal id, the attention's

@@ -314,10 +314,14 @@ never one it guesses at.
 `working` clears it, because the harness is the authority on whether it is
 blocked and may lower a flag its own earlier report raised. The two older
 clearings are unchanged: input sent to the terminal clears attention, and so does
-a client attaching and taking its full repaint. Neither clears the `activity` —
-"the user has looked" and "the agent is waiting for permission" are different
-facts, so a row stops glowing while still saying what the agent is doing. Only
-`start()` clears it, so a restarted agent does not open already finished.
+a client attaching and taking its full repaint — except while the activity is
+`waiting`, where looking is not answering and only input, the harness's next
+report or an explicit "Mark as Read" lowers it. A user may also move the flag by
+hand, per session, through `markSession`; it is the same flag, moved by the
+daemon. Nothing but `start()` clears the `activity` — "the user has looked" and
+"the agent is waiting for permission" are different facts, so a row stops
+glowing while still saying what the agent is doing, and a restarted agent does
+not open already finished.
 
 A session's status is **derived** from its terminals, never stored: a session is
 running if any terminal is running, wants attention if any unfocused terminal

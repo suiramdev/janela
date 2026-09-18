@@ -75,10 +75,23 @@ opening over them.
 
 ### `ui/app-sidebar.tsx`
 
-- **Two levels, never a third.** `sidebarRows` is flat because a recursive row type
-  would quietly permit a third level, and two is a product decision
-  (§ Non-negotiables 2). One group headed *Sessions* holds every row: a session is
-  what the list is a list of, and a project is the indentation.
+- **Two levels, never a third, and they are the sidebar's own two.** The list
+  follows Fluid Functionalism's nesting solution — one *section* level and one
+  *parent* level, nothing below — so the product rule (§ Non-negotiables 2) and
+  the component's grammar say the same thing. *Sessions* is the section: a
+  `collapsible` `SidebarGroup` whose label is the toggle and whose filter and
+  New Project controls sit in the `SidebarGroupActions` cluster the label pads
+  itself past. A project is the parent: a `SidebarMenuButton` carrying the
+  project's glyph as its `icon`, its name as the weight-animated label, and a
+  trailing chevron in the `ml-auto` action-sized box, followed by a
+  `SidebarMenuSub open={isExpanded}` holding the project's sessions as
+  `SidebarMenuSubItem` rows. A standalone session is a plain `SidebarMenuItem`
+  in the same menu. The sub rows are always mounted — the sub-menu collapses on
+  its measured height rather than unmounting — which is what lets one hover
+  highlight glide from a parent into its children and back.
+- `sidebarRows` is a `SidebarRow` array where a project row *owns* its
+  `SessionRow`s and a `SessionRow` owns nothing: two named shapes instead of one
+  recursive one, so a third level is a type error rather than a temptation.
 - The magnifier opens the Command Menu; this list carries no search field of its
   own, because one query answered two different ways is worse than one answer. The
   status filter stays, because it is a question about state.
@@ -105,15 +118,19 @@ opening over them.
   size arrives as a number, so no per-render style object), and the tint is applied
   last because `SidebarMenuButton` hands its icon the row's lit/unlit colour and a
   session's state is not a hover state.
-- **Six statuses, and only four paint.** `attention` and `failed` animate, in
-  `text-attention` and `text-failure`. `done` is `text-success` and deliberately
-  **static**: a finished agent is news, not an alarm, and a green dot pulsing in
-  a list of thirty rows is a second alarm competing with the real one. `working`
-  is an animated glyph in the muted foreground, because the row is saying "not
-  yet" rather than "look". `running` and `idle` are `invisible` — a live shell
-  says nothing the row does not already say — which is what retired the
-  `running` colour token in favour of `success` ([`design.md`](design.md)): it
-  lost its last reader when a plain running terminal stopped painting a dot.
+- **Four statuses, and three spinners.** The sidebar draws attention to agents
+  that are running, or have stopped and not yet been looked at, and nothing
+  else. `running` is the corner-spin glyph in the muted foreground: the row is
+  saying "not yet" rather than "look". `unread` is the ripple in
+  `text-attention` (blue), and it is the only one that pulses: news the user has
+  not had yet. `error` is the same ripple in `text-failure`, deliberately
+  **static** — an error is a state, not a fresh alarm, and a red dot pulsing in
+  a list of thirty rows competes with the blue one that wants a click. `idle` is
+  `invisible` — a live shell says nothing the row does not already say — which
+  is what retired the `running` colour token in favour of `success`
+  ([`design.md`](design.md)): it lost its last reader when a plain running
+  terminal stopped painting a dot, and `success` lost its sidebar reader when
+  "finished" stopped being its own state.
 - The status is also in the accessible name: a colour alone is a state a screen
   reader cannot read and a colour-blind user cannot distinguish.
 - Header controls and group actions are hoisted elements, because `render` takes an
@@ -124,11 +141,25 @@ opening over them.
   single choice.
 - `FilterRow` is its own component so each row owns its handler; a closure in the
   list would be a fresh function per row per render.
-- The project chevron is one mounted component rotated by the row, because swapping
-  the component per state remounts it and loses the animation.
+- The parent chevron follows the reference's two states: visible while the
+  project is closed (the reopen cue), hidden while open until the row is hovered
+  or holds focus, and rotated 90° while open. The rotation is a CSS transition on
+  the standalone `rotate` property — `transition-[opacity,rotate]` — at the
+  `--spring-fast` tier; `transition-transform` never covers Tailwind's `rotate-*`.
+  The chevron is a child of the button rather than its `icon` because the icon
+  slot belongs to the project's glyph, as it does in the reference.
+- The project glyph is an `IconComponent` built per project with `useMemo` keyed
+  on the two fields it reads, so the button's icon slot gets a stable component
+  type across renders and a new one only when the project itself changes.
+- A nested session row is a `SidebarMenuSubButton` rendered through a
+  `<button type="button">` template rather than its default anchor: a session is
+  selected, not navigated to, and the template carries the accessible name.
 - The context-menu trigger wraps the row rather than being it, so the hover action
   stays a sibling — `SidebarMenuAction` positions against the item and reveals on
-  `group/menu-item` hover.
+  `group/menu-item` hover. Only the project row carries one (New Session); a
+  session row has none, because its trailing gutter is where the status glyph's
+  news competes for the eye, and New Terminal is one right-click away in the
+  context menu and one ⌘ chord away in the window.
 - `EmptyState` says *which* nothing it is: "this filter found nothing" and "you have
   not added anything" call for different next actions, and neither repeats the
   buttons above.
@@ -570,29 +601,48 @@ it everywhere would make the gesture worthless.
   all five are destructive: a row that ends *more* programs must not look safer. They
   are dimmed rather than hidden, because a menu whose rows move depending on where in
   the strip you clicked cannot be learned.
+- Mark as Read / Mark as Unread is one row with one verb, chosen by `SessionMark`.
+  An `unread` session gets *Read*; anything else gets *Unread*, dimmed when it
+  could not take effect — a running or errored session outranks the flag in
+  `sessionStatus`, and a session with nothing live has no terminal to carry it.
+  Dimmed rather than hidden, for the same reason as the tab closes: a menu whose
+  rows move cannot be learned. The row sends `markSession` and nothing else; the
+  daemon moves the flag and the mirror repaints the glyph, so the client never
+  writes state it did not receive (§ Non-negotiables 6).
 
 ### `model/session-rows.ts`
 
-- A flat `SidebarRow` array, because a recursive row type would permit a third level.
+- A `SidebarRow` is either a session or a project that owns a list of
+  `SessionRow`s; the owned shape has no `kind` and no children, so the type
+  itself cannot express a third level. A project row carries *all* its sessions
+  whether or not it is expanded — the view's sub-menu collapses them in place.
 - `sessionStatus` is derived only from reported state: rendering an unreported
   terminal as running would be a lie this client invented (§ Non-negotiables 6).
 - Grouping happens here rather than through `SessionStore.inProject`, which builds a
   fresh array per call and would be a new reference every render.
 - `statusText` travels beside the colour, never instead of it.
-- **Six statuses in one precedence: attention, failed, done, working, running,
-  idle.** `attention` is a `needsAttention` with no activity or with a `waiting`
-  one, and it returns immediately — a question beats every other kind of news.
-  `done` is a `finished/completed` nobody has looked at yet; `working` is a
-  `running` terminal with `progress` or with a `working` report; `running` is
-  any other live terminal.
-- **Failure arrives from two places, and they rank differently.** An agent that
-  reported `finished/failed` is ranked *above* `done` and `working`; a non-zero
-  `exited` or a `failed` terminal is ranked *below* them, which is why the loop
-  collects `signalled` and `exited` as two flags and not one. A dev server that
-  died hours ago must not hide an agent that is working right now, and an agent
-  that stopped with an error is unseen news the user has not had yet. Both still
-  render as `failed`: the row says what it is, and the ordering only decides
-  which terminal in a session gets to speak for it.
+- **Four statuses in one precedence: error, running, unread, idle.** The session
+  glyph is the aggregate of its terminals, never one terminal's state: it runs
+  while *any* harness runs, it is unread only once *every* harness has stopped
+  and at least one stop has not been looked at, and an error is never hidden by
+  a sibling that is still working. A detailed view exposing each harness on its
+  own is the next thing to build on top of this; the session row is not it.
+- **Per terminal, the report decides and the attention flag only says whether
+  it was seen.** `working`, or a `progress` with no report, is `running`. A
+  `finished/completed`, a `waiting`, and a bare `needsAttention` — which is a
+  bell — are `unread` while the daemon's flag is up, and nothing once it is
+  down. What lowers it is the daemon's business, not this file's: a full repaint
+  or a keystroke for a completion or a bell, but only a keystroke, the harness's
+  next report or an explicit "Mark as Read" for a `waiting` — looking at a
+  blocked agent does not unblock it ([`terminal.md`](terminal.md) § What an
+  activity report does to the state). `finished/failed`, a non-zero `exited` and
+  a `failed` spawn are `error` whatever the flag says — a state until the next
+  report, not a notification the user can dismiss by looking. A live terminal
+  with no report and no progress is `idle`: a shell prompt is not an agent.
+- `sessionMark` is the verb the context menu offers: `read` for an unread
+  session, `unread` for an idle one with a live terminal, `none` otherwise. It
+  is derived here beside `sessionStatus` so the two can never disagree about
+  what a click would do.
 
 ### `model/sidebar-filter.ts`
 

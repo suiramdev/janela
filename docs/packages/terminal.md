@@ -471,14 +471,27 @@ flag, not one per source: a `working` report clears a bell that rang before it,
 and a bell that rings after it raises attention again. The last event wins, in
 arrival order, because a terminal either wants the user now or it does not.
 
-`send()` and `fullRepaintFor()` keep clearing attention — the user typed, or
-looked — but they **do not** clear the activity. "The user has seen it" and
-"the agent is waiting for permission" are different facts: the sidebar stops
-glowing while the row still says what the agent is doing. The activity therefore
-rides on both live states: `needsAttention` carries it when attention is up, and
+`send()` keeps clearing attention — the user typed — and so does
+`fullRepaintFor()` — the user looked — with one exception: a full repaint does
+**not** lower the flag while the activity is `waiting`. Looking at an agent
+that is blocked on a permission does not unblock it, and a sidebar that stopped
+glowing the moment the session was selected would hide the one row the user
+most needs to come back to. Typing does lower it, because typing into a
+waiting agent *is* the answer, and the agent's own next `working` report lowers
+it too. Neither clears the activity. "The user has seen it" and "the agent is
+waiting for permission" are different facts: the sidebar stops glowing while
+the row still says what the agent is doing. The activity therefore rides on
+both live states: `needsAttention` carries it when attention is up, and
 `running` carries it beside `progress` when it is not. Both are optional on the
 wire, so a terminal that has never had a harness in it is byte-identical to
 before.
+
+`markAttention(raised)` sets the flag by hand and touches nothing else. It is
+the daemon's half of "Mark as Read" and "Mark as Unread": the flag stays the one
+the emulator's events move, and a client that wants it moved asks for it
+through the protocol rather than editing its mirror. On a terminal with no
+process the call is harmless and invisible, because `state` answers `idle`
+before it reads the flag.
 
 Like progress, **an activity does not survive the process that reported it**:
 `start()` clears it, so a restarted agent does not open already "finished".

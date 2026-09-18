@@ -54,6 +54,12 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly name: string;
     }
+  | {
+      readonly type: "markSession";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly unread: boolean;
+    }
   | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
   | { readonly type: "projectBranches"; readonly id: RequestID; readonly projectID: ProjectID }
   | { readonly type: "listDirectory"; readonly id: RequestID; readonly directory?: AbsolutePath }

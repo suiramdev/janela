@@ -1,6 +1,5 @@
 import {
   ArrowRight01Icon,
-  ComputerTerminal01Icon,
   FilterIcon,
   FolderAddIcon,
   InboxIcon,
@@ -9,7 +8,7 @@ import {
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Project, ProjectID, Session, SessionID } from "@janela/core";
+import type { Project, ProjectID, SessionID } from "@janela/core";
 import {
   Badge,
   Button,
@@ -29,12 +28,17 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupActions,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
   SidebarTrigger,
   Tooltip,
@@ -59,6 +63,7 @@ import {
 import { selectSession } from "../model/command-dispatch.ts";
 import { projectMenuRows, sessionMenuRows } from "../model/menu-rows.ts";
 import {
+  type SessionRow,
   type SessionStatus,
   type SidebarRow,
   sidebarRows,
@@ -76,11 +81,9 @@ import {
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
 
 const STATUS_ICON = {
-  attention: statusGlyph(Dotm3x3_15, "text-attention", true),
-  failed: statusGlyph(Dotm3x3_15, "text-failure", true),
-  done: statusGlyph(Dotm3x3_15, "text-success", false),
-  working: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
-  running: statusGlyph(Dotm3x3_20, "invisible", false),
+  error: statusGlyph(Dotm3x3_15, "text-failure", false),
+  running: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
+  unread: statusGlyph(Dotm3x3_15, "text-attention", true),
   idle: statusGlyph(Dotm3x3_20, "invisible", false),
 } satisfies Record<SessionStatus, IconComponent>;
 
@@ -90,7 +93,7 @@ const INBOX_ICON = hugeicon(InboxIcon);
 
 const SETTINGS_ICON = hugeicon(Settings01Icon);
 
-const CHEVRON_ICON = hugeicon(ArrowRight01Icon);
+const ChevronIcon = hugeicon(ArrowRight01Icon);
 
 const SEARCH_BUTTON = (
   <Button variant="ghost" size="icon-sm" aria-label="Search">
@@ -98,22 +101,22 @@ const SEARCH_BUTTON = (
   </Button>
 );
 
-const NEW_PROJECT_BUTTON = (
-  <Button variant="ghost" size="icon-sm" aria-label="New Project">
-    <HugeiconsIcon icon={FolderAddIcon} strokeWidth={2} />
-  </Button>
+const NEW_PROJECT_ACTION = (
+  <SidebarGroupAction aria-label="New Project">
+    <HugeiconsIcon icon={FolderAddIcon} />
+  </SidebarGroupAction>
 );
 
-const FILTER_BUTTON_GHOST = (
-  <Button variant="ghost" size="icon-sm">
-    <HugeiconsIcon icon={FilterIcon} strokeWidth={2} />
-  </Button>
+const FILTER_ACTION = (
+  <SidebarGroupAction>
+    <HugeiconsIcon icon={FilterIcon} />
+  </SidebarGroupAction>
 );
 
-const FILTER_BUTTON_SECONDARY = (
-  <Button variant="secondary" size="icon-sm">
-    <HugeiconsIcon icon={FilterIcon} strokeWidth={2} />
-  </Button>
+const FILTER_ACTION_NARROWED = (
+  <SidebarGroupAction className="bg-secondary text-foreground">
+    <HugeiconsIcon icon={FilterIcon} />
+  </SidebarGroupAction>
 );
 
 export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }): ReactElement {
@@ -194,15 +197,17 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
         key={row.project.id}
         project={row.project}
         isExpanded={row.isExpanded}
+        sessions={row.sessions}
+        selection={selection}
         actions={actions}
         onToggle={toggle}
+        onSelect={select}
       />
     ) : (
       <SessionRow
         key={row.session.id}
-        session={row.session}
-        status={row.status}
-        indented={row.indented}
+        row={row}
+        nested={false}
         isSelected={row.session.id === selection}
         actions={actions}
         onSelect={select}
@@ -251,23 +256,21 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
       </SidebarChromeHeader>
 
       <SidebarContent className={SIDEBAR_SCROLLER}>
-        <SidebarGroup className="py-1">
-          <div className="flex items-center gap-0.5 pr-1">
-            <SidebarGroupLabel className="flex-1">
-              {isFiltered ? "Matches" : "Sessions"}
-            </SidebarGroupLabel>
+        <SidebarGroup collapsible>
+          <SidebarGroupLabel>{isFiltered ? "Matches" : "Sessions"}</SidebarGroupLabel>
+          <SidebarGroupActions>
             <SessionFilterMenu filter={filter} onChange={setFilter} />
             <Tooltip>
-              <TooltipTrigger render={NEW_PROJECT_BUTTON} onClick={addProject} />
+              <TooltipTrigger render={NEW_PROJECT_ACTION} onClick={addProject} />
               <TooltipContent>New Project</TooltipContent>
             </Tooltip>
-          </div>
+          </SidebarGroupActions>
           <SidebarMenu>{rows.map(renderRow)}</SidebarMenu>
           {isEmpty ? <EmptyState isFiltered={isFiltered} /> : null}
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-border border-t">
+      <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton icon={SETTINGS_ICON} onClick={openSettings}>
@@ -307,7 +310,7 @@ function SessionFilterMenu(props: {
       <DropdownTrigger
         aria-label={`Filter: ${SESSION_FILTER_TITLE[filter]}`}
         title={SESSION_FILTER_TITLE[filter]}
-        render={filter === "all" ? FILTER_BUTTON_GHOST : FILTER_BUTTON_SECONDARY}
+        render={filter === "all" ? FILTER_ACTION : FILTER_ACTION_NARROWED}
       />
       <DropdownContent className="w-48" align="end" checkedIndex={SESSION_FILTERS.indexOf(filter)}>
         <DropdownLabel>Show</DropdownLabel>
@@ -348,13 +351,23 @@ function FilterRow(props: {
   );
 }
 
+function projectGlyph(project: Pick<Project, "name" | "directory">): IconComponent {
+  return function ProjectGlyph({ className }: IconComponentProps) {
+    return <ProjectIcon project={project} className={className} />;
+  };
+}
+
 function ProjectRow(props: {
   readonly project: Project;
   readonly isExpanded: boolean;
+  readonly sessions: readonly SessionRow[];
+  readonly selection: SessionID | undefined;
   readonly actions: SidebarActions;
   readonly onToggle: (id: ProjectID, wasExpanded: boolean) => void;
+  readonly onSelect: (id: SessionID) => void;
 }): ReactElement {
-  const { project, isExpanded, actions, onToggle } = props;
+  const { project, isExpanded, sessions, selection, actions, onToggle, onSelect } = props;
+  const { name, directory } = project;
 
   const handleToggle = useCallback(() => {
     onToggle(project.id, isExpanded);
@@ -366,20 +379,28 @@ function ProjectRow(props: {
 
   const rows = useMemo(() => projectMenuRows(project, actions), [project, actions]);
 
+  const glyph = useMemo(() => projectGlyph({ name, directory }), [name, directory]);
+
   return (
     <SidebarMenuItem>
       <ContextMenuRegion label={`Project: ${project.name}`} rows={rows} className="block">
         <SidebarMenuButton
-          icon={CHEVRON_ICON}
+          icon={glyph}
           aria-expanded={isExpanded}
           onClick={handleToggle}
-          className={cn(
-            "font-medium [&>svg]:motion-safe:transition-transform",
-            isExpanded && "[&>svg]:rotate-90",
-          )}
+          className="group/parent-row"
         >
-          <ProjectIcon project={project} />
           {project.name}
+          <span className="-mr-0.5 ml-auto flex size-6 shrink-0 items-center justify-center">
+            <ChevronIcon
+              className={cn(
+                "text-muted-foreground transition-[opacity,rotate] duration-(--spring-fast)",
+                isExpanded
+                  ? "rotate-90 opacity-0 group-hover/parent-row:opacity-100 group-focus-within/parent-row:opacity-100"
+                  : "opacity-100",
+              )}
+            />
+          </span>
         </SidebarMenuButton>
         <SidebarMenuAction
           showOnHover
@@ -390,53 +411,73 @@ function ProjectRow(props: {
           <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />
         </SidebarMenuAction>
       </ContextMenuRegion>
+      <SidebarMenuSub open={isExpanded}>
+        {sessions.map((row) => (
+          <SessionRow
+            key={row.session.id}
+            row={row}
+            nested
+            isSelected={row.session.id === selection}
+            actions={actions}
+            onSelect={onSelect}
+          />
+        ))}
+      </SidebarMenuSub>
     </SidebarMenuItem>
   );
 }
 
 function SessionRow(props: {
-  readonly session: Session;
-  readonly status: SessionStatus;
-  readonly indented: boolean;
+  readonly row: SessionRow;
+  readonly nested: boolean;
   readonly isSelected: boolean;
   readonly actions: SidebarActions;
   readonly onSelect: (id: SessionID) => void;
 }): ReactElement {
-  const { session, status, indented, isSelected, actions, onSelect } = props;
+  const { row, nested, isSelected, actions, onSelect } = props;
+  const { session, status, mark } = row;
 
   const handleSelect = useCallback(() => {
     onSelect(session.id);
   }, [onSelect, session.id]);
 
-  const newTerminal = useCallback(() => {
-    actions.newTerminal(session.id);
-  }, [actions, session.id]);
+  const rows = useMemo(() => sessionMenuRows(session, mark, actions), [session, mark, actions]);
 
-  const rows = useMemo(() => sessionMenuRows(session, actions), [session, actions]);
+  const label = `${session.name} — ${statusText(status)}`;
+  const current = isSelected ? "true" : undefined;
 
-  return (
-    <SidebarMenuItem>
-      <ContextMenuRegion label={`Session: ${session.name}`} rows={rows} className="block">
-        <SidebarMenuButton
+  const template = useMemo(() => <button type="button" aria-label={label} />, [label]);
+
+  const region = (
+    <ContextMenuRegion label={`Session: ${session.name}`} rows={rows} className="block">
+      {nested ? (
+        <SidebarMenuSubButton
+          render={template}
           icon={STATUS_ICON[status]}
-          aria-label={`${session.name} — ${statusText(status)}`}
-          aria-current={isSelected ? "true" : undefined}
+          aria-current={current}
           isActive={isSelected}
           onClick={handleSelect}
-          className={indented ? "pl-7" : undefined}
+        >
+          {session.name}
+        </SidebarMenuSubButton>
+      ) : (
+        <SidebarMenuButton
+          icon={STATUS_ICON[status]}
+          aria-label={label}
+          aria-current={current}
+          isActive={isSelected}
+          onClick={handleSelect}
         >
           {session.name}
         </SidebarMenuButton>
-        <SidebarMenuAction
-          showOnHover
-          aria-label={`New Terminal in ${session.name}`}
-          title={`New Terminal in ${session.name}`}
-          onClick={newTerminal}
-        >
-          <HugeiconsIcon icon={ComputerTerminal01Icon} strokeWidth={2} />
-        </SidebarMenuAction>
-      </ContextMenuRegion>
-    </SidebarMenuItem>
+      )}
+    </ContextMenuRegion>
+  );
+
+  return nested ? (
+    <SidebarMenuSubItem>{region}</SidebarMenuSubItem>
+  ) : (
+    <SidebarMenuItem>{region}</SidebarMenuItem>
   );
 }
 

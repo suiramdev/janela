@@ -91,6 +91,7 @@ export interface FakeTerminal extends LiveTerminal {
   readonly attached: Map<string, GridSize>;
   readonly attachCalls: { client: string; viewport: GridSize }[];
   readonly sendCalls: Uint8Array[];
+  readonly markCalls: boolean[];
   readonly stopCalls: { count: number };
   readonly startCalls: { count: number };
   setState(state: TerminalState): void;
@@ -212,6 +213,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
   const drainCalls = { count: 0 };
   const attached = new Map<string, GridSize>();
   const sendCalls: Uint8Array[] = [];
+  const markCalls: boolean[] = [];
   const stopCalls = { count: 0 };
   const startCalls = { count: 0 };
   const attachCalls: { client: string; viewport: GridSize }[] = [];
@@ -242,6 +244,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
     attached,
     attachCalls,
     sendCalls,
+    markCalls,
     stopCalls,
     startCalls,
     start: () => {
@@ -264,6 +267,22 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
       if (options.throwOnSend !== undefined) throw options.throwOnSend;
 
       sendCalls.push(Uint8Array.from(input));
+    },
+    markAttention: (raised) => {
+      markCalls.push(raised);
+
+      if (current.kind !== "running" && current.kind !== "needsAttention") return;
+
+      const activity = current.activity;
+
+      if (raised) {
+        current =
+          activity === undefined
+            ? { kind: "needsAttention" }
+            : { kind: "needsAttention", activity };
+      } else {
+        current = { kind: "running", ...(activity !== undefined && { activity }) };
+      }
     },
     attach: (client, viewport) => {
       attachCalls.push({ client, viewport });

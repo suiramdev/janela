@@ -58,6 +58,7 @@ const CLIENT_MESSAGE_TYPES = exhaustiveLiterals<ClientMessage["type"]>()([
   "moveTab",
   "moveTerminal",
   "renameSession",
+  "markSession",
   "attach",
   "detach",
   "startTerminal",

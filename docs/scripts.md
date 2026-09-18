@@ -132,11 +132,11 @@ CLI is this, grown up.
 bun run scripts/survival-probe.ts                       # what is running
 bun run scripts/survival-probe.ts --attach <id> --columns 40 --rows 12
 bun run scripts/survival-probe.ts --attach <id> --send 'stty size\n'
-bun run scripts/survival-probe.ts --attach <id> --protocol-version 9
+bun run scripts/survival-probe.ts --attach <id> --protocol-version 13
 ```
 
 - The last form stages version skew, and the number has to be past
-  `PROTOCOL_VERSION` to do it — 9 is the shipped version, so 6 is now *refused*
+  `PROTOCOL_VERSION` to do it — 13 is the shipped version, so 12 is now *refused*
   from below as well. Anything outside the daemon's range is refused.
 - It never creates, starts, stops or removes anything. The most it does is attach a
   viewport, which the daemon undoes when the socket closes. It never starts a

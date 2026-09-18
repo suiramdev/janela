@@ -47,7 +47,10 @@ const running = fakeSession({
   terminals: [fakeTerminal({ id: terminalID("t-run") })],
 });
 
-const RUNNING_STATES = states([terminalID("t-run"), { kind: "running" }]);
+const RUNNING_STATES = states([
+  terminalID("t-run"),
+  { kind: "running", activity: { kind: "working" } },
+]);
 
 describe("SESSION_FILTERS", () => {
   test("the menu offers every filter that has a title, each exactly once", () => {

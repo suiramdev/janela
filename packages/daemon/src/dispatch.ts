@@ -28,7 +28,7 @@ import type {
   ProjectService,
   SessionService,
 } from "@janela/session";
-import { UnknownTerminal } from "@janela/session";
+import { UnknownSession, UnknownTerminal } from "@janela/session";
 import { UnexpectedFailure, isUserFacing, type Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 import { Effect, Match, Option, Result, Schema } from "effect";
@@ -62,6 +62,7 @@ export interface RequestDispatchOptions {
   readonly integrations: IntegrationService;
   readonly log: Logger;
   readonly announce: () => Promise<void>;
+  readonly settled: (terminal: LiveTerminal) => void;
 }
 
 export interface StateWorld {
@@ -124,6 +125,8 @@ const decodeLaunchProfile = Schema.decodeUnknownOption(
 
 const decodeTitle = Schema.decodeUnknownOption(Schema.String);
 
+const decodeVerdict = Schema.decodeUnknownOption(Schema.Boolean);
+
 const decodeDirectory = Schema.decodeUnknownOption(
   Schema.UndefinedOr(Schema.String.check(Schema.isStartsWith("/"))),
 );
@@ -167,6 +170,7 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
     integrations,
     log,
     announce,
+    settled,
   } = options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
@@ -300,6 +304,23 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           await sessions.rename(request.sessionID, name);
 
           return acknowledged(id);
+        },
+
+        markSession: (request) => {
+          const unread = Option.getOrUndefined(decodeVerdict(request.unread));
+
+          if (unread === undefined) throw new TypeError("markSession without a verdict");
+
+          if (sessions.find(request.sessionID) === undefined) {
+            throw new UnknownSession(request.sessionID);
+          }
+
+          for (const terminal of terminals.inSession(request.sessionID)) {
+            terminal.markAttention(unread);
+            settled(terminal);
+          }
+
+          return Promise.resolve(acknowledged(id));
         },
 
         attach: (request) => {

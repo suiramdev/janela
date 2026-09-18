@@ -324,7 +324,7 @@ export function SettingsSidebar(props: SettingsSidebarProps): ReactElement {
         </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="border-border border-t">
+      <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton icon={BACK_ICON} onClick={onBack}>
