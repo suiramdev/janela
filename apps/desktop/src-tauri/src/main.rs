@@ -258,7 +258,9 @@ fn set_menu_accelerators(
 /// A poisoned menu lock means a panic mid-edit of the menu bar; the bar is still
 /// AppKit's and still usable, so carry on with whatever state was left.
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Every menu the table may name. An unknown one is a bug in the table, not a row
