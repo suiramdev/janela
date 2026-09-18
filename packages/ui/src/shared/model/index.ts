@@ -1,5 +1,7 @@
 export * from "./client-environment.tsx";
 
+export * from "./command-shortcuts.ts";
+
 export * from "./confirmation.ts";
 
 export * from "./directory-picker.ts";

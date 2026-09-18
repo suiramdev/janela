@@ -11,8 +11,13 @@ import { Match } from "effect";
 import type { ReactElement } from "react";
 import { useCallback, useRef, useState } from "react";
 
-import { type CommandID, availableCommands } from "../../../../shared/config/index.ts";
-import { type Sheet, useClientEnvironment, useStoreValue } from "../../../../shared/model/index.ts";
+import type { CommandID } from "../../../../shared/config/index.ts";
+import {
+  type Sheet,
+  commandsWithShortcuts,
+  useClientEnvironment,
+  useStoreValue,
+} from "../../../../shared/model/index.ts";
 import {
   createSessionAndSelect,
   focusedTerminalOf,
@@ -121,6 +126,7 @@ function SheetBody(props: {
   const sessions = useStoreValue(sessionStore, () => sessionStore.sessions);
   const selection = useStoreValue(sessionStore, () => sessionStore.selection);
   const terminalStates = useStoreValue(sessionStore, () => sessionStore.terminalStates);
+  const settings = useStoreValue(view, () => view.settings);
 
   const pickSession = useCallback(
     (sessionID: SessionID) => {
@@ -171,7 +177,7 @@ function SheetBody(props: {
         projects={projects}
         sessions={sessions}
         terminalStates={terminalStates}
-        commands={availableCommands(environment.local !== undefined)}
+        commands={commandsWithShortcuts(settings, environment.local !== undefined)}
         onPick={runCommand}
         onPickSession={pickSession}
         onCancel={onClose}

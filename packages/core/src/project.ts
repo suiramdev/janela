@@ -24,7 +24,6 @@ export interface ProjectSettings {
   worktreeRoot: WorktreeRoot;
   automation: AutomationScripts;
   defaultProfileID?: LaunchProfileID;
-  isForgeEnabled: boolean;
 }
 
 export type WorktreeRoot =

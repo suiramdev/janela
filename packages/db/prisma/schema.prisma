@@ -69,7 +69,6 @@ model Project {
 
   worktreeRoot     String  @default("siblingDirectory")
   worktreeRootPath String?
-  isForgeEnabled   Boolean @default(true)
   accent           String  @default("none")
   isExpanded       Boolean @default(true)
   addedAt          DateTime

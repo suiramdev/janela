@@ -259,6 +259,50 @@ describe("migrate", () => {
     });
   });
 
+  test("a project at the second schema keeps its settings, and only loses the forge switch", async () => {
+    await withTemporaryDirectory(async (directory) => {
+      const path = join(directory, "janela.sqlite");
+      const { logger } = recordingLogger();
+      const priors = MIGRATIONS.slice(0, 2);
+
+      const connection: SqlDriverAdapter = await janelaSqliteAdapter({ path }).connect();
+
+      expect(await applyMigrations(connection, priors, logger)).toBe(2);
+
+      const seed = new Database(path);
+      seed.run(
+        `INSERT INTO "Project" (id, name, directory, worktreeRoot, worktreeRootPath, isForgeEnabled, accent, addedAt)
+           VALUES ('p', 'janela', '/tmp/janela', 'custom', '/tmp/trees', 0, 'blue', 0)`,
+      );
+      seed.close();
+
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 2);
+
+      const columns = readOnly(path, (database) =>
+        database
+          .query<{ name: string }, []>(`SELECT name FROM pragma_table_info('Project')`)
+          .all()
+          .map((column) => column.name),
+      );
+      const row = readOnly(path, (database) =>
+        database
+          .query<{ worktreeRoot: string; worktreeRootPath: string; accent: string }, []>(
+            `SELECT worktreeRoot, worktreeRootPath, accent FROM "Project" WHERE id = 'p'`,
+          )
+          .get(),
+      );
+
+      expect(columns).not.toContain("isForgeEnabled");
+      expect(row).toEqual({
+        worktreeRoot: "custom",
+        worktreeRootPath: "/tmp/trees",
+        accent: "blue",
+      });
+
+      await connection.dispose();
+    });
+  });
+
   test("an edited shipped migration is refused rather than re-run", async () => {
     await withTemporaryDirectory(async (directory) => {
       const path = join(directory, "janela.sqlite");

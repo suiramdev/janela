@@ -571,20 +571,6 @@ describe("state: when we must not look", () => {
     expect(h.invocations).toEqual([]);
     expect(h.records).toEqual([]);
   });
-
-  test("the setting off is silence, not a read", async () => {
-    const h = harness();
-    const disabled = fakeProject();
-
-    disabled.settings = { ...disabled.settings, isForgeEnabled: false };
-
-    const state = await h.forge.state({ project: disabled, session: fakeSession() });
-
-    expect(state).toBeUndefined();
-    expect(h.whichCalls).toEqual([]);
-    expect(h.invocations).toEqual([]);
-    expect(h.records).toEqual([]);
-  });
 });
 
 describe("state: the cache", () => {

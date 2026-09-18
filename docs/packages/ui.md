@@ -770,15 +770,27 @@ because macOS owns that toggle and a control here would be a lie — the copy sa
 where the real one is. The daemon group renders `SettingsDaemon` below both, since
 its stop controls are the largest permission of all.
 
-### `ui/integrations-settings.tsx`
+### The Integrations tab
 
-GitHub and GitLab first, then the launch profiles. The forge rows are **per
-project** — `isForgeEnabled` stays a project setting, and this pane is a second door
-to the same value the project pane no longer shows — because "connect GitHub" is
-asked per repository, but *looked for* under Integrations. Each row edits the
-project's draft through `withDraftProjectSettings`, so the commit bar counts it like
-any project edit. A project without a forge is not listed: there is nothing to
-switch.
+Renders `SettingsProfiles` directly; there is no pane file of its own. It once began
+with a GitHub/GitLab row per hosted project, editing `isForgeEnabled` through the
+draft. That switch is gone — reading pull request state is what a hosted project
+does, and a missing or logged-out CLI was already silence — so the tab is the launch
+profiles, which are the remaining "tools Janela reaches".
+
+### `ui/shortcuts-settings.tsx`
+
+The Shortcuts tab: one row per command, grouped by the menu it lives in, each with a
+recorder button showing the current caps and, where the row is overridden, a reset. The
+recorder is a button, not an input: pressing it arms recording, the next chord is read
+from `keydown` on the button itself, and Esc or blur disarms without changing anything.
+Modifier-only presses are ignored rather than refused, because ⌘ arriving before T is
+how every chord is typed. A refusal (grammar or conflict) shows as the field's error and
+keeps recording, so the user corrects without re-arming. Recording is reported upward
+through `onRecording` so the view can hold the keyboard (see `view-state.ts`); without
+that, the chord the user presses is the one the app runs. Local-only commands the
+current client cannot run still appear, because a shortcut is a setting and settings are
+shared across clients; they show *None* and record like any other row.
 
 ### `ui/notification-settings.tsx`
 
@@ -1119,6 +1131,11 @@ session **selection** stays on `SessionStore`, where the sidebar already reads i
   `TerminalSurface` focuses itself when `focused` becomes true.
 - A change that changed nothing is not a notification: `focusNeighbour` on a single pane
   happens constantly.
+- `isRecordingShortcut` is view state rather than pane state because two things outside
+  the pane must react to it: the web client's keyboard matcher stands aside, and the
+  desktop's menu sync releases the native accelerators. Both read the view they already
+  subscribe to; the pane only flips the flag, and its unmount flips it back so a user who
+  navigates away mid-recording does not leave the keyboard held.
 
 ### `local-layout.ts`
 
@@ -1191,6 +1208,23 @@ just created should be where they can find it. `withoutDraftProfile` takes `stor
 because deleting a draft-only profile is a discard, and `removeLaunchProfile` for an id
 the daemon never saw would be asking it to forget nothing.
 
+### `command-shortcuts.ts`
+
+`GlobalSettings.commandShortcuts` is a partial record of overrides, never a copy of the
+table: a command absent from it has its default, so a new default in a later build
+reaches a user who never touched that row, and a reset is a deletion rather than a
+write of the current default. `commandsWithShortcuts` is the one merge, and every
+consumer — the palette, the web matcher, the native menu sync, the pane — reads it
+rather than `COMMANDS`, which is what keeps the four from disagreeing about what ⌘T
+means. `shortcutViolation` is the rule the recorder enforces: a chord outside the
+grammar is refused with `SHORTCUT_GRAMMAR_MESSAGE`, and a chord another command already
+answers to is refused by naming that command's title, because "taken" without saying by
+what sends the user hunting through the list. Conflicts are checked against the merged
+table, not the defaults, so two overrides cannot collide either. Storage is lenient per
+entry: an id this build does not know, or a chord outside the grammar, is dropped on
+load rather than failing the whole record, so one stale row cannot cost the user their
+other shortcuts.
+
 ---
 
 ## `shared/config`
@@ -1228,6 +1262,22 @@ no Rust change — the property that stops the two lists drifting.
 - `acceleratorCaps` renders the table's Tauri notation rather than storing a second
   spelling that could disagree, and joins on `+` because the menu draws a cap per token: a
   glyph string it cannot split — `⌘,`, `⌘⇧]` — lands in one wide cap beside chords that did.
+
+### `accelerators.ts`
+
+The grammar of a shortcut, shared by the matcher, the recorder and the menu, so all
+three agree on what a chord is. `parseAccelerator` turns Tauri notation
+(`CmdOrCtrl+Shift+]`) into `AcceleratorKeys` — `code`, `shift`, `alt` — and refuses
+anything that is not exactly ⌘ plus one key with optional ⇧ and ⌥: no `Ctrl`, no
+modifier alone, no key it cannot name. `acceleratorForChord` goes the other way, from
+a `KeyboardEvent`-shaped `KeyChord` to the notation the table stores, through the same
+key-token map, so a chord the recorder accepts is one `parseAccelerator` will read back
+and one the Rust menu can register. `sameAccelerator` compares parsed forms rather than
+strings, because `CmdOrCtrl+Shift+]` and `Shift+CmdOrCtrl+]` are one chord.
+`acceleratorCapTokens` is the one place Tauri notation becomes Mac glyphs, one token
+per cap; `acceleratorCaps` joins them on `+` for the design package's menu, which draws
+a cap per token, and prose (a refusal message) joins them on nothing, because
+`⌘+N already means New Session` is not how a Mac user reads a chord.
 
 ### `profile-icons.ts`
 
@@ -1319,7 +1369,14 @@ exported from the package index; the Tauri-only ports (Finder, Terminal.app,
   command it cannot run. The third argument, `held`, is the modal that owns the
   keyboard: the source still claims the chord — a ⌘N over the folder picker must not
   fall through to the browser's new-window — but runs nothing while a picker is on
-  screen, which is what a native panel does to the menu bar.
+  screen, which is what a native panel does to the menu bar. The fourth,
+  `isRecording`, is the opposite: while the Shortcuts pane is recording, the source
+  does not claim the chord at all, so the recorder's own `keydown` handler is the one
+  that reads it — the matcher runs first, in the capture phase, and would otherwise
+  swallow every chord the user is trying to record and run the command it already
+  meant. The commands it matches come from `commandsWithShortcuts`, so an override
+  saved in Settings is what the keyboard answers to, and the default it replaced is
+  dead.
 
 ---
 

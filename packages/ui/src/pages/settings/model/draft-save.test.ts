@@ -184,14 +184,14 @@ describe("what a save writes", () => {
     const again = withDraftProjectSettings(
       saved,
       PROJECT.id,
-      fakeSettings({ isForgeEnabled: false }),
+      fakeSettings({ defaultProfileID: CLAUDE.id }),
     );
 
     expect(settingsDraftRequests(again, saved)).toEqual([
       {
         type: "updateProjectSettings",
         projectID: PROJECT.id,
-        settings: fakeSettings({ isForgeEnabled: false }),
+        settings: fakeSettings({ defaultProfileID: CLAUDE.id }),
       },
     ]);
   });

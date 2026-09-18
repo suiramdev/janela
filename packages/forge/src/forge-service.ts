@@ -416,8 +416,6 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
 
       if (host === undefined) return Promise.resolve(undefined);
 
-      if (!request.project.settings.isForgeEnabled) return Promise.resolve(undefined);
-
       const at = clock();
 
       return cached(states, request.session.id, at, () => readState(host, request.session, at));

@@ -68,7 +68,7 @@ const projectRecord = (overrides: Partial<Project> = {}): Project => ({
   name: "janela",
   directory: repositoryDirectory,
   git: { forge: "gitHub", defaultBranch: "main" },
-  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
+  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {} },
   accent: "none",
   isExpanded: true,
   addedAt: now(),

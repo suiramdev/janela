@@ -58,7 +58,7 @@ async function setup(label: string): Promise<World> {
     name: "fixture",
     directory: repository,
     git: { defaultBranch: "main" },
-    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: false },
+    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {} },
     accent: "none",
     isExpanded: true,
     addedAt: now(),

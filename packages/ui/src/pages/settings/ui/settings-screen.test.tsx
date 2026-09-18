@@ -67,7 +67,8 @@ const PANE_COPY = {
   appearance: "Font family",
   accessibility: "Nothing to set here yet",
   notifications: "rings the bell",
-  integrations: "GitHub and GitLab",
+  shortcuts: "Close Pane",
+  integrations: "Default launch profile",
   experimental: "Nothing is behind a flag",
   permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
@@ -92,6 +93,7 @@ function props(
     service: recordingService(),
     projects,
     draft,
+    onRecordingShortcut: noop,
     onChangeDraft: () => {},
   };
 }
@@ -134,6 +136,7 @@ describe("the tab table", () => {
       "appearance",
       "accessibility",
       "notifications",
+      "shortcuts",
       "integrations",
       "experimental",
       "permissions",
@@ -208,6 +211,7 @@ describe("the sidebar", () => {
       "Appearance",
       "Accessibility",
       "Notifications",
+      "Shortcuts",
       "Integrations",
       "Experimental",
       "Permissions",
@@ -263,6 +267,7 @@ describe("the sidebar", () => {
       "Appearance",
       "Accessibility",
       "Notifications",
+      "Shortcuts",
       "Integrations",
       "Experimental",
       "Permissions",
@@ -455,7 +460,6 @@ describe("the screen", () => {
         withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, JANELA.id, {
           worktreeRoot: { kind: "siblingDirectory" },
           automation: {},
-          isForgeEnabled: true,
         }),
       );
 
@@ -472,7 +476,6 @@ describe("the screen", () => {
         withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, JANELA.id, {
           worktreeRoot: { kind: "siblingDirectory" },
           automation: { sessionTeardown: { script: "docker compose down", timeoutSeconds: 0 } },
-          isForgeEnabled: false,
         }),
       );
 

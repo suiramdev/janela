@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_GLOBAL_SETTINGS,
   TERMINAL_FONT_SIZE_BOUNDS,
+  withCommandShortcut,
   withSilencedConfirmation,
 } from "../../model/index.ts";
 import { localStorageSettings, parseSettings } from "./settings-storage.ts";
@@ -118,5 +119,39 @@ describe("silenced confirmations", () => {
         "silencedConfirmations",
       ),
     ).toBe(false);
+  });
+});
+
+describe("command shortcuts", () => {
+  test("an override survives a round trip", async () => {
+    const storage = memoryStorage();
+    const store = localStorageSettings(storage);
+
+    await store.save(withCommandShortcut(DEFAULT_GLOBAL_SETTINGS, "splitRight", "CmdOrCtrl+E"));
+
+    expect((await store.load()).commandShortcuts).toEqual({ splitRight: "CmdOrCtrl+E" });
+  });
+
+  test("an id this build does not know, or a chord outside the grammar, is dropped", () => {
+    const settings = parseSettings(
+      JSON.stringify({
+        commandShortcuts: {
+          splitRight: "CmdOrCtrl+E",
+          launchRockets: "CmdOrCtrl+L",
+          closePane: "Ctrl+W",
+          nextTab: 7,
+        },
+      }),
+    );
+
+    expect(settings.commandShortcuts).toEqual({ splitRight: "CmdOrCtrl+E" });
+  });
+
+  test("a stored chord that is the default again is not an override", () => {
+    const settings = parseSettings(
+      JSON.stringify({ commandShortcuts: { closePane: "CmdOrCtrl+W" } }),
+    );
+
+    expect(Object.hasOwn(settings, "commandShortcuts")).toBe(false);
   });
 });

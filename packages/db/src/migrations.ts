@@ -6,6 +6,7 @@ import { Effect, Exit, Option, Schema } from "effect";
 
 import initial from "../prisma/migrations/20260908180902_initial/migration.sql" with { type: "text" };
 import automationScripts from "../prisma/migrations/20260917120000_automation_scripts/migration.sql" with { type: "text" };
+import dropForgeToggle from "../prisma/migrations/20260917150000_drop_forge_toggle/migration.sql" with { type: "text" };
 import { MigrationFailed } from "./errors.ts";
 
 export interface Migration {
@@ -21,6 +22,7 @@ interface AppliedRow {
 export const MIGRATIONS: readonly Migration[] = [
   { name: "20260908180902_initial", sql: initial },
   { name: "20260917120000_automation_scripts", sql: automationScripts },
+  { name: "20260917150000_drop_forge_toggle", sql: dropForgeToggle },
 ];
 
 export const MIGRATIONS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS "_prisma_migrations" (

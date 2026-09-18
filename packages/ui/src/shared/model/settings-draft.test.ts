@@ -113,10 +113,10 @@ describe("a project's settings", () => {
     const draft = withDraftProjectSettings(
       EMPTY_SETTINGS_DRAFT,
       PROJECT.id,
-      fakeSettings({ isForgeEnabled: false }),
+      fakeSettings({ defaultProfileID: CLAUDE.id }),
     );
 
-    expect(draftProjectSettings(draft, PROJECT).isForgeEnabled).toBe(false);
+    expect(draftProjectSettings(draft, PROJECT).defaultProfileID).toBe(CLAUDE.id);
     expect(draftProjectSettings(draft, OTHER)).toBe(OTHER.settings);
   });
 
@@ -126,10 +126,10 @@ describe("a project's settings", () => {
     const twice = withDraftProjectSettings(
       once,
       PROJECT.id,
-      fakeSettings({ isForgeEnabled: false }),
+      fakeSettings({ defaultProfileID: CLAUDE.id }),
     );
 
     expect(twice.projects).toHaveLength(1);
-    expect(draftProjectSettings(twice, PROJECT).isForgeEnabled).toBe(false);
+    expect(draftProjectSettings(twice, PROJECT).defaultProfileID).toBe(CLAUDE.id);
   });
 });

@@ -210,6 +210,16 @@ row should have its leading space back. Only the shell can answer that.
   it beats dispatching a guess. A failed install is logged and nothing else: every
   command is still reachable from ⌘⇧P. `COMMAND_EVENT` is paired with the Rust
   constant of the same name.
+- **Accelerators follow the settings.** `syncNativeShortcuts` watches the view and
+  hands the shell the merged table (`commandsWithShortcuts`) whenever the overrides
+  change, through `set_menu_accelerators`. It sends nothing while every shortcut is
+  the default, because the Rust menu already has the defaults, and it sends the
+  whole table rather than a diff so a reset reaches the menu as the default chord
+  and not as silence. While the Shortcuts pane is recording, it sends the table with
+  every accelerator `null` and restores it when recording ends: a native menu answers
+  a chord before the WebView sees it, so ⌘T pressed into the recorder would otherwise
+  open a terminal instead of being recorded. The applier is a typed function rather
+  than the raw bridge so the test can read what was sent without asserting on argv.
 - **Testing:** both files take the plugin function they call as an optional
   dependency — `open`, `openPath`, `revealItemInDir`, `listen` — defaulting to the
   real `@tauri-apps/*` export, the same shape as `LiveEnvironmentDeps.invoke`.

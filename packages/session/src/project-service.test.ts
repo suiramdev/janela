@@ -189,7 +189,6 @@ describe("addProject", () => {
       expect(added.settings).toEqual({
         worktreeRoot: { kind: "siblingDirectory" },
         automation: {},
-        isForgeEnabled: true,
       });
     });
   });
@@ -279,14 +278,14 @@ describe("updateSettings", () => {
       await fixture.projects.updateSettings(added.id, {
         worktreeRoot,
         automation: {},
-        isForgeEnabled: false,
       });
 
       const stored = await fixture.database.projects.find(added.id);
 
       expect(stored?.settings.worktreeRoot).toEqual(worktreeRoot);
-      expect(stored?.settings.isForgeEnabled).toBe(false);
-      expect(fixture.observer.projectCalls.at(-1)?.[0]?.settings.isForgeEnabled).toBe(false);
+      expect(fixture.observer.projectCalls.at(-1)?.[0]?.settings.worktreeRoot).toEqual(
+        worktreeRoot,
+      );
     });
   });
 });

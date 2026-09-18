@@ -72,7 +72,7 @@ const projectWith = (automation: AutomationScripts): Project => ({
   name: "janela",
   directory: absolutePath("/Users/x/code/janela"),
   git: { defaultBranch: "main" },
-  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation, isForgeEnabled: true },
+  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation },
   accent: "none",
   isExpanded: true,
   addedAt: now(),

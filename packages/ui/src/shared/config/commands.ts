@@ -149,32 +149,10 @@ export const COMMAND_BY_ID: Readonly<Record<string, Command | undefined>> = Obje
   COMMANDS.map((command) => [command.id, command]),
 );
 
-const ACCELERATOR_SYMBOLS = {
-  CmdOrCtrl: "⌘",
-  Shift: "⇧",
-  Alt: "⌥",
-  Left: "←",
-  Right: "→",
-  Up: "↑",
-  Down: "↓",
-} satisfies Record<string, string>;
-
-type AcceleratorToken = keyof typeof ACCELERATOR_SYMBOLS;
-
 export function isCommandID(value: string): value is CommandID {
   return Object.hasOwn(COMMAND_BY_ID, value);
 }
 
-function isAcceleratorToken(part: string): part is AcceleratorToken {
-  return Object.hasOwn(ACCELERATOR_SYMBOLS, part);
-}
-
-export function acceleratorCaps(accelerator: string): string {
-  return accelerator
-    .split("+")
-    .map((part) => (isAcceleratorToken(part) ? ACCELERATOR_SYMBOLS[part] : part))
-    .join("+");
-}
 export function availableCommands(hasLocalShell: boolean): readonly Command[] {
   return hasLocalShell ? COMMANDS : COMMANDS.filter((command) => command.localOnly !== true);
 }

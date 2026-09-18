@@ -143,7 +143,6 @@ function project(overrides: Partial<Project> = {}): Project {
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
       automation: {},
-      isForgeEnabled: true,
     },
     accent: "none",
     isExpanded: true,
@@ -361,7 +360,6 @@ describe("projects", () => {
           worktreeRoot: { kind: "custom", directory: absolutePath("/tmp/worktrees") },
           automation,
           defaultProfileID: defaultProfile.id,
-          isForgeEnabled: false,
         },
         accent: "blue",
         isExpanded: false,
@@ -434,7 +432,6 @@ describe("projects", () => {
         settings: {
           worktreeRoot: { kind: "custom", directory: absolutePath("/tmp/worktrees") },
           automation: {},
-          isForgeEnabled: true,
         },
       });
       await database.projects.save(value);
@@ -452,7 +449,6 @@ describe("projects", () => {
         settings: {
           worktreeRoot: { kind: "siblingDirectory" },
           automation: { sessionStart: DEV_SCRIPT },
-          isForgeEnabled: true,
         },
       });
       await database.projects.save(value);

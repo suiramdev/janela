@@ -4,6 +4,7 @@ export { SettingsScreen } from "./pages/settings/index.ts";
 
 export {
   ClientEnvironmentProvider,
+  commandsWithShortcuts,
   createConfirmationQueue,
   createDirectoryPickerQueue,
   createViewState,
@@ -27,7 +28,7 @@ export {
   type WindowControls,
 } from "./shared/model/index.ts";
 
-export { COMMANDS, availableCommands, isCommandID, type CommandID } from "./shared/config/index.ts";
+export { COMMANDS, isCommandID, type Command, type CommandID } from "./shared/config/index.ts";
 
 export {
   browserClipboard,

@@ -1,5 +1,9 @@
 import type { LaunchProfileID } from "@janela/core";
 
+import type { CommandID } from "../config/index.ts";
+
+export type CommandShortcuts = Readonly<Partial<Record<CommandID, string>>>;
+
 export interface GlobalSettings {
   readonly terminalFontFamily?: string;
 
@@ -10,6 +14,8 @@ export interface GlobalSettings {
   readonly defaultProfileID?: LaunchProfileID;
 
   readonly silencedConfirmations?: readonly ConfirmationKey[];
+
+  readonly commandShortcuts?: CommandShortcuts;
 }
 
 export type ConfirmationKey = "closeTerminals";

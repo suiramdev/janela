@@ -1,6 +1,7 @@
 import type { AutomationEvent, Project } from "@janela/core";
 import { AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
 
+import { COMMANDS } from "../../../shared/config/index.ts";
 import { fuzzyScore } from "../../../shared/lib/fuzzy-match/index.ts";
 import type { SettingsRoute, SettingsTabID } from "../../../shared/model/index.ts";
 import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scripts.ts";
@@ -8,7 +9,7 @@ import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scri
 export type SettingsSectionID =
   | "appearanceFont"
   | "notificationsBell"
-  | "forgeReading"
+  | "shortcuts"
   | "profilesDefault"
   | "profilesList"
   | "closingConfirmation"
@@ -82,12 +83,12 @@ export const NOTIFICATION_PERMISSION_SECTION: SettingsSection = {
   keywords: ["permission", "allow", "authorise", "authorize", "declined", "system settings"],
 };
 
-export const FORGE_SECTION: SettingsSection = {
-  id: "forgeReading",
-  title: "GitHub and GitLab",
-  hint: "Pull request and check state, read through your own gh or glab for each project hosted there. A missing or logged-out CLI means this is quietly absent, never an error.",
-  fields: [],
-  keywords: ["forge", "github", "gitlab", "gh", "glab", "pull request", "merge request", "checks"],
+export const SHORTCUTS_SECTION: SettingsSection = {
+  id: "shortcuts",
+  title: "Keyboard shortcuts",
+  hint: "Every shortcut is ⌘ and a key, with ⇧ or ⌥ if you like. Ctrl is never one: it belongs to the program running in the terminal. The menu bar and the command palette follow whatever you set here.",
+  fields: COMMANDS.map((command) => command.title),
+  keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
 };
 
 export const PROFILES_DEFAULT_SECTION: SettingsSection = {
@@ -241,11 +242,18 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     sections: [NOTIFICATIONS_BELL_SECTION],
   },
   {
+    id: "shortcuts",
+    title: "Shortcuts",
+    description:
+      "The keys that reach Janela rather than the terminal. Change any of them; a chord another command already answers to is refused by name.",
+    sections: [SHORTCUTS_SECTION],
+  },
+  {
     id: "integrations",
     title: "Integrations",
     description:
-      "The tools Janela reaches: gh and glab for pull request state, and the launch profiles that start claude, codex or a shell. Janela starts them and reads from them; it does not wrap, parse or manage what they do.",
-    sections: [FORGE_SECTION, PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
+      "The launch profiles that start claude, codex or a shell in a new terminal. Janela starts them and reads from them; it does not wrap, parse or manage what they do.",
+    sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
   },
   {
     id: "experimental",

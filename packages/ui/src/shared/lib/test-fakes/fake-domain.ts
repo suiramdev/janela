@@ -82,7 +82,6 @@ export function fakeSettings(overrides: Partial<ProjectSettings> = {}): ProjectS
   return {
     worktreeRoot: { kind: "siblingDirectory" },
     automation: {},
-    isForgeEnabled: true,
     ...overrides,
   };
 }

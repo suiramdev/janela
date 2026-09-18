@@ -1,14 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
-import type { CommandID } from "@janela/ui";
+import { DEFAULT_GLOBAL_SETTINGS, type CommandID, type GlobalSettings } from "@janela/ui";
 import type { EventCallback, UnlistenFn } from "@tauri-apps/api/event";
 
 import {
   COMMAND_EVENT,
   installNativeMenu,
+  syncNativeShortcuts,
   tauriCommandSource,
   type CommandEventListener,
+  type MenuAccelerator,
+  type ShortcutSettingsSource,
 } from "./menu.ts";
+
+interface FakeSettingsView extends ShortcutSettingsSource {
+  set(settings: GlobalSettings): void;
+  record(isRecording: boolean): void;
+}
 
 interface FakeEvents {
   readonly listen: CommandEventListener;
@@ -122,5 +130,116 @@ describe("installNativeMenu", () => {
       }),
     ).resolves.toBeUndefined();
     expect(commands).toEqual(["install_menu"]);
+  });
+});
+
+function fakeSettingsView(): FakeSettingsView {
+  let settings = DEFAULT_GLOBAL_SETTINGS;
+  let isRecording = false;
+  const listeners = new Set<() => void>();
+
+  const notify = (): void => {
+    for (const listener of listeners) listener();
+  };
+
+  return {
+    get settings(): GlobalSettings {
+      return settings;
+    },
+    get isRecordingShortcut(): boolean {
+      return isRecording;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    set(next) {
+      settings = next;
+      notify();
+    },
+    record(next) {
+      isRecording = next;
+      notify();
+    },
+  };
+}
+
+describe("syncNativeShortcuts", () => {
+  test("says nothing while every shortcut is the default, then sends the whole table on a change", () => {
+    const sent: (readonly MenuAccelerator[])[] = [];
+    const view = fakeSettingsView();
+
+    syncNativeShortcuts((accelerators) => {
+      sent.push(accelerators);
+
+      return Promise.resolve();
+    }, view);
+
+    view.set({ ...DEFAULT_GLOBAL_SETTINGS, terminalFontSize: 16 });
+
+    expect(sent).toEqual([]);
+
+    view.set({ ...DEFAULT_GLOBAL_SETTINGS, commandShortcuts: { splitRight: "CmdOrCtrl+E" } });
+
+    const [accelerators] = sent;
+
+    expect(sent).toHaveLength(1);
+    expect(accelerators?.find((row) => row.id === "splitRight")?.accelerator).toBe("CmdOrCtrl+E");
+    expect(accelerators?.find((row) => row.id === "closePane")?.accelerator).toBe("CmdOrCtrl+W");
+    expect(accelerators?.find((row) => row.id === "revealInFinder")?.accelerator).toBeNull();
+  });
+
+  test("a reset to the defaults is sent too, so the menu forgets the old chord", () => {
+    let sends = 0;
+    const view = fakeSettingsView();
+
+    view.set({ ...DEFAULT_GLOBAL_SETTINGS, commandShortcuts: { splitRight: "CmdOrCtrl+E" } });
+    syncNativeShortcuts(() => {
+      sends += 1;
+
+      return Promise.resolve();
+    }, view);
+    view.set(DEFAULT_GLOBAL_SETTINGS);
+
+    expect(sends).toBe(2);
+  });
+
+  test("recording releases every accelerator, so the menu cannot swallow the chord", () => {
+    const sent: (readonly MenuAccelerator[])[] = [];
+    const view = fakeSettingsView();
+
+    syncNativeShortcuts((accelerators) => {
+      sent.push(accelerators);
+
+      return Promise.resolve();
+    }, view);
+
+    view.record(true);
+
+    const [released] = sent;
+
+    expect(sent).toHaveLength(1);
+    expect(released?.length).toBeGreaterThan(0);
+    expect(released?.every((row) => row.accelerator === null)).toBe(true);
+
+    view.record(false);
+
+    const restored = sent[1];
+
+    expect(sent).toHaveLength(2);
+    expect(restored?.find((row) => row.id === "newSession")?.accelerator).toBe("CmdOrCtrl+N");
+  });
+
+  test("a shell that refuses the table is a warning, never a thrown error", () => {
+    const view = fakeSettingsView();
+
+    syncNativeShortcuts(() => Promise.reject(new Error("no menu")), view);
+
+    expect(() => {
+      view.set({ ...DEFAULT_GLOBAL_SETTINGS, commandShortcuts: { splitRight: "CmdOrCtrl+E" } });
+    }).not.toThrow();
   });
 });

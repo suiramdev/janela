@@ -24,7 +24,9 @@
 // titles, accelerators and which menu a row goes in — and nothing else. It does
 // not know what any command *means*, which is what stops the menu bar and the
 // in-app command palette drifting apart: there is one table, in TypeScript, and
-// adding a row to it needs no Rust change.
+// adding a row to it needs no Rust change. A user's own shortcuts arrive later,
+// through `set_menu_accelerators`, and are applied to the items already in the
+// bar — never by building a second menu (see `install_menu`).
 
 // The socket bridge is `bridge.rs`: it relays length-prefixed frames as raw bytes
 // in both directions and applies the two back-pressure policies — coalesced
@@ -41,7 +43,8 @@
 mod agent;
 mod bridge;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use agent::{
@@ -52,7 +55,7 @@ use bridge::{bridge_close, bridge_connect, bridge_receive, bridge_send, BridgeSt
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Wry};
+use tauri::{AppHandle, Emitter, State, Wry};
 
 /// The event a chosen menu item arrives on.
 ///
@@ -74,6 +77,28 @@ struct CommandSpec {
     section: Option<u32>,
 }
 
+/// One row of the user's shortcut table, as it crosses from the WebView: the chord
+/// a command now has, or `None` for a command with no chord at all.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceleratorSpec {
+    id: String,
+    accelerator: Option<String>,
+}
+
+/// The menu bar's mutable half.
+///
+/// `items` is every command row in the bar, by id, so a later accelerator change
+/// can be applied to the item that is already there. `accelerators` is the last
+/// table the WebView sent, kept so that a table arriving *before* the menu is
+/// built (settings load and the menu install are two independent promises) is
+/// honoured when it is.
+#[derive(Default)]
+struct MenuState {
+    items: Mutex<Option<HashMap<String, MenuItem<Wry>>>>,
+    accelerators: Mutex<HashMap<String, Option<String>>>,
+}
+
 /// Builds the menu bar from the table and installs it.
 ///
 /// Called after the page loads. Building it before then would need the table in
@@ -84,16 +109,36 @@ struct CommandSpec {
 /// menu's key equivalents: both stay registered with AppKit, and one ⌘D then
 /// splits twice. The table is a constant for the life of the process, so the
 /// second call has nothing to add — and in development the frontend remounts on
-/// every hot reload, which is how this was found.
+/// every hot reload, which is how this was found. What *does* change at runtime
+/// is a row's accelerator, and that is edited on the existing item.
 #[tauri::command]
-fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String> {
-    if MENU_INSTALLED.swap(true, Ordering::SeqCst) {
+fn install_menu(
+    app: AppHandle,
+    state: State<'_, MenuState>,
+    commands: Vec<CommandSpec>,
+) -> Result<(), String> {
+    let mut installed = lock(&state.items);
+    if installed.is_some() {
         return Ok(());
     }
+
+    let overrides = lock(&state.accelerators);
+    let commands: Vec<CommandSpec> = commands
+        .into_iter()
+        .map(|spec| match overrides.get(&spec.id) {
+            Some(accelerator) => CommandSpec {
+                accelerator: accelerator.clone(),
+                ..spec
+            },
+            None => spec,
+        })
+        .collect();
+    drop(overrides);
 
     let rows = |menu: &str| -> Vec<&CommandSpec> {
         commands.iter().filter(|spec| spec.menu == menu).collect()
     };
+    let mut items: HashMap<String, MenuItem<Wry>> = HashMap::new();
 
     for spec in &commands {
         if !MENUS.contains(&spec.menu.as_str()) {
@@ -109,7 +154,7 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     app_items.push(Box::new(
         PredefinedMenuItem::separator(&app).map_err(to_message)?,
     ));
-    push_rows(&app, &mut app_items, &rows("app"))?;
+    push_rows(&app, &mut app_items, &rows("app"), &mut items)?;
     app_items.push(Box::new(
         PredefinedMenuItem::separator(&app).map_err(to_message)?,
     ));
@@ -136,7 +181,7 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     ));
     let app_menu = submenu(&app, "Janela", app_items)?;
 
-    let file = submenu_of_rows(&app, "File", &rows("file"))?;
+    let file = submenu_of_rows(&app, "File", &rows("file"), &mut items)?;
 
     // Edit is entirely predefined, and that is the point: these are what route
     // ⌘C, ⌘V and ⌘Z to the WebView, where the terminal handles the DOM `copy` and
@@ -152,9 +197,9 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     ];
     let edit = submenu(&app, "Edit", edit_items)?;
 
-    let view = submenu_of_rows(&app, "View", &rows("view"))?;
-    let session = submenu_of_rows(&app, "Session", &rows("session"))?;
-    let terminal = submenu_of_rows(&app, "Terminal", &rows("terminal"))?;
+    let view = submenu_of_rows(&app, "View", &rows("view"), &mut items)?;
+    let session = submenu_of_rows(&app, "Session", &rows("session"), &mut items)?;
+    let terminal = submenu_of_rows(&app, "Terminal", &rows("terminal"), &mut items)?;
 
     // No Close Window: ⌘W closes a *pane*, and a window holding a running agent is
     // not something to close by reflex. No Enter Full Screen either — its default
@@ -174,11 +219,47 @@ fn install_menu(app: AppHandle, commands: Vec<CommandSpec>) -> Result<(), String
     )
     .map_err(to_message)?;
     app.set_menu(menu).map_err(to_message)?;
+    *installed = Some(items);
     Ok(())
 }
 
-/// Whether the menu bar has been built. See `install_menu`.
-static MENU_INSTALLED: AtomicBool = AtomicBool::new(false);
+/// Replaces every command row's accelerator with the user's table.
+///
+/// Applied in place on the items `install_menu` kept, so AppKit sees one key
+/// equivalent per chord throughout. Before the menu exists the table is only
+/// remembered; `install_menu` reads it. An unknown id is skipped rather than an
+/// error: the table is the WebView's, and a row the bar has no item for (a
+/// command hidden on this client) is not a fault.
+#[tauri::command]
+fn set_menu_accelerators(
+    state: State<'_, MenuState>,
+    accelerators: Vec<AcceleratorSpec>,
+) -> Result<(), String> {
+    let mut remembered = lock(&state.accelerators);
+    remembered.clear();
+    for spec in &accelerators {
+        remembered.insert(spec.id.clone(), spec.accelerator.clone());
+    }
+    drop(remembered);
+
+    let installed = lock(&state.items);
+    let Some(items) = installed.as_ref() else {
+        return Ok(());
+    };
+    for spec in &accelerators {
+        if let Some(item) = items.get(&spec.id) {
+            item.set_accelerator(spec.accelerator.as_deref())
+                .map_err(to_message)?;
+        }
+    }
+    Ok(())
+}
+
+/// A poisoned menu lock means a panic mid-edit of the menu bar; the bar is still
+/// AppKit's and still usable, so carry on with whatever state was left.
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Every menu the table may name. An unknown one is a bug in the table, not a row
 /// to silently drop.
@@ -202,17 +283,20 @@ fn submenu_of_rows(
     app: &AppHandle,
     title: &str,
     rows: &[&CommandSpec],
+    by_id: &mut HashMap<String, MenuItem<Wry>>,
 ) -> Result<Submenu<Wry>, String> {
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>> = Vec::new();
-    push_rows(app, &mut items, rows)?;
+    push_rows(app, &mut items, rows, by_id)?;
     submenu(app, title, items)
 }
 
-/// Appends the rows, with a separator wherever the section changes.
+/// Appends the rows, with a separator wherever the section changes, and records
+/// each item by id so its accelerator can be edited later.
 fn push_rows(
     app: &AppHandle,
     items: &mut Vec<Box<dyn tauri::menu::IsMenuItem<Wry>>>,
     rows: &[&CommandSpec],
+    by_id: &mut HashMap<String, MenuItem<Wry>>,
 ) -> Result<(), String> {
     let mut previous: Option<u32> = None;
     for spec in rows {
@@ -223,16 +307,16 @@ fn push_rows(
             ));
         }
         previous = Some(section);
-        items.push(Box::new(
-            MenuItem::with_id(
-                app,
-                &spec.id,
-                &spec.title,
-                true,
-                spec.accelerator.as_deref(),
-            )
-            .map_err(to_message)?,
-        ));
+        let item = MenuItem::with_id(
+            app,
+            &spec.id,
+            &spec.title,
+            true,
+            spec.accelerator.as_deref(),
+        )
+        .map_err(to_message)?;
+        by_id.insert(spec.id.clone(), item.clone());
+        items.push(Box::new(item));
     }
     Ok(())
 }
@@ -262,12 +346,14 @@ fn main() {
             let _ = app.emit(COMMAND_EVENT, event.id().0.clone());
         })
         .manage(BridgeState::default())
+        .manage(MenuState::default())
         .invoke_handler(tauri::generate_handler![
             bridge_connect,
             bridge_receive,
             bridge_send,
             bridge_close,
             install_menu,
+            set_menu_accelerators,
             launch_agent_status,
             register_launch_agent,
             unregister_launch_agent,

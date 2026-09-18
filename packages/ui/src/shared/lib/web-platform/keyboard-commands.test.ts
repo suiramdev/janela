@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { COMMANDS, type Command, type CommandID } from "../../config/index.ts";
+import { COMMANDS, type Command, type CommandID, type KeyChord } from "../../config/index.ts";
 import {
   type ChordEvent,
   type ChordTarget,
-  type KeyChord,
   commandForChord,
   keyboardCommandSource,
 } from "./keyboard-commands.ts";
@@ -17,6 +16,8 @@ interface Registration {
 interface RecordingTarget extends ChordTarget {
   readonly registered: Registration[];
 }
+
+const NEVER_RECORDING = (): boolean => false;
 
 const NEVER_HELD = (): boolean => false;
 
@@ -141,7 +142,12 @@ describe("keyboardCommandSource", () => {
     const received: CommandID[] = [];
     const calls: string[] = [];
 
-    const unsubscribe = keyboardCommandSource(target, COMMANDS, NEVER_HELD).subscribe((id) => {
+    const unsubscribe = keyboardCommandSource(
+      target,
+      () => COMMANDS,
+      NEVER_HELD,
+      NEVER_RECORDING,
+    ).subscribe((id) => {
       received.push(id);
     });
 
@@ -163,7 +169,7 @@ describe("keyboardCommandSource", () => {
     const received: CommandID[] = [];
     const calls: string[] = [];
 
-    keyboardCommandSource(target, COMMANDS, NEVER_HELD).subscribe((id) => {
+    keyboardCommandSource(target, () => COMMANDS, NEVER_HELD, NEVER_RECORDING).subscribe((id) => {
       received.push(id);
     });
     target.registered[0]?.listener(event(chord("KeyC"), calls));
@@ -172,13 +178,43 @@ describe("keyboardCommandSource", () => {
     expect(calls).toEqual([]);
   });
 
+  test("while a shortcut is being recorded, the chord is left for the recorder to read", () => {
+    const target = recordingTarget();
+    const received: CommandID[] = [];
+    const calls: string[] = [];
+    let isRecording = true;
+
+    keyboardCommandSource(
+      target,
+      () => COMMANDS,
+      NEVER_HELD,
+      () => isRecording,
+    ).subscribe((id) => {
+      received.push(id);
+    });
+    target.registered[0]?.listener(event(chord("KeyN"), calls));
+
+    expect(received).toEqual([]);
+    expect(calls).toEqual([]);
+
+    isRecording = false;
+    target.registered[0]?.listener(event(chord("KeyN"), calls));
+
+    expect(received).toEqual(["newSession"]);
+  });
+
   test("while a modal holds the keyboard, a chord is claimed but runs nothing", () => {
     const target = recordingTarget();
     const received: CommandID[] = [];
     const calls: string[] = [];
     let held = true;
 
-    keyboardCommandSource(target, COMMANDS, () => held).subscribe((id) => {
+    keyboardCommandSource(
+      target,
+      () => COMMANDS,
+      () => held,
+      NEVER_RECORDING,
+    ).subscribe((id) => {
       received.push(id);
     });
     target.registered[0]?.listener(event(chord("KeyN"), calls));

@@ -4,6 +4,7 @@ import {
   Cancel01Icon,
   ColorsIcon,
   FlaskConicalIcon,
+  KeyboardIcon,
   Notification01Icon,
   PlugSocketIcon,
   Search01Icon,
@@ -86,11 +87,12 @@ import {
   tabInfo,
 } from "../model/settings-index.ts";
 import { SettingsAppearance } from "./appearance-settings.tsx";
-import { SettingsIntegrations } from "./integrations-settings.tsx";
+import { SettingsProfiles } from "./launch-profiles.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
 import { EmptyPane, Pane, PaneHeader } from "./pane.tsx";
 import { SettingsPermissions } from "./permissions-settings.tsx";
 import { ProjectSettingsPane } from "./project-settings.tsx";
+import { SettingsShortcuts } from "./shortcuts-settings.tsx";
 
 export interface SettingsTab {
   readonly id: SettingsTabID;
@@ -132,6 +134,7 @@ export interface SettingsPaneProps {
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
   readonly reveal?: SettingsReveal | undefined;
+  readonly onRecordingShortcut: (isRecording: boolean) => void;
   readonly onChangeDraft: (draft: SettingsDraft) => void;
 }
 
@@ -139,6 +142,7 @@ const TAB_ICON = {
   appearance: hugeicon(ColorsIcon),
   accessibility: hugeicon(AccessibilityIcon),
   notifications: hugeicon(Notification01Icon),
+  shortcuts: hugeicon(KeyboardIcon),
   integrations: hugeicon(PlugSocketIcon),
   experimental: hugeicon(FlaskConicalIcon),
   permissions: hugeicon(SecurityCheckIcon),
@@ -430,7 +434,7 @@ export function SettingsPane(props: SettingsPaneProps): ReactElement {
 function PaneBody(
   props: SettingsPaneProps & { readonly project: Project | undefined },
 ): ReactElement | null {
-  const { draft, onChangeDraft, project, projects } = props;
+  const { draft, onChangeDraft, project } = props;
   const settings = draftSettings(draft, props.settings);
   const projectID = project?.id;
 
@@ -478,9 +482,15 @@ function PaneBody(
     Match.when("notifications", () => (
       <SettingsNotifications settings={settings} onChange={changeSettings} />
     )),
+    Match.when("shortcuts", () => (
+      <SettingsShortcuts
+        settings={settings}
+        onChange={changeSettings}
+        onRecording={props.onRecordingShortcut}
+      />
+    )),
     Match.when("integrations", () => (
-      <SettingsIntegrations
-        projects={projects}
+      <SettingsProfiles
         profiles={props.profiles}
         availability={props.availability}
         settings={settings}
@@ -583,6 +593,13 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
     view.showWorkspace();
   }, [view]);
 
+  const recordShortcut = useCallback(
+    (isRecording: boolean) => {
+      view.setRecordingShortcut(isRecording);
+    },
+    [view],
+  );
+
   const changeDraft = useCallback(
     (next: SettingsDraft) => {
       view.editSettingsDraft(next);
@@ -654,6 +671,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             draft={draft}
             reveal={reveal}
             onChangeDraft={changeDraft}
+            onRecordingShortcut={recordShortcut}
           />
           <SettingsCommitBar
             isDirty={isDirty}

@@ -44,7 +44,7 @@ const project: Project = {
   id: projectID,
   name: "janela",
   directory: "/Users/x/code/janela" as AbsolutePath,
-  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
+  settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {} },
   accent: "none",
   isExpanded: true,
   addedAt: now(),

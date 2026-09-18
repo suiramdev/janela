@@ -63,7 +63,6 @@ export interface ProjectColumns {
   readonly forge: string | null;
   readonly worktreeRoot: string;
   readonly worktreeRootPath: string | null;
-  readonly isForgeEnabled: boolean;
   readonly accent: string;
   readonly isExpanded: boolean;
   readonly addedAt: Date;
@@ -291,7 +290,6 @@ export function encodeProject(project: Project): ProjectColumns {
     forge: project.git?.forge ?? null,
     worktreeRoot: root.kind,
     worktreeRootPath: root.kind === "custom" ? root.directory : null,
-    isForgeEnabled: project.settings.isForgeEnabled,
     accent: project.accent,
     isExpanded: project.isExpanded,
     addedAt: toDate(project.addedAt),
@@ -403,7 +401,6 @@ export function decodeProject(row: ProjectRow, log: Logger): Project {
   const settings: ProjectSettings = {
     worktreeRoot,
     automation,
-    isForgeEnabled: row.isForgeEnabled,
   };
 
   if (defaultProfileID !== undefined) settings.defaultProfileID = defaultProfileID;

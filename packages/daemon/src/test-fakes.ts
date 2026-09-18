@@ -543,7 +543,6 @@ export function fakeProject(id: string): Project {
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
       automation: {},
-      isForgeEnabled: false,
     },
     accent: "none",
     isExpanded: true,

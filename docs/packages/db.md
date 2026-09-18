@@ -411,6 +411,11 @@ need it is the safe choice, and the script is the user's to tidy. The forward
 test seeds four argv rows at v1 and asserts the exact script text, quoting and
 order included.
 
+**v3 — `20260917150000_drop_forge_toggle`.** `Project.isForgeEnabled` is dropped; a
+plain `ALTER TABLE … DROP COLUMN`, which SQLite has had since 3.35 and the bundled
+engine is well past. The forward test seeds a project at v2 with the switch off and
+asserts its other settings survive and the column is gone.
+
 ## repositories.ts, prisma-repositories.ts
 
 `repositories.ts` is the interface half and names only `@janela/core` types;

@@ -16,7 +16,12 @@ import { Match } from "effect";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
-import { installNativeMenu, tauriCommandSource } from "./adapters/menu.ts";
+import {
+  installNativeMenu,
+  nativeMenuAccelerators,
+  syncNativeShortcuts,
+  tauriCommandSource,
+} from "./adapters/menu.ts";
 import { tauriDirectoryPicker, tauriNativeShell } from "./adapters/native.ts";
 import { tauriWindowControls } from "./adapters/window-controls.ts";
 import { liveEnvironment } from "./environment.ts";
@@ -97,6 +102,8 @@ void trace("log sink installed");
 environment.focus.install((terminalID) => {
   view.focusTerminal(terminalID);
 });
+
+syncNativeShortcuts(nativeMenuAccelerators(invoke), view);
 
 if (container === null) throw new Error(`index.html has no #${ROOT_ELEMENT_ID}`);
 

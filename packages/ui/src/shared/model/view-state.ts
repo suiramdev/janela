@@ -21,6 +21,7 @@ export type SettingsTabID =
   | "appearance"
   | "accessibility"
   | "notifications"
+  | "shortcuts"
   | "integrations"
   | "experimental"
   | "permissions";
@@ -42,6 +43,8 @@ export interface ViewState {
 
   readonly settings: GlobalSettings;
 
+  readonly isRecordingShortcut: boolean;
+
   applyLayout(sessionID: SessionID, change: (layout: SessionLayout) => SessionLayout): void;
 
   focusTerminal(terminalID: TerminalID): void;
@@ -49,6 +52,7 @@ export interface ViewState {
   openSheet(sheet: Sheet): void;
   closeSheet(): void;
   setSettings(settings: GlobalSettings): void;
+  setRecordingShortcut(isRecording: boolean): void;
 
   readonly settingsDraft: SettingsDraft;
   readonly savedSettingsDraft: SettingsDraft;
@@ -86,6 +90,7 @@ export function createViewState(sessions: SessionStore): ViewState {
   let settings = DEFAULT_GLOBAL_SETTINGS;
   let settingsDraft = EMPTY_SETTINGS_DRAFT;
   let savedSettingsDraft = EMPTY_SETTINGS_DRAFT;
+  let isRecordingShortcut = false;
 
   const surfaces = new Map<TerminalID, TerminalSurfaceHandle>();
 
@@ -124,6 +129,9 @@ export function createViewState(sessions: SessionStore): ViewState {
     },
     get settings(): GlobalSettings {
       return settings;
+    },
+    get isRecordingShortcut(): boolean {
+      return isRecordingShortcut;
     },
     get settingsDraft(): SettingsDraft {
       return settingsDraft;
@@ -165,6 +173,13 @@ export function createViewState(sessions: SessionStore): ViewState {
       if (settings === next) return;
 
       settings = next;
+      notify();
+    },
+
+    setRecordingShortcut(next: boolean): void {
+      if (isRecordingShortcut === next) return;
+
+      isRecordingShortcut = next;
       notify();
     },
 

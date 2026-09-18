@@ -90,7 +90,7 @@ function persistedProject(): Project {
     id: newProjectID(),
     name: "janela",
     directory: absolutePath(`/tmp/janela-${crypto.randomUUID()}`),
-    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {}, isForgeEnabled: true },
+    settings: { worktreeRoot: { kind: "siblingDirectory" }, automation: {} },
     accent: "none",
     isExpanded: true,
     addedAt: now(),

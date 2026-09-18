@@ -79,7 +79,6 @@ export function project(id: string, isExpanded: boolean): Project {
     settings: {
       worktreeRoot: { kind: "siblingDirectory" },
       automation: {},
-      isForgeEnabled: false,
     },
     accent: "none",
     isExpanded,

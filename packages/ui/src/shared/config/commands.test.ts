@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { COMMANDS, acceleratorCaps, availableCommands, isCommandID } from "./commands.ts";
+import { COMMANDS, availableCommands, isCommandID } from "./commands.ts";
 
 const chordOf = (id: string): string | undefined =>
   COMMANDS.find((command) => command.id === id)?.accelerator;
@@ -50,13 +50,5 @@ describe("availableCommands", () => {
 
     expect(missing.map((command) => command.id)).toEqual(["revealInFinder", "openInTerminal"]);
     expect(availableCommands(true)).toBe(COMMANDS);
-  });
-});
-
-describe("acceleratorCaps", () => {
-  test("renders the chord a Mac user reads, one token per cap", () => {
-    expect(acceleratorCaps("CmdOrCtrl+Shift+]")).toBe("⌘+⇧+]");
-    expect(acceleratorCaps("CmdOrCtrl+Alt+Left")).toBe("⌘+⌥+←");
-    expect(acceleratorCaps("CmdOrCtrl+,")).toBe("⌘+,");
   });
 });

@@ -92,7 +92,6 @@ public struct ProjectSettings: Hashable, Sendable, Codable {
     public var worktreeRoot: WorktreeRoot        // where new worktrees are placed
     public var automation: [AutomationEvent: AutomationScript]   // see below
     public var defaultProfileID: LaunchProfileID?
-    public var forge: ForgeSettings              // enabled, host override
 }
 ```
 
@@ -100,6 +99,11 @@ Per-*project* settings earn their place because a project is where the differenc
 actually live: one repo needs `pnpm install`, another needs a Python venv, a third
 needs neither. Per-*session* settings do not, and adding them would mean
 revisiting that split here first.
+
+Reading pull request state from GitHub or GitLab is not a setting. It used to be a
+per-project switch; it is now what a hosted project simply does, because a missing
+or logged-out `gh`/`glab` is already silence, so the switch only ever turned off
+something that cost nothing when it could not run.
 
 ---
 
