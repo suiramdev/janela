@@ -1,9 +1,7 @@
 import {
-  AccessibilityIcon,
   ArrowLeft02Icon,
   Cancel01Icon,
   ColorsIcon,
-  FlaskConicalIcon,
   KeyboardIcon,
   Notification01Icon,
   PlugSocketIcon,
@@ -89,7 +87,7 @@ import {
 import { SettingsAppearance } from "./appearance-settings.tsx";
 import { SettingsProfiles } from "./launch-profiles.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
-import { EmptyPane, Pane, PaneHeader } from "./pane.tsx";
+import { Pane, PaneHeader } from "./pane.tsx";
 import { SettingsPermissions } from "./permissions-settings.tsx";
 import { ProjectSettingsPane } from "./project-settings.tsx";
 import { SettingsShortcuts } from "./shortcuts-settings.tsx";
@@ -140,11 +138,9 @@ export interface SettingsPaneProps {
 
 const TAB_ICON = {
   appearance: hugeicon(ColorsIcon),
-  accessibility: hugeicon(AccessibilityIcon),
   notifications: hugeicon(Notification01Icon),
   shortcuts: hugeicon(KeyboardIcon),
   integrations: hugeicon(PlugSocketIcon),
-  experimental: hugeicon(FlaskConicalIcon),
   permissions: hugeicon(SecurityCheckIcon),
 } satisfies Record<SettingsTabID, IconComponent>;
 
@@ -473,12 +469,6 @@ function PaneBody(
     Match.when("appearance", () => (
       <SettingsAppearance settings={settings} onChange={changeSettings} />
     )),
-    Match.when("accessibility", () => (
-      <EmptyPane>
-        Nothing to set here yet. Every accessibility setting Janela honours is the system's, and it
-        reads them as they change.
-      </EmptyPane>
-    )),
     Match.when("notifications", () => (
       <SettingsNotifications settings={settings} onChange={changeSettings} />
     )),
@@ -499,7 +489,6 @@ function PaneBody(
         onChangeDraft={onChangeDraft}
       />
     )),
-    Match.when("experimental", () => <EmptyPane>Nothing is behind a flag right now.</EmptyPane>),
     Match.when("permissions", () => (
       <SettingsPermissions
         settings={settings}

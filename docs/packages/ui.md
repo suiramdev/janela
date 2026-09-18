@@ -632,7 +632,7 @@ positional shape is deliberate — a sidebar test reads better as
   fixed data, projects are the mirror's list, and the sidebar's *Project Settings* row
   became a link to somewhere rather than a second editor.
 - **The panes are the questions a user arrives with, and no General.** Appearance,
-  Accessibility, Notifications, Integrations, Experimental, Permissions. The first
+  Notifications, Shortcuts, Integrations, Permissions. The first
   cut was one pane per *product noun* — Terminal, Launch profiles, Notifications,
   Daemon — which read well from inside the codebase and badly from outside it:
   nobody arrives thinking "daemon", they arrive thinking "why did it ask me that"
@@ -645,12 +645,21 @@ positional shape is deliberate — a sidebar test reads better as
   command, not a wrapper; the close-terminal confirmation, the notification
   permission's explanation and the daemon's stop controls under Permissions,
   because all three are "what may it do, and what does it ask first".
-- **Two panes are honestly empty.** Accessibility and Experimental render an empty
-  state saying why — Janela follows the system's accessibility settings rather than
-  keeping its own, and nothing is currently behind a flag. They exist because their
-  absence would be read as "Janela ignores accessibility", and because a category
-  that will exist eventually is cheaper to ship empty than to renumber the panes
-  around later. The empty copy is load-bearing: it states the policy.
+- **No pane is empty, and two categories wait in this file rather than in code.**
+  Accessibility and Experimental shipped for one revision as empty panes whose copy
+  stated a policy — Janela follows the system's accessibility settings rather than
+  keeping its own, and nothing is behind a flag — and were removed because a tab
+  with nothing behind it is a tab the user opens, reads, and closes; the repo's
+  no-comment rule means the reservation lives here, and their last code is in
+  git (`feat(ui): settings by the questions users arrive with`). When either
+  earns a setting, restore the `SettingsTabID` member, the `SETTINGS_TAB_INFO`
+  entry, the `TAB_ICON` (`AccessibilityIcon`, `FlaskConicalIcon`) and the
+  `Match.when` arm, and the tab-table test asserts every pane holds a section.
+  The copy worth keeping — descriptions: *"Janela follows the macOS settings:
+  Reduce motion stops the cursor blinking and every animation, Increase contrast
+  raises the terminal's. Nothing here overrides them."* and *"Nothing is behind
+  a flag. What Janela ships, it ships for everyone; a feature that is not ready
+  for that will be switched on here."*
 - **The sections are data, not markup.** `model/settings-index.ts` holds every pane,
   its description, its sections and their field labels; the panes render from it and
   the sidebar's search reads it. A table nothing renders drifts, so a test renders

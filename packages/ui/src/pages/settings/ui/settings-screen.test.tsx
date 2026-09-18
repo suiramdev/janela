@@ -65,11 +65,9 @@ const projectRoute = (project: Project): SettingsRoute => ({
 
 const PANE_COPY = {
   appearance: "Font family",
-  accessibility: "Nothing to set here yet",
   notifications: "rings the bell",
   shortcuts: "Close Pane",
   integrations: "Default launch profile",
-  experimental: "Nothing is behind a flag",
   permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
 
@@ -134,11 +132,9 @@ describe("the tab table", () => {
   test("is one subject per pane, in the order the sidebar shows", () => {
     expect(SETTINGS_TABS.map((tab) => tab.id)).toEqual([
       "appearance",
-      "accessibility",
       "notifications",
       "shortcuts",
       "integrations",
-      "experimental",
       "permissions",
     ]);
   });
@@ -150,22 +146,19 @@ describe("the tab table", () => {
     expect(titles).not.toContain("Advanced");
   });
 
-  test("has no Projects tab: the projects are rows, not a seventh pane", () => {
+  test("has no Projects tab: the projects are rows, not a sixth pane", () => {
     const ids: readonly string[] = SETTINGS_TABS.map((tab) => tab.id);
 
     expect(ids).not.toContain("projects");
     expect(SETTINGS_TABS.some((tab) => tab.title === "Projects")).toBe(false);
   });
 
-  test("every pane says what it is for; only two hold no setting yet", () => {
+  test("every pane says what it is for and holds at least one setting", () => {
     for (const info of SETTINGS_TAB_INFO) {
       expect(info.title.length).toBeGreaterThan(0);
       expect(info.description.length).toBeGreaterThan(0);
+      expect(info.sections.length).toBeGreaterThan(0);
     }
-
-    expect(
-      SETTINGS_TAB_INFO.filter((info) => info.sections.length === 0).map((info) => info.id),
-    ).toEqual(["accessibility", "experimental"]);
   });
 });
 
@@ -209,11 +202,9 @@ describe("the sidebar", () => {
 
     expect(rowTitles(markup)).toEqual([
       "Appearance",
-      "Accessibility",
       "Notifications",
       "Shortcuts",
       "Integrations",
-      "Experimental",
       "Permissions",
       "janela",
       "api",
@@ -265,11 +256,9 @@ describe("the sidebar", () => {
     expect(markup).toContain("No projects yet.");
     expect(rowTitles(markup)).toEqual([
       "Appearance",
-      "Accessibility",
       "Notifications",
       "Shortcuts",
       "Integrations",
-      "Experimental",
       "Permissions",
     ]);
   });

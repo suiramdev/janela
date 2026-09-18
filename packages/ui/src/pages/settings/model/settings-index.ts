@@ -228,13 +228,6 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     sections: [APPEARANCE_FONT_SECTION],
   },
   {
-    id: "accessibility",
-    title: "Accessibility",
-    description:
-      "Janela follows the macOS settings: Reduce motion stops the cursor blinking and every animation, Increase contrast raises the terminal's. Nothing here overrides them.",
-    sections: [],
-  },
-  {
     id: "notifications",
     title: "Notifications",
     description:
@@ -254,13 +247,6 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     description:
       "The launch profiles that start claude, codex or a shell in a new terminal. Janela starts them and reads from them; it does not wrap, parse or manage what they do.",
     sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
-  },
-  {
-    id: "experimental",
-    title: "Experimental",
-    description:
-      "Nothing is behind a flag. What Janela ships, it ships for everyone; a feature that is not ready for that will be switched on here.",
-    sections: [],
   },
   {
     id: "permissions",

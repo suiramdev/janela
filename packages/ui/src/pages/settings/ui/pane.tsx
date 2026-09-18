@@ -1,13 +1,4 @@
-import {
-  cn,
-  Elevated,
-  Empty,
-  EmptyDescription,
-  FieldDescription,
-  FieldGroup,
-  FieldLegend,
-  FieldSet,
-} from "@janela/design";
+import { cn, Elevated, FieldDescription, FieldGroup, FieldLegend, FieldSet } from "@janela/design";
 import type { ReactElement, ReactNode } from "react";
 
 import { PANE_COLUMN } from "../../../shared/ui/index.ts";
@@ -92,17 +83,5 @@ export function Section(props: {
     <PaneCard title={section.title} hint={section.hint} id={sectionElementID(section.id)}>
       {props.children}
     </PaneCard>
-  );
-}
-
-export function EmptyPane(props: { readonly children: ReactNode }): ReactElement {
-  return (
-    <Elevated offset={1} className="rounded-xl p-4">
-      <Empty className="p-3" data-slot="settings-empty-pane">
-        <EmptyDescription className="text-muted-foreground text-xs">
-          {props.children}
-        </EmptyDescription>
-      </Empty>
-    </Elevated>
   );
 }

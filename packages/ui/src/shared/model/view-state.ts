@@ -19,11 +19,9 @@ export type Sheet =
 
 export type SettingsTabID =
   | "appearance"
-  | "accessibility"
   | "notifications"
   | "shortcuts"
   | "integrations"
-  | "experimental"
   | "permissions";
 
 export type SettingsRoute =
