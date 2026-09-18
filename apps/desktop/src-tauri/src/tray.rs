@@ -32,13 +32,12 @@
 //!
 //! A status item wants a template image: an alpha mask macOS tints itself, which
 //! is what makes one asset correct in a light menu bar, a dark one and under
-//! increased contrast. The app icon is the wrong shape for that — a dithered mark
-//! on a white square, which is mud at 18 pt and has no alpha to tint — and
-//! decoding a PNG instead would add the `image` crate to the shell for 1,296
-//! pixels. So the mark is computed: signed distances for a rounded frame, a
-//! chevron and a cursor bar, sampled 3×3 per pixel so the edges are not jagged.
-//! It runs once per launch, off the terminal path, and owns no asset that can
-//! drift from the icons beside it.
+//! increased contrast. The app icon is the wrong shape for that — a tinted
+//! phosphor field on an opaque tile, which is mud at 18 pt and has no alpha to
+//! tint — and decoding a PNG instead would add the `image` crate to the shell for
+//! 1,296 pixels. So the mark is the icon's hand as a 36-row text bitmap with
+//! four coverage levels, decoded once per launch, off the
+//! terminal path, and owning no asset that can drift from the icons beside it.
 
 use tauri::image::Image;
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
@@ -146,71 +145,72 @@ fn to_message(error: tauri::Error) -> String {
     error.to_string()
 }
 
-/// The mark's grid, in pixels, and how finely each pixel is sampled.
+/// The mark's grid, in pixels.
 ///
 /// 36 px tall because `tray-icon` scales whatever it is given to 18 pt: exactly
 /// two device pixels per point on every Mac that runs this app.
 const GLYPH_SIZE: u32 = 36;
-const GLYPH_SUBSAMPLES: u32 = 3;
 
-/// Half the stroke widths, in the glyph's pixels: 1.5 of 36 is 0.75 pt once scaled,
-/// which carries the weight of the extras it sits beside, and the ink inside is a
-/// shade lighter so the frame reads as a window rather than a box drawn around two
-/// characters.
-const FRAME_STROKE: f64 = 1.5;
-const INK_STROKE: f64 = 1.3;
+/// Coverage per pixel, one character each: space is clear, `.` a third, `+` two
+/// thirds, `#` solid. The silhouette is the app icon's hand at 32 px wide.
+const GLYPH_ROWS: [&str; 36] = [
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "               ++###+.              ",
+    "             .#########.            ",
+    "             ###########            ",
+    "            +###########.           ",
+    "            ############.           ",
+    "           +############+           ",
+    "          +##############.          ",
+    "         +################          ",
+    "       .+#################+         ",
+    "      .####################+        ",
+    "     .######################+       ",
+    "    .#########################+     ",
+    "   .###############+############.   ",
+    "  .############++.   ###########+   ",
+    "  #####+..####+      +###########   ",
+    "  #####   +###+      +###++######+  ",
+    "  .####   +###.      +###..#######  ",
+    "  .###+   +###.      +###..### ###  ",
+    "  .###.   +###.      #### .### ##+  ",
+    "  .##.    +###+     .###+ +##+ ##+  ",
+    "          .###+     +###. ###. +#.  ",
+    "           ###+     +### +###   .   ",
+    "           .##      .##+ ###.       ",
+    "                     ++  ##+        ",
+    "                         +#.        ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+    "                                    ",
+];
 
 fn glyph() -> Image<'static> {
     let side = GLYPH_SIZE as usize;
-    let samples = GLYPH_SUBSAMPLES * GLYPH_SUBSAMPLES;
-    let step = 1.0 / f64::from(GLYPH_SUBSAMPLES);
     let mut rgba = vec![0u8; side * side * 4];
 
-    for y in 0..side {
-        for x in 0..side {
-            let mut covered = 0;
-
-            for sample in 0..samples {
-                let dx = f64::from(sample % GLYPH_SUBSAMPLES) + 0.5;
-                let dy = f64::from(sample / GLYPH_SUBSAMPLES) + 0.5;
-
-                if mark(x as f64 + dx * step, y as f64 + dy * step) <= 0.0 {
-                    covered += 1;
-                }
-            }
-
-            rgba[(y * side + x) * 4 + 3] = u8::try_from(covered * 255 / samples).unwrap_or(u8::MAX);
+    for (y, row) in GLYPH_ROWS.iter().enumerate() {
+        for (x, cell) in row.bytes().enumerate().take(side) {
+            rgba[(y * side + x) * 4 + 3] = coverage(cell);
         }
     }
 
     Image::new_owned(rgba, GLYPH_SIZE, GLYPH_SIZE)
 }
 
-/// A terminal window with a prompt in it: negative inside the ink, positive
-/// outside, zero on its edge.
-fn mark(x: f64, y: f64) -> f64 {
-    let frame = rounded_frame(x, y).abs() - FRAME_STROKE;
-    let chevron = segment(x, y, 11.5, 13.5, 16.5, 18.0).min(segment(x, y, 11.5, 22.5, 16.5, 18.0))
-        - INK_STROKE;
-    let cursor = segment(x, y, 20.5, 22.5, 25.5, 22.5) - INK_STROKE;
-
-    frame.min(chevron).min(cursor)
-}
-
-/// Distance to a rounded rectangle centred in the glyph, 30 × 23 px with a 5 px
-/// corner radius.
-fn rounded_frame(x: f64, y: f64) -> f64 {
-    let qx = (x - 18.0).abs() - 15.0 + 5.0;
-    let qy = (y - 18.0).abs() - 11.5 + 5.0;
-
-    qx.max(qy).min(0.0) + qx.max(0.0).hypot(qy.max(0.0)) - 5.0
-}
-
-/// Distance to a line segment, so a stroke is one subtraction away.
-fn segment(x: f64, y: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
-    let (vx, vy) = (bx - ax, by - ay);
-    let (wx, wy) = (x - ax, y - ay);
-    let along = ((wx * vx + wy * vy) / (vx * vx + vy * vy)).clamp(0.0, 1.0);
-
-    (wx - along * vx).hypot(wy - along * vy)
+/// The alpha a row character stands for; anything unexpected is clear.
+fn coverage(cell: u8) -> u8 {
+    match cell {
+        b'.' => 85,
+        b'+' => 170,
+        b'#' => 255,
+        _ => 0,
+    }
 }

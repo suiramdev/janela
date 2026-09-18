@@ -290,12 +290,13 @@ lives: **Show Janela**, the rows `COMMANDS` marks `tray`, and **Quit Janela**.
 - **The glyph is computed, not an asset.** A status item wants a template image — an
   alpha mask macOS tints itself, which is what makes one mark correct in a light menu
   bar, a dark one and under increased contrast. The app icon is the wrong shape for
-  that: a dithered mark on an opaque white square, mud at 18 pt, with no alpha to
-  tint. The alternative was `tauri`'s `image-png` feature, which pulls the `image`
-  crate into the shell to decode 1,296 pixels. So `mark` is three signed distances —
-  a rounded frame, a chevron, a cursor bar — sampled 3×3 per pixel, run once per
-  launch. 36 px because `tray-icon` scales whatever it is handed to 18 pt, so that is
-  two device pixels per point and no resampling.
+  that: a tinted phosphor field on an opaque dark tile, mud at 18 pt, with no alpha
+  to tint. The alternative was `tauri`'s `image-png` feature, which pulls the `image`
+  crate into the shell to decode 1,296 pixels. So the mark is the app icon's hand as
+  a 36-row text bitmap — space, `.`, `+`, `#` for four
+  coverage levels — decoded into an alpha mask once per launch. 36 px because
+  `tray-icon` scales whatever it is handed to 18 pt, so that is two device pixels
+  per point and no resampling.
 - **A status item that fails to build is logged and nothing else.** The menu bar's
   extras are the user's to remove, and the window is not worth refusing over one.
 
