@@ -6,7 +6,6 @@ import type {
   AutomationEvent,
   Axis,
   Backing,
-  LaunchProfileID,
   PaneDestination,
   Project,
   ProjectID,
@@ -32,7 +31,7 @@ import {
   supportsWorktrees,
   worktreeOf,
 } from "@janela/core";
-import type { LaunchProfileRepository, SessionRepository } from "@janela/db";
+import type { SessionRepository } from "@janela/db";
 import { PullRequestUnavailable, type ForgeServing } from "@janela/forge";
 import type {
   GitWorktree,
@@ -51,7 +50,6 @@ import {
   LayoutTooDeep,
   NotAWorktree,
   PullRequestsNotSupported,
-  UnknownLaunchProfile,
   UnknownProject,
   UnknownSession,
   UnknownTerminal,
@@ -102,7 +100,6 @@ export interface SessionService {
 }
 
 export interface NewTerminalOptions {
-  readonly profileID?: LaunchProfileID;
   readonly title?: string;
   readonly placement?: {
     readonly kind: "split";
@@ -163,7 +160,6 @@ export interface SessionRemovalPlan {
 
 export interface SessionServiceDependencies {
   readonly repository: SessionRepository;
-  readonly profiles: LaunchProfileRepository;
   readonly projects: Pick<ProjectService, "find">;
   readonly worktrees: WorktreeServing;
   readonly terminals: TerminalRegistry;
@@ -505,20 +501,13 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
 
     if (session === undefined) throw new UnknownSession(id);
 
-    const profileID = options.profileID;
-    const profile = profileID === undefined ? undefined : await this.deps.profiles.find(profileID);
-
-    if (profileID !== undefined && profile === undefined) throw new UnknownLaunchProfile(profileID);
-
     const descriptor: TerminalDescriptor = {
       id: newTerminalID(),
-      title: options.title ?? profile?.name ?? "Shell",
+      title: options.title ?? "Shell",
       startsAutomatically: true,
       role: { kind: "user" },
       createdAt: now(),
     };
-
-    if (profile !== undefined) descriptor.profileID = profile.id;
 
     const placement = options.placement;
 
@@ -941,10 +930,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     session: Session,
     descriptor: TerminalDescriptor,
   ): Promise<LiveTerminal> {
-    const profile =
-      descriptor.profileID === undefined
-        ? undefined
-        : await this.deps.profiles.find(descriptor.profileID);
     const project = this.projectOf(session);
 
     const input: MutableLaunchInput = {
@@ -955,8 +940,6 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     };
 
     if (project !== undefined) input.project = project;
-
-    if (profile !== undefined) input.profile = profile;
 
     const launch = await resolveTerminalLaunch(input);
     const create = this.deps.createTerminal ?? createLiveTerminal;

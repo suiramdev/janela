@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import type {
   AbsolutePath,
-  LaunchProfile,
-  LaunchProfileID,
   Project,
   ProjectID,
   Session,
@@ -13,7 +11,7 @@ import type {
 } from "@janela/core";
 import { emptyLayout, now } from "@janela/core";
 
-import { LaunchProfileUnavailable } from "./errors.ts";
+import { ExecutableUnavailable } from "./errors.ts";
 import type { ShellEnvironment } from "./shell-environment.ts";
 import { DEFAULT_INITIAL_SIZE, resolveTerminalLaunch } from "./terminal-launch.ts";
 import { scriptedProcesses } from "./test-fakes.ts";
@@ -59,17 +57,6 @@ const descriptor = (overrides: Partial<TerminalDescriptor> = {}): TerminalDescri
   ...overrides,
 });
 
-const profile = (overrides: Partial<LaunchProfile> = {}): LaunchProfile => ({
-  id: "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f" as LaunchProfileID,
-  name: "Claude Code",
-  iconName: "sparkles",
-  command: ["claude"],
-  environment: {},
-  isAgent: true,
-  isBuiltIn: true,
-  ...overrides,
-});
-
 const rejection = (work: Promise<unknown>): Promise<Error> =>
   work.then(
     () => {
@@ -79,7 +66,7 @@ const rejection = (work: Promise<unknown>): Promise<Error> =>
   );
 
 describe("resolveTerminalLaunch", () => {
-  test("no profile means the login shell, with a dash-prefixed argv[0]", async () => {
+  test("no command means the login shell, with a dash-prefixed argv[0]", async () => {
     const launch = await resolveTerminalLaunch({
       session,
       terminal: descriptor(),
@@ -93,13 +80,13 @@ describe("resolveTerminalLaunch", () => {
     expect(launch.initialSize).toEqual(DEFAULT_INITIAL_SIZE);
   });
 
-  test("a profile's executable is resolved on the captured PATH, not ours", async () => {
+  test("a bare command is resolved on the captured PATH, not ours", async () => {
     const fake = scriptedProcesses({ which: { claude: "/opt/homebrew/bin/claude" } });
 
     const launch = await resolveTerminalLaunch({
       session,
       terminal: descriptor(),
-      profile: profile(),
+      command: ["claude"],
       shell,
       processes: fake.processes,
     });
@@ -125,39 +112,40 @@ describe("resolveTerminalLaunch", () => {
     expect(fake.whichCalls).toEqual([]);
   });
 
-  test("a profile whose tool is not installed names the profile, not the binary", async () => {
+  test("a command that is not installed is refused by name", async () => {
     const thrown = await rejection(
       resolveTerminalLaunch({
         session,
         terminal: descriptor(),
-        profile: profile(),
+        command: ["claude"],
         shell,
         processes: scriptedProcesses({ which: {} }).processes,
       }),
     );
 
-    expect(thrown).toBeInstanceOf(LaunchProfileUnavailable);
+    expect(thrown).toBeInstanceOf(ExecutableUnavailable);
 
-    if (!(thrown instanceof LaunchProfileUnavailable)) throw thrown;
+    if (!(thrown instanceof ExecutableUnavailable)) throw thrown;
 
-    expect(thrown.summary).toBe("Claude Code isn't installed.");
+    expect(thrown.summary).toBe("claude isn't installed.");
   });
 
-  test("the terminal capabilities and the JANELA namespace win over a profile that sets them", async () => {
+  test("the terminal capabilities and the JANELA namespace win over the captured environment", async () => {
     const launch = await resolveTerminalLaunch({
       session,
       terminal: descriptor(),
       project,
-      profile: profile({
-        command: [],
-        environment: {
+      shell: {
+        ...shell,
+        resolved: {
+          PATH: "/opt/homebrew/bin:/usr/bin",
           TERM: "vt100",
           ConEmuANSI: "OFF",
           JANELA_SESSION_NAME: "not this",
           ANTHROPIC_LOG: "debug",
+          EDITOR: "hx",
         },
-      }),
-      shell,
+      },
       processes: scriptedProcesses().processes,
     });
 

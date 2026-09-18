@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("markSession joined ClientMessage, so it is a wire change: version 13, speaking 13 only", () => {
-    expect(PROTOCOL_VERSION).toBe(13);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(13);
+  test("two client messages and two snapshot fields left the wire: version 14, speaking 14 only", () => {
+    expect(PROTOCOL_VERSION).toBe(14);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(14);
   });
 });
 

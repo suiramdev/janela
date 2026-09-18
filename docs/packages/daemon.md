@@ -288,10 +288,8 @@ the payload's `type` against an exhaustive table and stops
 and no further"); a coder that validated fields would turn every bad field into a
 dropped socket. So every field that reaches an algebra or a database is decoded
 here with a `Schema`, and a malformed one becomes a `failed` reply: a viewport and
-a resize (integers ≥ 1), a tab index and a request id (integers ≥ 0), a split
-placement, and a launch profile — including **every element of its argv**, because a
-number in there reaches `execve` as a stringified surprise and `["zsh", null]` is
-not an argument list.
+a resize (integers ≥ 1), a tab index and a request id (integers ≥ 0), and a split
+placement.
 
 The decoders **validate rather than replace**: the value handed on is the one the
 message already carried, because branding a `TerminalID` is `@janela/core`'s
@@ -358,10 +356,7 @@ exactly the kind of field the paragraph above is about. An unknown one is a
 `fullStateSnapshot` is composed **per announcement, not per frame**, so its cost is
 human-rate. It exists because a client merges by id and therefore **cannot express
 a removal**: the only way to say "that session is gone" is to send a complete list
-without it ([`protocol.md`](protocol.md) § message.ts). Launch profiles are
-announced from here rather than from `@janela/session` because the wire is their
-only writer and they have no `StateObserving` path — which keeps the brain knowing
-nothing about subscribers.
+without it ([`protocol.md`](protocol.md) § message.ts).
 
 `errorName` is the log-field helper: the **name** of an error, never its message,
 which is peer-influenced. For a `FrameError` it is `frameErrorLabel`, so the tag

@@ -141,7 +141,6 @@ describe("migrate", () => {
 
       expect(tableNames(path)).toEqual([
         "AutomationScript",
-        "LaunchProfile",
         "Project",
         "Session",
         "Terminal",
@@ -350,6 +349,71 @@ describe("migrate", () => {
       expect(columns).not.toContain("defaultProfileId");
       expect(columns).toContain("directory");
       expect(sessions).toEqual([{ id: "s", projectId: "p" }]);
+      expect(foreignKeys.rows).toEqual([[1]]);
+
+      await connection.dispose();
+    });
+  });
+
+  test("a terminal at the fourth schema keeps its session and loses the profile it named", async () => {
+    await withTemporaryDirectory(async (directory) => {
+      const path = join(directory, "janela.sqlite");
+      const { logger } = recordingLogger();
+      const priors = MIGRATIONS.slice(0, 4);
+
+      const connection: SqlDriverAdapter = await janelaSqliteAdapter({ path }).connect();
+
+      expect(await applyMigrations(connection, priors, logger)).toBe(4);
+
+      const seed = new Database(path);
+      seed.run(
+        `INSERT INTO "LaunchProfile" (id, name, iconName, command, environment)
+           VALUES ('lp', 'Claude Code', 'sparkles', '["claude"]', '{}')`,
+      );
+      seed.run(
+        `INSERT INTO "Session" (id, name, directory, backingKind, layout, position, createdAt, lastActiveAt)
+           VALUES ('s', 'feature', '/tmp/janela', 'folder', '{}', 0, 0, 0)`,
+      );
+      seed.run(
+        `INSERT INTO "Terminal" (id, sessionId, title, startsAutomatically, role, position, createdAt, profileId)
+           VALUES ('t', 's', 'claude', 1, 'user', 0, 0, 'lp')`,
+      );
+      seed.close();
+
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 4);
+
+      const columns = readOnly(path, (database) =>
+        database
+          .query<{ name: string }, []>(`SELECT name FROM pragma_table_info('Terminal')`)
+          .all()
+          .map((column) => column.name),
+      );
+      const terminals = readOnly(path, (database) =>
+        database
+          .query<{ id: string; sessionId: string; title: string }, []>(
+            `SELECT id, sessionId, title FROM "Terminal"`,
+          )
+          .all(),
+      );
+      const indexes = readOnly(path, (database) =>
+        database
+          .query<{ name: string }, []>(
+            `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'Terminal'`,
+          )
+          .all()
+          .map((index) => index.name),
+      );
+      const foreignKeys = await connection.queryRaw({
+        sql: "PRAGMA foreign_keys",
+        args: [],
+        argTypes: [],
+      });
+
+      expect(tableNames(path)).not.toContain("LaunchProfile");
+      expect(columns).not.toContain("profileId");
+      expect(columns).toContain("title");
+      expect(terminals).toEqual([{ id: "t", sessionId: "s", title: "claude" }]);
+      expect(indexes).toContain("Terminal_sessionId_position_idx");
       expect(foreignKeys.rows).toEqual([[1]]);
 
       await connection.dispose();

@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   instant,
-  type LaunchProfileID,
   type ProjectID,
   type Session,
   type SessionID,
@@ -10,18 +9,9 @@ import {
 } from "@janela/core";
 
 import { createStores } from "./stores.ts";
-import {
-  fakeLaunchProfile,
-  fakeProject,
-  fakeSession,
-  partial,
-  snapshot,
-  terminalID,
-} from "./test-fakes.ts";
+import { fakeProject, fakeSession, partial, snapshot, terminalID } from "./test-fakes.ts";
 
 const id = (name: string): SessionID => name as SessionID;
-
-const profileID = (name: string): LaunchProfileID => name as LaunchProfileID;
 
 describe("the mirror", () => {
   test("a full snapshot replaces the world", () => {
@@ -101,28 +91,6 @@ describe("the mirror", () => {
 
     expect(stores.sessions.terminalStates[one]).toBeUndefined();
     expect(stores.sessions.terminalStates[two]).toEqual({ kind: "idle" });
-  });
-
-  test("launch profiles merge on a partial and are replaced by a snapshot", () => {
-    const stores = createStores();
-    const [one, two] = [profileID("p1"), profileID("p2")];
-
-    stores.mirror.apply(snapshot([], [], {}, [fakeLaunchProfile("p1"), fakeLaunchProfile("p2")]));
-    const before = stores.sessions.launchProfiles;
-
-    stores.mirror.apply(partial());
-
-    expect(stores.sessions.launchProfiles).toBe(before);
-
-    stores.mirror.apply(partial([], [], {}, [fakeLaunchProfile("p2", "renamed")]));
-
-    expect(stores.sessions.launchProfiles.map((profile) => profile.id)).toEqual([one, two]);
-    expect(stores.sessions.launchProfiles[1]?.name).toBe("renamed");
-
-    stores.mirror.apply(snapshot([], [], {}, [fakeLaunchProfile("p2")]));
-
-    expect(stores.sessions.launchProfiles.map((profile) => profile.id)).toEqual([two]);
-    expect(stores.sessions.launchProfileAvailability).toEqual({ [two]: true });
   });
 });
 

@@ -1,15 +1,8 @@
-import type {
-  AutomationEvent,
-  GridSize,
-  LaunchProfile,
-  Project,
-  Session,
-  TerminalDescriptor,
-} from "@janela/core";
+import type { AutomationEvent, GridSize, Project, Session, TerminalDescriptor } from "@janela/core";
 import type { ProcessRunning } from "@janela/support/process";
 import type { TerminalLaunch } from "@janela/terminal";
 
-import { LaunchProfileUnavailable } from "./errors.ts";
+import { ExecutableUnavailable } from "./errors.ts";
 import {
   DECLARED_CONEMU_ANSI,
   DECLARED_TERM,
@@ -23,7 +16,6 @@ export interface TerminalLaunchInput {
   readonly session: Session;
   readonly terminal: TerminalDescriptor;
   readonly project?: Project;
-  readonly profile?: LaunchProfile;
   readonly command?: readonly string[];
   readonly script?: string;
   readonly automationEvent?: AutomationEvent;
@@ -54,7 +46,6 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
 
   const environment: TerminalLaunch["environment"] = {
     ...input.shell.resolved,
-    ...input.profile?.environment,
     TERM: DECLARED_TERM,
     ConEmuANSI: DECLARED_CONEMU_ANSI,
     ...janelaVariables(variables),
@@ -73,7 +64,7 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
     };
   }
 
-  const argv = input.command ?? input.profile?.command ?? [];
+  const argv = input.command ?? [];
   const first = argv[0];
 
   if (first === undefined) {
@@ -92,7 +83,7 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
     : await input.processes.which(first, environment["PATH"] ?? FALLBACK_PATH);
 
   if (executable === undefined) {
-    throw new LaunchProfileUnavailable(input.profile?.name ?? first);
+    throw new ExecutableUnavailable(first);
   }
 
   return {

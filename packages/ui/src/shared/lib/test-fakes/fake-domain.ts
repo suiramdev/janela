@@ -1,6 +1,4 @@
 import type {
-  LaunchProfile,
-  LaunchProfileAvailability,
   Project,
   ProjectSettings,
   Session,
@@ -10,43 +8,12 @@ import type {
 } from "@janela/core";
 import {
   absolutePath,
-  newLaunchProfileID,
   newProjectID,
   newSessionID,
   newTerminalID,
   now,
   singleTerminalLayout,
 } from "@janela/core";
-
-export function fakeProfile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
-  return {
-    id: newLaunchProfileID(),
-    name: "Claude Code",
-    iconName: "sparkles",
-    command: ["claude"],
-    environment: {},
-    isAgent: true,
-    isBuiltIn: false,
-    ...overrides,
-  };
-}
-
-export function fakeShellProfile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
-  return fakeProfile({
-    name: "Shell",
-    iconName: "terminal",
-    command: [],
-    isAgent: false,
-    isBuiltIn: true,
-    ...overrides,
-  });
-}
-
-export function reportedAvailable(
-  ...profiles: readonly LaunchProfile[]
-): LaunchProfileAvailability {
-  return Object.fromEntries(profiles.map((profile) => [profile.id, true]));
-}
 
 export function fakeTerminal(overrides: Partial<TerminalDescriptor> = {}): TerminalDescriptor {
   return {

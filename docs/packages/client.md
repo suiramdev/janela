@@ -68,17 +68,13 @@ it could ask for; nothing writes state it did not receive.
   received and never persisted.
 - `apply` is the only way either collection changes. "Collapse this project" is a
   *request*; the collapse renders when the daemon confirms it.
-- `launchProfiles` live on the session store rather than in a store of their own: a
-  profile is only ever read alongside a session, and a second store would be a second
-  notification for one apply.
 - `mergeByID` returns the **same reference** when a partial names nothing, which is
   what lets a `useSyncExternalStore` consumer skip a re-render without comparing
   contents. An updated item keeps its position; a new one goes last, and the next
   full snapshot restores the daemon's order.
-- `terminalStates` and `launchProfiles` are **replaced** by a full snapshot rather
-  than merged: a key absent from a full snapshot no longer exists, and keeping it
-  would render a dead terminal as running or leave a deleted profile in the picker
-  forever.
+- `terminalStates` is **replaced** by a full snapshot rather than merged: a key
+  absent from a full snapshot no longer exists, and keeping it would render a dead
+  terminal as running forever.
 - `isRunning` is derived only from reported state. A session whose terminals we have
   not heard about is not running, and rendering it as running would be a lie this
   client invented.

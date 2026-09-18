@@ -19,9 +19,9 @@ export type HandshakeRefusal =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "protocolViolation" };
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
-export const MINIMUM_SUPPORTED_VERSION = 13;
+export const MINIMUM_SUPPORTED_VERSION = 14;
 
 export function isCompatible(mine: Hello, other: Hello): boolean {
   return (

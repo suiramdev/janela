@@ -65,8 +65,6 @@ const CLIENT_MESSAGE_TYPES = exhaustiveLiterals<ClientMessage["type"]>()([
   "stopTerminal",
   "restartTerminal",
   "resize",
-  "saveLaunchProfile",
-  "removeLaunchProfile",
   "createTerminal",
   "removeTerminal",
   "snapshotText",

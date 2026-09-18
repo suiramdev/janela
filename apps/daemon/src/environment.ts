@@ -15,11 +15,9 @@ import { createIntegrationService } from "@janela/integrations";
 import { readPeerCredential } from "@janela/pty";
 import {
   createDirectoryBrowser,
-  createLaunchProfileService,
   createProjectService,
   createSessionService,
   resolveShellEnvironment,
-  type LaunchProfileService,
   type ProjectRemovalObserving,
   type ProjectService,
   type SessionService,
@@ -46,7 +44,6 @@ export interface DaemonEnvironment {
   readonly server: DaemonServer;
   readonly sessions: SessionService;
   readonly projects: ProjectService;
-  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
   readonly database: JanelaDatabase;
 }
@@ -98,7 +95,6 @@ export async function daemonEnvironment(
   });
   const sessions = createSessionService({
     repository: database.sessions,
-    profiles: database.launchProfiles,
     projects,
     worktrees,
     terminals,
@@ -109,20 +105,12 @@ export async function daemonEnvironment(
 
   deferredRemoval.service = sessions;
 
-  const launchProfiles = createLaunchProfileService({
-    repository: database.launchProfiles,
-    shell,
-    log: logger,
-  });
-
   await projects.load();
   await sessions.load();
-  await launchProfiles.load();
 
   const daemonServer = createDaemonServer({
     sessions,
     projects,
-    launchProfiles,
     directories: createDirectoryBrowser({ home: absolutePath(homedir()) }),
     terminals,
     integrations: createIntegrationService({
@@ -139,7 +127,6 @@ export async function daemonEnvironment(
     server: daemonServer,
     sessions,
     projects,
-    launchProfiles,
     terminals,
     database,
 

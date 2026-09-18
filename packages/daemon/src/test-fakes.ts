@@ -6,8 +6,6 @@ import {
   type Identifier,
   type IntegrationID,
   type IntegrationOverview,
-  type LaunchProfile,
-  type LaunchProfileID,
   type Project,
   type Session,
   type SessionID,
@@ -31,7 +29,6 @@ import {
 import type {
   DirectoryBrowsing,
   DirectoryListing,
-  LaunchProfileService,
   ProjectService,
   SessionCreationRequest,
   SessionService,
@@ -535,37 +532,6 @@ export function fakeListing(overrides: Partial<DirectoryListing> = {}): Director
       { name: "notes.md", kind: "file" },
     ],
     truncated: false,
-    ...overrides,
-  };
-}
-
-export function fakeLaunchProfiles(
-  profiles: readonly LaunchProfile[] = [],
-  overrides: Partial<LaunchProfileService> = {},
-): LaunchProfileService {
-  const availability: Record<LaunchProfileID, boolean> = {};
-
-  for (const profile of profiles) availability[profile.id] = true;
-
-  return {
-    profiles,
-    availability,
-    load: () => Promise.resolve(),
-    save: () => Promise.reject(new Error(NOT_CALLED)),
-    remove: () => Promise.reject(new Error(NOT_CALLED)),
-    ...overrides,
-  };
-}
-
-export function fakeProfile(id: string, overrides: Partial<LaunchProfile> = {}): LaunchProfile {
-  return {
-    id: fixtureIdentifier<"LaunchProfile">(id),
-    name: id,
-    iconName: "terminal",
-    command: [id],
-    environment: {},
-    isAgent: false,
-    isBuiltIn: false,
     ...overrides,
   };
 }

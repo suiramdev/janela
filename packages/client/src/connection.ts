@@ -330,8 +330,6 @@ export function createConnection(options: {
             projects: [],
             sessions: [],
             terminalStates: { [exited.terminalID]: { kind: "exited", code: exited.code } },
-            launchProfiles: [],
-            launchProfileAvailability: {},
             isFullSnapshot: false,
           });
         }),

@@ -22,7 +22,6 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
-  LaunchProfileService,
   ProjectService,
   SessionService,
   StateObserving,
@@ -63,7 +62,6 @@ export interface AcceptedConnection {
 export interface DaemonServerOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
-  readonly launchProfiles: LaunchProfileService;
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
@@ -138,26 +136,16 @@ const DELIVERED = (): boolean => true;
 const SEND_FAILED = (): boolean => false;
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, launchProfiles, directories, integrations, log } = options;
+  const { terminals, sessions, projects, directories, integrations, log } = options;
   const dispatch =
     options.dispatch ??
     createRequestDispatch({
       sessions,
       projects,
-      launchProfiles,
       directories,
       terminals,
       integrations,
       log,
-      announce: () =>
-        server.publish(
-          fullStateSnapshot({
-            projects: projects.projects,
-            sessions: sessions.sessions,
-            launchProfiles,
-            terminals,
-          }),
-        ),
       settled: (terminal) => terminalEvents.reconcile(terminal),
     });
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
@@ -608,7 +596,6 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         fullStateSnapshot({
           projects: projects.projects,
           sessions: changed,
-          launchProfiles,
           terminals,
         }),
       );
@@ -619,7 +606,6 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         fullStateSnapshot({
           projects: changed,
           sessions: sessions.sessions,
-          launchProfiles,
           terminals,
         }),
       );

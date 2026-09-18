@@ -14,8 +14,8 @@
 //! ## Rules this file enforces
 //!
 //! 1. **argv is an array, end to end.** Nothing here parses a command line, so the
-//!    quoting bug class does not exist. This is the same rule
-//!    `LaunchProfile.command` and `AutomationCommand.command` follow.
+//!    quoting bug class does not exist. This is the same rule every process
+//!    Janela spawns follows.
 //! 2. **Bytes are never dropped.** Past `HIGH_WATER` the reader stops reading; the
 //!    kernel PTY buffer fills and the child blocks in `write(2)`, exactly as
 //!    against a slow physical terminal. Reading resumes at `LOW_WATER`. Dropping a

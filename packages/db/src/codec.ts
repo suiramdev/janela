@@ -9,7 +9,6 @@ import type {
   GitDescriptor,
   Identifier,
   Instant,
-  LaunchProfile,
   LayoutTab,
   Pane,
   Project,
@@ -42,18 +41,8 @@ import { Option, Schema } from "effect";
 import type { Prisma } from "../generated/prisma/client.ts";
 import { CorruptRecord, InvalidRecord } from "./errors.ts";
 
-export type LaunchProfileRow = Prisma.LaunchProfileModel;
 export type ProjectRow = Prisma.ProjectGetPayload<{ include: { automation: true } }>;
 export type SessionRow = Prisma.SessionGetPayload<{ include: { terminals: true } }>;
-
-export interface LaunchProfileColumns {
-  readonly name: string;
-  readonly iconName: string;
-  readonly command: string;
-  readonly environment: string;
-  readonly isAgent: boolean;
-  readonly isBuiltIn: boolean;
-}
 
 export interface ProjectColumns {
   readonly name: string;
@@ -99,7 +88,6 @@ export interface TerminalColumns {
   readonly role: string;
   readonly position: number;
   readonly createdAt: Date;
-  readonly profileId: string | null;
 }
 
 type StoredPane =
@@ -141,10 +129,6 @@ const decodeAbsolutePathColumn = Schema.decodeUnknownOption(
 
 const decodeStringArrayColumn = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(Schema.String)),
-);
-
-const decodeStringRecordColumn = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
 );
 
 const StoredTerminalPane = Schema.Struct({
@@ -222,18 +206,6 @@ function readInstant(raw: Date, column: string, reasons: string[]): Instant | un
   return instant(raw);
 }
 
-function readArgv(raw: string, column: string, reasons: string[]): readonly string[] | undefined {
-  const decoded = decodeStringArrayColumn(raw);
-
-  if (Option.isNone(decoded)) {
-    reasons.push(`${column} is not a JSON array of strings`);
-
-    return undefined;
-  }
-
-  return decoded.value;
-}
-
 function readAccent(raw: string, table: "Project" | "Session", id: string, log: Logger): Accent {
   const known = ACCENTS.find((accent) => accent === raw);
 
@@ -242,40 +214,6 @@ function readAccent(raw: string, table: "Project" | "Session", id: string, log: 
   log.warning("accent unknown, defaulted", { table, id });
 
   return "none";
-}
-
-export function encodeLaunchProfile(profile: Omit<LaunchProfile, "id">): LaunchProfileColumns {
-  return {
-    name: profile.name,
-    iconName: profile.iconName,
-    command: JSON.stringify(profile.command),
-    environment: JSON.stringify(profile.environment),
-    isAgent: profile.isAgent,
-    isBuiltIn: profile.isBuiltIn,
-  };
-}
-
-export function decodeLaunchProfile(row: LaunchProfileRow): LaunchProfile {
-  const reasons: string[] = [];
-  const id = readIdentifier<"LaunchProfile">(row.id, "id", reasons);
-  const command = readArgv(row.command, "command", reasons);
-  const environment = decodeStringRecordColumn(row.environment);
-
-  if (Option.isNone(environment)) reasons.push("environment is not a JSON object of strings");
-
-  if (id === undefined || command === undefined || Option.isNone(environment)) {
-    throw new CorruptRecord("LaunchProfile", row.id, reasons);
-  }
-
-  return {
-    id,
-    name: row.name,
-    iconName: row.iconName,
-    command,
-    environment: environment.value,
-    isAgent: row.isAgent,
-    isBuiltIn: row.isBuiltIn,
-  };
 }
 
 export function encodeProject(project: Project): ProjectColumns {
@@ -452,7 +390,6 @@ export function encodeTerminal(
     role: terminal.role.kind === "user" ? "user" : terminal.role.event,
     position,
     createdAt: toDate(terminal.createdAt),
-    profileId: terminal.profileID ?? null,
   };
 }
 
@@ -501,10 +438,6 @@ function decodeTerminals(
     const role = decodeRole(row.role, label, reasons);
     const createdAt = readInstant(row.createdAt, `${label}: createdAt`, reasons);
 
-    const profileID =
-      row.profileId === null
-        ? undefined
-        : readIdentifier<"LaunchProfile">(row.profileId, `${label}: profileId`, reasons);
     const override =
       row.workingDirectoryOverride === null
         ? undefined
@@ -516,8 +449,6 @@ function decodeTerminals(
 
     if (id === undefined || role === undefined || createdAt === undefined) continue;
 
-    if (row.profileId !== null && profileID === undefined) continue;
-
     if (row.workingDirectoryOverride !== null && override === undefined) continue;
 
     const descriptor: TerminalDescriptor = {
@@ -527,8 +458,6 @@ function decodeTerminals(
       role,
       createdAt,
     };
-
-    if (profileID !== undefined) descriptor.profileID = profileID;
 
     if (override !== undefined) descriptor.workingDirectoryOverride = override;
 

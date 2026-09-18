@@ -53,8 +53,6 @@ export function environmentOver(state: {
     sessions: state.sessions,
     projects: state.projects ?? [],
     terminalStates: state.terminalStates ?? {},
-    launchProfiles: [],
-    launchProfileAvailability: {},
     isFullSnapshot: true,
   };
 

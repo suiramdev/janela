@@ -542,8 +542,8 @@ action fails `typecheck` rather than being a menu item that does nothing.
   reply on the same ordered queue, so the mirror already has the session when the
   request settles. Focus goes to its pane: creating a session means wanting to type
   in it.
-- `createTerminal` and `splitTerminal` never inherit a profile — a new pane is a
-  terminal, and a launch profile is something a terminal may be started with later.
+- `createTerminal` and `splitTerminal` start a shell — a new pane is a terminal, and
+  nothing is inherited from the pane it was split from.
   The split is the daemon's, persisted with the session, which is why it is a request.
 - Restart is one request: closing a pty leaves the terminal `running` until the
   daemon reaps the child, so a start sent straight after finds a terminal that looks
@@ -717,7 +717,7 @@ positional shape is deliberate — a sidebar test reads better as
   became a link to somewhere rather than a second editor.
 - **The panes are the questions a user arrives with, and no General.** Appearance,
   Notifications, Shortcuts, Integrations, Permissions. The first
-  cut was one pane per *product noun* — Terminal, Launch profiles, Notifications,
+  cut was one pane per *product noun* — Terminal, Notifications,
   Daemon — which read well from inside the codebase and badly from outside it:
   nobody arrives thinking "daemon", they arrive thinking "why did it ask me that"
   (Permissions) or "connect it to GitHub" (Integrations). There was also a *General*
@@ -725,9 +725,9 @@ positional shape is deliberate — a sidebar test reads better as
   after nothing always becomes, and it put the most destructive surface in the
   product behind the blandest label. The map now: the terminal font under
   Appearance; the bell and the two agent switches under Notifications; forge
-  reading, launch profiles and the activity-reporting hooks under
-  Integrations — all three are "the tools Janela reaches", and a profile is
-  still a command, not a wrapper; the close-terminal confirmation, the notification
+  reading and the activity-reporting hooks under
+  Integrations — both are "the tools Janela reaches", and Janela starts them and
+  listens rather than wrapping them; the close-terminal confirmation, the notification
   permission's explanation and the daemon's stop controls under Permissions,
   because all three are "what may it do, and what does it ask first".
 - **No pane is empty, and two categories wait in this file rather than in code.**
@@ -799,7 +799,7 @@ positional shape is deliberate — a sidebar test reads better as
   sections that are siblings, not children — so `PaneGroup` is a heading with its own
   explanation above a run of cards, instead of the card-inside-a-card the old nesting
   produced. `FieldSection` is the flat fieldset that remains for a form *inside* a
-  card: the profile editor's Icon, Command and Environment blocks.
+  card: the shortcut list's one block per menu.
 - **The commit bar** is always visible: one that appears when something is dirty moves
   the content as the user types and hides that the screen has a commit model at all.
   At rest it is quiet; dirty, it says how many changes it would write, because with one
@@ -810,8 +810,8 @@ positional shape is deliberate — a sidebar test reads better as
 - Save reads the draft from the store rather than the render that built the callback,
   and reads both halves, because what a save writes is the difference between them.
 - Revert bumps a revision used as the pane's key, because the panes hold field state
-  the draft cannot: argv rows carry identities and the open profile editor a working
-  copy.
+  the draft cannot: a shortcut row mid-recording, and a caret in a field the user was
+  typing into.
 - The Save bar is a sibling of the scroller, because it commits every tab's edits.
 
 ### `ui/daemon-settings.tsx`
@@ -864,13 +864,12 @@ its stop controls are the largest permission of all.
 
 ### The Integrations tab
 
-Two sections, and no pane file of its own: it renders `SettingsProfiles` and
-`SettingsIntegrations` in that order. It once began with a GitHub/GitLab row per
-hosted project, editing `isForgeEnabled` through the draft. That switch is gone —
-reading pull request state is what a hosted project does, and a missing or
-logged-out CLI was already silence — so what remains is the tools Janela reaches:
-the launch profiles that start them, and the hooks that let them say what they are
-doing. A profile is still a command, not a wrapper.
+One section, and no pane file of its own: it renders `SettingsIntegrations`. It once
+began with a GitHub/GitLab row per hosted project, editing `isForgeEnabled` through
+the draft. That switch is gone — reading pull request state is what a hosted project
+does, and a missing or logged-out CLI was already silence — so what remains is the
+hooks that let the agents the user runs say what they are doing. Janela starts them
+and listens; it does not wrap them.
 
 ### `ui/integrations-settings.tsx`
 
@@ -939,43 +938,6 @@ In-app state is unaffected by this pane, and both hints in it say so: the sideba
 shows a finished or waiting agent whatever the switches hold. The badge is the
 daemon's and needs no permission.
 
-### `ui/launch-profiles.tsx`
-
-- **Unavailable profiles are marked, not hidden.** A profile whose executable is not on
-  the user's `PATH` is dimmed and badged here rather than dropped: this is the one
-  surface where the problem can be *fixed*, and a profile you cannot see is a profile
-  you cannot repair.
-- **There is no default to choose.** The pane used to open with a *New terminals*
-  section holding a global default-profile select, and the list marked the chosen row
-  with a Default badge. Both are gone, because every new terminal — a session's first
-  included — starts the user's login shell. The Profiles section's hint now says what a
-  profile *is* (a saved command and environment, and what a session's terminal was
-  created with) rather than naming a fallback nothing reads. No client surface sends
-  `profileID` on `createTerminal` any more; the field stays on the wire for a caller
-  that names one on purpose.
-- Built-ins are editable (the ones we ship are guesses about the user's setup), and
-  neither deletable nor renamable — both consequences of seeding by name on every open.
-- The pane takes the draft rather than a value and a callback, because adding,
-  duplicating and deleting are changes to a *list*, and the difference between deleting
-  a stored profile and discarding a draft-only one decides whether the daemon hears
-  about it at all. The open editor still holds a working copy for the caret, because
-  argv and environment rows need identities that survive a neighbour being removed.
-- A new profile is staged immediately: the row has to appear in the list to be edited,
-  and an unsaved row the bar does not count is one the user loses to Revert without
-  being told.
-- The editor has no Save of its own, because a second Save would be two promises about
-  the same keystrokes. Delete and Duplicate stay, because neither is a field. It is
-  exported so it can be tested without driving a click through the list, and Delete is
-  pushed away from the other button because a destructive action beside a button people
-  reach for is a mis-click waiting to happen.
-- The row is a button, not a div with a handler: selecting a profile is an action.
-- The icon grid is real radio inputs, so the browser owns arrow-key navigation and the
-  roving tab stop — both of which buttons with `role="radio"` would reimplement and get
-  subtly wrong. `htmlFor` reaches the hidden radio Base UI mirrors, so the whole card is
-  a click target.
-- A freshly added variable row is labelled "Remove variable", because an icon-only
-  button labelled `Remove ` is one a screen reader cannot announce.
-
 ### `ui/project-settings.tsx`
 
 - **The security property.** Automation scripts exist only because a human typed them
@@ -1007,7 +969,7 @@ daemon's and needs no permission.
 - The directory is shown under the name, because two clones of one repository are two
   projects with the same name.
 - **It chooses nothing about what a terminal starts.** The pane's first section was
-  *Sessions*, one field wide: a default launch profile falling back to the global one.
+  *Sessions*, one field wide, naming what a session's terminals would run.
   The section is deleted rather than left empty — a card with a heading and no control
   is a question the user cannot answer, and search would offer a row that scrolls to
   nothing. A repository's pane is Worktrees and Automation; a plain folder's is
@@ -1029,44 +991,6 @@ nothing about that. Keyboard-reachable with the platform focus ring left alone, 
 - `Section` is a `fieldset`/`legend`, because a screen reader announces the group when
   focus enters it — the difference between "Enabled" and "Enabled, When a session is
   first opened".
-
-### `ui/argv-editor.tsx`
-
-Launch profiles only, now. There is no field that takes `claude --model opus` and
-splits it: splitting a string into argv has no correct implementation —
-`zsh -lc "echo 'a b'"` has no right answer — and every wrong one is a quoting bug in a
-program the user cares about. Position is the label, and the inputs are monospaced
-because a trailing space or an l/1 confusion is the bug being looked for. Automation
-used to share this editor and does not any more, for the reason given under
-`project-settings.tsx`: a hook wants a shell, and a profile wants exactly not one.
-
-### `ui/profile-icon.tsx`
-
-`aria-hidden` without exception: every place it is rendered puts a name beside it, so
-announcing the glyph reads the same thing twice. An icon that is the *only* label is a
-control that needs a label, not an icon that needs a role.
-
-### `model/profile-rules.ts`
-
-Separate from `shared/model/profile-draft.ts` — that holds the form shape, which
-`SettingsDraft` carries and so must sit below the window store. Rules belong with the
-screen that enforces them.
-
-- `profileViolations` is deliberately short: a profile is a command Janela starts, so
-  the only knowable wrongs are the ones that make it unstartable or unnameable. Whether
-  `claude` is a good idea is not ours to judge, and whether it is *installed* is
-  availability's answer. Note the asymmetry — a *later* blank argument is legal, because
-  `["zsh", "-lc", ""]` passes an empty argument on purpose.
-- Built-ins cannot be removed, because `BUILT_IN_PROFILES` is re-seeded on every open
-  and a deleted one would silently return and look like a bug in deletion. They cannot
-  be renamed for a separate reason: seeding matches built-ins **by name** (ids are
-  minted at seed time, and a hardcoded one would collide with a user's copy), so
-  renaming "Codex" makes the next open insert a fresh "Codex" beside it. Duplicating is
-  the supported route, and the editor says so.
-- `duplicatedProfile` drops `isBuiltIn` — the entire point — and mints a fresh id,
-  because two rows with one id is a lost profile.
-- `profileTitle` exists because a row with no title reads as a list that failed to
-  render rather than a form waiting for a word.
 
 ### `model/automation-scripts.ts`
 
@@ -1117,11 +1041,8 @@ choice made without knowing the cost is not a choice.
   a mapping exercised only by clicking a button is a mapping nothing checks. Everything
   identical to `since` is left out: a save leaves its values on screen (dropping them
   would show the mirror's older answer until the broadcast landed), so without this a
-  second Save re-sends the first one's writes, including a `removeLaunchProfile` for a
-  profile that is already gone. Compared by reference, because every edit is an
-  immutable update. Order is deliberate: profiles before the projects that may name one
-  as their default, and removals after saves so an edit and a deletion of the same
-  profile cannot resurrect it.
+  second Save re-sends the first one's writes. Compared by reference, because every
+  edit is an immutable update.
 - Global settings are not in that list — they are the client's own store and never
   cross the socket.
 - `draftEditCount` counts against `since` for the same reason, because the number and
@@ -1241,9 +1162,6 @@ than a repository, and there is deliberately no per-session tier.
 and both are facts only a client holds. A CLI has no use for any of it, which is the
 test for whether something belongs on the wire.
 
-- There is no default-profile field. It was the fallback for a project that expressed
-  no preference, with the project's own choice winning; both are gone, and every new
-  terminal starts the user's login shell.
 - An absent `terminalFontFamily` is the default stack, which is not the same as an empty
   string. The key is *removed* rather than set to `undefined`, because
   `exactOptionalPropertyTypes` makes those different types and a persisted
@@ -1337,30 +1255,6 @@ session **selection** stays on `SessionStore`, where the sidebar already reads i
   renumber the strip under an open menu. `"all"` does not read the tab it was opened on,
   so it still means every tab when that tab has just gone.
 
-### `profile-draft.ts`
-
-**The rule this file protects:** `command` is argv, edited one element at a time, because
-the moment a field splits `claude --model opus` Janela owns a quoting bug class it does
-not have.
-
-**Why the editor does not edit the domain value.** `readonly string[]` and a `Record`
-cannot represent what a user is halfway through typing — a blank variable name, two rows
-that collide, a duplicate argument — and both are positional in a way React needs
-identity for: remove argument 1 of three and an index-keyed list remounts 2 and 3, which
-drops the caret out of the field being typed in.
-
-- `argvOf` passes values through verbatim: a trailing empty argument and an argument of
-  two spaces are both things a program can be given, and deciding they are mistakes would
-  be us editing the user's command.
-- `variableDrafts` sorts by name so the editor does not reorder itself when a value is
-  saved and read back — object key order is insertion order, and a round trip through a
-  JSON column need not preserve it.
-- `environmentOf` drops blank names (a row started, not a variable called "") and keeps
-  the last of a repeated name, matching what a process sees when its environment array
-  carries a duplicate.
-- `blankProfile` starts with one blank argv element, because `[]` would present a valid
-  profile — the login shell — that the user did not ask for.
-
 ### `settings-draft.ts`
 
 **Why every tab has a draft.** The panes used to apply as you type, which is right for a
@@ -1379,10 +1273,7 @@ to confirm.
 
 **Edits, not a copy.** A field holds the mirror's value *or* the user's, so an untouched
 project keeps flowing from the daemon while another is edited and a save sends exactly
-what was touched. Additions go last rather than in name order, because the row the user
-just created should be where they can find it. `withoutDraftProfile` takes `stored`
-because deleting a draft-only profile is a discard, and `removeLaunchProfile` for an id
-the daemon never saw would be asking it to forget nothing.
+what was touched.
 
 ### `command-shortcuts.ts`
 
@@ -1455,18 +1346,6 @@ per cap; `acceleratorCaps` joins them on `+` for the design package's menu, whic
 a cap per token, and prose (a refusal message) joins them on nothing, because
 `⌘+N already means New Session` is not how a Mac user reads a chord.
 
-### `profile-icons.ts`
-
-`LaunchProfile.iconName` was an SF Symbol, then a Lucide name; the keys are **persisted**
-in the daemon's database, so they stay what they were while the glyph behind each is
-whatever the current icon set offers. Two consequences: an unrecognised name falls back to
-the terminal glyph, never to nothing, because a profile rendering a hole is worse than one
-rendering a terminal (and everything Janela launches is a command in a terminal, so the
-fallback is never a lie); and it is a closed set, because Hugeicons ships thousands of
-exports and naming them all would put every icon in the client bundle to serve a field the
-user picks from a grid. A profile stored with an unknown name keeps it — we never rewrite
-the user's row.
-
 ---
 
 ## `shared/lib`
@@ -1530,8 +1409,8 @@ exported from the package index; the Tauri-only ports (Finder, Terminal.app,
   than every setting; the font size goes through `withTerminalFontSize`, so the
   bounds are enforced in one place. A silenced-confirmation key this build does not
   know is dropped rather than carried — a question that no longer exists must not
-  silence the one that replaced it. A default-profile id an older build wrote is not in
-  the schema at all, so it is read past and dropped with it.
+  silence the one that replaced it. A field an older build wrote that is not in the
+  schema at all is read past and dropped with it.
 - `keyboard-commands.ts` — a `CommandSource` over `keydown`, for a client with no
   native menu bar to own the accelerators. `commandForChord` matches
   `Command.accelerator` against `KeyboardEvent.code` (layout-independent: `⌘⇧]` is

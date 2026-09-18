@@ -141,7 +141,7 @@ by accident.
 | Package | Owns | Must not |
 | --- | --- | --- |
 | `@janela/support` | `Log`, timing marks, `UserFacingError`, bounded buffers | Know anything about the domain. Its `/process` subpath is daemon-only, so the rest stays linkable into a WebView |
-| `@janela/core` | `Project`, `Session`, `TerminalDescriptor`, `SessionLayout`, `AutomationScript`, `LaunchProfile` | Perform I/O, or hold anything that does not survive JSON |
+| `@janela/core` | `Project`, `Session`, `TerminalDescriptor`, `SessionLayout`, `AutomationScript` | Perform I/O, or hold anything that does not survive JSON |
 | `@janela/protocol` | Frames, messages, handshake, transport seam | Know how anything is *implemented* on either side |
 
 ### Daemon side
@@ -192,7 +192,7 @@ packages/ui/src/
       index.ts  ui/  model/
   shared/
     model/              the window's stores and the ports the app implements   (index.ts)
-    config/             the command catalogue, the profile-icon catalogue      (index.ts)
+    config/             the command catalogue                                  (index.ts)
     ui/                 window chrome, context menus, find surface, project icon (index.ts)
     lib/                fuzzy-match/, test-fakes/                (an index.ts per folder)
 ```
@@ -245,11 +245,10 @@ FSD forbids and Steiger reports.
 One seam inside `shared/model` is worth knowing before editing it. `ViewState`
 holds the settings screen's **uncommitted draft**, so that navigating away cannot
 throw away what the user typed — which puts the draft's *shape* below both
-screens, in `shared/model/settings-draft.ts`, along with the profile form shape it
-names. The *rules* over that value — what a save writes, what refuses it, what an
-unnamed profile is called — live in `pages/settings/model`, because a rule the
-product enforces on the user's data is not infrastructure, and Shared may not hold
-one.
+screens, in `shared/model/settings-draft.ts`. The *rules* over that value — what a
+save writes, and what refuses it — live in `pages/settings/model`, because a rule
+the product enforces on the user's data is not infrastructure, and Shared may not
+hold one.
 
 ### Four rules that catch most mistakes
 
@@ -566,7 +565,7 @@ finding here rather than in a diff:
 
 ```text
 LiveTerminal.start()                      in the daemon
-   ├─ resolve command      (LaunchProfile, or the login shell)
+   ├─ resolve command      (the requested command, or the login shell)
    ├─ resolve environment  (ShellEnvironment + JANELA_* vars)
    ├─ spawnPseudoTerminal()  → openpty + fork + login_tty + execve
    ├─ reader thread          → blocking reads, water marks

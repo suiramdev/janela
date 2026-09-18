@@ -4,7 +4,6 @@ import {
   absolutePath,
   identifier,
   instant,
-  newLaunchProfileID,
   newProjectID,
   newSessionID,
   newTerminalID,
@@ -39,13 +38,7 @@ describe("identifier", () => {
   });
 
   test("every mint produces a fresh UUID", () => {
-    const minted = [
-      newProjectID(),
-      newSessionID(),
-      newTerminalID(),
-      newLaunchProfileID(),
-      newSessionID(),
-    ];
+    const minted = [newProjectID(), newSessionID(), newTerminalID(), newSessionID()];
 
     for (const value of minted) expect(value).toMatch(UUID);
 

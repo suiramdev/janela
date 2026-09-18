@@ -2,10 +2,10 @@
 //
 // ## What lives here
 //
-// Projects, sessions, terminal descriptors, session layouts, automation scripts,
-// launch profiles. Roughly: kilobytes. This database will never be large, and that
-// is a design constraint rather than an observation — if something wants to store
-// megabytes (scrollback, logs, agent transcripts) it does not belong here.
+// Projects, sessions, terminal descriptors, session layouts, automation scripts.
+// Roughly: kilobytes. This database will never be large, and that is a design
+// constraint rather than an observation — if something wants to store megabytes
+// (scrollback, logs, agent transcripts) it does not belong here.
 //
 // ## What does not live here
 //
@@ -38,21 +38,6 @@ datasource db {
   // Prisma 7 removed `url` from this block; the connection lives in
   // `prisma.config.ts` and the adapter is passed to the client constructor.
   provider = "sqlite"
-}
-
-/// Launch profiles come first because both Project and Terminal reference them.
-model LaunchProfile {
-  id         String  @id
-  name       String
-  iconName   String
-  /// JSON array. argv, never a shell string.
-  command    String
-  /// JSON object.
-  environment String
-  isAgent    Boolean @default(false)
-  isBuiltIn  Boolean @default(false)
-
-  terminals Terminal[]
 }
 
 model Project {
@@ -126,9 +111,6 @@ model Terminal {
   role                     String  @default("user")
   position                 Int
   createdAt                DateTime
-
-  profileId String?
-  profile   LaunchProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, position])
 }

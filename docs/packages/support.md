@@ -166,10 +166,9 @@ subpath to the daemon side and gates `node:child_process` to this package.
 
 **Arguments are always an array. There is no shell, so there is no quoting and no
 injection.** A caller who genuinely wants a shell writes `["zsh", "-lc", "…"]` and
-has chosen that explicitly — the same rule `LaunchProfile.command` follows, for
-the same reason. The one exception lives above this layer: an automation script
-is handed verbatim to the user's login shell, because a lifecycle hook *is* the
-user's shell logic (`AGENTS.md` § argv) — nothing here composes it.
+has chosen that explicitly. The one exception lives above this layer: an automation
+script is handed verbatim to the user's login shell, because a lifecycle hook *is*
+the user's shell logic (`AGENTS.md` § argv) — nothing here composes it.
 
 `ProcessRequest.executable` is resolved by the caller; this layer does not search
 `PATH` for `run`. `arguments` excludes `argv[0]`. An absent `environment` means an
@@ -205,8 +204,9 @@ are drained, and then we would decode a truncated stdout.
 
 ### which
 
-`which` decides whether a launch profile is offered at all: if `claude` is not on
-the user's `PATH` the profile is hidden rather than shown broken, and a missing
+`which` decides whether an executable is there before we commit to running it: an
+integration is offered only when its harness is on the user's `PATH`, a command a
+terminal was asked to run is resolved before the PTY is spawned, and a missing
 `gh` is silence rather than an error banner.
 
 A path-ish name (one containing `/`) is not searched for — it is checked where it

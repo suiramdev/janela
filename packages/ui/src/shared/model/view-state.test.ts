@@ -44,8 +44,6 @@ function fakeStore(initial: readonly Session[]): SessionStore & {
       selection = next;
     },
     terminalStates: {},
-    launchProfiles: [],
-    launchProfileAvailability: {},
     inProject: () => [],
     standaloneSessions: sessions,
     isRunning: () => false,

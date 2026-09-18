@@ -10,15 +10,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DaemonConnection } from "@janela/client";
-import type {
-  LaunchProfile,
-  LaunchProfileAvailability,
-  Project,
-  ProjectSettings,
-  Session,
-  TerminalID,
-  TerminalState,
-} from "@janela/core";
+import type { Project, ProjectSettings, Session, TerminalID, TerminalState } from "@janela/core";
 import {
   Button,
   cn,
@@ -86,7 +78,6 @@ import {
 } from "../model/settings-index.ts";
 import { SettingsAppearance } from "./appearance-settings.tsx";
 import { SettingsIntegrations } from "./integrations-settings.tsx";
-import { SettingsProfiles } from "./launch-profiles.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
 import { Pane, PaneHeader } from "./pane.tsx";
 import { SettingsPermissions } from "./permissions-settings.tsx";
@@ -125,8 +116,6 @@ interface NavRow {
 export interface SettingsPaneProps {
   readonly route: SettingsRoute;
   readonly settings: GlobalSettings;
-  readonly profiles: readonly LaunchProfile[];
-  readonly availability: LaunchProfileAvailability;
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
@@ -479,17 +468,7 @@ function PaneBody(
         onRecording={props.onRecordingShortcut}
       />
     )),
-    Match.when("integrations", () => (
-      <>
-        <SettingsProfiles
-          profiles={props.profiles}
-          availability={props.availability}
-          draft={draft}
-          onChangeDraft={onChangeDraft}
-        />
-        <SettingsIntegrations connection={props.connection} />
-      </>
-    )),
+    Match.when("integrations", () => <SettingsIntegrations connection={props.connection} />),
     Match.when("permissions", () => (
       <SettingsPermissions
         settings={settings}
@@ -561,8 +540,6 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
   const projects = useStoreValue(projectStore, () => projectStore.projects);
   const sessions = useStoreValue(sessionStore, () => sessionStore.sessions);
   const terminalStates = useStoreValue(sessionStore, () => sessionStore.terminalStates);
-  const profiles = useStoreValue(sessionStore, () => sessionStore.launchProfiles);
-  const availability = useStoreValue(sessionStore, () => sessionStore.launchProfileAvailability);
   const settings = useStoreValue(view, () => view.settings);
   const draft = useStoreValue(view, () => view.settingsDraft);
   const savedDraft = useStoreValue(view, () => view.savedSettingsDraft);
@@ -652,8 +629,6 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             key={revision}
             route={route}
             settings={settings}
-            profiles={profiles}
-            availability={availability}
             sessions={sessions}
             terminalStates={terminalStates}
             service={environment.local?.service}

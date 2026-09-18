@@ -1,9 +1,9 @@
 # @janela/session
 
 Layer 5, daemon side. The brain: project and session lifecycle, project
-automation, the captured login-shell environment, launch profiles and removal
-planning. It composes git, the terminal layer, the database and the forge into
-the operations a client can ask for.
+automation, the captured login-shell environment and removal planning. It
+composes git, the terminal layer, the database and the forge into the operations
+a client can ask for.
 
 What this package deliberately does not know: that a socket exists, that one of
 its peers is a WebView, or what a client is. It announces change through
@@ -25,7 +25,7 @@ programs are run with `Effect.runPromise` inside the method that owns them.
 
 ## errors.ts
 
-Twelve `UserFacingError` subclasses and nothing else. They keep that base
+Ten `UserFacingError` subclasses and nothing else. They keep that base
 because the `instanceof` contract crosses the daemon/client decision:
 `@janela/daemon` imports `UnknownTerminal` by name and turns anything
 `isUserFacing` into a `UserFacingFailure` on the wire. None of them carries a
@@ -42,7 +42,6 @@ path in a headline is how a dialog turns into a bug report.
 | `UnknownProject` | Two windows, one removed the project while the other still showed it. |
 | `UnknownSession` | The same race, one level down. |
 | `UnknownTerminal` | A stale mirror, or a split named beside a terminal of another session. |
-| `UnknownLaunchProfile` | Two settings windows, one deletion. |
 
 The refusals are the interesting half:
 
@@ -55,12 +54,9 @@ The refusals are the interesting half:
 - `LayoutTooDeep` — refusing is honest; silently opening a tab instead answers a
   question the user did not ask. The bound is `MAXIMUM_PANE_DEPTH` in
   `@janela/core`.
-- `BuiltInProfileProtected` — a deleted built-in would come back on the next
-  daemon start, because the seed is idempotent, and look like a bug. Editing is
-  offered; copy-and-edit is the answer for wanting a different one.
-- `LaunchProfileUnavailable` — the profile is normally *hidden* rather than shown
-  broken, so this is the case where the user started it anyway: configured before
-  the tool was uninstalled, or a session restored on another machine.
+- `ExecutableUnavailable` — the command the user asked to start is not on the
+  captured `PATH`: configured before the tool was uninstalled, or a session
+  restored on another machine.
 - `NotAWorktree` — `adoptWorktree` for a directory git does not list as a
   worktree of that project.
 - `PullRequestsNotSupported` — its own error rather than a silent no-op, thrown
@@ -240,8 +236,7 @@ session is the directory; its terminals are what happens to be open in it, and
 replacing the one just closed with a fresh shell would both spawn a process
 nobody asked for (§ Non-negotiables 5) and hide the close. The empty session is
 saved and announced like any other, and the client draws an empty state offering
-⌘T. Only `createSession` seeds a first terminal from the project's default
-profile.
+⌘T. Only `createSession` seeds a first terminal.
 
 `moveTab` lives here because tab order is part of `SessionLayout`, which the
 daemon owns; a client that rearranged its mirror would lose the drag on the next
@@ -380,7 +375,7 @@ is not cosmetic — `zsh` checks `argv[0][0] === '-'` to decide whether to sourc
 `.zprofile`. We never reimplement their shell configuration and never parse their
 `.zshrc`.
 
-The fix for *us* — checking whether `claude` exists before offering the profile —
+The fix for *us* — resolving `claude` on the `PATH` the user actually has —
 is to run one login shell at daemon startup and cache the result. Resolved once,
 after a client connects, never on the launch path
 ([`../performance.md`](../performance.md) § Launch: nothing blocks first paint).
@@ -408,7 +403,7 @@ everywhere but macOS.
 
 `printf '\0JANELA_ENVIRONMENT\0'; /usr/bin/env -0`, run with `-i -l -c`.
 Interactive as well as login because that is where users put `PATH` edits, and a
-`PATH` we did not capture is a launch profile we hide for no reason. The flags
+`PATH` we did not capture is a tool we fail to find for no reason. The flags
 are separate rather than `-ilc`: fish's option parser rejects the bundled form.
 
 The marker exists so a dotfile that greets the user (`fortune`, a version
@@ -464,12 +459,12 @@ session alone.
 ## terminal-launch.ts
 
 `@janela/terminal` receives an answer rather than computing one, because this is
-the only layer that knows about projects, profiles and the user's shell.
+the only layer that knows about projects and the user's shell.
 
 `TERM` and the `JANELA_*` namespace are applied **last**, after the captured
-environment and after the profile's own: they are facts about the terminal we
-created, and a profile that overrode them would be describing a terminal that
-does not exist. `DECLARED_TERM` is `xterm-256color` rather than a bespoke
+environment: they are facts about the terminal we created, and a captured value
+that overrode them would be describing a terminal that does not exist.
+`DECLARED_TERM` is `xterm-256color` rather than a bespoke
 terminfo entry, so every existing tool works on day one; revisit only if we ship
 a terminfo file, and note that the client renderer and the daemon emulator are two
 different libraries that must agree on what they claim to be.
@@ -495,7 +490,7 @@ measured:
 | Harness | Working (`9;4`) | Attention |
 | --- | --- | --- |
 | Claude Code 2.1.274 | yes, unlocked by `ConEmuANSI` | `preferredNotifChannel: "terminal_bell"`, or a `Notification` hook |
-| omp 18.2.4, and `pi` on its profile | only when the user sets `terminal.showProgress` (default off) | `ask.notify` |
+| omp 18.2.4, and `pi` | only when the user sets `terminal.showProgress` (default off) | `ask.notify` |
 | Codex 0.153.4 | never — the binary contains no `9;4` | `tui.notifications` (default off) emits OSC 9 or BEL |
 
 Activity itself travels through the integration `@janela/integrations` installs
@@ -518,9 +513,9 @@ like Terminal.app. A `script` is the login shell too, as `[$SHELL, "-c", script]
 with no lookup: the shell exists by construction, and the executables the script
 names are the shell's to find on the captured `PATH`, exactly as they would be at
 a prompt. Otherwise the executable is resolved against the captured `PATH` here
-rather than left to `execve`, so the user gets "Claude Code isn't installed."
-instead of an errno, and the name in that sentence is the profile's, not the
-binary's. A command containing `/` is taken as written. `argv` reaches the child
+rather than left to `execve`, so the user gets "claude isn't installed." instead
+of an errno, and the name in that sentence is the one the user wrote. A command
+containing `/` is taken as written. `argv` reaches the child
 verbatim, so `argv[0]` is what the user wrote and a program printing its own usage
 line reports the right name. `JANELA_PROJECT_DIRECTORY` joins the namespace
 whenever a project is known, for every terminal and not only automation, so a
@@ -529,37 +524,6 @@ user's own prompt can read it too.
 `DEFAULT_INITIAL_SIZE` is 80×24 because something has to be chosen:
 `negotiatedSize([])` has no answer and the child may print before the first
 viewport arrives. The first `attach` resizes.
-
-## launch-profile-service.ts
-
-Answers "what can be started", where `SessionService` answers "what is the user
-working on". A profile is *not* an integration: we resolve its executable and
-start it, we do not model the tool.
-
-`availability` is keyed by id and kept separate from the profile itself. It is a
-fact about this machine now, not something the user authored, and installing the
-tool must not require editing the profile. A profile whose executable is not on
-the captured `PATH` is **hidden rather than shown broken** — hiding is the
-client's decision and this record is the fact it needs.
-
-The `PATH` handed to `which` is the profile's own, then the captured
-login-shell one, then `/usr/bin:/bin` as a last resort — never the daemon's; see
-[`support.md`](support.md) § process.ts for what `which` does with it and why it
-ignores `process.env.PATH`. An empty argv is the login shell, which exists by
-construction and is never probed. A `which` that cannot run tells us nothing
-about the tool, so the profile is reported available: reporting otherwise would
-hide one that works.
-
-Probing is sequential on purpose. `which` is a subprocess, and a user with thirty
-profiles should not open thirty shells at once during daemon startup.
-
-`isBuiltIn` is ours, never the caller's. Editing a built-in keeps it built-in —
-that is what the settings surface offers — and nothing sent from outside can mint
-one, because a caller able to set it could make its own profile undeletable or a
-shipped one removable. `save` copies the caller's arrays and records rather than
-aliasing them: a client's object graph has no business being the daemon's state.
-`remove` rebuilds the availability record rather than `delete`-ing a key, so a
-mirror that merged it cannot keep a stale `true`.
 
 ## state-observing.ts
 

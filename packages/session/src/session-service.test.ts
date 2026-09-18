@@ -1,14 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type {
-  AbsolutePath,
-  LaunchProfile,
-  Project,
-  ProjectID,
-  SessionID,
-  TerminalID,
-} from "@janela/core";
-import { absolutePath, newLaunchProfileID, newProjectID, now } from "@janela/core";
+import type { AbsolutePath, Project, ProjectID, SessionID, TerminalID } from "@janela/core";
+import { absolutePath, newProjectID, now } from "@janela/core";
 import type { TemporaryDatabase } from "@janela/db";
 import { temporaryDatabase } from "@janela/db";
 import { GitFailure, type GitWorktree, type WorktreeServing } from "@janela/git";
@@ -20,7 +13,6 @@ import {
   LayoutTooDeep,
   NotAWorktree,
   PullRequestsNotSupported,
-  UnknownLaunchProfile,
   UnknownProject,
   UnknownSession,
   UnknownTerminal,
@@ -85,7 +77,6 @@ interface WithSessionsOptions {
   readonly safety?: FakeWorktreeOptions["safety"];
   readonly listed?: readonly GitWorktree[];
   readonly project?: Partial<Project>;
-  readonly profiles?: readonly LaunchProfile[];
 }
 
 type MutableWorktreeOptions = {
@@ -209,9 +200,6 @@ async function withSessions(
           const folder = projectRecord({ name: "notes", directory: folderDirectory });
           delete folder.git;
 
-          await Promise.all(
-            (options.profiles ?? []).map((profile) => database.launchProfiles.save(profile)),
-          );
           await database.projects.save(project);
           await database.projects.save(folder);
 
@@ -261,14 +249,12 @@ async function withSessions(
 
           const dependencies: MutableSessionDependencies = {
             repository: database.sessions,
-            profiles: database.launchProfiles,
             projects,
             worktrees: worktrees.worktrees,
             terminals,
             shell,
             observer: observer.observer,
-            processes: scriptedProcesses({ which: { claude: "/opt/homebrew/bin/claude" } })
-              .processes,
+            processes: scriptedProcesses().processes,
             createTerminal: factory.create,
             log: logger,
           };
@@ -530,7 +516,6 @@ describe("createSession", () => {
 
             const sessions = createSessionService({
               repository: database.sessions,
-              profiles: database.launchProfiles,
               projects,
               worktrees: fakeWorktrees({ canonicalise, events }).worktrees,
               terminals: createTerminalRegistry(),
@@ -701,25 +686,15 @@ describe("createSession", () => {
     });
   });
 
-  test("the first terminal is always the login shell, whatever profiles exist", async () => {
-    const profile: LaunchProfile = {
-      id: newLaunchProfileID(),
-      name: "Claude Code",
-      iconName: "sparkles",
-      command: ["claude"],
-      environment: {},
-      isAgent: true,
-      isBuiltIn: false,
-    };
-
-    await withSessions({ profiles: [profile] }, async (fixture) => {
+  test("the first terminal is the login shell, titled Shell", async () => {
+    await withSessions({}, async (fixture) => {
       const session = await fixture.sessions.createSession({
         kind: "inProject",
         projectID: fixture.project.id,
       });
 
+      expect(session.terminals).toHaveLength(1);
       expect(session.terminals[0]?.title).toBe("Shell");
-      expect(session.terminals[0]?.profileID).toBeUndefined();
     });
   });
 });
@@ -900,7 +875,6 @@ describe("removeSession", () => {
 
             const sessions = createSessionService({
               repository: database.sessions,
-              profiles: database.launchProfiles,
               projects,
               worktrees: worktrees.worktrees,
               terminals: createTerminalRegistry(),
@@ -1047,28 +1021,17 @@ describe("startTerminal", () => {
 
 describe("createTerminal", () => {
   test("a second terminal arrives as a new focused tab, configured and not started", async () => {
-    const profile: LaunchProfile = {
-      id: newLaunchProfileID(),
-      name: "Claude Code",
-      iconName: "sparkles",
-      command: ["claude"],
-      environment: {},
-      isAgent: true,
-      isBuiltIn: false,
-    };
-
-    await withSessions({ profiles: [profile] }, async (fixture) => {
+    await withSessions({}, async (fixture) => {
       const session = await fixture.sessions.createSession({
         kind: "inProject",
         projectID: fixture.project.id,
       });
 
-      const added = await fixture.sessions.createTerminal(session.id, { profileID: profile.id });
+      const added = await fixture.sessions.createTerminal(session.id, { title: "Server" });
 
       expect(fixture.factory.created).toHaveLength(0);
       expect(fixture.terminals.get(added.id)).toBeUndefined();
-      expect(added.title).toBe("Claude Code");
-      expect(added.profileID).toBe(profile.id);
+      expect(added.title).toBe("Server");
 
       const stored = await fixture.database.sessions.find(session.id);
       const first = session.terminals[0];
@@ -1082,21 +1045,17 @@ describe("createTerminal", () => {
     });
   });
 
-  test("an unknown session, and a profile that has been deleted, are both refused", async () => {
+  test("an unknown session is refused", async () => {
     await withSessions({}, async (fixture) => {
       const session = await fixture.sessions.createSession({
         kind: "inProject",
         projectID: fixture.project.id,
       });
       const unknownSession = unknownIdentifier as SessionID;
-      const goneProfile = newLaunchProfileID();
 
       expect(await rejection(fixture.sessions.createTerminal(unknownSession))).toBeInstanceOf(
         UnknownSession,
       );
-      expect(
-        await rejection(fixture.sessions.createTerminal(session.id, { profileID: goneProfile })),
-      ).toBeInstanceOf(UnknownLaunchProfile);
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
     });
   });
@@ -1407,7 +1366,6 @@ describe("load", () => {
       const registry = createTerminalRegistry();
       const restarted = createSessionService({
         repository: fixture.database.sessions,
-        profiles: fixture.database.launchProfiles,
         projects: { find: () => undefined },
         worktrees: refusingWorktrees,
         terminals: registry,

@@ -10,8 +10,8 @@ If you are new — human or agent — this sequence gets you productive fastest.
    design disagreements are settled here.
 3. **[`architecture.md`](architecture.md)** — two processes, modules, seams, key
    flows.
-4. **[`domain-model.md`](domain-model.md)** — the four nouns (project, session,
-   terminal, launch profile) and the vocabulary.
+4. **[`domain-model.md`](domain-model.md)** — the three nouns (project, session,
+   terminal) and the vocabulary.
 5. **[`development.md`](development.md)** — setup, the loop, and what to build
    first.
 

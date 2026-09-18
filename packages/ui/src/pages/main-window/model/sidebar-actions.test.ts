@@ -52,8 +52,6 @@ function emptySessionStore(): SessionStore {
     sessions: [],
     selection: undefined,
     terminalStates: {},
-    launchProfiles: [],
-    launchProfileAvailability: {},
     inProject: () => [],
     standaloneSessions: [],
     isRunning: () => false,

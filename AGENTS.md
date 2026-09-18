@@ -222,7 +222,6 @@ The words are load-bearing; UI copy and code use the same ones.
 | project | repository, workspace, group, folder |
 | session | workspace, worktree, tab, window |
 | terminal | pane, shell, tab, session |
-| launch profile | agent, command, tool, preset |
 | automation script | hook, command, task, job |
 | daemon, `janelad` | server, backend, service, agent |
 | client | frontend, UI (when you mean the process) |
@@ -275,9 +274,8 @@ it means a project or a session. Full table in
   `finally`. Never on the terminal byte path, never in a React render path, and
   never where it would introduce an unbounded buffer. See
   [`docs/architecture.md`](docs/architecture.md) § Effect at the seams.
-- **argv is always an array**, with one named exception. `LaunchProfile.command`,
-  git invocations, PTY spawns: no shell, so no quoting bug class. A user who wants a
-  shell in a profile writes `["zsh", "-lc", "…"]` and has chosen that. The exception
+- **argv is always an array**, with one named exception. Git invocations and PTY
+  spawns take no shell, so the quoting bug class does not exist there. The exception
   is `AutomationScript.script` — a lifecycle script *is* the user's shell logic, and
   Janela hands it verbatim to their login shell with `-c`. It is the one string a
   shell ever interprets, it is authored by the user in an editor labelled as such,
@@ -329,7 +327,7 @@ Run `bun run check`. It must pass. Then confirm:
       the intent.
 - [ ] Did you change the wire protocol? Version it, and say what an older peer does.
 - [ ] Did you add a concept a user has to learn? Justify it against
-      [`docs/product.md`](docs/product.md) § Non-goals — the budget is four nouns.
+      [`docs/product.md`](docs/product.md) § Non-goals — the budget is three nouns.
 - [ ] Did you use the word "workspace"? Replace it with project or session.
 - [ ] Did you change an architectural decision? Write the reason down in
       [`docs/architecture.md`](docs/architecture.md).

@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
 import { join } from "node:path";
 
 import {
   absolutePath,
-  BUILT_IN_PROFILES,
   newProjectID,
   newSessionID,
   newTerminalID,
@@ -257,40 +255,6 @@ describe("daemonEnvironment", () => {
     expect(daemon.environment.sessions.sessions).toHaveLength(2);
     expect(daemon.environment.projects.projects).toHaveLength(1);
     expect(daemon.environment.terminals.liveCount).toBe(0);
-  });
-
-  test("seeds the built-in launch profiles and probes them against the captured PATH", async () => {
-    await using directory = await temporaryDirectory("environment");
-    const bin = join(directory.path, "bin");
-
-    await mkdir(bin, { recursive: true });
-    await Bun.write(join(bin, "codex"), "#!/bin/sh\n");
-    await chmod(join(bin, "codex"), 0o755);
-
-    await using daemon = await openedDaemon({
-      databasePath: join(directory.path, "janela.sqlite"),
-      socketPath: join(directory.path, "run", "janelad.sock"),
-      shell: { ...shell, resolved: { PATH: bin } },
-    });
-    const byName = new Map(
-      daemon.environment.launchProfiles.profiles.map((profile) => [profile.name, profile]),
-    );
-
-    expect(byName.size).toBe(BUILT_IN_PROFILES.length);
-
-    const codex = byName.get("Codex");
-    const claude = byName.get("Claude Code");
-
-    expect(codex).toBeDefined();
-    expect(claude).toBeDefined();
-
-    if (codex !== undefined) {
-      expect(daemon.environment.launchProfiles.availability[codex.id]).toBe(true);
-    }
-
-    if (claude !== undefined) {
-      expect(daemon.environment.launchProfiles.availability[claude.id]).toBe(false);
-    }
   });
 
   test("a database it cannot open rejects rather than serving half a graph", async () => {
