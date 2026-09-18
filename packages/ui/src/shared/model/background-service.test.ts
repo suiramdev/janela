@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { fakeSession, fakeTerminal, states } from "../../../shared/lib/test-fakes/index.ts";
+import { fakeSession, fakeTerminal, states } from "../lib/test-fakes/index.ts";
 import {
   NO_SERVICE_CONFIRMATION,
   SERVICE_CONFIRM_TITLE,

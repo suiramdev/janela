@@ -3,7 +3,8 @@
 //! Deliberately thin, and the list of what belongs here is closed:
 //!
 //!   * the window, and its native chrome
-//!   * the native menu bar and its accelerators
+//!   * the native menu bar and its accelerators, and the status item beside the
+//!     clock — the daemon's surface when no window is in front of you
 //!   * native notifications
 //!   * the native directory picker — **the app performs file selection; the daemon
 //!     is handed paths.** That is a rule, not a convenience: it is what keeps macOS
@@ -21,12 +22,19 @@
 
 // The native menu is built at runtime from `@janela/ui`'s `COMMANDS`, which the
 // frontend sends once at startup (`install_menu` below). The shell reads ids,
-// titles, accelerators and which menu a row goes in — and nothing else. It does
-// not know what any command *means*, which is what stops the menu bar and the
-// in-app command palette drifting apart: there is one table, in TypeScript, and
-// adding a row to it needs no Rust change. A user's own shortcuts arrive later,
-// through `set_menu_accelerators`, and are applied to the items already in the
-// bar — never by building a second menu (see `install_menu`).
+// titles, accelerators, which menu a row goes in and whether it also belongs in
+// the status item — and nothing else. It does not know what any command *means*,
+// which is what stops the menu bar and the in-app command palette drifting apart:
+// there is one table, in TypeScript, and adding a row to it needs no Rust change.
+// A user's own shortcuts arrive later, through `set_menu_accelerators`, and are
+// applied to the items already in the bar — never by building a second menu (see
+// `install_menu`).
+//
+// The status item is `tray.rs`: Show and Quit, which the shell answers itself and
+// which therefore exist from launch rather than from page load, around the table's
+// tray rows. Stopping the daemon is one of those rows precisely because the shell
+// must not decide it — the cost is counted in sessions and live terminals, which
+// only the client knows.
 
 // The socket bridge is `bridge.rs`: it relays length-prefixed frames as raw bytes
 // in both directions and applies the two back-pressure policies — coalesced
@@ -42,6 +50,7 @@
 
 mod agent;
 mod bridge;
+mod tray;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -75,6 +84,8 @@ struct CommandSpec {
     accelerator: Option<String>,
     menu: String,
     section: Option<u32>,
+    #[serde(default)]
+    tray: bool,
 }
 
 /// One row of the user's shortcut table, as it crosses from the WebView: the chord
@@ -219,6 +230,12 @@ fn install_menu(
     )
     .map_err(to_message)?;
     app.set_menu(menu).map_err(to_message)?;
+
+    // The status item reads the same table, and is the one menu the shell rebuilds:
+    // it is not the main menu bar, and its rows carry no accelerator, so replacing
+    // it registers nothing with AppKit that the bar has already claimed.
+    let tray_rows: Vec<&CommandSpec> = commands.iter().filter(|spec| spec.tray).collect();
+    tray::set_commands(&app, &tray_rows)?;
     *installed = Some(items);
     Ok(())
 }
@@ -343,9 +360,40 @@ fn main() {
                 );
             }
         })
+        .setup(|app| {
+            // A status item that cannot be created is not a reason to refuse the
+            // window: the menu bar's extras are the user's to remove.
+            if let Err(message) = tray::install(app.handle()) {
+                log::error!(target: "app", "status item unavailable: {message}");
+            }
+
+            Ok(())
+        })
         .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+
+            // Show is the shell's own row, and the window is the shell's to raise:
+            // the WebView cannot raise itself.
+            if id == tray::SHOW_ID {
+                tray::show(app);
+
+                return;
+            }
+
+            // A row chosen from the status item is still answered in the window —
+            // stopping the daemon states its cost in sessions and live terminals
+            // there — so the window comes forward before the id goes over.
+            let command = match tray::row_command(id) {
+                Some(command) => {
+                    tray::show(app);
+
+                    command
+                }
+                None => id,
+            };
+
             // The id, and nothing else. What it means is the client's business.
-            let _ = app.emit(COMMAND_EVENT, event.id().0.clone());
+            let _ = app.emit(COMMAND_EVENT, command.to_owned());
         })
         .manage(BridgeState::default())
         .manage(MenuState::default())

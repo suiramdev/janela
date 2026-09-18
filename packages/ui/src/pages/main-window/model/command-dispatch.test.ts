@@ -16,6 +16,7 @@ import {
   type RecordingConfirmations,
   type RecordingDirectoryPicker,
   type RecordingNativeShell,
+  type RecordingService,
   fakeProject,
   fakeSession,
   fakeSurfaceHandle,
@@ -24,6 +25,7 @@ import {
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingService,
+  states,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
   type ConfirmationKey,
@@ -48,6 +50,7 @@ interface Harness {
   readonly native: RecordingNativeShell;
   readonly directories: RecordingDirectoryPicker;
   readonly confirmations: RecordingConfirmations;
+  readonly service: RecordingService;
   appears: Session | undefined;
 }
 
@@ -103,14 +106,13 @@ function harness(options: {
     silenced: options.silenced,
   });
 
+  const service = recordingService();
+
   const target: CommandTarget = {
     projects: projectStore,
     sessions: sessionStore,
     view,
-    local:
-      options.local === false
-        ? undefined
-        : { native, service: recordingService(), restartDaemon: () => {} },
+    local: options.local === false ? undefined : { native, service, restartDaemon: () => {} },
     directories,
     confirmations,
     connection: {
@@ -134,6 +136,7 @@ function harness(options: {
     native,
     directories,
     confirmations,
+    service,
     get appears(): Session | undefined {
       return appearing;
     },
@@ -697,5 +700,40 @@ describe("no target", () => {
     expect(context.sent).toEqual([]);
     expect(context.view.sheet).toBeUndefined();
     expect(context.native.calls).toEqual([]);
+  });
+});
+
+describe("Stop the Daemon", () => {
+  test("counts the terminals it would end before anything stops", async () => {
+    const running = fakeTerminal();
+    const session = fakeSession({ terminals: [running] });
+    const context = harness({
+      sessions: [session],
+      selection: session.id,
+      states: states([running.id, { kind: "running" }]),
+    });
+
+    await createCommandDispatch(context.target)("stopDaemon");
+
+    expect(context.confirmations.asked[0]?.message).toContain("1 live terminal");
+    expect(context.confirmations.asked[0]?.destructive).toBe(true);
+    expect(context.service.calls).toEqual([]);
+  });
+
+  test("stops it once the cost is accepted, and never silences the question", async () => {
+    const context = harness({ confirms: true });
+
+    await createCommandDispatch(context.target)("stopDaemon");
+
+    expect(context.service.calls).toEqual(["stop"]);
+    expect(context.confirmations.asked[0]?.remember).toBeUndefined();
+  });
+
+  test("does nothing on a client that is not on the daemon's Mac", async () => {
+    const context = harness({ local: false, confirms: true });
+
+    await createCommandDispatch(context.target)("stopDaemon");
+
+    expect(context.confirmations.asked).toEqual([]);
   });
 });

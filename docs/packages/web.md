@@ -60,12 +60,13 @@ the one place it is the right tool.
 
 ## What a browser user does not get
 
-- **Reveal in Finder, Open in Terminal** are `localOnly` commands: absent from the
-  palette, unclaimed by the keyboard, no-ops in dispatch. Add Project… and Open
-  Folder… are not: the folder is chosen in the app's own column view, fed by the
-  daemon one folder at a time.
-- **The background-service controls and the restart-on-version-skew button** need
-  `launchctl` on the Mac; the section and the button are not rendered.
+- **Reveal in Finder, Open in Terminal, Stop the Daemon…** are `localOnly`
+  commands: absent from the palette, unclaimed by the keyboard, no-ops in
+  dispatch. Add Project… and Open Folder… are not: the folder is chosen in the
+  app's own column view, fed by the daemon one folder at a time.
+- **The background-service controls, the status item and the restart-on-version-skew
+  button** need `launchctl` on the Mac; the section and the button are not rendered,
+  and a tab has no menu bar to put an item in.
 - **Browser-reserved chords.** ⌘W, ⌘N, ⌘T, ⌘Q and ⌘, never reach a page in Chrome
   or Safari. The palette (⌘⇧P) lists every available command, so nothing is
   unreachable, only slower; an installed (standalone) web app hands most of them

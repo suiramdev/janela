@@ -3332,10 +3332,12 @@ export const COMMANDS: readonly Command[];
 commands; fifteen accelerators, written in Tauri's notation because the native
 menu bar in `apps/desktop/src-tauri` is built from this table.
 
-Code versus spec: the shipped table carries five more (`openSettings`,
-`showCommands`, `nextTab`, `previousTab`, `closePane`) and no longer carries
-`newBranchSession` — ⌘⇧B and its sheet went when "New Session" became the one
-way a session is made, a session on a new branch included. The code wins.
+Code versus spec: the shipped table carries six more (`openSettings`,
+`showCommands`, `nextTab`, `previousTab`, `closePane`, `stopDaemon`) and no
+longer carries `newBranchSession` — ⌘⇧B and its sheet went when "New Session"
+became the one way a session is made, a session on a new branch included.
+`stopDaemon` has no chord and carries `tray: true`, which is how the status item
+draws it as well; the code wins.
 
 | Command id          | Title                | Accelerator            |
 | ------------------- | -------------------- | ---------------------- |
@@ -3533,11 +3535,17 @@ export function setLogSink(sink: LogSink): void;
 9. **The shell's responsibilities are a closed list**, from
    `apps/desktop/src-tauri/src/main.rs`: the window and its native chrome; the
    native menu bar and its accelerators, built from `@janela/ui`'s `COMMANDS`
-   table so the menu and the in-app command surface cannot drift apart; native
-   notifications; native file dialogs; the daemon sidecar's lifecycle and
-   launch-agent registration; the Unix-socket bridge. Keeping the list closed
-   is the point — logic in a shell is logic that cannot be tested without the
-   shell.
+   table so the menu and the in-app command surface cannot drift apart; the
+   status item, whose rows come from that same table; native notifications;
+   native file dialogs; the daemon sidecar's lifecycle and launch-agent
+   registration; the Unix-socket bridge. Keeping the list closed is the point —
+   logic in a shell is logic that cannot be tested without the shell.
+
+   Code versus spec: the status item is the one addition since this list was
+   written (`src-tauri/src/tray.rs`). It answers Show and Quit itself, because
+   those must work when the WebView does not, and routes its command rows
+   through the window so that stopping the daemon still states its cost where
+   the counts live.
 10. **File dialogs are a rule, not a convenience: the app selects, the daemon is
     handed paths.** TCC attributes access to the process that asked, so a
     directory the user picked in the app carries the user's intent and the
