@@ -113,31 +113,54 @@ this decides what it means; shipping focus state to the daemon would be a chatty
 protocol serving no one.
 
 The rules, stated once so the implementation cannot drift: already delivered → no;
-the user is looking straight at it → no; a bare BEL → whatever `notifiesOnBell` says,
-because programs ring it for reasons the user has not agreed are important; an
-OSC 9 / OSC 777 → deliver, because the program asked by name and that is consent; a
-finished prompt → deliver only when it failed *and* ran longer than
+the user is looking straight at it → no; a bare BEL → whatever the `bell` event's
+switch says, because programs ring it for reasons the user has not agreed are
+important; an OSC 9 / OSC 777 → deliver, because the program asked by name and that
+is consent; a finished prompt → deliver only when it failed *and* ran longer than
 `LONG_RUNNING_THRESHOLD_SECONDS` (10 s), since short commands failing is normal work;
-a reported agent activity → `waiting` asks `notifiesWhenAgentWaits`, `finished` asks
-`notifiesWhenAgentFinishes` for either outcome, and `working` is never worth
-interrupting for.
+a reported agent activity → `waiting`, `finished` and `failed` each ask their own
+switch, and `working` is never worth interrupting for.
+
+**`AttentionEvent` is the unit the user is asked about.** Four of them — `bell`,
+`waiting`, `finished`, `failed` — and they are the rows Settings draws, the keys the
+preferences are stored under, and the granularity of the sound. `attentionEvent`
+maps a signal onto one, or onto nothing for an agent that is merely working; it is
+the only place that mapping exists, so the switch a signal consults and the sound it
+makes can never disagree.
+
+- A **named notification takes the bell's event**, because both are a program asking
+  for the user's attention by its own choice rather than an agent reporting a turn.
+  It still always delivers — asking by name is consent — so the switch it shares is
+  about the *sound*, not about whether it arrives.
+- A **failed prompt takes `failed`**, because the only prompt that ever reaches
+  delivery is one that exited non-zero after ten seconds. Same reasoning: it always
+  delivers, and what it takes from the event is the sound.
+- `finished` and `failed` are separate events rather than one "the agent stopped",
+  because a turn that ended cleanly and a turn that broke are the two cases a user
+  most wants to tell apart without looking — which is exactly what a distinct sound
+  buys.
 
 **`AttentionPreferences` is the user's answer, read per signal.** `routeAttention`
 takes `preferences: () => AttentionPreferences` and calls it for every signal rather
 than capturing a value, so a switch flipped in Settings is in force for the next
-signal with no restart and no subscription. It is three booleans and no more: what
-the user is asked in Settings is exactly what the policy branches on, so there is no
-mapping layer to get wrong. Which of the three a signal consults is the policy's
-call, not the caller's — the app supplies the answers, never the verdict.
+signal with no restart and no subscription. It is a record of `{ notifies, sound }`
+keyed by `AttentionEvent` and nothing else: what the user is asked in Settings is
+exactly what the policy branches on, so there is no mapping layer to get wrong. Which
+event a signal consults is the policy's call, not the caller's — the app supplies the
+answers, never the verdict.
 
-- `notifiesOnBell` was, until agent activity landed, a *dead* setting: the switch
+- `DEFAULT_ATTENTION_PREFERENCES` lives here, beside the type, because both
+  `GlobalSettings` and the app's own fallback need it and they used to state it
+  twice. One of them being wrong was a silent behaviour change in whichever path
+  the other did not cover.
+- The `bell` event was, until agent activity landed, a *dead* setting: the switch
   saved and reloaded, and `isWorthInterrupting` returned `false` for a bell whatever
   it held. It is now what it always claimed to be. The bell still badges the sidebar
   when it is off — that channel needs no permission.
-- `notifiesWhenAgentFinishes` and `notifiesWhenAgentWaits` default to **on**, unlike
-  the bell: an agent reports activity only because the user installed its integration,
-  which is the consent a bare BEL lacks. The sidebar shows both states whatever the
-  preferences say; these decide only whether Janela also interrupts.
+- `waiting`, `finished` and `failed` default to **on**, unlike the bell: an agent
+  reports activity only because the user installed its integration, which is the
+  consent a bare BEL lacks. The sidebar shows those states whatever the preferences
+  say; these decide only whether Janela also interrupts.
 - `working` is a state, never a signal. The daemon does not raise it (see
   `@janela/daemon`'s relay), and the policy refuses it a second time here so a future
   caller that does raise one cannot notify a user every time an agent picks up a tool.
@@ -171,6 +194,36 @@ call, not the caller's — the app supplies the answers, never the verdict.
   post.
 - `AttentionDelivering` is implemented in `apps/desktop`: an app-level capability, so
   this package stays testable and browser-reachable without one.
+
+## `attention-sound.ts`
+
+`NotificationSound` — `silent`, a `system` sound by name, or a `custom` file — and
+the one-method `NotificationSoundPlaying` seam that makes it.
+
+**It lives here because two packages above have to name it and neither may name
+the other.** The setting is `GlobalSettings`, which is `@janela/ui`'s; the sound is
+played by `apps/desktop`, whose composition root may not reach for a React tree
+(see [`desktop.md`](desktop.md) § environment.ts). `@janela/client` is the deepest
+package both can see, and it is where `AttentionPreferences` already lives for the
+same reason.
+
+- **It is not policy.** `shouldDeliver` decides *whether* to interrupt; the sound is
+  part of *how*. It rides in `AttentionPreferences` because it is answered by the
+  same row of the same screen and read at the same moment, but no branch of the
+  policy ever looks at it — the only thing the sound field can change is what a
+  delivered notification sounds like. A client with no way to make a sound — the
+  browser one — stores it and implements the seam not at all.
+- **One sound per event, not one per app.** It started as a single setting, and a
+  single setting made the Settings screen say the same four things twice: once as
+  switches, once as a sound. Keying it by `AttentionEvent` collapsed those two lists
+  into one and is why a user can hear the difference between a finished turn and a
+  broken one.
+- `silent` is a member of the union rather than an absent field, so "no sound" is a
+  choice the user made and a case every consumer has to handle, instead of a
+  `undefined` that means either that or a setting from an older build.
+- The names of the system sounds are **not** here. They are macOS's, the Settings
+  picker is the only thing that needs the list, and a list in this package would be
+  a platform fact in a platform-free one ([`ui.md`](ui.md) § config).
 
 ## `test-fakes.ts`
 

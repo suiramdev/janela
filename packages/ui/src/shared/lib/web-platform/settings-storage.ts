@@ -1,11 +1,14 @@
-import { Effect, Option, Result, Schema } from "effect";
+import { ATTENTION_EVENTS, type NotificationSound } from "@janela/client";
+import { absolutePath } from "@janela/core";
+import { Effect, Match, Option, Result, Schema } from "effect";
 
-import { isCommandID, parseAccelerator } from "../../config/index.ts";
+import { isCommandID, parseAccelerator, SYSTEM_NOTIFICATION_SOUNDS } from "../../config/index.ts";
 import {
   CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
   isThemePreference,
   withCommandShortcut,
+  withNotificationEvent,
   withTerminalFontSize,
   withTheme,
   type GlobalSettings,
@@ -16,13 +19,37 @@ const KEY = "janela.settings";
 
 const absent = (): Effect.Effect<Option.Option<never>> => Effect.succeed(Option.none());
 
+const StoredNotificationSound = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("silent") }),
+  Schema.Struct({
+    kind: Schema.Literal("system"),
+    name: Schema.Literals(SYSTEM_NOTIFICATION_SOUNDS),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("custom"),
+    path: Schema.String.check(Schema.isStartsWith("/")),
+  }),
+]);
+
+type StoredNotificationSound = (typeof StoredNotificationSound)["Type"];
+
+const StoredAttentionEvent = Schema.Struct({
+  notifies: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
+  sound: Schema.optionalKey(StoredNotificationSound).pipe(Schema.catchDecoding(absent)),
+});
+
+const StoredNotifications = Schema.Struct({
+  bell: Schema.optionalKey(StoredAttentionEvent).pipe(Schema.catchDecoding(absent)),
+  waiting: Schema.optionalKey(StoredAttentionEvent).pipe(Schema.catchDecoding(absent)),
+  finished: Schema.optionalKey(StoredAttentionEvent).pipe(Schema.catchDecoding(absent)),
+  failed: Schema.optionalKey(StoredAttentionEvent).pipe(Schema.catchDecoding(absent)),
+});
+
 const StoredSettings = Schema.Struct({
   theme: Schema.optionalKey(Schema.String).pipe(Schema.catchDecoding(absent)),
   terminalFontFamily: Schema.optionalKey(Schema.String).pipe(Schema.catchDecoding(absent)),
   terminalFontSize: Schema.optionalKey(Schema.Number).pipe(Schema.catchDecoding(absent)),
-  notifiesOnBell: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
-  notifiesWhenAgentFinishes: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
-  notifiesWhenAgentWaits: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
+  notifications: Schema.optionalKey(StoredNotifications).pipe(Schema.catchDecoding(absent)),
   silencedConfirmations: Schema.optionalKey(Schema.Array(Schema.String)).pipe(
     Schema.catchDecoding(absent),
   ),
@@ -70,16 +97,17 @@ export function parseSettings(raw: string | null): GlobalSettings {
     settings = withTheme(settings, fields.theme);
   }
 
-  if (fields.notifiesOnBell !== undefined) {
-    settings = { ...settings, notifiesOnBell: fields.notifiesOnBell };
-  }
+  for (const event of ATTENTION_EVENTS) {
+    const entry = fields.notifications?.[event];
 
-  if (fields.notifiesWhenAgentFinishes !== undefined) {
-    settings = { ...settings, notifiesWhenAgentFinishes: fields.notifiesWhenAgentFinishes };
-  }
+    if (entry === undefined) continue;
 
-  if (fields.notifiesWhenAgentWaits !== undefined) {
-    settings = { ...settings, notifiesWhenAgentWaits: fields.notifiesWhenAgentWaits };
+    const current = settings.notifications[event];
+
+    settings = withNotificationEvent(settings, event, {
+      notifies: entry.notifies ?? current.notifies,
+      sound: entry.sound === undefined ? current.sound : storedSound(entry.sound),
+    });
   }
 
   if (fields.terminalFontFamily !== undefined && fields.terminalFontFamily.length > 0) {
@@ -103,4 +131,15 @@ export function parseSettings(raw: string | null): GlobalSettings {
   return fields.terminalFontSize === undefined
     ? settings
     : withTerminalFontSize(settings, fields.terminalFontSize);
+}
+
+function storedSound(stored: StoredNotificationSound): NotificationSound {
+  return Match.value(stored).pipe(
+    Match.when(
+      { kind: "custom" },
+      // SAFETY: the schema above accepted this string only because it starts with `/`, which is the whole of `absolutePath`'s precondition, so the call cannot throw.
+      (custom): NotificationSound => ({ kind: "custom", path: absolutePath(custom.path) }),
+    ),
+    Match.orElse((simple): NotificationSound => simple),
+  );
 }

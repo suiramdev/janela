@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { SILENT_NOTIFICATION_SOUND } from "@janela/client";
 import { absolutePath, identifier, instant, type Session, type TerminalID } from "@janela/core";
 import {
   encodeDaemonMessage,
@@ -8,13 +9,13 @@ import {
   PROTOCOL_VERSION,
 } from "@janela/protocol";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
-import { attentionPreferences, createViewState, DEFAULT_GLOBAL_SETTINGS } from "@janela/ui";
+import { createViewState } from "@janela/ui";
 import { PluginListener } from "@tauri-apps/api/core";
 import type { Options } from "@tauri-apps/plugin-notification";
 
 import type { NotificationPlugin } from "./adapters/notification-delivery.ts";
 import type { BridgeInvoke } from "./adapters/transport.ts";
-import { CLIENT_NAME, DEFAULT_ATTENTION_PREFERENCES, liveEnvironment } from "./environment.ts";
+import { CLIENT_NAME, liveEnvironment } from "./environment.ts";
 
 type ShellAnswer = number | string | ArrayBuffer | undefined;
 
@@ -398,10 +399,6 @@ describe("liveEnvironment", () => {
     expect(plugin.sent[0]?.body).toBe("Waiting for permission.");
   });
 
-  test("the default preferences are the settings defaults, restated because @janela/ui is out of reach here", () => {
-    expect(DEFAULT_ATTENTION_PREFERENCES).toEqual(attentionPreferences(DEFAULT_GLOBAL_SETTINGS));
-  });
-
   test("the preferences the app supplies decide, so a waiting agent can stay quiet", async () => {
     const shell = fakeShell();
     const plugin = recordingPlugin();
@@ -411,9 +408,10 @@ describe("liveEnvironment", () => {
       plugin,
       isApplicationActive: () => false,
       attentionPreferences: () => ({
-        notifiesOnBell: false,
-        notifiesWhenAgentFinishes: false,
-        notifiesWhenAgentWaits: false,
+        bell: { notifies: false, sound: SILENT_NOTIFICATION_SOUND },
+        waiting: { notifies: false, sound: SILENT_NOTIFICATION_SOUND },
+        finished: { notifies: false, sound: SILENT_NOTIFICATION_SOUND },
+        failed: { notifies: false, sound: SILENT_NOTIFICATION_SOUND },
       }),
     });
 

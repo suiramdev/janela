@@ -729,9 +729,9 @@ positional shape is deliberate — a sidebar test reads better as
   (Permissions) or "connect it to GitHub" (Integrations). There was also a *General*
   before either cut, holding three unrelated things, which is what a pane named
   after nothing always becomes, and it put the most destructive surface in the
-  product behind the blandest label. The map now: the terminal font under
-  Appearance; the bell and the two agent switches under Notifications; forge
-  reading and the activity-reporting hooks under
+  product behind the blandest label. The map now: the theme and the terminal font
+  under Appearance; the four attention events, each with its switch and its sound,
+  under Notifications; forge reading and the activity-reporting hooks under
   Integrations — both are "the tools Janela reaches", and Janela starts them and
   listens rather than wrapping them; the close-terminal confirmation, the notification
   permission's explanation and the daemon's stop controls under Permissions,
@@ -945,24 +945,55 @@ shared across clients; they show *None* and record like any other row.
 
 ### `ui/notification-settings.tsx`
 
-Two sections, three switches. "Not the terminal you are looking at" and "only when
-Janela is not frontmost" are facts, not preferences, and a mis-tuned notification
-policy trains users to distrust the badge. Among what a *terminal* reports the bell
-is the one genuine choice, because a bell means whatever the program ringing it
-decided; an explicit OSC 9 or OSC 777 is consent, not a choice.
+One section, one row per event, and each row carries both halves of the answer: a
+switch for whether Janela interrupts and a select for what it sounds like. "Not the
+terminal you are looking at" and "only when Janela is not frontmost" are facts, not
+preferences, and a mis-tuned notification policy trains users to distrust the badge.
 
-**Agents** is the second section, and its two switches — finished, waiting —
-default **on** while the bell defaults off. The asymmetry is where the consent came
-from: a bell arrives from any program that happens to write `\a`, whereas an
-activity report exists only because the user installed that harness's integration
-one tab away. Defaulting those on honours a decision already taken rather than
-guessing at one, and it is also why the bell switch stopped being decorative — it
-was saved and reloaded and read by nothing until the attention policy grew
-preferences ([`client.md`](client.md)).
+**It was three sections until sounds became per-event.** Bell and Agents held the
+switches; a third section held the one sound they all made. Splitting the sound by
+event meant the pane would have listed the same four things twice — once to ask
+whether, once to ask how — with the reader left to match the rows up by name. Folding
+the sound into the row that owns it is why the switches and the sounds cannot drift
+apart, and it is the same reason `AttentionEvent` exists at all
+([`client.md`](client.md)).
 
-In-app state is unaffected by this pane, and both hints in it say so: the sidebar
-shows a finished or waiting agent whatever the switches hold. The badge is the
-daemon's and needs no permission.
+The four rows are the bell, an agent waiting, an agent finishing and an agent
+stopping with an error. The last three default **on** while the bell defaults off.
+The asymmetry is where the consent came from: a bell arrives from any program that
+happens to write `\a`, whereas an activity report exists only because the user
+installed that harness's integration one tab away. Defaulting those on honours a
+decision already taken rather than guessing at one, and it is also why the bell
+switch stopped being decorative — it was saved and reloaded and read by nothing until
+the attention policy grew preferences.
+
+Two rows carry a hint about something that arrives *regardless* of their switch: a
+program that asks macOS for a notification by name rides on the bell row, and a
+command that failed after ten seconds rides on the error row. Both always deliver —
+asking by name is consent, and a long failure is news — so what those rows lend them
+is the sound, which is what the hint says. In-app state is unaffected by any of this:
+the sidebar shows a finished or waiting agent whatever the switches hold, because the
+badge is the daemon's and needs no permission.
+
+**The sound select renders only where `local` does** — a client that cannot play a
+sound must not draw a picker for one, and the browser client never notifies at all.
+It is one control for both halves of that setting: Silent, macOS's fourteen alert
+sounds by name, the chosen file when there is one, and **Choose a file…** last. That
+last row is a separate value from the chosen file on purpose — re-selecting the row a
+`<select>` is already showing fires no change event, so a single "Custom" row would
+have let the user pick a file once and never swap it.
+
+Picking a sound plays it, which is the whole reason the picker is usable: the names
+mean nothing until you hear them. **Play** repeats the current one — for the file,
+which has no name anybody recognises — and is disabled for silence, because a button
+that does nothing is worse than a greyed one. Both controls are disabled while the
+row's switch is off, since a notification that never arrives has no sound to choose;
+the switch is the row's subject and the sound is a detail of it. Nothing here is
+saved until the commit bar is, so a preview costs a sound and not a setting.
+
+Each select is labelled `Sound — <the row's label>` rather than just "Sound",
+because four identically-named controls on one screen are four controls a screen
+reader cannot tell apart.
 
 ### `ui/project-settings.tsx`
 
@@ -1137,6 +1168,13 @@ thing that can be wrong.
   terminal receives nothing.
 - `restartDaemon` is the version-skew banner's button and the only thing that may cause
   it, because restarting kills live terminals (§ Non-negotiables 7).
+- `NotificationSoundControlling` is under `local` because both of its methods are
+  the Mac's: only the shell can play a sound it was handed by name or by path, and
+  only the shell has a file panel. It pairs playing with choosing in one port
+  because the Settings picker needs both in one gesture — a chosen file plays
+  immediately, which is the only way to know you picked the right one. Delivery
+  does not go through this port; it has its own dep in the composition root, so
+  the notification path never depends on a React tree.
 - `useStoreValue`'s third argument is the point: without a server snapshot
   `renderToStaticMarkup` throws, and these views are tested by rendering to markup.
   `read` must be reference-stable between notifications, so composing an object literal
@@ -1196,12 +1234,32 @@ test for whether something belongs on the wire.
   string. The key is *removed* rather than set to `undefined`, because
   `exactOptionalPropertyTypes` makes those different types and a persisted
   `{"terminalFontFamily": null}` would read back as an override to nothing.
-- `notifiesOnBell` is off by default, because programs ring the bell for reasons the user
-  has not agreed are important. An explicit OSC 9 or OSC 777 delivers regardless.
-- `notifiesWhenAgentFinishes` and `notifiesWhenAgentWaits` are on by default, and the
-  difference from the bell is consent: an activity report exists only because the user
-  installed that harness's integration, while a bell arrives from any program that
-  writes `\a`. Neither affects the sidebar, which shows both states regardless.
+- `notifications` is one entry per `AttentionEvent`, each `{ notifies, sound }`, and
+  the type and its defaults are `@janela/client`'s because `apps/desktop` has to name
+  them too ([`client.md`](client.md) § attention-policy.ts). It replaced three
+  booleans and a single sound field: the booleans and the sound were asked side by
+  side on one screen and consulted side by side on one code path, so keeping them in
+  four flat fields only made it possible for them to disagree about which event was
+  which.
+- `bell.notifies` is off by default, because programs ring the bell for reasons the
+  user has not agreed are important. An explicit OSC 9 or OSC 777 delivers regardless.
+- `waiting`, `finished` and `failed` notify by default, and the difference from the
+  bell is consent: an activity report exists only because the user installed that
+  harness's integration, while a bell arrives from any program that writes `\a`.
+  None of them affects the sidebar, which shows every state regardless.
+- Every event's `sound` is **silent** by default, and that is the conservative answer
+  rather than a shy one: Janela's notifications have never made a sound, and a noise
+  is a bigger interruption than a banner. The field is required rather than optional
+  because silence is a choice like any other — an absent key would mean "silent or
+  written by an older build", and the two want the same behaviour but not the same
+  type.
+- A stored `custom` sound must be an absolute path and a stored `system` one must
+  name a sound this build knows; anything else decodes to silence rather than to a
+  sound nothing can play, and it costs that one event's sound rather than its switch
+  or another event ([§ web-platform](#web-platform) below).
+- `withNotificationEvent` exists so no caller spreads the nested record by hand.
+  Every writer of this setting is a UI row that owns exactly one event, and a
+  hand-written spread that forgot the inner one would silently reset the other three.
 - `TERMINAL_FONT_SIZE_BOUNDS` is not taste: below the minimum the grid stops being
   legible and above the maximum an 80-column view no longer fits a laptop display, and
   both ends produce "the app is broken" reports. A number input yields `NaN` for an empty
@@ -1385,6 +1443,18 @@ per cap; `acceleratorCaps` joins them on `+` for the design package's menu, whic
 a cap per token, and prose (a refusal message) joins them on nothing, because
 `⌘+N already means New Session` is not how a Mac user reads a chord.
 
+### `notification-sounds.ts`
+
+The fourteen names in `/System/Library/Sounds` — the same list, and the same
+spelling, macOS's own Sound pane offers. It is a table rather than a directory read
+because a client may not touch the filesystem, and it is here rather than in
+`apps/desktop` because the Settings picker is the only thing that needs to *show*
+them; the shell only ever resolves the one name it is handed.
+
+The names are also the stored form: a persisted `system` sound that is not in this
+list decodes to silence, so a setting written by a build that knew a name this one
+does not never becomes a sound nothing can play.
+
 ---
 
 ## `shared/lib`
@@ -1450,6 +1520,12 @@ exported from the package index; the Tauri-only ports (Finder, Terminal.app,
   know is dropped rather than carried — a question that no longer exists must not
   silence the one that replaced it. A field an older build wrote that is not in the
   schema at all is read past and dropped with it.
+  The sound is the one field whose *value* is checked rather than only its type: a
+  `system` name that is not in `SYSTEM_NOTIFICATION_SOUNDS` and a `custom` path
+  that is not absolute both read as silence, because the alternative is a stored
+  setting the shell can only refuse — silence is what the user gets either way, and
+  this way the picker shows it. An accepted `custom` path is re-branded with
+  `absolutePath`, which cannot throw after the schema's `isStartsWith("/")`.
 - `keyboard-commands.ts` — a `CommandSource` over `keydown`, for a client with no
   native menu bar to own the accelerators. `commandForChord` matches
   `Command.accelerator` against `KeyboardEvent.code` (layout-independent: `⌘⇧]` is

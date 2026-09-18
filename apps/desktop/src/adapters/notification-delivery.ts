@@ -1,4 +1,5 @@
-import type { AttentionDelivering } from "@janela/client";
+import type { AttentionDelivering, AttentionEvent } from "@janela/client";
+import { attentionEvent } from "@janela/client";
 import { agentActivityText, type SessionID, type TerminalID } from "@janela/core";
 import type { AttentionSignal } from "@janela/protocol";
 import { log, type Logger } from "@janela/support";
@@ -36,6 +37,7 @@ export interface NotificationDeliveryOptions {
   readonly onActivate: (target: AttentionTarget) => void;
   readonly plugin?: NotificationPlugin | undefined;
   readonly activateWindow?: (() => Promise<void>) | undefined;
+  readonly playSound?: ((event: AttentionEvent) => void) | undefined;
   readonly log?: Logger | undefined;
 }
 
@@ -138,6 +140,10 @@ export function createNotificationDelivery(
 
       const parked = { sessionID, cancelled: false };
       inFlight.add(parked);
+
+      const event = attentionEvent(input.signal);
+
+      if (event !== undefined) options.playSound?.(event);
 
       const granted = await Effect.runPromise(
         Effect.ensuring(

@@ -5,7 +5,9 @@
 //!   * the window, and its native chrome
 //!   * the native menu bar and its accelerators, and the status item beside the
 //!     clock — the daemon's surface when no window is in front of you
-//!   * native notifications
+//!   * native notifications, and the sound one plays — `sound.rs`, because the
+//!     sound a user chose from their own disk is not a name a notification can
+//!     carry
 //!   * the native directory picker — **the app performs file selection; the daemon
 //!     is handed paths.** That is a rule, not a convenience: it is what keeps macOS
 //!     permission prompts attributed to the app the user just clicked rather than to
@@ -51,6 +53,7 @@
 mod agent;
 mod bridge;
 mod dock;
+mod sound;
 mod tray;
 
 use std::collections::HashMap;
@@ -62,6 +65,7 @@ use agent::{
     unregister_launch_agent,
 };
 use bridge::{bridge_close, bridge_connect, bridge_receive, bridge_send, BridgeState};
+use sound::play_notification_sound;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::PageLoadEvent;
@@ -411,6 +415,7 @@ fn main() {
             open_login_items_settings,
             stop_background_service,
             dock::set_dock_icon,
+            play_notification_sound,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the Janela shell");

@@ -41,6 +41,7 @@ import {
   type AppearanceControl,
   type BackgroundServiceControlling,
   type GlobalSettings,
+  type NotificationSoundControlling,
   type SettingsDraft,
   type SettingsRoute,
   type SettingsTabID,
@@ -121,6 +122,7 @@ export interface SettingsPaneProps {
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
   readonly appearance: AppearanceControl | undefined;
+  readonly sound: NotificationSoundControlling | undefined;
   readonly connection: Pick<DaemonConnection, "request">;
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
@@ -465,7 +467,7 @@ function PaneBody(
       />
     )),
     Match.when("notifications", () => (
-      <SettingsNotifications settings={settings} onChange={changeSettings} />
+      <SettingsNotifications settings={settings} onChange={changeSettings} sound={props.sound} />
     )),
     Match.when("shortcuts", () => (
       <SettingsShortcuts
@@ -639,6 +641,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             terminalStates={terminalStates}
             service={environment.local?.service}
             appearance={environment.local?.appearance}
+            sound={environment.local?.sound}
             connection={connection}
             projects={projects}
             draft={draft}

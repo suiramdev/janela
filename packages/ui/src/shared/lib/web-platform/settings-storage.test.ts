@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import { SILENT_NOTIFICATION_SOUND } from "@janela/client";
+import { absolutePath } from "@janela/core";
+
 import {
   DEFAULT_GLOBAL_SETTINGS,
   TERMINAL_FONT_SIZE_BOUNDS,
   withCommandShortcut,
+  withNotificationEvent,
   withSilencedConfirmation,
 } from "../../model/index.ts";
 import { localStorageSettings, parseSettings } from "./settings-storage.ts";
@@ -39,18 +43,42 @@ describe("parseSettings", () => {
 
   test("one bad field costs that field, not every setting", () => {
     const settings = parseSettings(
-      JSON.stringify({ terminalFontSize: "big", notifiesOnBell: true }),
+      JSON.stringify({
+        terminalFontSize: "big",
+        notifications: { bell: { notifies: true } },
+      }),
     );
 
     expect(settings.terminalFontSize).toBe(DEFAULT_GLOBAL_SETTINGS.terminalFontSize);
-    expect(settings.notifiesOnBell).toBe(true);
+    expect(settings.notifications.bell.notifies).toBe(true);
   });
 
   test("a file written before the agent switches existed keeps them on", () => {
     const settings = parseSettings(JSON.stringify({ terminalFontSize: 14 }));
 
-    expect(settings.notifiesWhenAgentFinishes).toBe(true);
-    expect(settings.notifiesWhenAgentWaits).toBe(true);
+    expect(settings.notifications.waiting.notifies).toBe(true);
+    expect(settings.notifications.finished.notifies).toBe(true);
+    expect(settings.notifications.failed.notifies).toBe(true);
+  });
+
+  test("one event's switch is read without disturbing the other events", () => {
+    const settings = parseSettings(
+      JSON.stringify({ notifications: { failed: { notifies: false } } }),
+    );
+
+    expect(settings.notifications.failed.notifies).toBe(false);
+    expect(settings.notifications.finished.notifies).toBe(true);
+  });
+
+  test("a bad event reads as the defaults, and costs no other event", () => {
+    const settings = parseSettings(
+      JSON.stringify({
+        notifications: { waiting: "loud", failed: { notifies: false } },
+      }),
+    );
+
+    expect(settings.notifications.waiting).toEqual(DEFAULT_GLOBAL_SETTINGS.notifications.waiting);
+    expect(settings.notifications.failed.notifies).toBe(false);
   });
 
   test("a field this version retired reads as the defaults, not as itself", () => {
@@ -84,6 +112,61 @@ describe("parseSettings", () => {
       "Menlo",
     );
   });
+
+  test("a chosen sound comes back as the sound, an unplayable one as silence", () => {
+    expect(
+      parseSettings(
+        JSON.stringify({
+          notifications: { failed: { sound: { kind: "system", name: "Submarine" } } },
+        }),
+      ).notifications.failed.sound,
+    ).toEqual({ kind: "system", name: "Submarine" });
+    expect(
+      parseSettings(
+        JSON.stringify({
+          notifications: { bell: { sound: { kind: "custom", path: "/Users/me/ping.aiff" } } },
+        }),
+      ).notifications.bell.sound,
+    ).toEqual({ kind: "custom", path: absolutePath("/Users/me/ping.aiff") });
+
+    for (const stored of [
+      { kind: "system", name: "NoSuchSound" },
+      { kind: "custom", path: "relative.aiff" },
+      { kind: "custom" },
+      { kind: "elsewhere" },
+    ]) {
+      expect(
+        parseSettings(JSON.stringify({ notifications: { waiting: { sound: stored } } }))
+          .notifications.waiting.sound,
+      ).toEqual(DEFAULT_GLOBAL_SETTINGS.notifications.waiting.sound);
+    }
+  });
+
+  test("an unplayable sound costs the sound, not the switch beside it", () => {
+    const settings = parseSettings(
+      JSON.stringify({
+        notifications: { bell: { notifies: true, sound: { kind: "system", name: "NoSuchSound" } } },
+      }),
+    );
+
+    expect(settings.notifications.bell.notifies).toBe(true);
+    expect(settings.notifications.bell.sound).toEqual(SILENT_NOTIFICATION_SOUND);
+  });
+
+  test("each event keeps its own sound", () => {
+    const settings = parseSettings(
+      JSON.stringify({
+        notifications: {
+          waiting: { sound: { kind: "system", name: "Submarine" } },
+          failed: { sound: { kind: "system", name: "Basso" } },
+        },
+      }),
+    );
+
+    expect(settings.notifications.waiting.sound).toEqual({ kind: "system", name: "Submarine" });
+    expect(settings.notifications.failed.sound).toEqual({ kind: "system", name: "Basso" });
+    expect(settings.notifications.finished.sound).toEqual(SILENT_NOTIFICATION_SOUND);
+  });
 });
 
 describe("localStorageSettings", () => {
@@ -100,16 +183,23 @@ describe("localStorageSettings", () => {
     const storage = memoryStorage();
     const store = localStorageSettings(storage);
 
-    await store.save({
-      ...DEFAULT_GLOBAL_SETTINGS,
-      notifiesWhenAgentFinishes: false,
-      notifiesWhenAgentWaits: false,
+    const quiet = withNotificationEvent(DEFAULT_GLOBAL_SETTINGS, "finished", {
+      notifies: false,
+      sound: { kind: "system", name: "Submarine" },
     });
+
+    await store.save(
+      withNotificationEvent(quiet, "waiting", {
+        notifies: false,
+        sound: SILENT_NOTIFICATION_SOUND,
+      }),
+    );
 
     const loaded = await store.load();
 
-    expect(loaded.notifiesWhenAgentFinishes).toBe(false);
-    expect(loaded.notifiesWhenAgentWaits).toBe(false);
+    expect(loaded.notifications.finished.notifies).toBe(false);
+    expect(loaded.notifications.finished.sound).toEqual({ kind: "system", name: "Submarine" });
+    expect(loaded.notifications.waiting.notifies).toBe(false);
   });
 
   test("a store that refuses to write loses a preference, not the session", async () => {

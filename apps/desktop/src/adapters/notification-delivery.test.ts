@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { AttentionDelivering } from "@janela/client";
+import type { AttentionDelivering, AttentionEvent } from "@janela/client";
 import type { Instant, SessionID, TerminalID } from "@janela/core";
 import type { AttentionKind, AttentionSignal } from "@janela/protocol";
 import type { LogRecord, Logger } from "@janela/support";
@@ -54,6 +54,7 @@ interface Gate {
 interface DeliveryOverrides {
   readonly onActivate?: ((target: AttentionTarget) => void) | undefined;
   readonly activateWindow?: (() => Promise<void>) | undefined;
+  readonly playSound?: ((event: AttentionEvent) => void) | undefined;
   readonly log?: Logger | undefined;
 }
 
@@ -179,6 +180,7 @@ function delivery(plugin: FakePlugin, overrides: DeliveryOverrides = {}) {
 
         return Promise.resolve();
       }),
+    playSound: overrides.playSound,
     log: overrides.log,
   });
 
@@ -293,6 +295,66 @@ describe("delivery", () => {
     await Promise.all(parked);
 
     expect(plugin.sent).toHaveLength(MAXIMUM_IN_FLIGHT_DELIVERIES);
+  });
+
+  test("the sound plays once per delivery, even when macOS has refused the banner", async () => {
+    const plugin = fakePlugin();
+    plugin.alreadyGranted = false;
+    plugin.response = "denied";
+    let plays = 0;
+    const { adapter } = delivery(plugin, { playSound: () => void (plays += 1) });
+
+    await adapter.deliver(input(NOTIFICATION));
+    await adapter.deliver(input(NOTIFICATION));
+
+    expect(plugin.sent).toEqual([]);
+    expect(plays).toBe(2);
+  });
+
+  test("each event asks for its own sound", async () => {
+    const plugin = fakePlugin();
+    const events: AttentionEvent[] = [];
+    const { adapter } = delivery(plugin, { playSound: (event) => void events.push(event) });
+
+    await adapter.deliver(input({ kind: "bell" }));
+    await adapter.deliver(
+      input({ kind: "activity", activity: { kind: "waiting", need: "input" } }),
+    );
+    await adapter.deliver(
+      input({ kind: "activity", activity: { kind: "finished", outcome: "completed" } }),
+    );
+    await adapter.deliver(
+      input({ kind: "activity", activity: { kind: "finished", outcome: "failed" } }),
+    );
+    await adapter.deliver(input({ kind: "promptFinished", exitCode: 1, durationSeconds: 30 }));
+
+    expect(events).toEqual(["bell", "waiting", "finished", "failed", "failed"]);
+  });
+
+  test("an agent that is only working asks for no sound at all", async () => {
+    const plugin = fakePlugin();
+    const events: AttentionEvent[] = [];
+    const { adapter } = delivery(plugin, { playSound: (event) => void events.push(event) });
+
+    await adapter.deliver(input({ kind: "activity", activity: { kind: "working" } }));
+
+    expect(events).toEqual([]);
+  });
+
+  test("a delivery the overload cap drops is silent too", async () => {
+    const plugin = fakePlugin();
+    plugin.gate = gate();
+    let plays = 0;
+    const { adapter } = delivery(plugin, { playSound: () => void (plays += 1) });
+
+    const parked = Array.from({ length: MAXIMUM_IN_FLIGHT_DELIVERIES + 5 }, () =>
+      adapter.deliver(input(NOTIFICATION)),
+    );
+
+    plugin.gate.open();
+    await Promise.all(parked);
+
+    expect(plays).toBe(MAXIMUM_IN_FLIGHT_DELIVERIES);
   });
 });
 

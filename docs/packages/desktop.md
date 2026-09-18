@@ -43,16 +43,21 @@ linked, so it could not if it tried.
   is synchronous — the policy is consulted on the signal path.
 - `attentionPreferences` is a dep, not an import, for the same reason `TerminalFocus`
   is: the answers live in `GlobalSettings`, which is `@janela/ui`'s, and
-  `liveEnvironment` may not reach for a React tree. So `DEFAULT_ATTENTION_PREFERENCES`
-  restates the three `DEFAULT_GLOBAL_SETTINGS` values — bell off, both agent switches
-  on — and a test in `environment.test.ts` pins it against
-  `attentionPreferences(DEFAULT_GLOBAL_SETTINGS)`, since a test may import the UI
-  package where the composition root may not. A headless environment therefore
-  notifies for a waiting or finished agent and stays quiet for a bell, exactly as a
+  `liveEnvironment` may not reach for a React tree. The fallback is
+  `DEFAULT_ATTENTION_PREFERENCES` from `@janela/client`, which is also what
+  `DEFAULT_GLOBAL_SETTINGS.notifications` holds — it used to be restated here and
+  pinned by a test, and moving the constant down to the package both sides can see
+  removed the copy instead of guarding it. A headless environment therefore notifies
+  for a waiting, finished or failed agent and stays quiet for a bell, exactly as a
   fresh install does.
 - The dep is a function called per signal, not a value: settings change while the app
   runs, and a captured snapshot would keep notifying after the user turned the switch
   off.
+- `playAttentionSound` is a dep of the same shape, and it takes the
+  `AttentionEvent` the delivery adapter resolved rather than a sound: the mapping from
+  signal to event is `@janela/client`'s one copy of that decision, and the app's job
+  is only to look the event up in the settings the user last saved. A headless
+  environment passes none and is silent, which is also what a fresh install does.
 
 ## `src/main.tsx`
 
@@ -164,7 +169,8 @@ happened.
   in which case the session is still selected and the window simply did not come
   forward.
 - The bare-bell branch in `notificationContent` used to exist only so the mapping was
-  total; `notifiesOnBell` is live now, so it is a body the user can actually read.
+  total; the bell event's switch is live now, so it is a body the user can actually
+  read.
 - An `activity` body is `agentActivityText` from `@janela/core` with the first letter
   capitalised and a full stop added: "Waiting for permission.", "Finished.",
   "Stopped with an error." — the harness's own report, punctuated. The words are not
@@ -177,6 +183,34 @@ happened.
   four strings, not just the body: the composed title carries the terminal's OSC 0
   title, which is the user's output too. It also asserts something *was* logged and
   that the content did travel, so it cannot pass vacuously.
+- The sound is **not** the notification's. `playSound` is a dep called on the
+  delivery path, before authorization is even asked, so the sound arrives when
+  macOS has refused the banner — and an overload the in-flight cap drops is silent
+  too, because that delivery did not happen. Why the app plays it rather than
+  naming it in the notification is in `src-tauri/src/sound.rs` below.
+- **Which** sound is not decided here either. This adapter resolves the signal to an
+  `AttentionEvent` with `@janela/client`'s `attentionEvent` and hands that up; the
+  composition root looks the event up in the user's settings. So the switch a signal
+  consults and the sound it makes come from one mapping, and an agent that is merely
+  working — which never notifies — maps to no event and asks for no sound.
+
+## `src/adapters/notification-sound.ts`
+
+The client half of the notification sound: one `invoke` and one file dialog.
+
+- **Silence is not a sound the shell is asked to make.** `play` returns before the
+  invoke, so `SoundChoice` in Rust has two variants and no third that means
+  nothing.
+- A failure is logged as the *kind* — `system` or `custom` — and never the path: a
+  file the user picked out of their own music is their business
+  (§ Non-negotiables 11). It is a `warning` and nothing else happens: a sound that
+  would not play must not cost the user their notification.
+- `chooseFile` is `dialog:allow-open`, the capability the directory picker already
+  needs, with a filter list rather than a directory flag. The extensions are the
+  container formats macOS plays; naming them is what stops the panel offering a
+  `.txt`.
+- The chosen path is `AbsolutePath` from the panel and nothing else ever reaches
+  the setting, which is what lets the stored-settings schema demand one.
 
 ## `src/adapters/window-controls.ts`
 
@@ -314,6 +348,37 @@ lives: **Show Janela**, the rows `COMMANDS` marks `tray`, and **Quit Janela**.
   per point and no resampling.
 - **A status item that fails to build is logged and nothing else.** The menu bar's
   extras are the user's to remove, and the window is not worth refusing over one.
+
+## `src-tauri/src/sound.rs` — the notification sound
+
+**The app plays the sound; the notification stays silent.** A macOS notification
+can only *name* a sound, and the name has to resolve to a sound resource in
+`/System/Library/Sounds`, `~/Library/Sounds` or the bundle. A file the user picked
+out of their own music is none of those, so "or choose a sound of your own" could
+never have travelled on the banner. Playing it here makes both halves of the
+setting one mechanism — and the sound still arrives when macOS has refused the
+banner, which is the case the feature is most useful in.
+
+- **A named sound is a shared cached instance that stays `isPlaying` after it has
+  finished.** A second `play` on it answers `false` and makes no sound, so without
+  the `stop` first, every notification after the first one would have been silent.
+  Measured with `NSSound` directly, not assumed: `play` → `true`, 1.2 s later
+  `isPlaying` → `true`, a bare `play` → `false`, `stop` then `play` → `true`.
+- **`PLAYING` holds exactly one sound.** A playing `NSSound` needs an owner — a
+  file-backed one has no other — and releasing it mid-playback can cut it off.
+  One slot means the bound is one sound, not a day's worth of them
+  (§ Non-negotiables 9), and the replacement is the behaviour you want anyway: the
+  newest notification is the one you hear.
+- **The choice crosses as a two-variant enum**, `system { name }` or
+  `custom { path }`. There is no `silent`, because a client that wants no sound
+  asks for nothing — so the shell has no state where it is holding a sound it must
+  not make.
+- **A name macOS cannot resolve, or a file it cannot read, is an `Err` the client
+  logs and drops.** The banner has already been posted by then; a sound is not
+  worth failing a delivery over.
+- Nothing dispatches to the main thread: `NSSound` needs no main-thread marker in
+  AppKit's own annotations, and Tauri answers a synchronous command on the thread
+  the IPC call arrived on.
 
 ## `scripts/` — the bundle gate
 

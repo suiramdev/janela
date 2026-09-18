@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import type { NotificationSound } from "@janela/client";
+import { ATTENTION_EVENTS, SILENT_NOTIFICATION_SOUND } from "@janela/client";
+
 import {
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_SIZE_BOUNDS,
-  attentionPreferences,
+  withNotificationEvent,
   withTerminalFontFamily,
   withTerminalFontSize,
 } from "./global-settings.ts";
@@ -15,12 +18,19 @@ describe("the defaults", () => {
   });
 
   test("leave the bell quiet", () => {
-    expect(DEFAULT_GLOBAL_SETTINGS.notifiesOnBell).toBe(false);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifications.bell.notifies).toBe(false);
   });
 
   test("let an agent interrupt, because that is the report the user asked for", () => {
-    expect(DEFAULT_GLOBAL_SETTINGS.notifiesWhenAgentFinishes).toBe(true);
-    expect(DEFAULT_GLOBAL_SETTINGS.notifiesWhenAgentWaits).toBe(true);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifications.waiting.notifies).toBe(true);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifications.finished.notifies).toBe(true);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifications.failed.notifies).toBe(true);
+  });
+
+  test("every event starts silent, because a banner interrupts less than a noise", () => {
+    for (const event of ATTENTION_EVENTS) {
+      expect(DEFAULT_GLOBAL_SETTINGS.notifications[event].sound).toEqual(SILENT_NOTIFICATION_SOUND);
+    }
   });
 });
 
@@ -70,19 +80,18 @@ describe("withTerminalFontSize", () => {
   });
 });
 
-describe("attentionPreferences", () => {
-  test("carries the three notification switches and nothing else", () => {
-    expect(
-      attentionPreferences({
-        ...DEFAULT_GLOBAL_SETTINGS,
-        terminalFontFamily: "Menlo",
-        notifiesOnBell: true,
-        notifiesWhenAgentWaits: false,
-      }),
-    ).toEqual({
-      notifiesOnBell: true,
-      notifiesWhenAgentFinishes: true,
-      notifiesWhenAgentWaits: false,
+describe("withNotificationEvent", () => {
+  test("changes one event and leaves the others where they were", () => {
+    const sound: NotificationSound = { kind: "system", name: "Submarine" };
+    const changed = withNotificationEvent(DEFAULT_GLOBAL_SETTINGS, "failed", {
+      notifies: false,
+      sound,
     });
+
+    expect(changed.notifications.failed).toEqual({ notifies: false, sound });
+    expect(changed.notifications.finished).toEqual(DEFAULT_GLOBAL_SETTINGS.notifications.finished);
+    expect(changed.notifications.waiting).toEqual(DEFAULT_GLOBAL_SETTINGS.notifications.waiting);
+    expect(changed.notifications.bell).toEqual(DEFAULT_GLOBAL_SETTINGS.notifications.bell);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifications.failed.notifies).toBe(true);
   });
 });

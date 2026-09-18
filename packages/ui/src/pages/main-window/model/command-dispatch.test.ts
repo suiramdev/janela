@@ -25,6 +25,7 @@ import {
   recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
+  recordingNotificationSound,
   recordingService,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
@@ -116,7 +117,13 @@ function harness(options: {
     local:
       options.local === false
         ? undefined
-        : { native, service, appearance: recordingAppearance(), restartDaemon: () => {} },
+        : {
+            native,
+            service,
+            appearance: recordingAppearance(),
+            restartDaemon: () => {},
+            sound: recordingNotificationSound(),
+          },
     directories,
     confirmations,
     connection: {

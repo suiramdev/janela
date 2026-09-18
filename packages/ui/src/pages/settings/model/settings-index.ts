@@ -9,8 +9,7 @@ import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scri
 export type SettingsSectionID =
   | "appearanceTheme"
   | "appearanceFont"
-  | "notificationsBell"
-  | "notificationsAgents"
+  | "notificationsEvents"
   | "shortcuts"
   | "integrationsHooks"
   | "closingConfirmation"
@@ -99,19 +98,23 @@ export const SHORTCUTS_SECTION: SettingsSection = {
   keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
 };
 
-export const NOTIFICATIONS_BELL_SECTION: SettingsSection = {
-  id: "notificationsBell",
-  title: "Bell",
-  fields: ["Notify when a terminal rings the bell"],
-  keywords: ["bell", "alert", "badge", "banner", "notification centre", "sound", "attention"],
-};
-
-export const NOTIFICATIONS_AGENTS_SECTION: SettingsSection = {
-  id: "notificationsAgents",
-  title: "Agents",
-  hint: "An agent whose integration is installed tells Janela when it finishes a turn and when it is waiting on you. Both are shown in the sidebar whatever you choose here; this is only about interrupting you.",
-  fields: ["Notify when an agent finishes", "Notify when an agent is waiting for you"],
+export const NOTIFICATIONS_EVENTS_SECTION: SettingsSection = {
+  id: "notificationsEvents",
+  title: "Events",
+  hint: "One row per thing Janela can tell you about: whether it interrupts you, and what it sounds like. The sidebar shows all of them whatever you choose here, and an agent only reports the last two if its integration is installed.",
+  fields: [
+    "A terminal rings the bell",
+    "An agent is waiting for you",
+    "An agent finishes",
+    "An agent stops with an error",
+  ],
   keywords: [
+    "bell",
+    "alert",
+    "badge",
+    "banner",
+    "notification centre",
+    "attention",
     "agent",
     "claude",
     "codex",
@@ -123,7 +126,18 @@ export const NOTIFICATIONS_AGENTS_SECTION: SettingsSection = {
     "permission",
     "question",
     "turn",
-    "notification",
+    "error",
+    "failed",
+    "sound",
+    "audio",
+    "chime",
+    "ping",
+    "silent",
+    "mute",
+    "custom",
+    "aiff",
+    "wav",
+    "volume",
   ],
 };
 
@@ -252,7 +266,7 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     title: "Notifications",
     description:
       "When Janela may interrupt you. It never notifies for the terminal you are looking at, and never while its window is frontmost and that session is selected.",
-    sections: [NOTIFICATIONS_BELL_SECTION, NOTIFICATIONS_AGENTS_SECTION],
+    sections: [NOTIFICATIONS_EVENTS_SECTION],
   },
   {
     id: "shortcuts",

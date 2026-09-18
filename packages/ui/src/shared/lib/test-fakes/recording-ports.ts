@@ -1,3 +1,4 @@
+import type { NotificationSound } from "@janela/client";
 import type { AbsolutePath } from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
@@ -12,6 +13,7 @@ import {
   type DirectoryPicking,
   type GlobalSettings,
   type NativeShell,
+  type NotificationSoundControlling,
   type SettingsStoring,
   type ThemePreference,
   type WindowControls,
@@ -33,6 +35,11 @@ export interface RecordingNativeShell extends NativeShell {
 }
 
 export interface RecordingDirectoryPicker extends DirectoryPicking {
+  readonly calls: string[];
+}
+
+export interface RecordingNotificationSound extends NotificationSoundControlling {
+  readonly played: NotificationSound[];
   readonly calls: string[];
 }
 
@@ -99,6 +106,29 @@ export function recordingDirectoryPicker(
     calls,
     pickDirectory(request) {
       calls.push(`pickDirectory:${request.title}`);
+
+      return Promise.resolve(picks);
+    },
+  };
+}
+
+export function recordingNotificationSound(
+  picks: AbsolutePath | undefined = undefined,
+): RecordingNotificationSound {
+  const played: NotificationSound[] = [];
+  const calls: string[] = [];
+
+  return {
+    played,
+    calls,
+    play(sound) {
+      played.push(sound);
+      calls.push(`play:${sound.kind}`);
+
+      return Promise.resolve();
+    },
+    chooseFile() {
+      calls.push("chooseFile");
 
       return Promise.resolve(picks);
     },

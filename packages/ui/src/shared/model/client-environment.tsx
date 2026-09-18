@@ -1,4 +1,9 @@
-import type { DaemonConnection, ProjectStore, SessionStore } from "@janela/client";
+import type {
+  DaemonConnection,
+  NotificationSoundPlaying,
+  ProjectStore,
+  SessionStore,
+} from "@janela/client";
 import type { AbsolutePath, TerminalID } from "@janela/core";
 import {
   createContext,
@@ -42,11 +47,16 @@ export interface AppearanceControl {
   apply(theme: ThemePreference): Promise<void>;
 }
 
+export interface NotificationSoundControlling extends NotificationSoundPlaying {
+  chooseFile(): Promise<AbsolutePath | undefined>;
+}
+
 export interface LocalShell {
   readonly native: NativeShell;
   readonly service: BackgroundServiceControlling;
   readonly appearance: AppearanceControl;
   readonly restartDaemon: () => void;
+  readonly sound: NotificationSoundControlling;
 }
 
 export interface ClientEnvironment {
