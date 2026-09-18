@@ -22,6 +22,7 @@ import {
   fakeSurfaceHandle,
   fakeTerminal,
   inertNativeShell,
+  recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingService,
@@ -112,7 +113,10 @@ function harness(options: {
     projects: projectStore,
     sessions: sessionStore,
     view,
-    local: options.local === false ? undefined : { native, service, restartDaemon: () => {} },
+    local:
+      options.local === false
+        ? undefined
+        : { native, service, appearance: recordingAppearance(), restartDaemon: () => {} },
     directories,
     confirmations,
     connection: {

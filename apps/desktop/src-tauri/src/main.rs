@@ -50,6 +50,7 @@
 
 mod agent;
 mod bridge;
+mod dock;
 mod tray;
 
 use std::collections::HashMap;
@@ -409,6 +410,7 @@ fn main() {
             unregister_launch_agent,
             open_login_items_settings,
             stop_background_service,
+            dock::set_dock_icon,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the Janela shell");

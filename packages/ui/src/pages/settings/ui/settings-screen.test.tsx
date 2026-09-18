@@ -12,6 +12,7 @@ import {
   fakeProject,
   fakeSession,
   fakeSettings,
+  recordingAppearance,
   recordingService,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
@@ -78,6 +79,7 @@ function props(
     sessions: [fakeSession()],
     terminalStates: states(),
     service: recordingService(),
+    appearance: recordingAppearance(),
     connection: fakeClientEnvironment().connection,
     projects,
     draft,

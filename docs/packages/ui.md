@@ -846,10 +846,30 @@ positional shape is deliberate — a sidebar test reads better as
 
 ### `ui/appearance-settings.tsx`
 
-One section: the font. Colours come from the appearance the system declares, size
-comes from the window, and behaviour belongs to the program — so the font is the one
-thing a developer has an opinion about that we cannot infer. The close-terminal
-question that used to sit beside it moved to Permissions with the other questions.
+Two sections: the theme and the font. Size comes from the window and behaviour
+belongs to the program, so those are the two things a developer has an opinion
+about that we cannot infer. The close-terminal question that used to sit beside
+them moved to Permissions with the other questions.
+
+- **The theme is a window appearance, not a stylesheet.** `GlobalSettings.theme` is
+  `system | light | dark`, and applying it is `LocalShell.appearance.apply`, which
+  on the desktop is Tauri's `setTheme` — the app-wide `NSAppearance`. The WebView's
+  `prefers-color-scheme` then follows the window, so every token, every `dark:`
+  variant and the terminal's own palette switch through the one rule
+  [`design.md`](design.md) already has: the stylesheet decides nothing, it follows
+  the appearance it is shown. There is no `.dark` class and no second token set to
+  keep in step. `MainWindow` applies `draftSettings(view.settingsDraft, view.settings).theme`,
+  so the choice previews while the draft is open and Revert puts the window back;
+  Save is what persists it. The sidebar's theme button beside Settings writes
+  through immediately, the way "Don't ask again" does, because a quick switch that
+  needed a Save bar would not be quick.
+- **The browser client shows the choice disabled** with a hint, because a page
+  cannot override the browser's `prefers-color-scheme`; `local` is undefined there,
+  which is the same test that hides the sidebar's button. Increase Contrast is
+  still macOS's alone, in either theme.
+- `ChoiceField` in `fields.tsx` is the radio list every three-way setting will use:
+  a `RadioGroup` under one label, each option with a title and one line of detail,
+  the whole thing disabled as a unit.
 
 - Both fields reach every attached terminal through `TerminalPane`, which reads
   `view.settings` and hands the surface a `TerminalFont`. A save re-applies the font

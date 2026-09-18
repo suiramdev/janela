@@ -4,7 +4,11 @@ import type { CommandID } from "../config/index.ts";
 
 export type CommandShortcuts = Readonly<Partial<Record<CommandID, string>>>;
 
+export type ThemePreference = "system" | "light" | "dark";
+
 export interface GlobalSettings {
+  readonly theme: ThemePreference;
+
   readonly terminalFontFamily?: string;
 
   readonly terminalFontSize: number;
@@ -32,6 +36,7 @@ export const TERMINAL_FONT_SIZE_BOUNDS = { minimum: 8, maximum: 32 } as const;
 export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
+  theme: "system",
   terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
   notifiesOnBell: false,
   notifiesWhenAgentFinishes: true,
@@ -39,6 +44,22 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
 };
 
 export const CONFIRMATION_KEYS: readonly ConfirmationKey[] = ["closeTerminals"];
+
+export const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
+
+export const THEME_TITLE = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+} as const satisfies Record<ThemePreference, string>;
+
+export function isThemePreference(value: string): value is ThemePreference {
+  return THEME_PREFERENCES.some((candidate) => candidate === value);
+}
+
+export function withTheme(settings: GlobalSettings, theme: ThemePreference): GlobalSettings {
+  return settings.theme === theme ? settings : { ...settings, theme };
+}
 
 export function attentionPreferences(settings: GlobalSettings): AttentionPreferences {
   return {

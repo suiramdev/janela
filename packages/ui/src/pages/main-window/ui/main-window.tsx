@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, type ReactElement } from "react";
 
 import type { CommandID } from "../../../shared/config/index.ts";
 import {
+  draftSettings,
   type SettingsRoute,
   useClientEnvironment,
   useStoreValue,
@@ -26,8 +27,9 @@ export function MainWindow(props: MainWindowProps): ReactElement {
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
   const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
 
-  const { view, commands, settings } = environment;
+  const { view, commands, settings, local } = environment;
   const screen = useStoreValue(view, () => view.screen);
+  const theme = useStoreValue(view, () => draftSettings(view.settingsDraft, view.settings).theme);
 
   const dispatch = useMemo(
     () =>
@@ -59,6 +61,12 @@ export function MainWindow(props: MainWindowProps): ReactElement {
       return undefined;
     }, swallowRequestFailure);
   }, [settings, view]);
+
+  useEffect(() => {
+    if (local === undefined) return;
+
+    void local.appearance.apply(theme).catch(swallowRequestFailure);
+  }, [local, theme]);
 
   const selected =
     selection !== undefined && sessions.some((session) => session.id === selection)

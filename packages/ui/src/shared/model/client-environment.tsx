@@ -11,7 +11,7 @@ import {
 import type { CommandID } from "../config/index.ts";
 import type { ConfirmationQueue } from "./confirmation.ts";
 import type { DirectoryPicking } from "./directory-picker.ts";
-import type { SettingsStoring } from "./global-settings.ts";
+import type { SettingsStoring, ThemePreference } from "./global-settings.ts";
 import type { ViewState } from "./view-state.ts";
 
 export interface CommandSource {
@@ -38,9 +38,14 @@ export interface BackgroundServiceControlling {
   stopAndUnregister(): void;
 }
 
+export interface AppearanceControl {
+  apply(theme: ThemePreference): Promise<void>;
+}
+
 export interface LocalShell {
   readonly native: NativeShell;
   readonly service: BackgroundServiceControlling;
+  readonly appearance: AppearanceControl;
   readonly restartDaemon: () => void;
 }
 

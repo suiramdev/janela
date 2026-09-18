@@ -257,4 +257,21 @@ describe("AppSidebar markup", () => {
     expect(markup.indexOf("loose")).toBeLessThan(markup.indexOf("janela"));
     expect(markup.indexOf("janela")).toBeLessThan(markup.indexOf("inside"));
   });
+
+  test("the theme button sits after Settings and names the held theme", () => {
+    const environment = fakeEnvironment({});
+    environment.view.setSettings({ ...environment.view.settings, theme: "dark" });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="Theme: Dark"');
+    expect(markup.indexOf(">Settings<")).toBeLessThan(markup.indexOf('aria-label="Theme: Dark"'));
+  });
+
+  test("a browser client has no theme button: nothing there can hold one", () => {
+    const markup = renderSidebar({ ...fakeEnvironment({}), local: undefined });
+
+    expect(markup).toContain(">Settings<");
+    expect(markup).not.toContain('aria-label="Theme:');
+  });
 });

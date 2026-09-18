@@ -1,11 +1,14 @@
 import {
   ArrowRight01Icon,
+  ComputerIcon,
   FilterIcon,
   FolderAddIcon,
   InboxIcon,
+  Moon02Icon,
   PlusSignIcon,
   Search01Icon,
   Settings01Icon,
+  Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Project, ProjectID, SessionID } from "@janela/core";
@@ -52,7 +55,14 @@ import type { ComponentType, ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { CommandID } from "../../../shared/config/index.ts";
-import { useClientEnvironment, useStoreValue } from "../../../shared/model/index.ts";
+import {
+  THEME_PREFERENCES,
+  THEME_TITLE,
+  type ThemePreference,
+  useClientEnvironment,
+  useStoreValue,
+  withTheme,
+} from "../../../shared/model/index.ts";
 import {
   ContextMenuRegion,
   ProjectIcon,
@@ -118,6 +128,24 @@ const FILTER_ACTION_NARROWED = (
     <HugeiconsIcon icon={FilterIcon} />
   </SidebarGroupAction>
 );
+
+const THEME_BUTTON = {
+  system: (
+    <Button variant="ghost" size="icon-sm">
+      <HugeiconsIcon icon={ComputerIcon} strokeWidth={2} />
+    </Button>
+  ),
+  light: (
+    <Button variant="ghost" size="icon-sm">
+      <HugeiconsIcon icon={Sun03Icon} strokeWidth={2} />
+    </Button>
+  ),
+  dark: (
+    <Button variant="ghost" size="icon-sm">
+      <HugeiconsIcon icon={Moon02Icon} strokeWidth={2} />
+    </Button>
+  ),
+} satisfies Record<ThemePreference, ReactElement>;
 
 export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }): ReactElement {
   const environment = useClientEnvironment();
@@ -190,6 +218,18 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
   const openSettings = useCallback(() => {
     dispatch("openSettings");
   }, [dispatch]);
+
+  const theme = useStoreValue(environment.view, () => environment.view.settings.theme);
+
+  const changeTheme = useCallback(
+    (next: ThemePreference) => {
+      const settings = withTheme(environment.view.settings, next);
+
+      environment.view.setSettings(settings);
+      void environment.settings.save(settings).catch(() => undefined);
+    },
+    [environment],
+  );
 
   const renderRow = (row: SidebarRow): ReactElement =>
     row.kind === "project" ? (
@@ -271,13 +311,18 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton icon={SETTINGS_ICON} onClick={openSettings}>
-              Settings
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center gap-1">
+          <SidebarMenu className="min-w-0 flex-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton icon={SETTINGS_ICON} onClick={openSettings}>
+                Settings
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          {environment.local === undefined ? undefined : (
+            <ThemeMenu theme={theme} onChange={changeTheme} />
+          )}
+        </div>
       </SidebarFooter>
 
       <SidebarRail />
@@ -325,6 +370,58 @@ function SessionFilterMenu(props: {
         ))}
       </DropdownContent>
     </DropdownMenu>
+  );
+}
+
+function ThemeMenu(props: {
+  readonly theme: ThemePreference;
+  readonly onChange: (theme: ThemePreference) => void;
+}): ReactElement {
+  const { theme, onChange } = props;
+
+  return (
+    <DropdownMenu>
+      <DropdownTrigger
+        aria-label={`Theme: ${THEME_TITLE[theme]}`}
+        title={`Theme: ${THEME_TITLE[theme]}`}
+        render={THEME_BUTTON[theme]}
+      />
+      <DropdownContent className="w-40" align="end" checkedIndex={THEME_PREFERENCES.indexOf(theme)}>
+        <DropdownLabel>Theme</DropdownLabel>
+        {THEME_PREFERENCES.map((candidate, index) => (
+          <ThemeRow
+            key={candidate}
+            index={index}
+            theme={candidate}
+            isChecked={candidate === theme}
+            onSelect={onChange}
+          />
+        ))}
+      </DropdownContent>
+    </DropdownMenu>
+  );
+}
+
+function ThemeRow(props: {
+  readonly index: number;
+  readonly theme: ThemePreference;
+  readonly isChecked: boolean;
+  readonly onSelect: (theme: ThemePreference) => void;
+}): ReactElement {
+  const { index, theme, isChecked, onSelect } = props;
+
+  const handleSelect = useCallback(() => {
+    onSelect(theme);
+  }, [theme, onSelect]);
+
+  return (
+    <MenuItem
+      index={index}
+      label={THEME_TITLE[theme]}
+      checked={isChecked}
+      closeOnClick
+      onSelect={handleSelect}
+    />
   );
 }
 

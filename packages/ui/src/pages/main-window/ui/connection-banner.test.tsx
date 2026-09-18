@@ -24,6 +24,7 @@ import {
   memorySettingsStore,
   neverCommands,
   overlaidWindowControls,
+  recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingService,
@@ -128,6 +129,7 @@ function fakeEnvironment(options: {
         : {
             native: inertNativeShell(),
             service: recordingService(),
+            appearance: recordingAppearance(),
             restartDaemon: options.onRestart ?? (() => {}),
           },
   };

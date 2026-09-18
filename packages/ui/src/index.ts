@@ -15,6 +15,8 @@ export {
   TERMINAL_FONT_SIZE_BOUNDS,
   withSilencedConfirmation,
   withTerminalFontSize,
+  withTheme,
+  type AppearanceControl,
   type ClientEnvironment,
   type Clipboard,
   type CommandSource,
@@ -26,6 +28,7 @@ export {
   type NativeShell,
   type SettingsRoute,
   type SettingsStoring,
+  type ThemePreference,
   type WindowControls,
 } from "./shared/model/index.ts";
 

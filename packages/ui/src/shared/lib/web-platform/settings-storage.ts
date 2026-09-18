@@ -4,8 +4,10 @@ import { isCommandID, parseAccelerator } from "../../config/index.ts";
 import {
   CONFIRMATION_KEYS,
   DEFAULT_GLOBAL_SETTINGS,
+  isThemePreference,
   withCommandShortcut,
   withTerminalFontSize,
+  withTheme,
   type GlobalSettings,
   type SettingsStoring,
 } from "../../model/index.ts";
@@ -15,6 +17,7 @@ const KEY = "janela.settings";
 const absent = (): Effect.Effect<Option.Option<never>> => Effect.succeed(Option.none());
 
 const StoredSettings = Schema.Struct({
+  theme: Schema.optionalKey(Schema.String).pipe(Schema.catchDecoding(absent)),
   terminalFontFamily: Schema.optionalKey(Schema.String).pipe(Schema.catchDecoding(absent)),
   terminalFontSize: Schema.optionalKey(Schema.Number).pipe(Schema.catchDecoding(absent)),
   notifiesOnBell: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
@@ -62,6 +65,10 @@ export function parseSettings(raw: string | null): GlobalSettings {
   );
 
   let settings: GlobalSettings = DEFAULT_GLOBAL_SETTINGS;
+
+  if (fields.theme !== undefined && isThemePreference(fields.theme)) {
+    settings = withTheme(settings, fields.theme);
+  }
 
   if (fields.notifiesOnBell !== undefined) {
     settings = { ...settings, notifiesOnBell: fields.notifiesOnBell };

@@ -12,6 +12,7 @@ import {
   memorySettingsStore,
   neverCommands,
   overlaidWindowControls,
+  recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingService,
@@ -81,6 +82,11 @@ export function fakeEnvironment(options: {
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
+    local: {
+      native: inertNativeShell(),
+      service: recordingService(),
+      appearance: recordingAppearance(),
+      restartDaemon: () => {},
+    },
   };
 }

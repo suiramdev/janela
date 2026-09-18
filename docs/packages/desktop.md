@@ -212,7 +212,7 @@ row should have its leading space back. Only the shell can answer that.
   Nothing here consumes the native events, and every drag in `@janela/ui` — tab
   reorder, pane docking — is HTML5 DnD on the page.
 
-## `src/adapters/{native,menu}.ts`
+## `src/adapters/{native,appearance,menu}.ts`
 
 - **Native shell and directory picker:** the app performs file selection and the
   daemon is handed paths. That keeps macOS permission prompts attributed to the app
@@ -229,6 +229,21 @@ row should have its leading space back. Only the shell can answer that.
   `ClientEnvironment.local`: the ports only a client on the daemon's own Mac can
   answer. The browser client leaves `local` undefined and the views hide what needs
   it.
+- **Appearance:** `tauriAppearance` answers `LocalShell.appearance` with the window's
+  `setTheme`, which on macOS is the app-wide `NSAppearance`: `light` and `dark` hold
+  it, `system` (`null`) hands it back to the OS. The WebView's `prefers-color-scheme`
+  follows the window, which is why the stylesheet needs no class and no second token
+  set — see [`ui.md`](ui.md) § `ui/appearance-settings.tsx`. It needs
+  `core:window:allow-set-theme`, which `core:default` does not include.
+- **Dock icon:** `src/dock.rs` swaps `NSApplication.applicationIconImage` between
+  the light and dark 512 px tiles, both embedded with `include_bytes!` so they cannot
+  drift from the bundle's. `tao` makes `set_window_icon` a no-op on macOS and Tauri
+  has no Dock API, so it is AppKit directly, on the main thread, decoding through
+  `NSImage` rather than an image crate. The client asks for the tile per *resolved*
+  scheme — `tauriAppearance` reads `prefers-color-scheme` after `setTheme` and again
+  on every `change`, so under System the Dock follows macOS at sunset too. A tile
+  that fails to decode is logged and the Dock keeps its icon. The bundle's own icon
+  returns when the process ends; nothing is written to disk.
 - **Menu:** the command table is handed to the shell once at startup, so adding a row
   to `COMMANDS` adds a menu item with no Rust change and no second list. An id this
   build does not know is a version skew between the menu and the table, and dropping

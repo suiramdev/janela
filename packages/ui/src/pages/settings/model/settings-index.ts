@@ -7,6 +7,7 @@ import type { SettingsRoute, SettingsTabID } from "../../../shared/model/index.t
 import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scripts.ts";
 
 export type SettingsSectionID =
+  | "appearanceTheme"
   | "appearanceFont"
   | "notificationsBell"
   | "notificationsAgents"
@@ -60,11 +61,19 @@ interface ScoredMatch {
   readonly order: number;
 }
 
+export const APPEARANCE_THEME_SECTION: SettingsSection = {
+  id: "appearanceTheme",
+  title: "Theme",
+  hint: "System follows macOS, including when it changes at sunset. Light and Dark hold the window to one. Increase Contrast is honoured either way.",
+  fields: ["Theme"],
+  keywords: ["appearance", "theme", "light", "dark", "system", "mode", "colours", "scheme"],
+};
+
 export const APPEARANCE_FONT_SECTION: SettingsSection = {
   id: "appearanceFont",
   title: "Terminal font",
   fields: ["Font family", "Font size"],
-  keywords: ["appearance", "typeface", "monospace", "size", "zoom", "theme", "colours"],
+  keywords: ["appearance", "typeface", "monospace", "size", "zoom", "font"],
 };
 
 export const CLOSING_CONFIRMATION_SECTION: SettingsSection = {
@@ -235,8 +244,8 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     id: "appearance",
     title: "Appearance",
     description:
-      "How a terminal reads. Light, dark and Increase contrast are macOS settings, and Janela follows them rather than keeping its own.",
-    sections: [APPEARANCE_FONT_SECTION],
+      "How the window and its terminals read. The theme is yours to hold; Increase Contrast stays a macOS setting Janela follows.",
+    sections: [APPEARANCE_THEME_SECTION, APPEARANCE_FONT_SECTION],
   },
   {
     id: "notifications",

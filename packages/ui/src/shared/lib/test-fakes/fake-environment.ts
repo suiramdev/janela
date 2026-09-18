@@ -9,6 +9,7 @@ import {
   memorySettingsStore,
   neverCommands,
   overlaidWindowControls,
+  recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingService,
@@ -38,7 +39,12 @@ export function fakeClientEnvironment(): ClientEnvironment {
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
+    local: {
+      native: inertNativeShell(),
+      service: recordingService(),
+      appearance: recordingAppearance(),
+      restartDaemon: () => {},
+    },
   };
 }
 
@@ -69,6 +75,11 @@ export function environmentOver(state: {
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
     settings: memorySettingsStore(),
-    local: { native: inertNativeShell(), service: recordingService(), restartDaemon: () => {} },
+    local: {
+      native: inertNativeShell(),
+      service: recordingService(),
+      appearance: recordingAppearance(),
+      restartDaemon: () => {},
+    },
   };
 }

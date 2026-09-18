@@ -16,6 +16,7 @@ tauri-build = { version = "2.6", features = [] }
 libc = "0.2"
 log = "0.4"
 objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSResponder"] }
 objc2-foundation = "0.3"
 objc2-service-management = { version = "0.3", features = ["SMAppService"] }
 serde = { version = "1", features = ["derive"] }

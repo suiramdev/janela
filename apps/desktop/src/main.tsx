@@ -17,6 +17,7 @@ import { Match } from "effect";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
+import { tauriAppearance } from "./adapters/appearance.ts";
 import {
   installNativeMenu,
   nativeMenuAccelerators,
@@ -53,6 +54,7 @@ const clientEnvironment: ClientEnvironment = {
   settings: settingsStore,
   local: {
     native: tauriNativeShell(),
+    appearance: tauriAppearance(),
     service: {
       stop: () => void environment.stopBackgroundService(),
       stopAndUnregister: () =>

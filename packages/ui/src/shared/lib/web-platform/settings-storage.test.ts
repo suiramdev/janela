@@ -60,6 +60,13 @@ describe("parseSettings", () => {
     expect(Object.hasOwn(settings, "retiredSetting")).toBe(false);
   });
 
+  test("a held theme comes back; a theme this version does not know is System", () => {
+    expect(parseSettings(JSON.stringify({ theme: "dark" })).theme).toBe("dark");
+    expect(parseSettings(JSON.stringify({ theme: "light" })).theme).toBe("light");
+    expect(parseSettings(JSON.stringify({ theme: "neon" })).theme).toBe("system");
+    expect(parseSettings(JSON.stringify({ theme: 2 })).theme).toBe("system");
+  });
+
   test("a font size from another era is clamped rather than trusted", () => {
     expect(parseSettings(JSON.stringify({ terminalFontSize: 400 })).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.maximum,

@@ -38,6 +38,7 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  type AppearanceControl,
   type BackgroundServiceControlling,
   type GlobalSettings,
   type SettingsDraft,
@@ -119,6 +120,7 @@ export interface SettingsPaneProps {
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
+  readonly appearance: AppearanceControl | undefined;
   readonly connection: Pick<DaemonConnection, "request">;
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
@@ -456,7 +458,11 @@ function PaneBody(
 
   return Match.value(props.route.tab).pipe(
     Match.when("appearance", () => (
-      <SettingsAppearance settings={settings} onChange={changeSettings} />
+      <SettingsAppearance
+        settings={settings}
+        canApplyTheme={props.appearance !== undefined}
+        onChange={changeSettings}
+      />
     )),
     Match.when("notifications", () => (
       <SettingsNotifications settings={settings} onChange={changeSettings} />
@@ -632,6 +638,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             sessions={sessions}
             terminalStates={terminalStates}
             service={environment.local?.service}
+            appearance={environment.local?.appearance}
             connection={connection}
             projects={projects}
             draft={draft}

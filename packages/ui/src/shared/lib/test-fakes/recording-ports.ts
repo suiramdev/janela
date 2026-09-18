@@ -2,6 +2,7 @@ import type { AbsolutePath } from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
 import {
+  type AppearanceControl,
   type Clipboard,
   type CommandSource,
   type ConfirmationKey,
@@ -12,6 +13,7 @@ import {
   type GlobalSettings,
   type NativeShell,
   type SettingsStoring,
+  type ThemePreference,
   type WindowControls,
 } from "../../model/index.ts";
 
@@ -41,6 +43,10 @@ export interface RecordingClipboard extends Clipboard {
 
 export interface RecordingSettingsStore extends SettingsStoring {
   readonly saved: GlobalSettings[];
+}
+
+export interface RecordingAppearance extends AppearanceControl {
+  readonly applied: ThemePreference[];
 }
 
 export interface RecordingSurfaceHandle extends TerminalSurfaceHandle {
@@ -171,6 +177,19 @@ export function memorySettingsStore(initial = DEFAULT_GLOBAL_SETTINGS): Recordin
     save(settings) {
       stored = settings;
       saved.push(settings);
+
+      return Promise.resolve();
+    },
+  };
+}
+
+export function recordingAppearance(): RecordingAppearance {
+  const applied: ThemePreference[] = [];
+
+  return {
+    applied,
+    apply(theme) {
+      applied.push(theme);
 
       return Promise.resolve();
     },
