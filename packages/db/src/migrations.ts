@@ -8,6 +8,7 @@ import initial from "../prisma/migrations/20260908180902_initial/migration.sql" 
 import automationScripts from "../prisma/migrations/20260917120000_automation_scripts/migration.sql" with { type: "text" };
 import dropForgeToggle from "../prisma/migrations/20260917150000_drop_forge_toggle/migration.sql" with { type: "text" };
 import dropDefaultProfile from "../prisma/migrations/20260918110000_drop_default_profile/migration.sql" with { type: "text" };
+import dropLaunchProfiles from "../prisma/migrations/20260918130000_drop_launch_profiles/migration.sql" with { type: "text" };
 import { MigrationFailed } from "./errors.ts";
 
 export interface Migration {
@@ -26,6 +27,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: "20260917120000_automation_scripts", sql: automationScripts },
   { name: "20260917150000_drop_forge_toggle", sql: dropForgeToggle },
   { name: "20260918110000_drop_default_profile", sql: dropDefaultProfile, rebuildsTables: true },
+  { name: "20260918130000_drop_launch_profiles", sql: dropLaunchProfiles, rebuildsTables: true },
 ];
 
 export const MIGRATIONS_TABLE_DDL = `CREATE TABLE IF NOT EXISTS "_prisma_migrations" (

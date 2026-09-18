@@ -157,7 +157,7 @@ Tests use `GitFixture` against real repositories.
 ### 3. `JanelaPersistence` — records
 
 GRDB records and queries for the tables in `v1-initial`: project, session,
-terminal, launchProfile, automationCommand. Round-trip tests, plus the cascade
+terminal, automationCommand. Round-trip tests, plus the cascade
 tests that encode product rules ([`testing.md`](testing.md) § Migrations).
 
 ### 4. `JanelaCore` — the layout algebra
@@ -364,8 +364,8 @@ Profiling: see [`performance.md`](performance.md) § How to measure.
 - Changing an architectural decision means writing it down in
   [`architecture.md`](architecture.md), in the same PR.
 - Adding a user-visible concept means justifying it against
-  [`product.md`](product.md) § Non-goals. The budget is four nouns: project,
-  session, terminal, launch profile.
+  [`product.md`](product.md) § Non-goals. The budget is three nouns: project,
+  session and terminal.
 - Using the word "workspace" in code, copy or docs means you have not decided
   whether you mean a project or a session. Pick one.
 - Changing the wire protocol means bumping its version and saying what an older

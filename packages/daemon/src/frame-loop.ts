@@ -18,6 +18,7 @@ export interface FrameLoopDependencies {
   readonly liveTerminals: () => Iterable<LiveTerminal>;
   readonly hasRoom: (client: string) => boolean;
   readonly deliver: (client: string, terminalID: TerminalID, bytes: Uint8Array) => void;
+  readonly settled: (terminal: LiveTerminal) => void;
   readonly log: Logger;
 }
 
@@ -30,7 +31,7 @@ export const FRAME_INTERVAL_MS = 8;
 const errorName = (cause: unknown): string => (cause instanceof Error ? cause.name : "unknown");
 
 export function createFrameLoop(dependencies: FrameLoopDependencies): FrameLoop {
-  const { terminals, liveTerminals, hasRoom, deliver, log } = dependencies;
+  const { terminals, liveTerminals, hasRoom, deliver, settled, log } = dependencies;
 
   const attachments = new Map<TerminalID, Map<string, Attachment>>();
   const drained = new Set<TerminalID>();
@@ -127,9 +128,9 @@ export function createFrameLoop(dependencies: FrameLoopDependencies): FrameLoop 
             continue;
           }
 
+          const full = attachment.full;
           const painted = Result.try({
-            try: () =>
-              attachment.full ? terminal.fullRepaintFor(client) : terminal.repaintFor(client),
+            try: () => (full ? terminal.fullRepaintFor(client) : terminal.repaintFor(client)),
             catch: errorName,
           });
 
@@ -145,6 +146,8 @@ export function createFrameLoop(dependencies: FrameLoopDependencies): FrameLoop 
           }
 
           attachment.full = false;
+
+          if (full) settled(terminal);
 
           if (painted.success.length > 0) deliver(client, terminalID, painted.success);
         }

@@ -427,6 +427,28 @@ describe("attention", () => {
     expect(terminal.state).toEqual({ kind: "running" });
   });
 
+  test("a full repaint clears it, and marking raises or lowers it by hand", async () => {
+    const terminal = live("t-mark", shellLaunch("stty raw -echo; printf '\\a'; exec cat"));
+    const sink = recordingSink();
+    terminal.events = sink;
+    terminal.attach("a", { columns: 40, rows: 6 });
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.notifications.length > 0, "the bell");
+
+    terminal.fullRepaintFor("a");
+
+    expect(terminal.state).toEqual({ kind: "running" });
+
+    terminal.markAttention(true);
+
+    expect(terminal.state).toEqual({ kind: "needsAttention" });
+
+    terminal.markAttention(false);
+
+    expect(terminal.state).toEqual({ kind: "running" });
+  });
+
   test("OSC 0 and OSC 7 reach the title and the reported directory", async () => {
     const terminal = live(
       "t-osc",
@@ -546,6 +568,32 @@ describe("agent activity", () => {
     terminal.send(new Uint8Array([0x0a]));
 
     expect(terminal.state).toEqual({ kind: "running", activity: WAITING });
+  });
+
+  test("a repaint does not answer a waiting agent, but input and a mark do", async () => {
+    const terminal = live(
+      "t-activity-waiting-repaint",
+      shellLaunch("stty raw -echo; printf '\\033]7770;waiting;input\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    const waiting = { kind: "waiting", need: "input" } as const;
+    terminal.events = sink;
+    terminal.attach("a", { columns: 40, rows: 6 });
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.activities.length > 0, "the activity report");
+
+    terminal.fullRepaintFor("a");
+
+    expect(terminal.state).toEqual({ kind: "needsAttention", activity: waiting });
+
+    terminal.markAttention(false);
+
+    expect(terminal.state).toEqual({ kind: "running", activity: waiting });
+
+    terminal.fullRepaintFor("a");
+
+    expect(terminal.state).toEqual({ kind: "running", activity: waiting });
   });
 
   test("working after waiting clears the attention the harness itself raised", async () => {

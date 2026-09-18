@@ -75,10 +75,23 @@ opening over them.
 
 ### `ui/app-sidebar.tsx`
 
-- **Two levels, never a third.** `sidebarRows` is flat because a recursive row type
-  would quietly permit a third level, and two is a product decision
-  (§ Non-negotiables 2). One group headed *Sessions* holds every row: a session is
-  what the list is a list of, and a project is the indentation.
+- **Two levels, never a third, and they are the sidebar's own two.** The list
+  follows Fluid Functionalism's nesting solution — one *section* level and one
+  *parent* level, nothing below — so the product rule (§ Non-negotiables 2) and
+  the component's grammar say the same thing. *Sessions* is the section: a
+  `collapsible` `SidebarGroup` whose label is the toggle and whose filter and
+  New Project controls sit in the `SidebarGroupActions` cluster the label pads
+  itself past. A project is the parent: a `SidebarMenuButton` carrying the
+  project's glyph as its `icon`, its name as the weight-animated label, and a
+  trailing chevron in the `ml-auto` action-sized box, followed by a
+  `SidebarMenuSub open={isExpanded}` holding the project's sessions as
+  `SidebarMenuSubItem` rows. A standalone session is a plain `SidebarMenuItem`
+  in the same menu. The sub rows are always mounted — the sub-menu collapses on
+  its measured height rather than unmounting — which is what lets one hover
+  highlight glide from a parent into its children and back.
+- `sidebarRows` is a `SidebarRow` array where a project row *owns* its
+  `SessionRow`s and a `SessionRow` owns nothing: two named shapes instead of one
+  recursive one, so a third level is a type error rather than a temptation.
 - The magnifier opens the Command Menu; this list carries no search field of its
   own, because one query answered two different ways is worse than one answer. The
   status filter stays, because it is a question about state.
@@ -105,15 +118,19 @@ opening over them.
   size arrives as a number, so no per-render style object), and the tint is applied
   last because `SidebarMenuButton` hands its icon the row's lit/unlit colour and a
   session's state is not a hover state.
-- **Six statuses, and only four paint.** `attention` and `failed` animate, in
-  `text-attention` and `text-failure`. `done` is `text-success` and deliberately
-  **static**: a finished agent is news, not an alarm, and a green dot pulsing in
-  a list of thirty rows is a second alarm competing with the real one. `working`
-  is an animated glyph in the muted foreground, because the row is saying "not
-  yet" rather than "look". `running` and `idle` are `invisible` — a live shell
-  says nothing the row does not already say — which is what retired the
-  `running` colour token in favour of `success` ([`design.md`](design.md)): it
-  lost its last reader when a plain running terminal stopped painting a dot.
+- **Four statuses, and three spinners.** The sidebar draws attention to agents
+  that are running, or have stopped and not yet been looked at, and nothing
+  else. `running` is the corner-spin glyph in the muted foreground: the row is
+  saying "not yet" rather than "look". `unread` is the ripple in
+  `text-attention` (blue), and it is the only one that pulses: news the user has
+  not had yet. `error` is the same ripple in `text-failure`, deliberately
+  **static** — an error is a state, not a fresh alarm, and a red dot pulsing in
+  a list of thirty rows competes with the blue one that wants a click. `idle` is
+  `invisible` — a live shell says nothing the row does not already say — which
+  is what retired the `running` colour token in favour of `success`
+  ([`design.md`](design.md)): it lost its last reader when a plain running
+  terminal stopped painting a dot, and `success` lost its sidebar reader when
+  "finished" stopped being its own state.
 - The status is also in the accessible name: a colour alone is a state a screen
   reader cannot read and a colour-blind user cannot distinguish.
 - Header controls and group actions are hoisted elements, because `render` takes an
@@ -124,11 +141,25 @@ opening over them.
   single choice.
 - `FilterRow` is its own component so each row owns its handler; a closure in the
   list would be a fresh function per row per render.
-- The project chevron is one mounted component rotated by the row, because swapping
-  the component per state remounts it and loses the animation.
+- The parent chevron follows the reference's two states: visible while the
+  project is closed (the reopen cue), hidden while open until the row is hovered
+  or holds focus, and rotated 90° while open. The rotation is a CSS transition on
+  the standalone `rotate` property — `transition-[opacity,rotate]` — at the
+  `--spring-fast` tier; `transition-transform` never covers Tailwind's `rotate-*`.
+  The chevron is a child of the button rather than its `icon` because the icon
+  slot belongs to the project's glyph, as it does in the reference.
+- The project glyph is an `IconComponent` built per project with `useMemo` keyed
+  on the two fields it reads, so the button's icon slot gets a stable component
+  type across renders and a new one only when the project itself changes.
+- A nested session row is a `SidebarMenuSubButton` rendered through a
+  `<button type="button">` template rather than its default anchor: a session is
+  selected, not navigated to, and the template carries the accessible name.
 - The context-menu trigger wraps the row rather than being it, so the hover action
   stays a sibling — `SidebarMenuAction` positions against the item and reveals on
-  `group/menu-item` hover.
+  `group/menu-item` hover. Only the project row carries one (New Session); a
+  session row has none, because its trailing gutter is where the status glyph's
+  news competes for the eye, and New Terminal is one right-click away in the
+  context menu and one ⌘ chord away in the window.
 - `EmptyState` says *which* nothing it is: "this filter found nothing" and "you have
   not added anything" call for different next actions, and neither repeats the
   buttons above.
@@ -511,8 +542,8 @@ action fails `typecheck` rather than being a menu item that does nothing.
   reply on the same ordered queue, so the mirror already has the session when the
   request settles. Focus goes to its pane: creating a session means wanting to type
   in it.
-- `createTerminal` and `splitTerminal` never inherit a profile — a new pane is a
-  terminal, and a launch profile is something a terminal may be started with later.
+- `createTerminal` and `splitTerminal` start a shell — a new pane is a terminal, and
+  nothing is inherited from the pane it was split from.
   The split is the daemon's, persisted with the session, which is why it is a request.
 - Restart is one request: closing a pty leaves the terminal `running` until the
   daemon reaps the child, so a start sent straight after finds a terminal that looks
@@ -570,29 +601,48 @@ it everywhere would make the gesture worthless.
   all five are destructive: a row that ends *more* programs must not look safer. They
   are dimmed rather than hidden, because a menu whose rows move depending on where in
   the strip you clicked cannot be learned.
+- Mark as Read / Mark as Unread is one row with one verb, chosen by `SessionMark`.
+  An `unread` session gets *Read*; anything else gets *Unread*, dimmed when it
+  could not take effect — a running or errored session outranks the flag in
+  `sessionStatus`, and a session with nothing live has no terminal to carry it.
+  Dimmed rather than hidden, for the same reason as the tab closes: a menu whose
+  rows move cannot be learned. The row sends `markSession` and nothing else; the
+  daemon moves the flag and the mirror repaints the glyph, so the client never
+  writes state it did not receive (§ Non-negotiables 6).
 
 ### `model/session-rows.ts`
 
-- A flat `SidebarRow` array, because a recursive row type would permit a third level.
+- A `SidebarRow` is either a session or a project that owns a list of
+  `SessionRow`s; the owned shape has no `kind` and no children, so the type
+  itself cannot express a third level. A project row carries *all* its sessions
+  whether or not it is expanded — the view's sub-menu collapses them in place.
 - `sessionStatus` is derived only from reported state: rendering an unreported
   terminal as running would be a lie this client invented (§ Non-negotiables 6).
 - Grouping happens here rather than through `SessionStore.inProject`, which builds a
   fresh array per call and would be a new reference every render.
 - `statusText` travels beside the colour, never instead of it.
-- **Six statuses in one precedence: attention, failed, done, working, running,
-  idle.** `attention` is a `needsAttention` with no activity or with a `waiting`
-  one, and it returns immediately — a question beats every other kind of news.
-  `done` is a `finished/completed` nobody has looked at yet; `working` is a
-  `running` terminal with `progress` or with a `working` report; `running` is
-  any other live terminal.
-- **Failure arrives from two places, and they rank differently.** An agent that
-  reported `finished/failed` is ranked *above* `done` and `working`; a non-zero
-  `exited` or a `failed` terminal is ranked *below* them, which is why the loop
-  collects `signalled` and `exited` as two flags and not one. A dev server that
-  died hours ago must not hide an agent that is working right now, and an agent
-  that stopped with an error is unseen news the user has not had yet. Both still
-  render as `failed`: the row says what it is, and the ordering only decides
-  which terminal in a session gets to speak for it.
+- **Four statuses in one precedence: error, running, unread, idle.** The session
+  glyph is the aggregate of its terminals, never one terminal's state: it runs
+  while *any* harness runs, it is unread only once *every* harness has stopped
+  and at least one stop has not been looked at, and an error is never hidden by
+  a sibling that is still working. A detailed view exposing each harness on its
+  own is the next thing to build on top of this; the session row is not it.
+- **Per terminal, the report decides and the attention flag only says whether
+  it was seen.** `working`, or a `progress` with no report, is `running`. A
+  `finished/completed`, a `waiting`, and a bare `needsAttention` — which is a
+  bell — are `unread` while the daemon's flag is up, and nothing once it is
+  down. What lowers it is the daemon's business, not this file's: a full repaint
+  or a keystroke for a completion or a bell, but only a keystroke, the harness's
+  next report or an explicit "Mark as Read" for a `waiting` — looking at a
+  blocked agent does not unblock it ([`terminal.md`](terminal.md) § What an
+  activity report does to the state). `finished/failed`, a non-zero `exited` and
+  a `failed` spawn are `error` whatever the flag says — a state until the next
+  report, not a notification the user can dismiss by looking. A live terminal
+  with no report and no progress is `idle`: a shell prompt is not an agent.
+- `sessionMark` is the verb the context menu offers: `read` for an unread
+  session, `unread` for an idle one with a live terminal, `none` otherwise. It
+  is derived here beside `sessionStatus` so the two can never disagree about
+  what a click would do.
 
 ### `model/sidebar-filter.ts`
 
@@ -667,7 +717,7 @@ positional shape is deliberate — a sidebar test reads better as
   became a link to somewhere rather than a second editor.
 - **The panes are the questions a user arrives with, and no General.** Appearance,
   Notifications, Shortcuts, Integrations, Permissions. The first
-  cut was one pane per *product noun* — Terminal, Launch profiles, Notifications,
+  cut was one pane per *product noun* — Terminal, Notifications,
   Daemon — which read well from inside the codebase and badly from outside it:
   nobody arrives thinking "daemon", they arrive thinking "why did it ask me that"
   (Permissions) or "connect it to GitHub" (Integrations). There was also a *General*
@@ -675,9 +725,9 @@ positional shape is deliberate — a sidebar test reads better as
   after nothing always becomes, and it put the most destructive surface in the
   product behind the blandest label. The map now: the terminal font under
   Appearance; the bell and the two agent switches under Notifications; forge
-  reading, launch profiles and the activity-reporting hooks under
-  Integrations — all three are "the tools Janela reaches", and a profile is
-  still a command, not a wrapper; the close-terminal confirmation, the notification
+  reading and the activity-reporting hooks under
+  Integrations — both are "the tools Janela reaches", and Janela starts them and
+  listens rather than wrapping them; the close-terminal confirmation, the notification
   permission's explanation and the daemon's stop controls under Permissions,
   because all three are "what may it do, and what does it ask first".
 - **No pane is empty, and two categories wait in this file rather than in code.**
@@ -749,7 +799,7 @@ positional shape is deliberate — a sidebar test reads better as
   sections that are siblings, not children — so `PaneGroup` is a heading with its own
   explanation above a run of cards, instead of the card-inside-a-card the old nesting
   produced. `FieldSection` is the flat fieldset that remains for a form *inside* a
-  card: the profile editor's Icon, Command and Environment blocks.
+  card: the shortcut list's one block per menu.
 - **The commit bar** is always visible: one that appears when something is dirty moves
   the content as the user types and hides that the screen has a commit model at all.
   At rest it is quiet; dirty, it says how many changes it would write, because with one
@@ -760,8 +810,8 @@ positional shape is deliberate — a sidebar test reads better as
 - Save reads the draft from the store rather than the render that built the callback,
   and reads both halves, because what a save writes is the difference between them.
 - Revert bumps a revision used as the pane's key, because the panes hold field state
-  the draft cannot: argv rows carry identities and the open profile editor a working
-  copy.
+  the draft cannot: a shortcut row mid-recording, and a caret in a field the user was
+  typing into.
 - The Save bar is a sibling of the scroller, because it commits every tab's edits.
 
 ### `ui/daemon-settings.tsx`
@@ -814,13 +864,12 @@ its stop controls are the largest permission of all.
 
 ### The Integrations tab
 
-Two sections, and no pane file of its own: it renders `SettingsProfiles` and
-`SettingsIntegrations` in that order. It once began with a GitHub/GitLab row per
-hosted project, editing `isForgeEnabled` through the draft. That switch is gone —
-reading pull request state is what a hosted project does, and a missing or
-logged-out CLI was already silence — so what remains is the tools Janela reaches:
-the launch profiles that start them, and the hooks that let them say what they are
-doing. A profile is still a command, not a wrapper.
+One section, and no pane file of its own: it renders `SettingsIntegrations`. It once
+began with a GitHub/GitLab row per hosted project, editing `isForgeEnabled` through
+the draft. That switch is gone — reading pull request state is what a hosted project
+does, and a missing or logged-out CLI was already silence — so what remains is the
+hooks that let the agents the user runs say what they are doing. Janela starts them
+and listens; it does not wrap them.
 
 ### `ui/integrations-settings.tsx`
 
@@ -889,43 +938,6 @@ In-app state is unaffected by this pane, and both hints in it say so: the sideba
 shows a finished or waiting agent whatever the switches hold. The badge is the
 daemon's and needs no permission.
 
-### `ui/launch-profiles.tsx`
-
-- **Unavailable profiles are marked, not hidden.** A profile whose executable is not on
-  the user's `PATH` is dimmed and badged here rather than dropped: this is the one
-  surface where the problem can be *fixed*, and a profile you cannot see is a profile
-  you cannot repair.
-- **There is no default to choose.** The pane used to open with a *New terminals*
-  section holding a global default-profile select, and the list marked the chosen row
-  with a Default badge. Both are gone, because every new terminal — a session's first
-  included — starts the user's login shell. The Profiles section's hint now says what a
-  profile *is* (a saved command and environment, and what a session's terminal was
-  created with) rather than naming a fallback nothing reads. No client surface sends
-  `profileID` on `createTerminal` any more; the field stays on the wire for a caller
-  that names one on purpose.
-- Built-ins are editable (the ones we ship are guesses about the user's setup), and
-  neither deletable nor renamable — both consequences of seeding by name on every open.
-- The pane takes the draft rather than a value and a callback, because adding,
-  duplicating and deleting are changes to a *list*, and the difference between deleting
-  a stored profile and discarding a draft-only one decides whether the daemon hears
-  about it at all. The open editor still holds a working copy for the caret, because
-  argv and environment rows need identities that survive a neighbour being removed.
-- A new profile is staged immediately: the row has to appear in the list to be edited,
-  and an unsaved row the bar does not count is one the user loses to Revert without
-  being told.
-- The editor has no Save of its own, because a second Save would be two promises about
-  the same keystrokes. Delete and Duplicate stay, because neither is a field. It is
-  exported so it can be tested without driving a click through the list, and Delete is
-  pushed away from the other button because a destructive action beside a button people
-  reach for is a mis-click waiting to happen.
-- The row is a button, not a div with a handler: selecting a profile is an action.
-- The icon grid is real radio inputs, so the browser owns arrow-key navigation and the
-  roving tab stop — both of which buttons with `role="radio"` would reimplement and get
-  subtly wrong. `htmlFor` reaches the hidden radio Base UI mirrors, so the whole card is
-  a click target.
-- A freshly added variable row is labelled "Remove variable", because an icon-only
-  button labelled `Remove ` is one a screen reader cannot announce.
-
 ### `ui/project-settings.tsx`
 
 - **The security property.** Automation scripts exist only because a human typed them
@@ -957,7 +969,7 @@ daemon's and needs no permission.
 - The directory is shown under the name, because two clones of one repository are two
   projects with the same name.
 - **It chooses nothing about what a terminal starts.** The pane's first section was
-  *Sessions*, one field wide: a default launch profile falling back to the global one.
+  *Sessions*, one field wide, naming what a session's terminals would run.
   The section is deleted rather than left empty — a card with a heading and no control
   is a question the user cannot answer, and search would offer a row that scrolls to
   nothing. A repository's pane is Worktrees and Automation; a plain folder's is
@@ -979,44 +991,6 @@ nothing about that. Keyboard-reachable with the platform focus ring left alone, 
 - `Section` is a `fieldset`/`legend`, because a screen reader announces the group when
   focus enters it — the difference between "Enabled" and "Enabled, When a session is
   first opened".
-
-### `ui/argv-editor.tsx`
-
-Launch profiles only, now. There is no field that takes `claude --model opus` and
-splits it: splitting a string into argv has no correct implementation —
-`zsh -lc "echo 'a b'"` has no right answer — and every wrong one is a quoting bug in a
-program the user cares about. Position is the label, and the inputs are monospaced
-because a trailing space or an l/1 confusion is the bug being looked for. Automation
-used to share this editor and does not any more, for the reason given under
-`project-settings.tsx`: a hook wants a shell, and a profile wants exactly not one.
-
-### `ui/profile-icon.tsx`
-
-`aria-hidden` without exception: every place it is rendered puts a name beside it, so
-announcing the glyph reads the same thing twice. An icon that is the *only* label is a
-control that needs a label, not an icon that needs a role.
-
-### `model/profile-rules.ts`
-
-Separate from `shared/model/profile-draft.ts` — that holds the form shape, which
-`SettingsDraft` carries and so must sit below the window store. Rules belong with the
-screen that enforces them.
-
-- `profileViolations` is deliberately short: a profile is a command Janela starts, so
-  the only knowable wrongs are the ones that make it unstartable or unnameable. Whether
-  `claude` is a good idea is not ours to judge, and whether it is *installed* is
-  availability's answer. Note the asymmetry — a *later* blank argument is legal, because
-  `["zsh", "-lc", ""]` passes an empty argument on purpose.
-- Built-ins cannot be removed, because `BUILT_IN_PROFILES` is re-seeded on every open
-  and a deleted one would silently return and look like a bug in deletion. They cannot
-  be renamed for a separate reason: seeding matches built-ins **by name** (ids are
-  minted at seed time, and a hardcoded one would collide with a user's copy), so
-  renaming "Codex" makes the next open insert a fresh "Codex" beside it. Duplicating is
-  the supported route, and the editor says so.
-- `duplicatedProfile` drops `isBuiltIn` — the entire point — and mints a fresh id,
-  because two rows with one id is a lost profile.
-- `profileTitle` exists because a row with no title reads as a list that failed to
-  render rather than a form waiting for a word.
 
 ### `model/automation-scripts.ts`
 
@@ -1067,11 +1041,8 @@ choice made without knowing the cost is not a choice.
   a mapping exercised only by clicking a button is a mapping nothing checks. Everything
   identical to `since` is left out: a save leaves its values on screen (dropping them
   would show the mirror's older answer until the broadcast landed), so without this a
-  second Save re-sends the first one's writes, including a `removeLaunchProfile` for a
-  profile that is already gone. Compared by reference, because every edit is an
-  immutable update. Order is deliberate: profiles before the projects that may name one
-  as their default, and removals after saves so an edit and a deletion of the same
-  profile cannot resurrect it.
+  second Save re-sends the first one's writes. Compared by reference, because every
+  edit is an immutable update.
 - Global settings are not in that list — they are the client's own store and never
   cross the socket.
 - `draftEditCount` counts against `since` for the same reason, because the number and
@@ -1191,9 +1162,6 @@ than a repository, and there is deliberately no per-session tier.
 and both are facts only a client holds. A CLI has no use for any of it, which is the
 test for whether something belongs on the wire.
 
-- There is no default-profile field. It was the fallback for a project that expressed
-  no preference, with the project's own choice winning; both are gone, and every new
-  terminal starts the user's login shell.
 - An absent `terminalFontFamily` is the default stack, which is not the same as an empty
   string. The key is *removed* rather than set to `undefined`, because
   `exactOptionalPropertyTypes` makes those different types and a persisted
@@ -1287,30 +1255,6 @@ session **selection** stays on `SessionStore`, where the sidebar already reads i
   renumber the strip under an open menu. `"all"` does not read the tab it was opened on,
   so it still means every tab when that tab has just gone.
 
-### `profile-draft.ts`
-
-**The rule this file protects:** `command` is argv, edited one element at a time, because
-the moment a field splits `claude --model opus` Janela owns a quoting bug class it does
-not have.
-
-**Why the editor does not edit the domain value.** `readonly string[]` and a `Record`
-cannot represent what a user is halfway through typing — a blank variable name, two rows
-that collide, a duplicate argument — and both are positional in a way React needs
-identity for: remove argument 1 of three and an index-keyed list remounts 2 and 3, which
-drops the caret out of the field being typed in.
-
-- `argvOf` passes values through verbatim: a trailing empty argument and an argument of
-  two spaces are both things a program can be given, and deciding they are mistakes would
-  be us editing the user's command.
-- `variableDrafts` sorts by name so the editor does not reorder itself when a value is
-  saved and read back — object key order is insertion order, and a round trip through a
-  JSON column need not preserve it.
-- `environmentOf` drops blank names (a row started, not a variable called "") and keeps
-  the last of a repeated name, matching what a process sees when its environment array
-  carries a duplicate.
-- `blankProfile` starts with one blank argv element, because `[]` would present a valid
-  profile — the login shell — that the user did not ask for.
-
 ### `settings-draft.ts`
 
 **Why every tab has a draft.** The panes used to apply as you type, which is right for a
@@ -1329,10 +1273,7 @@ to confirm.
 
 **Edits, not a copy.** A field holds the mirror's value *or* the user's, so an untouched
 project keeps flowing from the daemon while another is edited and a save sends exactly
-what was touched. Additions go last rather than in name order, because the row the user
-just created should be where they can find it. `withoutDraftProfile` takes `stored`
-because deleting a draft-only profile is a discard, and `removeLaunchProfile` for an id
-the daemon never saw would be asking it to forget nothing.
+what was touched.
 
 ### `command-shortcuts.ts`
 
@@ -1405,18 +1346,6 @@ per cap; `acceleratorCaps` joins them on `+` for the design package's menu, whic
 a cap per token, and prose (a refusal message) joins them on nothing, because
 `⌘+N already means New Session` is not how a Mac user reads a chord.
 
-### `profile-icons.ts`
-
-`LaunchProfile.iconName` was an SF Symbol, then a Lucide name; the keys are **persisted**
-in the daemon's database, so they stay what they were while the glyph behind each is
-whatever the current icon set offers. Two consequences: an unrecognised name falls back to
-the terminal glyph, never to nothing, because a profile rendering a hole is worse than one
-rendering a terminal (and everything Janela launches is a command in a terminal, so the
-fallback is never a lie); and it is a closed set, because Hugeicons ships thousands of
-exports and naming them all would put every icon in the client bundle to serve a field the
-user picks from a grid. A profile stored with an unknown name keeps it — we never rewrite
-the user's row.
-
 ---
 
 ## `shared/lib`
@@ -1480,8 +1409,8 @@ exported from the package index; the Tauri-only ports (Finder, Terminal.app,
   than every setting; the font size goes through `withTerminalFontSize`, so the
   bounds are enforced in one place. A silenced-confirmation key this build does not
   know is dropped rather than carried — a question that no longer exists must not
-  silence the one that replaced it. A default-profile id an older build wrote is not in
-  the schema at all, so it is read past and dropped with it.
+  silence the one that replaced it. A field an older build wrote that is not in the
+  schema at all is read past and dropped with it.
 - `keyboard-commands.ts` — a `CommandSource` over `keydown`, for a client with no
   native menu bar to own the accelerators. `commandForChord` matches
   `Command.accelerator` against `KeyboardEvent.code` (layout-independent: `⌘⇧]` is

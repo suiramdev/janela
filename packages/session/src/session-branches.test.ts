@@ -91,7 +91,6 @@ async function setup(label: string): Promise<World> {
 
   const sessions = createSessionService({
     repository: database.sessions,
-    profiles: database.launchProfiles,
     projects,
     worktrees: service,
     terminals: createTerminalRegistry(),

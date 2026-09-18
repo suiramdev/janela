@@ -44,7 +44,7 @@ reasoning and the seam were carried across* — not that a body was translated.
 | Was | Is | Notes |
 | --- | --- | --- |
 | `Identifier<Subject>` | `Identifier<Subject>` | Phantom type → branded string. Erased at runtime, so ids encode as themselves |
-| `ProjectID`, `SessionID`, `TerminalID`, `LaunchProfileID`, `AutomationID` | unchanged | |
+| `ProjectID`, `SessionID`, `TerminalID`, `AutomationID` | unchanged | |
 | — | `AbsolutePath` | **New.** `URL` carried "this is absolute" for free; a bare string would lose it |
 | — | `Instant` | **New.** ISO 8601 string, not `Date`. Every value here crosses a socket as JSON, and a `Date` needs a revival pass that one missed call site turns into a lie |
 | `Accent` | `Accent` | Enum → string union |
@@ -56,8 +56,6 @@ reasoning and the seam were carried across* — not that a body was translated.
 | `TerminalDescriptor`, `TerminalRole`, `TerminalState` | unchanged | |
 | `SessionLayout`, `.Tab`, `.Pane`, `.Axis` | `SessionLayout`, `LayoutTab`, `Pane`, `Axis` | Flattened out of the namespace |
 | `Pane.maximumDepth`, `.fractionRange` | `MAXIMUM_PANE_DEPTH`, `FRACTION_RANGE` | |
-| `LaunchProfile` | `LaunchProfile` | `symbolName` → `iconName`: SF Symbols are not available to a WebView, so it is a key `@janela/ui` maps to a Hugeicons glyph. Presentational either way, and an unknown name falls back rather than rendering nothing |
-| `LaunchProfile.builtIns` | `BUILT_IN_PROFILES` | Now `Omit<LaunchProfile, "id">`: ids are assigned at seed time, because a hardcoded id would collide with a user's own copy |
 | `GridSize` | `GridSize` | Was in `JanelaProtocol`; moved to `@janela/core`, where the other domain values live |
 
 ### `@janela/protocol`
@@ -98,7 +96,7 @@ reasoning and the seam were carried across* — not that a body was translated.
 | `TerminalByteStream` | `byte-stream.ts` constants + `PseudoTerminal.drain()` | The `DispatchIO` machinery became a Rust reader thread; the water marks and the never-drop rule are unchanged |
 | `TerminalBytes` (`ContiguousArray<UInt8>`) | `TerminalBytes` (`Uint8Array`) | A view into a reusable buffer, valid only until the next drain |
 | `JanelaDatabase`, `JanelaDatabase.migrator` | `JanelaDatabase`, `prisma/schema.prisma` + `prisma/migrations/` | Hand-written `DatabaseMigrator` → generated ordered SQL |
-| — | `ProjectRepository`, `SessionRepository`, `LaunchProfileRepository` | **New.** GRDB record types were implied; the repositories make the core-values-only boundary explicit |
+| — | `ProjectRepository`, `SessionRepository` | **New.** GRDB record types were implied; the repositories make the core-values-only boundary explicit |
 | — | `adapter.ts` | **New.** Prisma needs a driver adapter; ours, not a dependency |
 | `TerminalEmulating`, `TerminalEventSink`, `TerminalNotification`, `PromptMark` | unchanged | `eventSink` → `events`; delegate methods → `onTitle`/`onAttention`/… |
 | `LiveTerminal`, `TerminalRegistry`, `GridDimensions` | `LiveTerminal`, `TerminalRegistry`, `GridSize` | `GridDimensions` merged into `@janela/core`'s `GridSize` — two names for one thing was one too many |

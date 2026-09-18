@@ -4,8 +4,6 @@ import { describe, expect, test } from "bun:test";
 import type {
   AutomationScript,
   AutomationScripts,
-  LaunchProfile,
-  LaunchProfileID,
   Pane,
   Project,
   ProjectID,
@@ -15,10 +13,8 @@ import type {
   TerminalID,
 } from "@janela/core";
 import {
-  BUILT_IN_PROFILES,
   MAXIMUM_PANE_DEPTH,
   absolutePath,
-  newLaunchProfileID,
   newProjectID,
   newSessionID,
   newTerminalID,
@@ -120,19 +116,6 @@ function withDatabase(work: (fixture: Fixture) => Promise<void>): Promise<void> 
       }),
     ),
   );
-}
-
-function profile(overrides: Partial<LaunchProfile> = {}): LaunchProfile {
-  return {
-    id: newLaunchProfileID(),
-    name: "Claude",
-    iconName: "sparkles",
-    command: ["zsh", "-lc", 'echo "a b" | wc', ""],
-    environment: { FOO: "a=b", EMPTY: "" },
-    isAgent: true,
-    isBuiltIn: false,
-    ...overrides,
-  };
 }
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -264,82 +247,6 @@ function rowCount(database: TemporaryDatabase, table: string): number {
   );
 }
 
-describe("launch profiles", () => {
-  test("a profile round-trips, argv and environment intact", async () => {
-    await withDatabase(async ({ database }) => {
-      const value = profile();
-      await database.launchProfiles.save(value);
-
-      expect(await database.launchProfiles.find(value.id)).toEqual(value);
-    });
-  });
-
-  test("all is name-ordered, and an absent id is undefined rather than a throw", async () => {
-    await withDatabase(async ({ database }) => {
-      for (const name of ["Zsh", "Codex", "Aider"]) {
-        // oxlint-disable-next-line no-await-in-loop
-        await database.launchProfiles.save(profile({ name }));
-      }
-
-      expect((await database.launchProfiles.all()).map((p) => p.name)).toEqual([
-        "Aider",
-        "Codex",
-        "Zsh",
-      ]);
-      expect(await database.launchProfiles.find(newLaunchProfileID())).toBeUndefined();
-    });
-  });
-
-  test("an argv stored as a shell string is refused, never read as one word", async () => {
-    await withDatabase(async ({ database, corrupt }) => {
-      const value = profile();
-      await database.launchProfiles.save(value);
-      corrupt(`UPDATE LaunchProfile SET command = '"claude --dangerous"'`);
-
-      const failure = await failureOf(database.launchProfiles.find(value.id));
-
-      expect(failure).toBeInstanceOf(CorruptRecord);
-      expect(failure instanceof CorruptRecord ? failure.table : undefined).toBe("LaunchProfile");
-      expect(reasonsOf(failure)).toEqual(["command is not a JSON array of strings"]);
-    });
-  });
-
-  test("an environment stored as an array is refused", async () => {
-    await withDatabase(async ({ database, corrupt }) => {
-      const value = profile();
-      await database.launchProfiles.save(value);
-      corrupt(`UPDATE LaunchProfile SET environment = '["FOO=bar"]'`);
-
-      expect(reasonsOf(await failureOf(database.launchProfiles.find(value.id)))).toEqual([
-        "environment is not a JSON object of strings",
-      ]);
-    });
-  });
-
-  test("seeding twice yields one set, and never overwrites an edit", async () => {
-    await withDatabase(async ({ database }) => {
-      await database.launchProfiles.seedBuiltIns();
-      await database.launchProfiles.seedBuiltIns();
-
-      expect(await database.launchProfiles.all()).toHaveLength(BUILT_IN_PROFILES.length);
-
-      const claude = (await database.launchProfiles.all()).find((p) => p.name === "Claude Code");
-
-      expect(claude).toBeDefined();
-
-      if (claude === undefined) return;
-
-      await database.launchProfiles.save({ ...claude, command: ["claude", "--resume"] });
-
-      await database.launchProfiles.seedBuiltIns();
-      const after = await database.launchProfiles.all();
-
-      expect(after).toHaveLength(BUILT_IN_PROFILES.length);
-      expect(after.find((p) => p.name === "Claude Code")?.command).toEqual(["claude", "--resume"]);
-    });
-  });
-});
-
 describe("projects", () => {
   test("a project round-trips with git, a custom worktree root and a script per event", async () => {
     await withDatabase(async ({ database }) => {
@@ -470,10 +377,7 @@ describe("sessions", () => {
     await withDatabase(async ({ database }) => {
       const owner = project();
       await database.projects.save(owner);
-      const profileValue = profile();
-      await database.launchProfiles.save(profileValue);
-
-      const shell = terminal({ profileID: profileValue.id });
+      const shell = terminal();
       const agent = terminal({
         title: "claude",
         role: { kind: "automation", event: "sessionStart" },
@@ -644,29 +548,6 @@ describe("cascades", () => {
       expect(rowCount(database, "Terminal")).toBe(sibling.terminals.length);
     });
   });
-
-  test("removing a profile keeps the terminal that used it, with no profile", async () => {
-    await withDatabase(async ({ database }) => {
-      const owner = project();
-      const profileValue = profile();
-      await database.launchProfiles.save(profileValue);
-      await database.projects.save(owner);
-
-      const attached = terminal({ profileID: profileValue.id });
-      const value = worktreeSession(owner.id, {
-        terminals: [attached],
-        layout: oneTab(attached.id),
-      });
-      await database.sessions.save(value);
-
-      await database.launchProfiles.remove(profileValue.id);
-
-      const read = await database.sessions.find(value.id);
-
-      expect(read?.terminals).toHaveLength(1);
-      expect(read?.terminals[0]?.profileID).toBeUndefined();
-    });
-  });
 });
 
 describe("a backing that is representable in SQL and meaningless in the domain", () => {
@@ -683,6 +564,21 @@ describe("a backing that is representable in SQL and meaningless in the domain",
         "worktreeOwnership is not managed or adopted",
       ]);
       expect(await failureOf(database.sessions.all())).toBeInstanceOf(CorruptRecord);
+    });
+  });
+
+  test("a path list stored as a shell string is refused, never read as one path", async () => {
+    await withDatabase(async ({ database, corrupt }) => {
+      const owner = project();
+      await database.projects.save(owner);
+      const value = worktreeSession(owner.id);
+      await database.sessions.save(value);
+
+      corrupt(`UPDATE Session SET worktreeIncludedPaths = '".env node_modules"'`);
+
+      expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
+        "worktreeIncludedPaths is not a JSON array of strings",
+      ]);
     });
   });
 
@@ -1020,10 +916,9 @@ describe("save refuses", () => {
 });
 
 describe("referential integrity", () => {
-  test("a terminal naming a profile that does not exist is a caller bug that propagates", async () => {
+  test("a session naming a project that does not exist is a caller bug that propagates", async () => {
     await withDatabase(async ({ database }) => {
-      const orphan = terminal({ profileID: newLaunchProfileID() as LaunchProfileID });
-      const value = session({ terminals: [orphan], layout: oneTab(orphan.id) });
+      const value = worktreeSession(newProjectID());
       const failure = await failureOf(database.sessions.save(value));
 
       expect(failure).toBeDefined();

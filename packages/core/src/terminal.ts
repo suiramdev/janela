@@ -1,10 +1,9 @@
-import type { AbsolutePath, Instant, LaunchProfileID, TerminalID } from "./identifiers.ts";
+import type { AbsolutePath, Instant, TerminalID } from "./identifiers.ts";
 import type { AutomationEvent } from "./project.ts";
 
 export interface TerminalDescriptor {
   readonly id: TerminalID;
   title: string;
-  profileID?: LaunchProfileID;
   workingDirectoryOverride?: AbsolutePath;
   startsAutomatically: boolean;
   role: TerminalRole;

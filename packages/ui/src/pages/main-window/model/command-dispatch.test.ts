@@ -16,7 +16,6 @@ import {
   type RecordingConfirmations,
   type RecordingDirectoryPicker,
   type RecordingNativeShell,
-  fakeProfile,
   fakeProject,
   fakeSession,
   fakeSurfaceHandle,
@@ -59,7 +58,6 @@ function harness(options: {
   readonly sessions?: readonly Session[];
   readonly selection?: SessionID;
   readonly states?: Readonly<Record<TerminalID, TerminalState>>;
-  readonly profiles?: readonly ReturnType<typeof fakeProfile>[];
   readonly confirms?: boolean;
   readonly silenced?: readonly ConfirmationKey[];
   readonly picks?: string;
@@ -86,8 +84,6 @@ function harness(options: {
       selection = next;
     },
     terminalStates: options.states ?? {},
-    launchProfiles: options.profiles ?? [],
-    launchProfileAvailability: {},
     inProject: () => [],
     standaloneSessions: sessions,
     isRunning: () => false,
@@ -321,15 +317,13 @@ describe("creation", () => {
 });
 
 describe("splits", () => {
-  test("a split names the focused pane and starts a shell, whatever that pane runs", async () => {
-    const profile = fakeProfile();
-    const terminal = fakeTerminal({ profileID: profile.id });
+  test("a split names the focused pane and starts a shell", async () => {
+    const terminal = fakeTerminal();
     const session = fakeSession({ terminals: [terminal] });
 
     const context = harness({
       sessions: [session],
       selection: session.id,
-      profiles: [profile],
     });
 
     await createCommandDispatch(context.target)("splitRight");

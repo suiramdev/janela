@@ -23,12 +23,11 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
-  LaunchProfileService,
   NewTerminalOptions,
   ProjectService,
   SessionService,
 } from "@janela/session";
-import { UnknownTerminal } from "@janela/session";
+import { UnknownSession, UnknownTerminal } from "@janela/session";
 import { UnexpectedFailure, isUserFacing, type Logger } from "@janela/support";
 import type { LiveTerminal, TerminalRegistry } from "@janela/terminal";
 import { Effect, Match, Option, Result, Schema } from "effect";
@@ -56,18 +55,16 @@ export interface RequestDispatching {
 export interface RequestDispatchOptions {
   readonly sessions: SessionService;
   readonly projects: ProjectService;
-  readonly launchProfiles: LaunchProfileService;
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
   readonly log: Logger;
-  readonly announce: () => Promise<void>;
+  readonly settled: (terminal: LiveTerminal) => void;
 }
 
 export interface StateWorld {
   readonly projects: readonly Project[];
   readonly sessions: readonly Session[];
-  readonly launchProfiles: LaunchProfileService;
   readonly terminals: TerminalRegistry;
 }
 
@@ -111,18 +108,9 @@ const decodePaneDestination = Schema.decodeUnknownOption(
   ]),
 );
 
-const decodeLaunchProfile = Schema.decodeUnknownOption(
-  Schema.Struct({
-    id: Schema.String.check(Schema.isNonEmpty()),
-    name: Schema.String,
-    iconName: Schema.String,
-    command: Schema.Array(Schema.String),
-    environment: Schema.Record(Schema.String, Schema.String),
-    isAgent: Schema.Boolean,
-  }),
-);
-
 const decodeTitle = Schema.decodeUnknownOption(Schema.String);
+
+const decodeVerdict = Schema.decodeUnknownOption(Schema.Boolean);
 
 const decodeDirectory = Schema.decodeUnknownOption(
   Schema.UndefinedOr(Schema.String.check(Schema.isStartsWith("/"))),
@@ -151,23 +139,12 @@ export function fullStateSnapshot(world: StateWorld): StateUpdate {
     projects: world.projects,
     sessions: world.sessions,
     terminalStates,
-    launchProfiles: world.launchProfiles.profiles,
-    launchProfileAvailability: world.launchProfiles.availability,
     isFullSnapshot: true,
   };
 }
 
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const {
-    sessions,
-    projects,
-    launchProfiles,
-    directories,
-    terminals,
-    integrations,
-    log,
-    announce,
-  } = options;
+  const { sessions, projects, directories, terminals, integrations, log, settled } = options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
     const terminal = terminals.get(terminalID);
@@ -199,7 +176,6 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
               update: fullStateSnapshot({
                 projects: projects.projects,
                 sessions: sessions.sessions,
-                launchProfiles,
                 terminals,
               }),
             });
@@ -302,6 +278,23 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           return acknowledged(id);
         },
 
+        markSession: (request) => {
+          const unread = Option.getOrUndefined(decodeVerdict(request.unread));
+
+          if (unread === undefined) throw new TypeError("markSession without a verdict");
+
+          if (sessions.find(request.sessionID) === undefined) {
+            throw new UnknownSession(request.sessionID);
+          }
+
+          for (const terminal of terminals.inSession(request.sessionID)) {
+            terminal.markAttention(unread);
+            settled(terminal);
+          }
+
+          return Promise.resolve(acknowledged(id));
+        },
+
         attach: (request) => {
           const terminal = requireTerminal(request.terminalID);
           const { viewport } = request;
@@ -335,26 +328,6 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
 
         restartTerminal: async (request) => {
           await sessions.restartTerminal(request.terminalID);
-
-          return acknowledged(id);
-        },
-
-        saveLaunchProfile: async (request) => {
-          const { profile } = request;
-
-          if (Option.isNone(decodeLaunchProfile(profile))) {
-            throw new TypeError("save with an unusable profile");
-          }
-
-          await launchProfiles.save(profile);
-          await announce();
-
-          return acknowledged(id);
-        },
-
-        removeLaunchProfile: async (request) => {
-          await launchProfiles.remove(request.profileID);
-          await announce();
 
           return acknowledged(id);
         },
@@ -502,10 +475,8 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
 function newTerminalOptions(
   request: Extract<ClientMessage, { readonly type: "createTerminal" }>,
 ): NewTerminalOptions {
-  const { placement, profileID } = request;
+  const { placement } = request;
   const draft: NewTerminalDraft = {};
-
-  if (profileID !== undefined) draft.profileID = profileID;
 
   const title = Option.getOrUndefined(decodeTitle(request.title));
 

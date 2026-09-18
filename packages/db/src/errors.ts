@@ -1,11 +1,10 @@
 import { UserFacingError } from "@janela/support";
 
-export type RecordTable = "Project" | "Session" | "LaunchProfile";
+export type RecordTable = "Project" | "Session";
 
 const NOUN = {
   Project: "project",
   Session: "session",
-  LaunchProfile: "launch profile",
 } satisfies Readonly<Record<RecordTable, string>>;
 
 export class MigrationFailed extends UserFacingError {

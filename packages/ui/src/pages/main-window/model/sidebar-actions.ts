@@ -29,6 +29,7 @@ export interface SidebarActions {
   openProjectSettings(projectID: ProjectID): void;
   removeProject(project: Project): void;
   removeSession(session: Session): void;
+  markSession(sessionID: SessionID, unread: boolean): void;
   readonly local: SidebarLocalActions | undefined;
 }
 
@@ -98,6 +99,12 @@ export function createSidebarActions(target: SidebarActionTarget): SidebarAction
 
     removeSession(session: Session): void {
       void removeSession(session).catch(swallowRequestFailure);
+    },
+
+    markSession(sessionID: SessionID, unread: boolean): void {
+      void connection
+        .request({ type: "markSession", sessionID, unread })
+        .catch(swallowRequestFailure);
     },
 
     local: localActions,

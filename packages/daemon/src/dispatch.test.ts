@@ -3,8 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type {
   GridSize,
   IntegrationReport,
-  LaunchProfile,
-  LaunchProfileID,
   PaneDestination,
   Project,
   Session,
@@ -30,7 +28,6 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
-  LaunchProfileService,
   NewTerminalOptions,
   ProjectBranchOverview,
   ProjectService,
@@ -46,8 +43,6 @@ import {
   fakeDirectories,
   fakeIntegrations,
   fakeListing,
-  fakeLaunchProfiles,
-  fakeProfile,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -118,16 +113,6 @@ class TerminalNotRunning extends UserFacingError {
   }
 }
 
-class BuiltInProfile extends UserFacingError {
-  override readonly summary = "Built-in profiles can't be deleted.";
-
-  constructor() {
-    super("built-in launch profile cannot be removed", {
-      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
-    });
-  }
-}
-
 function fakeDescriptor(id: TerminalID): TerminalDescriptor {
   return {
     id,
@@ -160,8 +145,6 @@ function fixture(
     readonly projects?: readonly Project[];
     readonly sessionOverrides?: Partial<SessionService>;
     readonly projectOverrides?: Partial<ProjectService>;
-    readonly profiles?: readonly LaunchProfile[];
-    readonly profileOverrides?: Partial<LaunchProfileService>;
     readonly directories?: DirectoryBrowsing;
     readonly integrations?: FakeIntegrations;
   } = {},
@@ -174,7 +157,6 @@ function fixture(
   const server = createDaemonServer({
     sessions: fakeSessions(options.sessions ?? [], options.sessionOverrides ?? {}),
     projects: fakeProjects(options.projects ?? [], options.projectOverrides ?? {}),
-    launchProfiles: fakeLaunchProfiles(options.profiles ?? [], options.profileOverrides ?? {}),
     directories: options.directories ?? fakeDirectories(),
     terminals: registry,
     integrations: options.integrations ?? fakeIntegrations(),
@@ -321,7 +303,7 @@ describe("terminals", () => {
     const refusing = fixture({
       terminals: [terminal],
       sessionOverrides: {
-        startTerminal: () => Promise.reject(new UnavailableProfile()),
+        startTerminal: () => Promise.reject(new ExecutableUnavailable()),
       },
     });
     const second = await refusing.connect();
@@ -534,10 +516,8 @@ describe("state", () => {
       state: { kind: "idle" },
       sessionID: second.id,
     });
-    const profile = fakeProfile("p1");
     const daemon = fixture({
       sessions: [first, second],
-      profiles: [profile],
       projects: [],
       terminals: [terminal],
     });
@@ -554,8 +534,6 @@ describe("state", () => {
         projects: [],
         sessions: [first, second],
         terminalStates: { [terminal.id]: { kind: "idle" } },
-        launchProfiles: [profile],
-        launchProfileAvailability: { [profile.id]: true },
         isFullSnapshot: true,
       },
     });
@@ -584,8 +562,6 @@ describe("state", () => {
         projects: [],
         sessions: [survivor],
         terminalStates: {},
-        launchProfiles: [],
-        launchProfileAvailability: {},
         isFullSnapshot: true,
       },
     });
@@ -652,6 +628,85 @@ describe("sessions", () => {
     expect(removals[0]?.plan).toBe(plans[0]);
     expect(removals[1]?.plan).toBe(plans[1]);
     expect(plans).toHaveLength(2);
+  });
+
+  test("marking a session read lowers attention on each live terminal and announces it", async () => {
+    const session = fakeSession("s1");
+    const bell = fakeTerminal(terminalID(), {
+      sessionID: session.id,
+      state: { kind: "needsAttention" },
+    });
+    const finished = fakeTerminal(terminalID(), {
+      sessionID: session.id,
+      state: { kind: "needsAttention", activity: { kind: "finished", outcome: "completed" } },
+    });
+    const elsewhere = fakeTerminal(terminalID(), { state: { kind: "needsAttention" } });
+    const daemon = fixture({ sessions: [session], terminals: [bell, finished, elsewhere] });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
+    await peer.reply(1 as RequestID);
+    await peer.send(
+      request({ type: "markSession", id: 2 as RequestID, sessionID: session.id, unread: false }),
+    );
+
+    expect(await peer.reply(2 as RequestID)).toEqual({ type: "acknowledged", id: 2 as RequestID });
+    expect(bell.state).toEqual({ kind: "running" });
+    expect(finished.state).toEqual({
+      kind: "running",
+      activity: { kind: "finished", outcome: "completed" },
+    });
+    expect(elsewhere.markCalls).toEqual([]);
+
+    const announced = peer.controls.filter(
+      (message) => message.type === "state" && !message.update.isFullSnapshot,
+    );
+
+    expect(
+      announced.map((message) => (message.type === "state" ? message.update.terminalStates : {})),
+    ).toEqual([{ [bell.id]: { kind: "running" } }, { [finished.id]: finished.state }]);
+  });
+
+  test("marking a session unread raises attention on a quiet terminal", async () => {
+    const session = fakeSession("s1");
+    const shell = fakeTerminal(terminalID(), { sessionID: session.id });
+    const daemon = fixture({ sessions: [session], terminals: [shell] });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({ type: "markSession", id: 1 as RequestID, sessionID: session.id, unread: true }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("acknowledged");
+    expect(shell.state).toEqual({ kind: "needsAttention" });
+  });
+
+  test("marking an unknown session fails, and a verdict that is not a boolean is refused", async () => {
+    const session = fakeSession("s1");
+    const shell = fakeTerminal(terminalID(), { sessionID: session.id });
+    const daemon = fixture({ sessions: [session], terminals: [shell] });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({
+        type: "markSession",
+        id: 1 as RequestID,
+        sessionID: "nobody" as SessionID,
+        unread: true,
+      }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+
+    for (const [index, unread] of ["true", 1, null].entries()) {
+      const id = (index + 2) as RequestID;
+      // oxlint-disable-next-line no-await-in-loop
+      await peer.send(wireControl({ type: "markSession", id, sessionID: session.id, unread }));
+      // oxlint-disable-next-line no-await-in-loop
+      expect((await peer.reply(id)).type).toBe("failed");
+    }
+
+    expect(shell.markCalls).toEqual([]);
   });
 
   test("a failure crosses the wire as a summary, and stderr appears nowhere", async () => {
@@ -1011,96 +1066,9 @@ describe("sessions", () => {
   });
 });
 
-describe("launch profiles", () => {
-  test("a saved profile is stored and announced to every state subscriber", async () => {
-    const saved: LaunchProfile[] = [];
-    const profile = fakeProfile("p1", { name: "Claude Code", command: ["claude"] });
-    const daemon = fixture({
-      profiles: [profile],
-      profileOverrides: {
-        save: (value) => {
-          saved.push(value);
-
-          return Promise.resolve(value);
-        },
-      },
-    });
-    const peer = await daemon.connect();
-
-    await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
-    await peer.reply(1 as RequestID);
-    await peer.send(request({ type: "saveLaunchProfile", id: 2 as RequestID, profile }));
-
-    expect(await peer.reply(2 as RequestID)).toEqual({
-      type: "acknowledged",
-      id: 2 as RequestID,
-    });
-    expect(saved).toEqual([profile]);
-
-    await until(
-      () => peer.controls.filter((message) => message.type === "state").length === 2,
-      "the announcement",
-    );
-    const announced = peer.controls.findLast((message) => message.type === "state");
-
-    expect(announced?.type === "state" ? announced.update.launchProfiles : undefined).toEqual([
-      profile,
-    ]);
-  });
-
-  test("a profile that is not a profile is refused, and nothing is stored", async () => {
-    const saved: LaunchProfile[] = [];
-    const daemon = fixture({
-      profileOverrides: {
-        save: (value) => {
-          saved.push(value);
-
-          return Promise.resolve(value);
-        },
-      },
-    });
-    const peer = await daemon.connect();
-
-    await peer.send(
-      wireControl({
-        type: "saveLaunchProfile",
-        id: 1,
-        profile: { ...fakeProfile("p1"), command: ["zsh", null] },
-      }),
-    );
-
-    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
-    expect(saved).toEqual([]);
-  });
-
-  test("removing a built-in is refused in the user's own words", async () => {
-    const daemon = fixture({
-      profileOverrides: {
-        remove: () => Promise.reject(new BuiltInProfile()),
-      },
-    });
-    const peer = await daemon.connect();
-
-    await peer.send(
-      request({
-        type: "removeLaunchProfile",
-        id: 1 as RequestID,
-        profileID: "p1" as LaunchProfileID,
-      }),
-    );
-
-    expect(await peer.reply(1 as RequestID)).toEqual({
-      type: "failed",
-      id: 1 as RequestID,
-      failure: {
-        summary: "Built-in profiles can't be deleted.",
-        recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
-      },
-    });
-  });
-
+describe("terminal lifecycle", () => {
   test("createTerminal configures a terminal and answers with its id", async () => {
-    const asked: { session: SessionID; profileID?: LaunchProfileID; title?: string }[] = [];
+    const asked: { session: SessionID; title?: string }[] = [];
     const created = terminalID();
     const daemon = fixture({
       sessions: [fakeSession("s1")],
@@ -1120,7 +1088,7 @@ describe("launch profiles", () => {
         type: "createTerminal",
         id: 1 as RequestID,
         sessionID: "s1" as SessionID,
-        profileID: "p1" as LaunchProfileID,
+        title: "Notes",
       }),
     );
 
@@ -1129,7 +1097,7 @@ describe("launch profiles", () => {
       id: 1 as RequestID,
       text: created,
     });
-    expect(asked).toEqual([{ session: "s1" as SessionID, profileID: "p1" as LaunchProfileID }]);
+    expect(asked).toEqual([{ session: "s1" as SessionID, title: "Notes" }]);
   });
 
   test("a split placement reaches the brain intact", async () => {
@@ -1417,10 +1385,10 @@ describe("correlation", () => {
   });
 });
 
-class UnavailableProfile extends UserFacingError {
+class ExecutableUnavailable extends UserFacingError {
   override readonly summary = "That command isn't available.";
 
   constructor() {
-    super("launch profile not on PATH");
+    super("executable not on PATH");
   }
 }

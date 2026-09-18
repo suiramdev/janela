@@ -29,8 +29,6 @@ export function partialTerminalState(id: TerminalID, state: TerminalState): Stat
     projects: [],
     sessions: [],
     terminalStates: { [id]: state },
-    launchProfiles: [],
-    launchProfileAvailability: {},
     isFullSnapshot: false,
   };
 }

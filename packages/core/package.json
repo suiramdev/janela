@@ -2,7 +2,7 @@
   "name": "@janela/core",
   "version": "0.0.0",
   "private": true,
-  "description": "The domain model: project, session, terminal, launch profile. Pure, no I/O.",
+  "description": "The domain model: project, session, terminal. Pure, no I/O.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -1,7 +1,7 @@
 # @janela/core
 
-Layer 1, the domain model: project, session, terminal, launch profile, and pure
-functions over them. No I/O, no frameworks, nothing platform-specific.
+Layer 1, the domain model: project, session, terminal, and pure functions over
+them. No I/O, no frameworks, nothing platform-specific.
 
 ## index.ts
 
@@ -10,8 +10,8 @@ socket and must stay cheap to encode and free of anything process-specific. That
 is why timestamps are ISO strings and paths are strings rather than `Date` and
 `URL`.
 
-Four nouns — project, session, terminal, launch profile — and that is the whole
-concept budget. `docs/product.md` § 1 explains why a fifth is expensive.
+Three nouns — project, session, terminal — and that is the whole concept budget.
+`docs/product.md` § 1 explains why a fourth is expensive.
 
 ## accent.ts
 
@@ -121,72 +121,14 @@ error to report and move on from: it is a file we must leave byte-for-byte
 alone, and the only person who can fix it is the user — hence a status with a
 reason, and a `configPath` in the report so they can go and look.
 
-`IntegrationReport.isAvailable` is the same question `profileAvailability`
-asks and is answered the same way, in the daemon, against the user's real
-`PATH`. A harness that is not installed still gets a row: the row is where the
+`IntegrationReport.isAvailable` is answered in the daemon, against the user's
+real `PATH`, because this package has no I/O and a client cannot spawn a
+process. A harness that is not installed still gets a row: the row is where the
 user finds out that the hook they are about to install is for something they do
 not have. `reports` is the list of things this harness will make Janela show —
 user-facing copy, owned by the integration rather than by the view, because
 what a hook can report differs per harness and a view guessing at it would be
 the one place the two could disagree.
-
-## launch-profile.ts
-
-`LaunchProfile` is how Janela *starts* an agent, and starting is still the whole
-of what it does: we do not wrap Claude Code, parse Codex's output, or model an
-agent's task graph. The other half of what "agent support" now means is
-`integration.ts` above and `@janela/integrations` — a hook the harness runs to
-say what it is doing — and the two halves never meet: a profile names a command,
-an integration names a configuration file, and neither reads the other. See
-`docs/product.md` § Non-goals.
-
-`iconName` names a Lucide icon from `@janela/design` (it was an SF Symbol name
-before the client became a WebView). It is presentational either way, and a name
-the client does not recognise falls back to the terminal glyph rather than
-rendering nothing.
-
-`command` is an argv array, never a shell string, so there is no quoting bug
-class. An empty `command` means "the user's login shell", resolved at launch.
-`environment` values are not secrets; anything sensitive should come from the
-user's own shell configuration. `isAgent` is presentational — a distinct tab icon
-and inclusion in "notify me when agents finish" — and grants no behaviour,
-because agents get no special behaviour. `isBuiltIn` is what protects a shipped
-profile from deletion; a user overrides one by copying it.
-
-`BUILT_IN_PROFILES` carry no id: ids are assigned at seed time, because a
-hardcoded id would collide with a user's own copy of a built-in, and names are
-the identity seeding matches on. These are *suggestions, not wrappers* — if
-the binary is not on the user's `PATH` the profile is hidden rather than shown
-broken, and adding an entry must never require code changes elsewhere. Five
-ship: Shell, Claude Code, Codex, OpenCode, and **Oh My Pi** (`omp`, icon `bot`,
-`isAgent`), which arrived with activity reporting — a harness Janela can hook
-is a harness worth offering to start, and offering it cost exactly one row.
-
-### Availability
-
-Availability is the one fact about a profile `@janela/core` cannot compute: it
-depends on the user's real `PATH`, captured from their login shell in the daemon
-(`resolveShellEnvironment`, `@janela/session`). The daemon computes the record
-and sends it; the client filters on it and never probes anything itself — a
-client cannot spawn a process, and `scripts/layers.ts` makes that structural.
-
-**An absent entry means hidden.** Not "assume available": a profile shown in a
-picker and then failing to start is exactly the "shown broken" outcome the
-product forbids, and the login shell is available by rule, so the picker is never
-empty while we wait to be told. `profileAvailability` therefore gives every
-profile an entry, which is how the record distinguishes "we looked and it is
-missing" from "nobody has said". Its `PATH` predicate is injected because the
-lookup is I/O and this package has none.
-
-`needsPathLookup` is the same rule `resolveTerminalLaunch` applies, and
-deliberately does **not** stat anything: a name containing a separator is a path
-and is used as written. Two copies of this predicate would be two chances for a
-profile to be hidden here and then fail to launch there.
-
-`availableProfiles` preserves the order it was given. Which profiles a menu shows
-and in what sequence is a presentation decision made by the view that shows them,
-and a picker that reordered itself as binaries appeared and disappeared would
-move the user's target between keystrokes.
 
 ## project.ts
 
@@ -232,8 +174,8 @@ because build tools embed them.
 `AutomationScripts` is a partial record from event to `AutomationScript`, and it
 lives in **Janela's database, never in the repository**: a committed file that
 runs commands makes cloning a repo a code-execution vector. `script` is a shell
-script, verbatim — the **one deliberate exception** to the argv rule
-`LaunchProfile.command` follows. A lifecycle hook is the user's own shell logic
+script, verbatim — the **one deliberate exception** to the argv rule every other
+process Janela spawns follows. A lifecycle hook is the user's own shell logic
 (pipes, `&&`, variables, a heredoc), and an argv array made them spell
 `["zsh", "-lc", "…"]` to get any of it; the daemon hands the string to their login
 shell with `-c` and adds nothing to it, so no quoting is ever Janela's. There is
@@ -410,12 +352,12 @@ descriptor, a child process and an emulator. Keeping the two apart is what lets
 `@janela/core` stay free of I/O, and it is what makes "restore my layout" mean
 "restore descriptors" rather than "restart everyone's shells".
 
-`title` starts from the launch profile's name, then follows the terminal's OSC
-0/2 title sequences once the process starts talking. An absent `profileID` means
-the user's login shell. An absent `workingDirectoryOverride` means the session
-directory; it is set when the user splits a terminal while `cd`'d somewhere else.
-`startsAutomatically` is typically true for the first terminal only — the rest
-are lazy, which is how forty configured terminals cost nothing.
+`title` starts as `Shell`, then follows the terminal's OSC 0/2 title sequences
+once the process starts talking. Every terminal runs the user's login shell; an
+absent `workingDirectoryOverride` means the session directory, and it is set when
+the user splits a terminal while `cd`'d somewhere else. `startsAutomatically` is
+typically true for the first terminal only — the rest are lazy, which is how
+forty configured terminals cost nothing.
 
 `TerminalRole.automation` terminals are ordinary terminals with a label. They are
 not a hidden process with a bespoke output view: everything Janela runs on the

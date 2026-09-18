@@ -1,31 +1,18 @@
-import type {
-  LaunchProfile,
-  LaunchProfileID,
-  Project,
-  ProjectID,
-  Session,
-  SessionID,
-} from "@janela/core";
-import { BUILT_IN_PROFILES, newLaunchProfileID, now, toDate } from "@janela/core";
+import type { Project, ProjectID, Session, SessionID } from "@janela/core";
+import { now, toDate } from "@janela/core";
 import type { Logger } from "@janela/support";
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import {
-  decodeLaunchProfile,
   decodeProject,
   decodeSession,
   encodeAutomation,
-  encodeLaunchProfile,
   encodeProject,
   encodeSession,
   encodeTerminal,
   requireWritableSession,
 } from "./codec.ts";
-import type {
-  LaunchProfileRepository,
-  ProjectRepository,
-  SessionRepository,
-} from "./repositories.ts";
+import type { ProjectRepository, SessionRepository } from "./repositories.ts";
 
 const BY_POSITION = { orderBy: { position: "asc" } } as const;
 
@@ -166,55 +153,6 @@ export function sessionRepository(client: PrismaClient, log: Logger): SessionRep
 
     async touch(id: SessionID): Promise<void> {
       await client.session.updateMany({ where: { id }, data: { lastActiveAt: toDate(now()) } });
-    },
-  };
-}
-
-export function launchProfileRepository(client: PrismaClient): LaunchProfileRepository {
-  return {
-    async all(): Promise<readonly LaunchProfile[]> {
-      const rows = await client.launchProfile.findMany({ orderBy: { name: "asc" } });
-
-      return rows.map(decodeLaunchProfile);
-    },
-
-    async find(id: LaunchProfileID): Promise<LaunchProfile | undefined> {
-      const row = await client.launchProfile.findUnique({ where: { id } });
-
-      return row === null ? undefined : decodeLaunchProfile(row);
-    },
-
-    async save(profile: LaunchProfile): Promise<void> {
-      const columns = encodeLaunchProfile(profile);
-
-      await client.launchProfile.upsert({
-        where: { id: profile.id },
-        create: { id: profile.id, ...columns },
-        update: columns,
-      });
-    },
-
-    async remove(id: LaunchProfileID): Promise<void> {
-      await client.launchProfile.deleteMany({ where: { id } });
-    },
-
-    async seedBuiltIns(): Promise<void> {
-      await client.$transaction(async (tx) => {
-        const present = await tx.launchProfile.findMany({
-          where: { isBuiltIn: true },
-          select: { name: true },
-        });
-        const names = new Set(present.map((row) => row.name));
-
-        for (const profile of BUILT_IN_PROFILES) {
-          if (names.has(profile.name)) continue;
-
-          // oxlint-disable-next-line no-await-in-loop
-          await tx.launchProfile.create({
-            data: { id: newLaunchProfileID(), ...encodeLaunchProfile(profile) },
-          });
-        }
-      });
     },
   };
 }

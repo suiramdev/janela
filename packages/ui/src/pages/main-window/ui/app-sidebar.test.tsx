@@ -28,53 +28,7 @@ function renderSidebar(environment: ClientEnvironment): string {
 }
 
 describe("AppSidebar markup", () => {
-  test("a session needing attention says so in its name, and spins for it", () => {
-    const withAttention = session("fix/pty", { terminals: [terminal("t1")] });
-
-    const environment = fakeEnvironment({
-      sessions: [withAttention],
-      states: { [terminalID("t1")]: { kind: "needsAttention" } },
-    });
-
-    const markup = renderSidebar(environment);
-
-    expect(markup).toContain('aria-label="fix/pty — needs attention"');
-    expect(markup).toContain("dmx-matrix-3");
-    expect(markup).toContain("text-attention");
-    expect(markup).toContain("dmx-ripple-echo");
-  });
-
-  test("a session whose agent is mid-turn is working, and spins muted for it", () => {
-    const midTurn = session("feat/spinner", { terminals: [terminal("t1")] });
-
-    const environment = fakeEnvironment({
-      sessions: [midTurn],
-      states: { [terminalID("t1")]: { kind: "running", progress: { kind: "indeterminate" } } },
-    });
-
-    const markup = renderSidebar(environment);
-
-    expect(markup).toContain('aria-label="feat/spinner — working"');
-    expect(markup).toContain("dmx-matrix-3");
-    expect(markup).toContain("text-muted-foreground");
-  });
-
-  test("a failed session spins like attention does, in the failure colour", () => {
-    const broken = session("fix/build", { terminals: [terminal("t1")] });
-
-    const environment = fakeEnvironment({
-      sessions: [broken],
-      states: { [terminalID("t1")]: { kind: "exited", code: 1 } },
-    });
-
-    const markup = renderSidebar(environment);
-
-    expect(markup).toContain('aria-label="fix/build — failed"');
-    expect(markup).toContain("dmx-matrix-3");
-    expect(markup).toContain("text-failure");
-  });
-
-  test("a session whose agent said it finished is done, in green, and does not spin", () => {
+  test("a session with an unread completion says so in its name, and flashes blue", () => {
     const shipped = session("feat/hooks", { terminals: [terminal("t1")] });
 
     const environment = fakeEnvironment({
@@ -89,32 +43,56 @@ describe("AppSidebar markup", () => {
 
     const markup = renderSidebar(environment);
 
-    expect(markup).toContain('aria-label="feat/hooks — finished"');
+    expect(markup).toContain('aria-label="feat/hooks — unread"');
     expect(markup).toContain("dmx-matrix-3");
-    expect(markup).toContain("text-success");
+    expect(markup).toContain("text-attention");
+    expect(markup).toContain("dmx-ripple-echo");
+  });
+
+  test("a session whose agent is mid-turn is running, and spins muted for it", () => {
+    const midTurn = session("feat/spinner", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [midTurn],
+      states: { [terminalID("t1")]: { kind: "running", activity: { kind: "working" } } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="feat/spinner — running"');
+    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).toContain("text-muted-foreground");
+  });
+
+  test("a session that stopped with an error is red, and does not move", () => {
+    const broken = session("fix/build", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [broken],
+      states: { [terminalID("t1")]: { kind: "exited", code: 1 } },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="fix/build — stopped with an error"');
+    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).toContain("text-failure");
     expect(markup).not.toContain("dmx-ripple-echo");
   });
 
   test("every status paints the same glyph box, so the label never shifts", () => {
     const environment = fakeEnvironment({
       sessions: [
-        session("waiting", { terminals: [terminal("t1")] }),
+        session("shipped", { terminals: [terminal("t1")] }),
         session("broken", { terminals: [terminal("t2")] }),
-        session("shipped", { terminals: [terminal("t3")] }),
-        session("busy", { terminals: [terminal("t4")] }),
-        session("alive", { terminals: [terminal("t5")] }),
-        session("asleep", { terminals: [terminal("t6")] }),
+        session("busy", { terminals: [terminal("t3")] }),
+        session("asleep", { terminals: [terminal("t4")] }),
       ],
       states: {
         [terminalID("t1")]: { kind: "needsAttention" },
         [terminalID("t2")]: { kind: "exited", code: 1 },
-        [terminalID("t3")]: {
-          kind: "needsAttention",
-          activity: { kind: "finished", outcome: "completed" },
-        },
-        [terminalID("t4")]: { kind: "running", progress: { kind: "indeterminate" } },
-        [terminalID("t5")]: { kind: "running" },
-        [terminalID("t6")]: { kind: "idle" },
+        [terminalID("t3")]: { kind: "running", activity: { kind: "working" } },
+        [terminalID("t4")]: { kind: "idle" },
       },
     });
 
@@ -122,29 +100,71 @@ describe("AppSidebar markup", () => {
       ...renderSidebar(environment).matchAll(/<div role="status"[^>]*style="([^"]*)"/gu),
     ].map((match) => match[1]);
 
-    expect(boxes).toHaveLength(6);
+    expect(boxes).toHaveLength(4);
     expect(new Set(boxes).size).toBe(1);
     expect(boxes[0]).toContain("min-width:16px");
     expect(boxes[0]).toContain("width:16px");
   });
 
   test("a session with nothing pending paints no indicator, but keeps the column", () => {
-    const running = session("chore/logs", { terminals: [terminal("t1")] });
-    const idle = session("chore/notes", { terminals: [terminal("t2")] });
+    const shell = session("chore/logs", { terminals: [terminal("t1")] });
+    const seen = session("chore/notes", { terminals: [terminal("t2")] });
 
     const environment = fakeEnvironment({
-      sessions: [running, idle],
-      states: { [terminalID("t1")]: { kind: "running" }, [terminalID("t2")]: { kind: "idle" } },
+      sessions: [shell, seen],
+      states: {
+        [terminalID("t1")]: { kind: "running" },
+        [terminalID("t2")]: {
+          kind: "running",
+          activity: { kind: "finished", outcome: "completed" },
+        },
+      },
     });
 
     const markup = renderSidebar(environment);
 
-    expect(markup).toContain('aria-label="chore/logs — running"');
+    expect(markup).toContain('aria-label="chore/logs — idle"');
     expect(markup).toContain('aria-label="chore/notes — idle"');
     expect(markup).toContain("invisible");
     expect(markup).not.toContain("text-attention");
     expect(markup).not.toContain("text-failure");
-    expect(markup).not.toContain("text-success");
+  });
+
+  test("a project is a parent row whose sessions live in a sub-menu, closed or open", () => {
+    const inside = session("member", { project: "p", terminals: [terminal("t1")] });
+
+    const closed = renderSidebar(
+      fakeEnvironment({ projects: [project("p", false)], sessions: [inside] }),
+    );
+    const open = renderSidebar(
+      fakeEnvironment({ projects: [project("p", true)], sessions: [inside] }),
+    );
+
+    for (const markup of [closed, open]) {
+      expect(markup).toContain("group/parent-row");
+      expect(markup.indexOf('data-sidebar="menu-button"')).toBeLessThan(
+        markup.indexOf('data-sidebar="menu-sub"'),
+      );
+      expect(markup).toMatch(
+        /<button[^>]*aria-label="member — idle"[^>]*data-sidebar="menu-sub-button"/u,
+      );
+    }
+
+    expect(closed).toMatch(/data-sidebar="menu-sub" data-state="closed" aria-hidden="true"/u);
+    expect(closed).toContain('aria-expanded="false"');
+    expect(open).toMatch(/data-sidebar="menu-sub" data-state="open"/u);
+    expect(open).toContain('aria-expanded="true"');
+  });
+
+  test("the Sessions section is a collapsible group with its controls in the header cluster", () => {
+    const markup = renderSidebar(fakeEnvironment({ projects: [project("p", false)] }));
+    const cluster = markup.indexOf('data-sidebar="group-actions"');
+
+    expect(markup).toMatch(/data-sidebar="group" data-state="open"/u);
+    expect(markup).toMatch(/<button[^>]*data-sidebar="group-label"/u);
+    expect(cluster).toBeGreaterThan(-1);
+    expect(markup.indexOf('aria-label="Filter: All Sessions"')).toBeGreaterThan(cluster);
+    expect(markup.indexOf('aria-label="New Project"')).toBeGreaterThan(cluster);
   });
 
   test("project rows are disclosures and the selected session is current", () => {

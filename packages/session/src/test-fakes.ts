@@ -523,6 +523,8 @@ class FakeLiveTerminal implements LiveTerminal {
 
   send(): void {}
 
+  markAttention(): void {}
+
   attach(_client: string, viewport: GridSize): GridSize {
     return viewport;
   }

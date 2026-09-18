@@ -3,7 +3,6 @@ export type Identifier<Subject extends string> = string & { readonly [brand]: Su
 export type ProjectID = Identifier<"Project">;
 export type SessionID = Identifier<"Session">;
 export type TerminalID = Identifier<"Terminal">;
-export type LaunchProfileID = Identifier<"LaunchProfile">;
 
 export type AbsolutePath = string & { readonly [brand]: "AbsolutePath" };
 
@@ -28,10 +27,6 @@ export function newSessionID(): SessionID {
 
 export function newTerminalID(): TerminalID {
   return fresh<"Terminal">();
-}
-
-export function newLaunchProfileID(): LaunchProfileID {
-  return fresh<"LaunchProfile">();
 }
 
 export function identifier<Subject extends string>(raw: string): Identifier<Subject> {

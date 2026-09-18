@@ -117,17 +117,9 @@ removing a project stops its sessions' terminals, and the session service does
 not exist when the project service is built. Before `server` exists nothing can
 have subscribed, so an announcement in that window has nobody to reach and
 dropping it is correct rather than lossy. `createDaemonServer` takes no
-`dispatch`: it builds `createRequestDispatch` itself and binds `announce` to the
-server it is constructing, which is the one cycle this root cannot break from
-outside.
-
-**The launch profile service gets the real shell capture**, because a profile's
-availability *is* a fact about this `PATH`; a synthetic environment would report
-every tool as missing. Its `load()` seeds the built-ins, reads them all, and
-probes the captured `PATH` with a `which` per profile rather than a spawn, so an
-uninstalled agent costs one lookup and no process. It is a *required* dependency
-now that profiles are on the wire, and it takes the same repository the session
-service reads — one handle to one SQLite file.
+`dispatch`: it builds `createRequestDispatch` itself and binds `settled` to the
+terminal-event relay it is constructing, which is the one wiring this root
+cannot do from outside.
 
 **`process.getuid` is optional in the types, and the peer check is the whole of
 the socket's authorization**, so a daemon that cannot name its own uid refuses to

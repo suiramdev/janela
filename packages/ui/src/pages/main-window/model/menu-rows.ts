@@ -12,6 +12,8 @@ import {
   FolderOpenIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
+  MailOpen01Icon,
+  Mail01Icon,
   PlusSignIcon,
   Search01Icon,
   Settings01Icon,
@@ -23,6 +25,7 @@ import { hugeicon } from "@janela/design";
 import type { CommandID } from "../../../shared/config/index.ts";
 import type { TabCloseScope } from "../../../shared/model/index.ts";
 import type { MenuRow } from "../../../shared/ui/index.ts";
+import type { SessionMark } from "./session-rows.ts";
 import type { SidebarActions } from "./sidebar-actions.ts";
 
 export interface TerminalMenuTarget {
@@ -48,6 +51,8 @@ export interface TabMenuTarget {
 const ICON = {
   newSession: hugeicon(PlusSignIcon),
   newTerminal: hugeicon(ComputerTerminal01Icon),
+  markRead: hugeicon(MailOpen01Icon),
+  markUnread: hugeicon(Mail01Icon),
   reveal: hugeicon(FolderOpenIcon),
   terminal: hugeicon(TerminalIcon),
   settings: hugeicon(Settings01Icon),
@@ -117,7 +122,30 @@ export function projectMenuRows(project: Project, actions: SidebarActions): read
   ];
 }
 
-export function sessionMenuRows(session: Session, actions: SidebarActions): readonly MenuRow[] {
+function markRow(session: Session, mark: SessionMark, actions: SidebarActions): MenuRow {
+  if (mark === "read") {
+    return {
+      kind: "item",
+      label: "Mark as Read",
+      icon: ICON.markRead,
+      onSelect: () => actions.markSession(session.id, false),
+    };
+  }
+
+  return {
+    kind: "item",
+    label: "Mark as Unread",
+    icon: ICON.markUnread,
+    disabled: mark === "none",
+    onSelect: () => actions.markSession(session.id, true),
+  };
+}
+
+export function sessionMenuRows(
+  session: Session,
+  mark: SessionMark,
+  actions: SidebarActions,
+): readonly MenuRow[] {
   return [
     { kind: "label", label: session.name },
     {
@@ -126,6 +154,7 @@ export function sessionMenuRows(session: Session, actions: SidebarActions): read
       icon: ICON.newTerminal,
       onSelect: () => actions.newTerminal(session.id),
     },
+    markRow(session, mark, actions),
     ...(actions.local === undefined ? [] : [SEPARATOR]),
     ...localRows(session.directory, actions.local),
     { kind: "separator" },

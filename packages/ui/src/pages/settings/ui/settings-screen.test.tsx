@@ -9,13 +9,10 @@ import {
   environmentOver,
   fakeClientEnvironment,
   fakeFolderProject,
-  fakeProfile,
   fakeProject,
   fakeSession,
   fakeSettings,
-  fakeShellProfile,
   recordingService,
-  reportedAvailable,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
@@ -26,8 +23,6 @@ import {
   type SettingsDraft,
   type SettingsRoute,
   type SettingsTabID,
-  profileDraft,
-  withDraftProfile,
   withDraftProjectSettings,
   withDraftSettings,
   withSilencedConfirmation,
@@ -41,10 +36,6 @@ import {
   SettingsScreen,
   SettingsSidebar,
 } from "./settings-screen.tsx";
-
-const shell = fakeShellProfile();
-
-const claude = fakeProfile({ name: "Claude Code" });
 
 const noop = (): void => {};
 
@@ -67,7 +58,7 @@ const PANE_COPY = {
   appearance: "Font family",
   notifications: "rings the bell",
   shortcuts: "Close Pane",
-  integrations: "saved command and environment",
+  integrations: "Janela reads nothing else",
   permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
 
@@ -84,8 +75,6 @@ function props(
   return {
     route,
     settings: DEFAULT_GLOBAL_SETTINGS,
-    profiles: [shell, claude],
-    availability: reportedAvailable(shell, claude),
     sessions: [fakeSession()],
     terminalStates: states(),
     service: recordingService(),
@@ -319,16 +308,6 @@ describe("the pane", () => {
     expect(
       renderToStaticMarkup(<SettingsPane {...props(projectRoute(JANELA), PROJECTS, draft)} />),
     ).toContain('value="/tmp/trees"');
-  });
-
-  test("a profile renamed but not saved reads renamed in the list", () => {
-    const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...claude, name: "Opus" }));
-    const markup = renderToStaticMarkup(
-      <SettingsPane {...props(tabRoute("integrations"), PROJECTS, draft)} />,
-    );
-
-    expect(markup).toContain("Opus");
-    expect(markup).not.toContain("Claude Code");
   });
 
   test("carries no Save of its own: the bar is a sibling of the panel", () => {

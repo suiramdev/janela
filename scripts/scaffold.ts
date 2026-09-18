@@ -47,7 +47,7 @@ const EXTRAS = {
     },
   },
   "@janela/core": {
-    description: "The domain model: project, session, terminal, launch profile. Pure, no I/O.",
+    description: "The domain model: project, session, terminal. Pure, no I/O.",
   },
   "@janela/protocol": {
     description: "Frames, messages, handshake, and the transport seam both processes share.",

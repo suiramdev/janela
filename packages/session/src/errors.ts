@@ -1,4 +1,4 @@
-import type { AbsolutePath, LaunchProfileID, ProjectID, SessionID, TerminalID } from "@janela/core";
+import type { AbsolutePath, ProjectID, SessionID, TerminalID } from "@janela/core";
 import { UserFacingError, type Presentation } from "@janela/support";
 import { Match } from "effect";
 
@@ -72,38 +72,16 @@ export class PullRequestsNotSupported extends UserFacingError {
   }
 }
 
-export class LaunchProfileUnavailable extends UserFacingError {
+export class ExecutableUnavailable extends UserFacingError {
   override readonly summary: string;
-  readonly profileName: string;
+  readonly executable: string;
 
-  constructor(profileName: string) {
-    super("launch profile executable not found on PATH", {
+  constructor(executable: string) {
+    super("executable not found on PATH", {
       recoverySuggestion: "Install it, or start a plain shell instead.",
     });
-    this.summary = `${profileName} isn't installed.`;
-    this.profileName = profileName;
-  }
-}
-
-export class UnknownLaunchProfile extends UserFacingError {
-  override readonly summary = "That launch profile no longer exists.";
-  readonly profile: LaunchProfileID;
-
-  constructor(profile: LaunchProfileID) {
-    super(`launch profile ${profile} not found`);
-    this.profile = profile;
-  }
-}
-
-export class BuiltInProfileProtected extends UserFacingError {
-  override readonly summary = "Built-in profiles can't be deleted.";
-  readonly profile: LaunchProfileID;
-
-  constructor(profile: LaunchProfileID) {
-    super("built-in launch profile cannot be removed", {
-      recoverySuggestion: "Edit it instead, or copy it and edit the copy.",
-    });
-    this.profile = profile;
+    this.summary = `${executable} isn't installed.`;
+    this.executable = executable;
   }
 }
 

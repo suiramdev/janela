@@ -20,6 +20,7 @@ interface Delivery {
 interface Harness {
   readonly loop: FrameLoop;
   readonly deliveries: Delivery[];
+  readonly settled: TerminalID[];
   readonly records: Recorded[];
   readonly withoutRoom: Set<string>;
   readonly frames: { count: number };
@@ -34,6 +35,7 @@ function harness(
   enumerated: readonly FakeTerminal[] = terminals,
 ): Harness {
   const deliveries: Delivery[] = [];
+  const settled: TerminalID[] = [];
   const withoutRoom = new Set<string>();
   const frames = { count: 0 };
   const { logger, records } = recordingLogger();
@@ -51,9 +53,13 @@ function harness(
       deliver: (client, id, bytes) => {
         deliveries.push({ client, terminalID: id, text: decoder.decode(bytes) });
       },
+      settled: (terminal) => {
+        settled.push(terminal.id);
+      },
       log: logger,
     }),
     deliveries,
+    settled,
     records,
     withoutRoom,
     frames,
@@ -98,6 +104,18 @@ describe("the frame loop", () => {
     expect(terminal.repaintCalls).toEqual(["c1"]);
     expect(deliveries.map((delivery) => delivery.text)).toEqual(["F", "d"]);
     expect(deliveries[0]?.terminalID).toBe(terminal.id);
+  });
+
+  test("a full repaint settles the terminal's state once, a delta never does", () => {
+    const terminal = fakeTerminal(terminalID());
+    const { loop, settled } = harness([terminal]);
+
+    loop.attach("c1", terminal.id);
+    loop.tick();
+    loop.tick();
+    loop.tick();
+
+    expect(settled).toEqual([terminal.id]);
   });
 
   test("one encode per attached client per tick, in attach order", () => {

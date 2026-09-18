@@ -1,58 +1,36 @@
 import type { ClientRequest } from "@janela/client";
 
-import {
-  type GlobalSettings,
-  type SettingsDraft,
-  type SettingsRoute,
-  profileOf,
-} from "../../../shared/model/index.ts";
+import type { GlobalSettings, SettingsDraft, SettingsRoute } from "../../../shared/model/index.ts";
 import { automationViolations } from "./automation-scripts.ts";
-import { profileViolations } from "./profile-rules.ts";
 
 export interface DraftViolation {
   readonly route: SettingsRoute;
   readonly message: string;
 }
 
-const PROFILES_ROUTE: SettingsRoute = { kind: "tab", tab: "integrations" };
-
 export function draftViolations(draft: SettingsDraft): readonly DraftViolation[] {
-  const profiles = draft.profiles.flatMap((entry) =>
-    profileViolations(profileOf(entry)).map((message) => ({ route: PROFILES_ROUTE, message })),
-  );
-
-  const projects = draft.projects.flatMap((edit) =>
+  return draft.projects.flatMap((edit) =>
     automationViolations(edit.settings).map((message) => ({
       route: { kind: "project", projectID: edit.projectID } as const,
       message,
     })),
   );
-
-  return [...profiles, ...projects];
 }
 
 export function settingsDraftRequests(
   draft: SettingsDraft,
   since: SettingsDraft,
 ): readonly ClientRequest[] {
-  return [
-    ...draft.profiles
-      .filter((entry) => !since.profiles.includes(entry))
-      .map((entry) => ({ type: "saveLaunchProfile", profile: profileOf(entry) }) as const),
-    ...draft.removedProfileIDs
-      .filter((profileID) => !since.removedProfileIDs.includes(profileID))
-      .map((profileID) => ({ type: "removeLaunchProfile", profileID }) as const),
-    ...draft.projects
-      .filter((edit) => !since.projects.includes(edit))
-      .map(
-        (edit) =>
-          ({
-            type: "updateProjectSettings",
-            projectID: edit.projectID,
-            settings: edit.settings,
-          }) as const,
-      ),
-  ];
+  return draft.projects
+    .filter((edit) => !since.projects.includes(edit))
+    .map(
+      (edit) =>
+        ({
+          type: "updateProjectSettings",
+          projectID: edit.projectID,
+          settings: edit.settings,
+        }) as const,
+    );
 }
 
 export function draftSettingsToSave(

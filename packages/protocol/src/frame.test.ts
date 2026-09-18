@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("ProjectSettings lost its default profile, so it is a wire change: version 12, speaking 12 only", () => {
-    expect(PROTOCOL_VERSION).toBe(12);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(12);
+  test("two client messages and two snapshot fields left the wire: version 14, speaking 14 only", () => {
+    expect(PROTOCOL_VERSION).toBe(14);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(14);
   });
 });
 

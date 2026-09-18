@@ -36,6 +36,7 @@ export interface LiveTerminal {
   stop(): Promise<void>;
   restart(): Promise<void>;
   send(bytes: Uint8Array): void;
+  markAttention(raised: boolean): void;
   attach(client: string, viewport: GridSize): GridSize;
   detach(client: string): GridSize | undefined;
   drain(): void;
@@ -355,6 +356,10 @@ class PtyLiveTerminal implements LiveTerminal {
     this.attention = false;
   }
 
+  markAttention(raised: boolean): void {
+    this.attention = raised;
+  }
+
   attach(client: string, viewport: GridSize): GridSize {
     const existing = this.clients.get(client);
 
@@ -432,7 +437,7 @@ class PtyLiveTerminal implements LiveTerminal {
     const mark = begin("repaint", this.id);
     entry.revision = emulator.revision;
     entry.owesSize = false;
-    this.attention = false;
+    this.attention = this.activity?.kind === "waiting" && this.attention;
 
     const bytes = emulator.fullRepaint();
 

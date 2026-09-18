@@ -44,6 +44,7 @@ function recordingActions(
     openProjectSettings: (id: ProjectID) => calls.push(`openProjectSettings:${id}`),
     removeProject: (project) => calls.push(`removeProject:${project.id}`),
     removeSession: (session) => calls.push(`removeSession:${session.id}`),
+    markSession: (id, unread) => calls.push(`markSession:${id}:${unread ? "unread" : "read"}`),
     local:
       options.local === false
         ? undefined
@@ -140,12 +141,13 @@ describe("sessionMenuRows", () => {
   test("the rows name the session, and removing it is destructive", () => {
     const session = fakeSession({ name: "fix/pty", directory: absolutePath("/src/janela-pty") });
     const actions = recordingActions();
-    const rows = sessionMenuRows(session, actions);
+    const rows = sessionMenuRows(session, "unread", actions);
 
     for (const label of labels(rows)) row(rows, label).onSelect();
 
     expect(actions.calls).toEqual([
       `newTerminal:${session.id}`,
+      `markSession:${session.id}:unread`,
       "revealInFinder:/src/janela-pty",
       "openInTerminal:/src/janela-pty",
       `removeSession:${session.id}`,
@@ -153,12 +155,33 @@ describe("sessionMenuRows", () => {
     expect(row(rows, "Remove Session…").destructive).toBe(true);
   });
 
-  test("without a local shell the session menu is new terminal and remove, separated", () => {
-    const session = fakeSession({ name: "fix/pty", directory: absolutePath("/src/janela-pty") });
-    const rows = sessionMenuRows(session, recordingActions({ local: false }));
+  test("an unread session offers Mark as Read, which lowers the flag", () => {
+    const session = fakeSession({ name: "fix/pty" });
+    const actions = recordingActions();
+    const rows = sessionMenuRows(session, "read", actions);
 
-    expect(labels(rows)).toEqual(["New Terminal", "Remove Session…"]);
-    expect(rows.map((entry) => entry.kind)).toEqual(["label", "item", "separator", "item"]);
+    expect(labels(rows)).not.toContain("Mark as Unread");
+    expect(row(rows, "Mark as Read").disabled).toBeUndefined();
+
+    row(rows, "Mark as Read").onSelect();
+
+    expect(actions.calls).toEqual([`markSession:${session.id}:read`]);
+  });
+
+  test("a session that cannot take a mark shows the verb dimmed rather than hidden", () => {
+    const session = fakeSession({ name: "fix/pty" });
+    const rows = sessionMenuRows(session, "none", recordingActions());
+
+    expect(row(rows, "Mark as Unread").disabled).toBe(true);
+    expect(row(rows, "Mark as Unread").destructive).toBeUndefined();
+  });
+
+  test("without a local shell the session menu is new terminal, mark and remove, separated", () => {
+    const session = fakeSession({ name: "fix/pty", directory: absolutePath("/src/janela-pty") });
+    const rows = sessionMenuRows(session, "unread", recordingActions({ local: false }));
+
+    expect(labels(rows)).toEqual(["New Terminal", "Mark as Unread", "Remove Session…"]);
+    expect(rows.map((entry) => entry.kind)).toEqual(["label", "item", "item", "separator", "item"]);
   });
 });
 

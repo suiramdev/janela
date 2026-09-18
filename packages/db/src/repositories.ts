@@ -1,11 +1,4 @@
-import type {
-  LaunchProfile,
-  LaunchProfileID,
-  Project,
-  ProjectID,
-  Session,
-  SessionID,
-} from "@janela/core";
+import type { Project, ProjectID, Session, SessionID } from "@janela/core";
 
 export interface ProjectRepository {
   all(): Promise<readonly Project[]>;
@@ -22,12 +15,4 @@ export interface SessionRepository {
   save(session: Session): Promise<void>;
   remove(id: SessionID): Promise<void>;
   touch(id: SessionID): Promise<void>;
-}
-
-export interface LaunchProfileRepository {
-  all(): Promise<readonly LaunchProfile[]>;
-  find(id: LaunchProfileID): Promise<LaunchProfile | undefined>;
-  save(profile: LaunchProfile): Promise<void>;
-  remove(id: LaunchProfileID): Promise<void>;
-  seedBuiltIns(): Promise<void>;
 }

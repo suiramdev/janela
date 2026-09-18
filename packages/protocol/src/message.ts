@@ -5,8 +5,6 @@ import type {
   GridSize,
   Instant,
   IntegrationID,
-  LaunchProfile,
-  LaunchProfileID,
   Project,
   ProjectID,
   PaneDestination,
@@ -54,6 +52,12 @@ export type ClientMessage =
       readonly sessionID: SessionID;
       readonly name: string;
     }
+  | {
+      readonly type: "markSession";
+      readonly id: RequestID;
+      readonly sessionID: SessionID;
+      readonly unread: boolean;
+    }
   | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
   | { readonly type: "projectBranches"; readonly id: RequestID; readonly projectID: ProjectID }
   | { readonly type: "listDirectory"; readonly id: RequestID; readonly directory?: AbsolutePath }
@@ -89,20 +93,9 @@ export type ClientMessage =
       readonly includeScrollback: boolean;
     }
   | {
-      readonly type: "saveLaunchProfile";
-      readonly id: RequestID;
-      readonly profile: LaunchProfile;
-    }
-  | {
-      readonly type: "removeLaunchProfile";
-      readonly id: RequestID;
-      readonly profileID: LaunchProfileID;
-    }
-  | {
       readonly type: "createTerminal";
       readonly id: RequestID;
       readonly sessionID: SessionID;
-      readonly profileID?: LaunchProfileID;
       readonly title?: string;
       readonly placement?: {
         readonly kind: "split";
@@ -159,8 +152,6 @@ export interface StateUpdate {
   readonly projects: readonly Project[];
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
-  readonly launchProfiles: readonly LaunchProfile[];
-  readonly launchProfileAvailability: Readonly<Record<LaunchProfileID, boolean>>;
   readonly isFullSnapshot: boolean;
 }
 

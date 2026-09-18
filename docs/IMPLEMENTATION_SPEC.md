@@ -630,7 +630,7 @@ export function worktreeIncluding(git: GitRunning): WorktreeIncluding;
 
 1. **Always array arguments**: there is no shell, so there is no quoting and no
    injection — the whole bug class does not exist. Same rule as
-   `LaunchProfile.command` and `AutomationCommand.command`.
+   `AutomationCommand.command`.
 2. **Always `-C <directory>`**: never `chdir` the process; sessions run
    concurrently and a process-wide current directory is shared state.
 3. **`GIT_OPTIONAL_LOCKS=0` on read-only commands**: a background refresh never
@@ -777,7 +777,6 @@ export interface JanelaDatabase {
 
   readonly projects: ProjectRepository;
   readonly sessions: SessionRepository;
-  readonly launchProfiles: LaunchProfileRepository;
 }
 
 export function defaultDatabasePath(): AbsolutePath {
@@ -822,21 +821,12 @@ export interface SessionRepository {
   remove(id: SessionID): Promise<void>;
   touch(id: SessionID): Promise<void>;
 }
-
-export interface LaunchProfileRepository {
-  all(): Promise<readonly LaunchProfile[]>;
-  find(id: LaunchProfileID): Promise<LaunchProfile | undefined>;
-  save(profile: LaunchProfile): Promise<void>;
-  remove(id: LaunchProfileID): Promise<void>;
-  seedBuiltIns(): Promise<void>;
-}
 ```
 
 `ProjectRepository.remove` deletes a project **and everything in it** and does
 not ask: the caller has already asked the removal question for each session
 that owns a directory (§ 3.2). `SessionRepository.standalone()` is a
-first-class case, not a leftover bucket. `seedBuiltIns()` inserts
-`BUILT_IN_PROFILES` on first open without overwriting a user's edits.
+first-class case, not a leftover bucket.
 
 #### JanelaSqliteAdapter
 
@@ -863,19 +853,6 @@ datasource db {
   provider = "sqlite"
 }
 
-model LaunchProfile {
-  id         String  @id
-  name       String
-  iconName   String
-  command    String
-  environment String
-  isAgent    Boolean @default(false)
-  isBuiltIn  Boolean @default(false)
-
-  projects  Project[]
-  terminals Terminal[]
-}
-
 model Project {
   id        String @id
   name      String
@@ -891,9 +868,6 @@ model Project {
   accent           String  @default("none")
   isExpanded       Boolean @default(true)
   addedAt          DateTime
-
-  defaultProfileId String?
-  defaultProfile   LaunchProfile? @relation(fields: [defaultProfileId], references: [id], onDelete: SetNull)
 
   sessions   Session[]
   automation AutomationCommand[]
@@ -939,9 +913,6 @@ model Terminal {
   position                 Int
   createdAt                DateTime
 
-  profileId String?
-  profile   LaunchProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
-
   @@index([sessionId, position])
 }
 
@@ -960,11 +931,10 @@ model AutomationCommand {
 }
 ```
 
-Five models, roughly kilobytes of data. Prisma 7 removed `url` from the
+Four models, roughly kilobytes of data. Prisma 7 removed `url` from the
 `datasource` block: the connection lives in `packages/db/prisma.config.ts`,
 which configures the CLI only — the running daemon passes its own adapter to
-the client constructor and never reads it. `LaunchProfile.command`,
-`LaunchProfile.environment`, `AutomationCommand.command` and
+the client constructor and never reads it. `AutomationCommand.command` and
 `Session.worktreeIncludedPaths` are JSON columns; `Session.layout` is the
 recursive tab/pane tree. Scrollback, secrets, notification bodies and anything
 derivable from git or a forge are deliberately absent.
@@ -1031,19 +1001,16 @@ derivable from git or a forge are deliberately absent.
    nonsense `Backing`; `SessionLayout` is recursive depth-bounded JSON,
    validated on encode and decode, and a corrupt layout is **repaired by
    dropping panes** rather than failing the load, because a session the user
-   cannot open is worse than a session that lost a split; `command` and
-   `environment` are JSON arrays and objects, and an argv array that
-   round-trips into a string is the quoting bug class coming back in through
-   the database.
+   cannot open is worse than a session that lost a split; `command` is a JSON
+   array, and an argv array that round-trips into a string is the quoting bug
+   class coming back in through the database.
 6. **Cascade rules encode product rules**, declared once in the schema rather
    than spread across statements: a project cascades to its sessions and its
-   automation commands, and a session cascades to its terminals; deleting a
-   launch profile sets `Project.defaultProfileId` and `Terminal.profileId`
-   null rather than deleting a descriptor, and a terminal with no profile
-   falls back to the login shell; `Session.projectId` is nullable, so a
-   standalone session belongs to no project, and it is `Cascade` rather than
-   `SetNull` because a worktree-backed session orphaned from its project would
-   have a `backing` nothing could interpret.
+   automation commands, and a session cascades to its terminals;
+   `Session.projectId` is nullable, so a standalone session belongs to no
+   project, and it is `Cascade` rather than `SetNull` because a
+   worktree-backed session orphaned from its project would have a `backing`
+   nothing could interpret.
 7. **Prisma's CLI runs on Node, not Bun**, and rejects unsupported Node
    versions by design. Bun runs everything we ship, but `prisma generate` and
    `prisma migrate` shell out to Node regardless, so the supported version is
@@ -1058,14 +1025,12 @@ derivable from git or a forge are deliberately absent.
   We do not fake the database — the mapping and the migration are the two
   things most likely to break a user's session list, and a fake tests neither.
 - Round-trip every repository method: save then find, for a project with
-  automation commands, a session with terminals and a layout, and a launch
-  profile; `all()`, `inProject()` and `standalone()` return what was written,
-  in the stored order; `touch()` moves `lastActiveAt` and nothing else;
-  `seedBuiltIns()` is idempotent and does not overwrite an edited built-in.
-- The three cascade tests, one per product rule: removing a project deletes
-  its sessions and their terminals; removing a launch profile leaves every
-  referencing terminal alive with a null profile; removing a session deletes
-  its terminals and leaves the project intact.
+  automation commands and a session with terminals and a layout; `all()`,
+  `inProject()` and `standalone()` return what was written, in the stored
+  order; `touch()` moves `lastActiveAt` and nothing else.
+- The two cascade tests, one per product rule: removing a project deletes its
+  sessions and their terminals; removing a session deletes its terminals and
+  leaves the project intact.
 - A `SessionLayout` at depth 7 is refused on encode, and a stored layout
   beyond `MAXIMUM_PANE_DEPTH` is repaired on load by dropping panes, with the
   session still openable.
@@ -1113,13 +1078,11 @@ export type Identifier<Subject extends string> = string & { readonly [brand]: Su
 export type ProjectID = Identifier<"Project">;
 export type SessionID = Identifier<"Session">;
 export type TerminalID = Identifier<"Terminal">;
-export type LaunchProfileID = Identifier<"LaunchProfile">;
 export type AutomationID = Identifier<"Automation">;
 
 export function newProjectID(): ProjectID;
 export function newSessionID(): SessionID;
 export function newTerminalID(): TerminalID;
-export function newLaunchProfileID(): LaunchProfileID;
 export function newAutomationID(): AutomationID;
 
 export function identifier<Subject extends string>(raw: string): Identifier<Subject>;
@@ -1198,7 +1161,6 @@ will be lost.
 export interface TerminalDescriptor {
   readonly id: TerminalID;
   title: string;
-  profileID?: LaunchProfileID;
   workingDirectoryOverride?: AbsolutePath;
   startsAutomatically: boolean;
   role: TerminalRole;
@@ -1266,9 +1228,9 @@ export interface ProjectSettings {
   isForgeEnabled: boolean;
 }
 
-// Shipped: `automation` became `AutomationScripts` (protocol 10), `isForgeEnabled`
-// left (v3 migration), and a `defaultProfileID` that once sat here left with it
-// (protocol 12, v4 migration) — every new terminal starts the login shell.
+// Shipped: `automation` became `AutomationScripts` (protocol 10) and
+// `isForgeEnabled` left (v3 migration). Nothing here decides what a terminal
+// runs — every new terminal starts the login shell.
 
 export type WorktreeRoot =
   | { readonly kind: "siblingDirectory" }
@@ -1302,26 +1264,9 @@ scheduling, no retry, no dependency graph, no conditional execution.
 `timeoutSeconds` bounds `sessionTeardown` only; the other two events block
 nothing.
 
-#### Launch profiles and accents
+#### Accents
 
 ```ts
-export interface LaunchProfile {
-  readonly id: LaunchProfileID;
-  name: string;
-  iconName: string;
-  command: readonly string[];
-  environment: Readonly<Record<string, string>>;
-  isAgent: boolean;
-  isBuiltIn: boolean;
-}
-
-export const BUILT_IN_PROFILES: readonly Omit<LaunchProfile, "id">[] = [
-  { name: "Shell", iconName: "terminal", command: [], environment: {}, isAgent: false, isBuiltIn: true },
-  { name: "Claude Code", iconName: "sparkles", command: ["claude"], environment: {}, isAgent: true, isBuiltIn: true },
-  { name: "Codex", iconName: "code", command: ["codex"], environment: {}, isAgent: true, isBuiltIn: true },
-  { name: "OpenCode", iconName: "box", command: ["opencode"], environment: {}, isAgent: true, isBuiltIn: true },
-];
-
 export const ACCENTS = [
   "none",
   "red",
@@ -1338,16 +1283,7 @@ export const ACCENTS = [
 export type Accent = (typeof ACCENTS)[number];
 ```
 
-`iconName` is a stable key that `@janela/ui` maps to a Hugeicons glyph; the field is
-presentational, and a name the client does not recognise falls back to the
-terminal glyph rather than rendering nothing. An empty `command` means the
-user's login shell, resolved at launch by `@janela/session`. Ids for the
-built-ins are assigned at seed time rather than baked in, because a
-hardcoded id would collide with a user's own copy of a built-in. Built-ins
-are *suggestions, not integrations*: a profile whose binary is absent from
-`PATH` is hidden rather than shown broken, and adding an entry must never
-require code changes elsewhere. `ACCENTS[0]` is `"none"`, so absence is a
-value rather than a null.
+`ACCENTS[0]` is `"none"`, so absence is a value rather than a null.
 
 #### Session layout
 
@@ -1431,8 +1367,8 @@ bare terminal as 1.
    this package needs an `await`, it belongs in a higher package. Layer 1
    with `@janela/support` as its only dependency makes that mechanical
    (`scripts/layers.ts`).
-3. **Four nouns is the concept budget**: project, session, terminal, launch
-   profile (`docs/product.md` § 1). Two levels of containment, never three.
+3. **Three nouns is the concept budget**: project, session, terminal
+   (`docs/product.md` § 1). Two levels of containment, never three.
    Standalone sessions are a first-class case, not a fake "Ungrouped"
    project.
 4. **Every layout function is pure and returns a new layout.** `splitPane`
@@ -1521,8 +1457,7 @@ bare terminal as 1.
   — the check that replaces any language-level codec, and the one that
   proves these types are cheap to put on the socket.
 - The concept budget is pinned mechanically: `AUTOMATION_EVENTS` has exactly
-  three entries, `BUILT_IN_PROFILES` commands are argv arrays with no shell
-  metacharacters, `Shell` has an empty command, `ACCENTS[0]` is `"none"`.
+  three entries, and `ACCENTS[0]` is `"none"`.
 
 ---
 
@@ -1814,10 +1749,9 @@ export function createTerminalRegistry(): TerminalRegistry {
 9. **This package runs in the daemon, never in a client.** It owns the child
    process, so it outlives every window. The client's half of the seam is
    `TerminalRendering` in `@janela/terminal-ui`, which draws.
-   `@janela/terminal` also does not resolve a launch profile or build an
-   environment — it receives a fully resolved `TerminalLaunch` from
-   `@janela/session`, the only place that knows about projects, profiles and
-   the user's shell.
+   `@janela/terminal` also does not resolve a command or build an environment —
+   it receives a fully resolved `TerminalLaunch` from `@janela/session`, the
+   only place that knows about projects and the user's shell.
 
 10. **`negotiatedSize` is the minimum of all attached viewports**, which is
     tmux's rule and the only one that guarantees no attached client is shown a
@@ -2170,9 +2104,9 @@ export const DECLARED_TERM = "xterm-256color";
    `loginShellArguments()` puts the leading `-` on `argv[0]` because `zsh`
    tests `argv[0][0] === '-'` to decide whether to source `.zprofile`. We
    never parse a `.zshrc`. For the cases where the daemon needs the
-   environment itself — checking whether `claude` exists before offering the
-   profile — `resolveShellEnvironment()` runs the login shell **once at daemon
-   startup**, off the critical path, and caches the result in `resolved`.
+   environment itself — checking whether an integration's harness is on the
+   user's `PATH` — `resolveShellEnvironment()` runs the login shell **once at
+   daemon startup**, off the critical path, and caches the result in `resolved`.
    `loginShell` comes from `getpwuid`, falling back to `$SHELL` and then
    `/bin/zsh`; never hardcoded.
 
@@ -2376,16 +2310,19 @@ is unused over the local socket, where the operating system vouches for the
 peer, and is carried from v1 because adding a field to a shipped protocol is a
 breaking change and this one costs nothing.
 
-Code versus spec: the shipped constants are `PROTOCOL_VERSION = 9` and
-`MINIMUM_SUPPORTED_VERSION = 9`. They moved together up to 6, for the reason
+Code versus spec: the shipped constants are `PROTOCOL_VERSION = 14` and
+`MINIMUM_SUPPORTED_VERSION = 14`. They moved together up to 6, for the reason
 the paragraph above gives; v7 only added optional fields to a message a v6 peer
 already decodes, so that peer degraded to git's own refusal instead of closing
 the connection; v8 adds a new request (`listDirectory`, the browser client's
 folder picker) and v9 another (`moveTerminal`, a pane dropped elsewhere in its
 layout), each of which an older daemon would answer by dropping the socket, so
-the minimum moved with them again. `docs/packages/protocol.md` § Version history
-carries the numbered history of what each version added, plus what an older
-peer does when it meets a newer one. The code wins.
+the minimum moved with them again, and it has kept moving since — 13 adds
+`markSession`, and 14 takes the two launch-profile requests off `ClientMessage`
+along with the `StateUpdate` fields that carried them.
+`docs/packages/protocol.md` § Version history carries the numbered history of
+what each version added, plus what an older peer does when it meets a newer
+one. The code wins.
 
 #### Messages
 
@@ -2458,14 +2395,13 @@ otherwise opening a session would spawn processes.
 
 Code versus spec: the union above is the version-1 shape and the code has
 grown past it. `packages/protocol/src/message.ts` is authoritative; the
-additions, with the version each arrived in, are `removalPlan`,
-`saveLaunchProfile`, `removeLaunchProfile` and `createTerminal` (v3, which
-also made `attach.viewport` optional), `restartTerminal` and `removeTerminal`
-(v4), and `projectBranches` and `moveTab` (v6, which also gave
-`SessionCreationIntent`'s `inProject` case an optional `branch`). Twenty-two
-variants, of which `hello` and `resize` carry no `id`. The paragraph above
-still holds: none of them reads or writes the database, and `startTerminal` is
-still the only one that starts a process.
+additions, with the version each arrived in, are `removalPlan` and
+`createTerminal` (v3, which also made `attach.viewport` optional),
+`restartTerminal` and `removeTerminal` (v4), and `projectBranches` and `moveTab`
+(v6, which also gave `SessionCreationIntent`'s `inProject` case an optional
+`branch`). Twenty variants by v6, of which `hello` and `resize` carry no `id`.
+The paragraph above still holds: none of them reads or writes the database, and
+`startTerminal` is still the only one that starts a process.
 
 `DaemonMessage` has 8 variants.
 
@@ -3171,10 +3107,9 @@ export const MOTION = { fast: 120, medium: 200 } as const;
    someone would otherwise get wrong. Everything else is a literal at the call
    site.
 3. **Icons are Hugeicons** (`@hugeicons/react` + `@hugeicons/core-free-icons`),
-   declared in `packages/design/package.json` and `packages/ui/package.json`. An unknown `iconName` — the field
-   `LaunchProfile` carries — falls back to a default glyph rather than
-   rendering nothing, because a profile row with an invisible icon looks like a
-   layout bug.
+   declared in `packages/design/package.json` and `packages/ui/package.json`.
+   An unrecognised icon key falls back to a default glyph rather than rendering
+   nothing, because a row with an invisible icon looks like a layout bug.
 4. **SF Mono first, in a user-overridable stack**: `TERMINAL_FONT_STACK` is the
    default only, overridable in Settings, and `xtermRendering` applies whichever
    one is in force — the setting is a `TerminalFont` the surface requires, not a
@@ -3788,10 +3723,9 @@ schema (§ 1.3).
 
 **Implementation decisions**:
 
-1. **`command` is an argv array, never a shell string** — the same rule as
-   `LaunchProfile`, for the same reason: no quoting bug class, no `sh -c`. A
-   user who wants a shell writes `["zsh", "-lc", "…"]` and has chosen that
-   explicitly.
+1. **`command` is an argv array, never a shell string** — no quoting bug class,
+   no `sh -c`. A user who wants a shell writes `["zsh", "-lc", "…"]` and has
+   chosen that explicitly.
 
 2. **Automation is visible** (non-negotiable #12): each command runs in a real
    terminal with `role: automation(event)`, in the session's directory, with
@@ -4085,7 +4019,7 @@ fullRepaint(): Uint8Array;
    while the PTY sustains 100 MB/s (`docs/performance.md` § Terminal
    throughput). 100 MB/s of `yes` output is at most 60 repaints per second of an
    80×24 grid, and repainting every cell of one every frame stays well under
-   the bound. If a profile shows socket bytes rising with throughput, damage
+   the bound. If a profiling run shows socket bytes rising with throughput, damage
    coalescing is broken.
 
 6. **Built last**, as planned — the placeholder made every section above it
@@ -4252,24 +4186,11 @@ in `packages/db/src/repositories.ts`, and reads back through them:
   `sessions.find` no longer returns the session, so neither terminal
   descriptor is reachable. Two cascade hops in one assertion, because the
   second hop is the one a hand-written delete forgets.
-- **Deleting a launch profile leaves the terminal descriptors and nulls their
-  profile reference.** Create a profile, a terminal that names it, call
-  `launchProfiles.remove(id)`; assert the session still loads, its terminal is
-  still there, and `TerminalDescriptor.profileID` is now absent — a terminal
-  with no profile falls back to the login shell. The schema half of the rule is
-  `profileId String?` with `onDelete: SetNull`. A profile is a convenience,
-  never the identity of a terminal.
 - **A standalone session survives every project deletion.** Create a standalone
   session — no `projectID`, per `backingViolations` in
   `packages/core/src/session.ts` — plus a project with its own session; remove
   the project; assert `sessions.standalone()` still returns it. It belongs to
   no project, so nothing done to a project can take it away.
-- **Deleting a launch profile keeps the terminal that used it.** Point a
-  terminal's `profileID` at a profile, remove the profile, assert
-  `sessions.find` returns the terminal with no profile rather than failing to
-  load. A dangling reference must degrade to "no profile", never to an
-  unreadable record. (A project used to carry a default profile with the same
-  rule; the field is gone — every new terminal starts the login shell.)
 - **Forward from the previous version.** Open a database at the schema version
   before the change, migrate, and assert the data survived. This is the test
   that stops us destroying a user's session list, and every migration gets one.
@@ -4436,7 +4357,7 @@ Per [`AGENTS.md`](../AGENTS.md) § Before you finish:
 - [ ] No wire-protocol change without a version bump and a stated older-peer
       story.
 - [ ] No new user-facing concept without justification against
-      [`product.md`](product.md) § Non-goals — the budget is four nouns.
+      [`product.md`](product.md) § Non-goals — the budget is three nouns.
 - [ ] No use of the word "workspace"; it is a project or a session.
 - [ ] No architectural decision changed without the change written down in
       [`architecture.md`](architecture.md).
@@ -4548,7 +4469,6 @@ same words.
 | terminal | pane, shell, tab, session |
 | tab | window, view |
 | split | pane, division |
-| launch profile | agent, command, tool, preset |
 | directory | folder, path, cwd |
 | automation command | hook, script, task, job |
 | daemon, `janelad` | server, backend, service, agent |

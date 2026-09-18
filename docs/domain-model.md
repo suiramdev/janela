@@ -2,13 +2,12 @@
 
 > [!WARNING]
 > **This document predates the Tauri/TypeScript migration and is stale.**
-> **The model itself is current and correct** — four nouns, the backing invariants,
+> **The model itself is current and correct** — three nouns, the backing invariants,
 > the vocabulary, the deliberately-absent table. What is stale is the *syntax*: the
 > types are shown in Swift and live in `JanelaCore`. They are now TypeScript in
-> `@janela/core`, with three changes worth knowing: timestamps are ISO strings
-> rather than `Date`, paths are branded strings rather than `URL`, and
-> `symbolName` is `iconName`. Every rename has a row in
-> [`MIGRATION_MAP.md`](MIGRATION_MAP.md).
+> `@janela/core`, with two changes worth knowing: timestamps are ISO strings
+> rather than `Date`, and paths are branded strings rather than `URL`. Every
+> rename has a row in [`MIGRATION_MAP.md`](MIGRATION_MAP.md).
 >
 > Current: [`AGENTS.md`](../AGENTS.md) for commands and layering,
 > [`architecture.md`](architecture.md) for the system,
@@ -30,8 +29,8 @@ cheap to encode and free of anything process-specific.
 ## The whole model
 
 ```text
-Project ──────────► Session ──────────► Terminal ──────► LaunchProfile
-(a directory we    (a directory with   (one PTY +       (a thing to run)
+Project ──────────► Session ──────────► Terminal
+(a directory we    (a directory with   (one PTY +
  know about, its    terminals in it)    emulator)
  settings and
  automation)              │
@@ -39,12 +38,12 @@ Project ──────────► Session ──────────
       └── optional ───────┘        a session with no project is standalone
 ```
 
-Four nouns. That is the entire concept budget, and
-[`product.md`](product.md) § 1 explains why adding a fifth is expensive.
+Three nouns. That is the entire concept budget, and
+[`product.md`](product.md) § 1 explains why adding a fourth is expensive.
 
 The tree is exactly two levels deep and the second level is flat. Everything else
-— worktrees, splits, tabs, pull requests, automation — hangs off one of these four
-as a value, never as a fifth entity.
+— worktrees, splits, tabs, pull requests, automation — hangs off one of these three
+as a value, never as a fourth entity.
 
 ---
 
@@ -93,11 +92,6 @@ public struct ProjectSettings: Hashable, Sendable, Codable {
     public var automation: [AutomationEvent: AutomationScript]   // see below
 }
 ```
-
-There is no per-project default launch profile, and no global one either: every
-new terminal, a session's first included, starts the user's login shell. A launch
-profile is what a terminal was created with, never what a project or a setting
-decides on the user's behalf.
 
 Per-*project* settings earn their place because a project is where the differences
 actually live: one repo needs `pnpm install`, another needs a Python venv, a third
@@ -236,8 +230,8 @@ Two facts about `newWorktree` that the field list understates:
 Note the split, which mirrors the old session/descriptor split one level down:
 
 - **`TerminalDescriptor`** (`JanelaCore`) — the part we can write to disk: `title`,
-  optional `profileID`, optional working-directory override, `startsAutomatically`,
-  and `role`. Shared by both processes.
+  an optional working-directory override, `startsAutomatically` and `role`. Shared
+  by both processes.
 - **`LiveTerminal`** (`JanelaTerminal`, **daemon only**) — the live object, holding a
   file descriptor, a child process and the authoritative grid. Named `LiveTerminal`
   rather than `Terminal` because SwiftTerm already exports a `Terminal`, and the
@@ -314,10 +308,14 @@ never one it guesses at.
 `working` clears it, because the harness is the authority on whether it is
 blocked and may lower a flag its own earlier report raised. The two older
 clearings are unchanged: input sent to the terminal clears attention, and so does
-a client attaching and taking its full repaint. Neither clears the `activity` —
-"the user has looked" and "the agent is waiting for permission" are different
-facts, so a row stops glowing while still saying what the agent is doing. Only
-`start()` clears it, so a restarted agent does not open already finished.
+a client attaching and taking its full repaint — except while the activity is
+`waiting`, where looking is not answering and only input, the harness's next
+report or an explicit "Mark as Read" lowers it. A user may also move the flag by
+hand, per session, through `markSession`; it is the same flag, moved by the
+daemon. Nothing but `start()` clears the `activity` — "the user has looked" and
+"the agent is waiting for permission" are different facts, so a row stops
+glowing while still saying what the agent is doing, and a restarted agent does
+not open already finished.
 
 A session's status is **derived** from its terminals, never stored: a session is
 running if any terminal is running, wants attention if any unfocused terminal
@@ -373,27 +371,6 @@ Design constraints, all of them enforceable and tested:
 Why this is modelled at all, when the old model refused to model layout: splits and
 tabs are v1 scope, and "wherever you left it" only works if "where you left it"
 is written down.
-
----
-
-## Launch profile
-
-A named thing you can start in a terminal: `name`, `symbolName`, `command` and
-`environment`.
-
-`command` is an **argument array, not a shell string**. We never hand user input
-to `sh -c`, so the quoting bug class does not exist here. An empty `command` means
-"the user's login shell", resolved at launch.
-
-`isAgent` is **purely presentational** — a different tab icon, inclusion in
-"notify me when agents finish". It grants no special behaviour, because agents get
-no special behaviour.
-
-Built-ins ship for Shell, Claude Code, Codex, OpenCode and Oh My Pi. These are
-*suggestions, not wrappers*: if the binary is not on the user's `PATH`, the
-profile is hidden rather than shown broken. Adding one must never require code
-changes elsewhere. A profile is not an integration either — it starts a harness;
-an integration is the hook that harness runs.
 
 ---
 
@@ -493,7 +470,7 @@ for `working`, which is state and not news.
 
 ### `IntegrationReport`
 
-Not a fifth noun. Nothing in the tree holds one, nothing persists one, and the
+Not a fourth noun. Nothing in the tree holds one, nothing persists one, and the
 user never names one: it is what the daemon answers when a client asks what
 Janela's activity-reporting hooks look like *right now*, recomputed per request
 by reading each harness's own configuration.
@@ -541,7 +518,7 @@ and belongs here before it belongs in code.
 | **Worktree as an entity** | It has no independent lifecycle. It is provenance on a session. |
 | **Nested projects / folders / tags** | The sidebar is two levels. Hierarchy past that is a cost users pay to organise something they mostly search. |
 | **Task / run / job** | A running thing is a terminal. Automation is a command with an event, not a job with a queue. |
-| **Agent** | An agent is a launch profile that happens to be an agent. What one says about itself is `AgentActivity`, a value on a terminal's state, not an entity with a lifecycle. |
+| **Agent** | An agent is a program the user starts in a terminal. What one says about itself is `AgentActivity`, a value on a terminal's state, not an entity with a lifecycle. |
 | **Per-session settings** | Settings are global or per-project. Sessions carry state, not configuration. |
 | **Saved layouts** | The layout is wherever you left it, stored on the session. Not a named object with its own management UI. |
 | **Pull request / issue as an entity** | `ForgeState` is a cache on a session. We do not own forge objects and must never look like we do. |
@@ -563,7 +540,6 @@ model erodes.
 | terminal | pane, shell, tab, session |
 | tab | window, view |
 | split | pane, division |
-| launch profile | agent, command, tool, preset |
 | directory | folder, path, cwd |
 | automation script | hook, command, task, job |
 | daemon, `janelad` | server, backend, service, agent |
@@ -582,7 +558,7 @@ Four of these are worth stating twice, because they are the ones that will slip:
 - **An integration is the hook Janela installs**, in a harness's own
   configuration, so that harness can report what it is doing. It is not a plugin
   *of* Janela, and Janela has no plugin API to be one of.
-- **A harness is the program a launch profile starts** — Claude Code, Codex,
+- **A harness is the program the user starts in a terminal** — Claude Code, Codex,
   OpenCode, Oh My Pi. The word is accepted, and only while the subject is hooks
-  and activity reporting; everywhere else the thing being named is a launch
-  profile. "Hook" still never means an automation script: that row stands.
+  and activity reporting. "Hook" still never means an automation script: that row
+  stands.

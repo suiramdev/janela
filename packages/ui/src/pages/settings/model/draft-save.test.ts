@@ -1,22 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  fakeProfile,
-  fakeProject,
-  fakeSettings,
-  fakeShellProfile,
-} from "../../../shared/lib/test-fakes/index.ts";
+import { fakeProject, fakeSettings } from "../../../shared/lib/test-fakes/index.ts";
 import {
   DEFAULT_GLOBAL_SETTINGS,
   EMPTY_SETTINGS_DRAFT,
   draftProjectSettings,
-  profileDraft,
-  profileOf,
-  withDraftProfile,
   withDraftProjectSettings,
   withDraftSettings,
   withTerminalFontSize,
-  withoutDraftProfile,
 } from "../../../shared/model/index.ts";
 import {
   draftEditCount,
@@ -24,12 +15,6 @@ import {
   draftViolations,
   settingsDraftRequests,
 } from "./draft-save.ts";
-
-const SHELL = fakeShellProfile();
-
-const CLAUDE = fakeProfile({ name: "Claude Code" });
-
-const STORED = [SHELL, CLAUDE];
 
 const PROJECT = fakeProject();
 
@@ -42,14 +27,6 @@ const DEV_SCRIPT = { sessionStart: { script: "pnpm dev", timeoutSeconds: 30 } };
 describe("what blocks a save", () => {
   test("nothing, for a draft that has not broken anything", () => {
     expect(draftViolations(EMPTY_SETTINGS_DRAFT)).toEqual([]);
-  });
-
-  test("a staged profile with no name, named with the pane to fix it on", () => {
-    const draft = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...CLAUDE, name: " " }));
-
-    expect(draftViolations(draft)).toEqual([
-      { route: { kind: "tab", tab: "integrations" }, message: "A profile needs a name." },
-    ]);
   });
 
   test("a staged teardown that would never time out, named with its project", () => {
@@ -93,19 +70,16 @@ describe("the change count", () => {
 
   test("counts every tab's edits, which is what one Save writes", () => {
     const draft = withDraftProjectSettings(
-      withoutDraftProfile(
-        withDraftProfile(
-          withDraftSettings(EMPTY_SETTINGS_DRAFT, DEFAULT_GLOBAL_SETTINGS),
-          profileDraft(fakeProfile({ name: "Codex" })),
-        ),
-        CLAUDE.id,
-        STORED,
+      withDraftProjectSettings(
+        withDraftSettings(EMPTY_SETTINGS_DRAFT, DEFAULT_GLOBAL_SETTINGS),
+        PROJECT.id,
+        fakeSettings(),
       ),
-      PROJECT.id,
-      fakeSettings(),
+      OTHER.id,
+      fakeSettings({ automation: DEV_SCRIPT }),
     );
 
-    expect(draftEditCount(draft, EMPTY_SETTINGS_DRAFT)).toBe(4);
+    expect(draftEditCount(draft, EMPTY_SETTINGS_DRAFT)).toBe(3);
   });
 
   test("stops counting an edit once it has been saved", () => {
@@ -133,41 +107,24 @@ describe("what a save writes", () => {
     expect(draftSettingsToSave(draft, NOTHING_SAVED)).toBe(DEFAULT_GLOBAL_SETTINGS);
   });
 
-  test("one message per edit, profiles before the projects saved beside them", () => {
-    const added = profileDraft(fakeProfile({ name: "Codex" }));
+  test("one message per project edited, in the order they were edited", () => {
     const settings = fakeSettings({ automation: DEV_SCRIPT });
 
     const draft = withDraftProjectSettings(
-      withoutDraftProfile(withDraftProfile(EMPTY_SETTINGS_DRAFT, added), CLAUDE.id, STORED),
-      PROJECT.id,
-      settings,
+      withDraftProjectSettings(EMPTY_SETTINGS_DRAFT, PROJECT.id, settings),
+      OTHER.id,
+      fakeSettings(),
     );
 
     expect(settingsDraftRequests(draft, NOTHING_SAVED)).toEqual([
-      { type: "saveLaunchProfile", profile: profileOf(added) },
-      { type: "removeLaunchProfile", profileID: CLAUDE.id },
       { type: "updateProjectSettings", projectID: PROJECT.id, settings },
-    ]);
-  });
-
-  test("a profile edited and then deleted is removed, not written back", () => {
-    const edited = withDraftProfile(EMPTY_SETTINGS_DRAFT, profileDraft({ ...CLAUDE, name: "a" }));
-    const draft = withoutDraftProfile(edited, CLAUDE.id, STORED);
-
-    expect(settingsDraftRequests(draft, NOTHING_SAVED)).toEqual([
-      { type: "removeLaunchProfile", profileID: CLAUDE.id },
+      { type: "updateProjectSettings", projectID: OTHER.id, settings: fakeSettings() },
     ]);
   });
 
   test("only what has changed since the last save", () => {
-    const added = profileDraft(fakeProfile({ name: "Codex" }));
-
     const first = withDraftProjectSettings(
-      withoutDraftProfile(
-        withDraftSettings(withDraftProfile(EMPTY_SETTINGS_DRAFT, added), DEFAULT_GLOBAL_SETTINGS),
-        CLAUDE.id,
-        STORED,
-      ),
+      withDraftSettings(EMPTY_SETTINGS_DRAFT, DEFAULT_GLOBAL_SETTINGS),
       PROJECT.id,
       fakeSettings(),
     );

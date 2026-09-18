@@ -11,7 +11,6 @@ export type SettingsSectionID =
   | "notificationsBell"
   | "notificationsAgents"
   | "shortcuts"
-  | "profilesList"
   | "integrationsHooks"
   | "closingConfirmation"
   | "notificationPermission"
@@ -89,28 +88,6 @@ export const SHORTCUTS_SECTION: SettingsSection = {
   hint: "Every shortcut is ⌘ and a key, with ⇧ or ⌥ if you like. Ctrl is never one: it belongs to the program running in the terminal. The menu bar and the command palette follow whatever you set here.",
   fields: COMMANDS.map((command) => command.title),
   keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
-};
-
-export const PROFILES_LIST_SECTION: SettingsSection = {
-  id: "profilesList",
-  title: "Profiles",
-  hint: "A profile is a saved command and environment. Every new terminal starts your login shell; a profile is what a session's terminal was created with.",
-  fields: [],
-  keywords: [
-    "profile",
-    "login shell",
-    "agent",
-    "command",
-    "argument",
-    "argv",
-    "environment",
-    "variable",
-    "icon",
-    "duplicate",
-    "delete",
-    "claude",
-    "codex",
-  ],
 };
 
 export const NOTIFICATIONS_BELL_SECTION: SettingsSection = {
@@ -279,8 +256,8 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     id: "integrations",
     title: "Integrations",
     description:
-      "The launch profiles that name a command for claude, codex, omp or a shell, and the hooks those agents can use to tell Janela what they are doing. Janela starts them and listens; it does not wrap, parse or manage what they do.",
-    sections: [PROFILES_LIST_SECTION, INTEGRATIONS_HOOKS_SECTION],
+      "The hooks the agents you run can use to tell Janela what they are doing. Janela listens; it does not wrap, parse or manage what they do.",
+    sections: [INTEGRATIONS_HOOKS_SECTION],
   },
   {
     id: "permissions",

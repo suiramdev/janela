@@ -12,21 +12,17 @@ export interface FilteredSidebar {
 
 export const SESSION_FILTERS: readonly SessionFilter[] = [
   "all",
-  "attention",
-  "working",
-  "done",
+  "unread",
   "running",
-  "failed",
+  "error",
   "idle",
 ];
 
 export const SESSION_FILTER_TITLE = {
   all: "All Sessions",
-  attention: "Needs Attention",
-  working: "Working",
-  done: "Finished",
+  unread: "Unread",
   running: "Running",
-  failed: "Failed",
+  error: "Error",
   idle: "Idle",
 } satisfies Record<SessionFilter, string>;
 

@@ -137,7 +137,6 @@ async function withSessions(
 
           const dependencies: MutableSessionDependencies = {
             repository: database.sessions,
-            profiles: database.launchProfiles,
             projects,
             worktrees: worktrees.worktrees,
             terminals: createTerminalRegistry(),

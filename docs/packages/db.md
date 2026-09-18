@@ -81,9 +81,9 @@ becoming a plausible-looking lie.
 
 - **A discriminator with payload columns is CORRUPT when it is inconsistent.**
   `backingKind`, `worktreeOwnership`, `worktreeRoot`, a terminal's `role`, an
-  automation `event`, and every argv/environment JSON column. A half-populated
-  worktree backing is *representable* in SQL and meaningless in the domain, so it
-  is rejected rather than guessed. Guessing would put a session in front of a user
+  automation `event`, and `worktreeIncludedPaths`. A half-populated worktree
+  backing is *representable* in SQL and meaningless in the domain, so it is
+  rejected rather than guessed. Guessing would put a session in front of a user
   whose "delete the worktree too" answer we invented.
 - **A cosmetic or cached enumeration DEGRADES.** `accent` falls back to `none`; an
   unrecognised `forge` becomes absent; each with a warning. Refusing to load a
@@ -104,12 +104,10 @@ corollary is a contract for whoever registers a repository: always record
 A worktree binding's `path` has no column of its own — it *is* the session's
 `directory` — and `sessionViolations` refuses a value where the two disagree.
 
-An argv array that round-trips into a string is the quoting bug class coming back
-in through the database, so a stored `'"claude --dangerous"'` is refused rather
-than read as one word. `Schema.Array(Schema.String)` under
-`Schema.fromJsonString` is what refuses it; `Schema.Record(Schema.String,
-Schema.String)` refuses an environment stored as an array, which a hand-rolled
-`typeof` walk over `Object.entries` did not.
+A string list that round-trips into a string is the quoting bug class coming back
+in through the database, so a `worktreeIncludedPaths` stored as
+`'".env node_modules"'` is refused rather than read as one path.
+`Schema.Array(Schema.String)` under `Schema.fromJsonString` is what refuses it.
 
 ### The layout is repaired, not rejected
 
@@ -394,9 +392,10 @@ Every migration needs two tests (`docs/testing.md` § Migrations): **forward fro
 the previous version** — open a database at version N−1, migrate, assert the data
 survived, which is the test that stops us destroying a user's session list — and
 the **cascade rules**, because they encode product rules. For v1 the previous
-version is an empty database, and the cascade assertions live both in the shipped
-SQL (`ON DELETE CASCADE` ×3, `ON DELETE SET NULL` ×2) and in behavioural tests over
-a real store.
+version is an empty database, and its cascade assertions are pinned in the
+shipped SQL (`ON DELETE CASCADE` ×3, `ON DELETE SET NULL` ×2 — both `SET NULL`
+columns have since been dropped) and, for the three that survive, in behavioural
+tests over a real store.
 
 **v2 — `20260917120000_automation_scripts`.** `AutomationCommand` (an argv row per
 command, with `isEnabled` and `position`) became `AutomationScript`, one row per
@@ -417,9 +416,9 @@ engine is well past. The forward test seeds a project at v2 with the switch off 
 asserts its other settings survive and the column is gone.
 
 **v4 — `20260918110000_drop_default_profile`.** `Project.defaultProfileId` is
-dropped: every new terminal starts the login shell, so no project names a profile.
-The column was a foreign key, and SQLite refuses to `DROP COLUMN` a column named
-in a `FOREIGN KEY` clause, so the table is rebuilt the way Prisma's own
+dropped: every new terminal starts the login shell, so a project had nothing to
+name. The column was a foreign key, and SQLite refuses to `DROP COLUMN` a column
+named in a `FOREIGN KEY` clause, so the table is rebuilt the way Prisma's own
 `RedefineTables` does it — create `new_Project`, copy, drop, rename, recreate the
 unique index. The trap is the drop: with `foreign_keys = ON`, `DROP TABLE "Project"`
 performs an implicit `DELETE FROM`, and that delete *cascades* into every session
@@ -428,10 +427,24 @@ and automation script (measured on a seeded copy: the session count went from 1 
 it off *before* the transaction for any migration that says `rebuildsTables: true`,
 runs `PRAGMA foreign_key_check` after the script and refuses to commit if a row
 would dangle, and turns enforcement back on afterwards whatever happened. The
-forward test seeds a project with a default profile and a session at v3 and asserts
-the session survives, the column is gone and `PRAGMA foreign_keys` reads 1 again;
+forward test seeds a project naming one and a session at v3 and asserts the
+session survives, the column is gone and `PRAGMA foreign_keys` reads 1 again;
 flipping `rebuildsTables` off makes that test and the v2 forward test fail, which
 is the cascade doing exactly what it is meant to do.
+
+**v5 — `20260918130000_drop_launch_profiles`.** Launch profiles left the product,
+so the store loses both halves of them: `Terminal.profileId` and the table it
+pointed at. The column is the same shape of problem v4 had — a foreign key SQLite
+will not `DROP` in place — so `Terminal` is rebuilt the same way (create
+`new_Terminal`, copy, drop, rename, recreate `Terminal_sessionId_position_idx`)
+and the table is dropped afterwards, once nothing references it. Unlike v4 no
+cascade is waiting: nothing has a foreign key *to* `Terminal`, so `rebuildsTables`
+here buys the `PRAGMA foreign_key_check` before the commit rather than rescuing
+rows — it is declared because the migration rebuilds a table, which is what the
+flag means. The forward test seeds a session and a terminal naming a profile at
+v4 and asserts the terminal keeps its session and title, the column and the table
+are gone, the index is back, and `PRAGMA foreign_keys` reads 1; commenting out any
+one of the drop, the copy or the index fails exactly one assertion.
 
 ## repositories.ts, prisma-repositories.ts
 
@@ -455,11 +468,11 @@ Three rules run through all of it:
   absent id is a no-op: callers reach here from a confirmation dialog, and a second
   click must not throw.
 
-A project's directory clash surfaces as Prisma's P2002 and a missing profile as
-P2003, and both propagate: they are caller bugs about identity, not decisions a
-repository gets to make. A terminal naming a profile that does not exist is the
-database's foreign key doing its job, and dressing it up as an `InvalidRecord`
-would give us two copies of the rule.
+A project's directory clash surfaces as Prisma's P2002 and a session naming a
+project that does not exist as P2003, and both propagate: they are caller bugs
+about identity, not decisions a repository gets to make. A foreign key doing its
+job is not an `InvalidRecord`, and dressing it up as one would give us two copies
+of the rule.
 
 Child upserts are sequential rather than `Promise.all`ed. One SQLite connection
 holds one transaction, and the adapter's transaction lock serialises anything that
@@ -470,17 +483,7 @@ A session's `position` is assigned once, on first insert, as max+1 within the
 project or among standalone sessions. `save` never moves a session, because
 reordering is a user action with its own entry point and this interface does not
 have one yet. `all()` lists standalone sessions first, then each project's own
-order; launch profiles come back in *name* order, not menu order, because which
-profiles a menu shows and in what sequence is a presentation decision and this is a
-store.
-
-`seedBuiltIns` identifies a built-in by its **name**: ids are minted at seed time,
-because a hardcoded id would collide with a user's own copy of a built-in. So an
-edited built-in is recognised and left exactly as the user left it. Removing a
-profile never deletes a terminal that referenced it — the column is
-`ON DELETE SET NULL`, and a terminal with no profile falls back to the login
-shell. Protecting a built-in from deletion is the job of the service that owns
-that rule, not of a store.
+order.
 
 ## Tests
 

@@ -48,8 +48,6 @@ export function fakeEnvironment(options: {
     sessions,
     selection: options.selection,
     terminalStates: states,
-    launchProfiles: [],
-    launchProfileAvailability: {},
     inProject: (id) => sessions.filter((candidate) => candidate.projectID === id),
     standaloneSessions: sessions.filter((candidate) => candidate.projectID === undefined),
     isRunning: (id) => {

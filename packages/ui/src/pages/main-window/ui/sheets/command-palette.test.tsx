@@ -96,7 +96,7 @@ describe("rankedSessionRows", () => {
       "run",
       [janela],
       [running],
-      states([terminalID("t-run"), { kind: "running" }]),
+      states([terminalID("t-run"), { kind: "running", activity: { kind: "working" } }]),
     )[0];
 
     expect(row?.description).toBe("janela");

@@ -1,6 +1,4 @@
 import type {
-  LaunchProfile,
-  LaunchProfileAvailability,
   Project,
   ProjectID,
   Session,
@@ -25,10 +23,6 @@ export interface SessionStore {
 
   inProject(id: ProjectID): readonly Session[];
   readonly standaloneSessions: readonly Session[];
-
-  readonly launchProfiles: readonly LaunchProfile[];
-
-  readonly launchProfileAvailability: LaunchProfileAvailability;
 
   isRunning(id: SessionID): boolean;
 
@@ -120,8 +114,6 @@ export function createStores(): Stores {
   let projects: readonly Project[] = [];
   let sessions: readonly Session[] = [];
   let terminalStates: StateUpdate["terminalStates"] = {};
-  let launchProfiles: readonly LaunchProfile[] = [];
-  let launchProfileAvailability: LaunchProfileAvailability = {};
   let selection: SessionID | undefined;
   let stale = true;
   let standalone: readonly Session[] = [];
@@ -165,12 +157,6 @@ export function createStores(): Stores {
       get terminalStates(): Readonly<Record<TerminalID, TerminalState>> {
         return terminalStates;
       },
-      get launchProfiles(): readonly LaunchProfile[] {
-        return launchProfiles;
-      },
-      get launchProfileAvailability(): LaunchProfileAvailability {
-        return launchProfileAvailability;
-      },
       inProject: (id) => sessions.filter((session) => session.projectID === id),
       get standaloneSessions(): readonly Session[] {
         return standalone;
@@ -193,8 +179,6 @@ export function createStores(): Stores {
           projects = [...update.projects];
           sessions = [...update.sessions];
           terminalStates = { ...update.terminalStates };
-          launchProfiles = [...update.launchProfiles];
-          launchProfileAvailability = { ...update.launchProfileAvailability };
 
           if (selection !== undefined && !sessions.some((session) => session.id === selection)) {
             selection = neighbourOf(previous, selection, sessions);
@@ -207,17 +191,6 @@ export function createStores(): Stores {
 
           if (Object.keys(update.terminalStates).length > 0) {
             terminalStates = { ...terminalStates, ...update.terminalStates };
-          }
-
-          if (update.launchProfiles.length > 0) {
-            launchProfiles = mergeByID(launchProfiles, update.launchProfiles);
-          }
-
-          if (Object.keys(update.launchProfileAvailability).length > 0) {
-            launchProfileAvailability = {
-              ...launchProfileAvailability,
-              ...update.launchProfileAvailability,
-            };
           }
         }
 

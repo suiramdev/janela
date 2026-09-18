@@ -24,7 +24,6 @@ import {
   fakeDispatch,
   fakeDirectories,
   fakeIntegrations,
-  fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -183,7 +182,6 @@ async function fixture(
   const daemon = createDaemonServer({
     sessions: fakeSessions(),
     projects: fakeProjects(),
-    launchProfiles: fakeLaunchProfiles(),
     directories: fakeDirectories(),
     terminals: registry,
     integrations: fakeIntegrations(),
@@ -262,7 +260,6 @@ async function coldStartedListener(): Promise<ColdStart> {
   const daemon = createDaemonServer({
     sessions: fakeSessions(),
     projects: fakeProjects(),
-    launchProfiles: fakeLaunchProfiles(),
     directories: fakeDirectories(),
     terminals: registry,
     integrations: fakeIntegrations(),

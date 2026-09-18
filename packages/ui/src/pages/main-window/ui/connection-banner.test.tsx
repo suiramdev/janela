@@ -89,8 +89,6 @@ function fakeEnvironment(options: {
     sessions,
     selection: undefined,
     terminalStates: states,
-    launchProfiles: [],
-    launchProfileAvailability: {},
     inProject: () => [],
     standaloneSessions: sessions,
     isRunning: (id) => {

@@ -18,7 +18,6 @@ import {
   fakeDirectories,
   fakeDispatch,
   fakeIntegrations,
-  fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -92,7 +91,6 @@ function fixture(terminals: readonly FakeTerminal[], sessions: readonly Session[
   const server = createDaemonServer({
     sessions: fakeSessions(sessions),
     projects: fakeProjects(),
-    launchProfiles: fakeLaunchProfiles(),
     directories: fakeDirectories(),
     terminals: registry,
     integrations: fakeIntegrations(),
