@@ -3,6 +3,8 @@ import type { AttentionSignal } from "@janela/protocol";
 import type { Logger } from "@janela/support";
 import { Match } from "effect";
 
+import type { NotificationSound } from "./attention-sound.ts";
+import { SILENT_NOTIFICATION_SOUND } from "./attention-sound.ts";
 import type { SessionStore } from "./stores.ts";
 
 export interface AttentionPolicy {
@@ -21,11 +23,14 @@ export interface AttentionContext {
   readonly focusedTerminalID?: TerminalID | undefined;
 }
 
-export interface AttentionPreferences {
-  readonly notifiesOnBell: boolean;
-  readonly notifiesWhenAgentFinishes: boolean;
-  readonly notifiesWhenAgentWaits: boolean;
+export type AttentionEvent = "bell" | "waiting" | "finished" | "failed";
+
+export interface AttentionEventPreference {
+  readonly notifies: boolean;
+  readonly sound: NotificationSound;
 }
+
+export type AttentionPreferences = Readonly<Record<AttentionEvent, AttentionEventPreference>>;
 
 export interface AttentionDelivering {
   deliver(input: {
@@ -55,6 +60,20 @@ export interface AttentionRoutingOptions {
 export interface AttentionRouting {
   stop(): void;
 }
+
+export const ATTENTION_EVENTS: readonly AttentionEvent[] = [
+  "bell",
+  "waiting",
+  "finished",
+  "failed",
+];
+
+export const DEFAULT_ATTENTION_PREFERENCES = {
+  bell: { notifies: false, sound: SILENT_NOTIFICATION_SOUND },
+  waiting: { notifies: true, sound: SILENT_NOTIFICATION_SOUND },
+  finished: { notifies: true, sound: SILENT_NOTIFICATION_SOUND },
+  failed: { notifies: true, sound: SILENT_NOTIFICATION_SOUND },
+} satisfies AttentionPreferences;
 
 export const COALESCING_WINDOW_SECONDS = 5;
 
@@ -112,9 +131,27 @@ export function createAttentionPolicy(): AttentionPolicy {
   };
 }
 
+export function attentionEvent(signal: AttentionSignal): AttentionEvent | undefined {
+  return Match.value(signal.kind).pipe(
+    Match.when({ kind: "bell" }, (): AttentionEvent => "bell"),
+    Match.when({ kind: "notification" }, (): AttentionEvent => "bell"),
+    Match.when({ kind: "promptFinished" }, (): AttentionEvent => "failed"),
+    Match.when({ kind: "activity" }, (reported) =>
+      Match.value(reported.activity).pipe(
+        Match.when({ kind: "working" }, (): AttentionEvent | undefined => undefined),
+        Match.when({ kind: "waiting" }, (): AttentionEvent => "waiting"),
+        Match.when({ kind: "finished", outcome: "completed" }, (): AttentionEvent => "finished"),
+        Match.when({ kind: "finished", outcome: "failed" }, (): AttentionEvent => "failed"),
+        Match.exhaustive,
+      ),
+    ),
+    Match.exhaustive,
+  );
+}
+
 function isWorthInterrupting(signal: AttentionSignal, preferences: AttentionPreferences): boolean {
   return Match.value(signal.kind).pipe(
-    Match.when({ kind: "bell" }, () => preferences.notifiesOnBell),
+    Match.when({ kind: "bell" }, () => preferences.bell.notifies),
     Match.when({ kind: "notification" }, () => true),
     Match.when(
       { kind: "promptFinished" },
@@ -126,8 +163,9 @@ function isWorthInterrupting(signal: AttentionSignal, preferences: AttentionPref
     Match.when({ kind: "activity" }, (reported) =>
       Match.value(reported.activity).pipe(
         Match.when({ kind: "working" }, () => false),
-        Match.when({ kind: "waiting" }, () => preferences.notifiesWhenAgentWaits),
-        Match.when({ kind: "finished" }, () => preferences.notifiesWhenAgentFinishes),
+        Match.when({ kind: "waiting" }, () => preferences.waiting.notifies),
+        Match.when({ kind: "finished", outcome: "completed" }, () => preferences.finished.notifies),
+        Match.when({ kind: "finished", outcome: "failed" }, () => preferences.failed.notifies),
         Match.exhaustive,
       ),
     ),

@@ -2,8 +2,10 @@ import {
   createAttentionPolicy,
   createConnection,
   createStores,
+  DEFAULT_ATTENTION_PREFERENCES,
   routeAttention,
   type AttentionDelivering,
+  type AttentionEvent,
   type AttentionPreferences,
   type DaemonConnection,
   type ProjectStore,
@@ -44,6 +46,7 @@ export interface LiveEnvironmentDeps {
   readonly invoke?: BridgeInvoke | undefined;
   readonly plugin?: NotificationPlugin | undefined;
   readonly activateWindow?: (() => Promise<void>) | undefined;
+  readonly playAttentionSound?: ((event: AttentionEvent) => void) | undefined;
   readonly isApplicationActive?: (() => boolean) | undefined;
   readonly attentionPreferences?: (() => AttentionPreferences) | undefined;
 }
@@ -62,12 +65,6 @@ export interface AppEnvironment {
 }
 
 export const CLIENT_NAME = "janela-desktop";
-
-export const DEFAULT_ATTENTION_PREFERENCES: AttentionPreferences = {
-  notifiesOnBell: false,
-  notifiesWhenAgentFinishes: true,
-  notifiesWhenAgentWaits: true,
-};
 
 export function liveEnvironment(deps: LiveEnvironmentDeps = {}): AppEnvironment {
   const invokeFn = deps.invoke ?? invoke;
@@ -99,6 +96,7 @@ export function liveEnvironment(deps: LiveEnvironmentDeps = {}): AppEnvironment 
   const attention = createNotificationDelivery({
     plugin: deps.plugin,
     activateWindow: deps.activateWindow,
+    playSound: deps.playAttentionSound,
     log: log("app"),
     onActivate: (target) => {
       sessions.selection = target.sessionID;

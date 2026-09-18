@@ -6,14 +6,17 @@ import type { AttentionKind, AttentionSignal } from "@janela/protocol";
 import {
   COALESCING_WINDOW_SECONDS,
   LONG_RUNNING_THRESHOLD_SECONDS,
+  attentionEvent,
   createAttentionPolicy,
   routeAttention,
   type AttentionContext,
+  type AttentionEvent,
   type AttentionDelivering,
   type AttentionPreferences,
   type AttentionRoutingOptions,
   type AttentionSource,
 } from "./attention-policy.ts";
+import { SILENT_NOTIFICATION_SOUND } from "./attention-sound.ts";
 import { createStores } from "./stores.ts";
 import {
   fakeSession,
@@ -50,16 +53,16 @@ const prompt = (exitCode: number | undefined, durationSeconds: number): Attentio
     ? { kind: "promptFinished", durationSeconds }
     : { kind: "promptFinished", exitCode, durationSeconds };
 
-const DEFAULT_PREFERENCES: AttentionPreferences = {
-  notifiesOnBell: false,
-  notifiesWhenAgentFinishes: true,
-  notifiesWhenAgentWaits: true,
-};
-
-const preferences = (overrides: Partial<AttentionPreferences>): AttentionPreferences => ({
-  ...DEFAULT_PREFERENCES,
-  ...overrides,
+const preferences = (
+  overrides: Partial<Record<AttentionEvent, boolean>>,
+): AttentionPreferences => ({
+  bell: { notifies: overrides.bell ?? false, sound: SILENT_NOTIFICATION_SOUND },
+  waiting: { notifies: overrides.waiting ?? true, sound: SILENT_NOTIFICATION_SOUND },
+  finished: { notifies: overrides.finished ?? true, sound: SILENT_NOTIFICATION_SOUND },
+  failed: { notifies: overrides.failed ?? true, sound: SILENT_NOTIFICATION_SOUND },
 });
+
+const DEFAULT_PREFERENCES: AttentionPreferences = preferences({});
 
 const activity = (reported: AgentActivity): AttentionKind => ({
   kind: "activity",
@@ -198,11 +201,7 @@ describe("what is worth interrupting for", () => {
     const policy = createAttentionPolicy();
 
     expect(
-      policy.shouldDeliver(
-        signal({ kind: "bell" }),
-        NOBODY_LOOKING,
-        preferences({ notifiesOnBell: true }),
-      ),
+      policy.shouldDeliver(signal({ kind: "bell" }), NOBODY_LOOKING, preferences({ bell: true })),
     ).toBe(true);
   });
 
@@ -245,7 +244,7 @@ describe("what is worth interrupting for", () => {
       policy.shouldDeliver(
         signal(activity({ kind: "working" })),
         NOBODY_LOOKING,
-        preferences({ notifiesWhenAgentFinishes: true, notifiesWhenAgentWaits: true }),
+        preferences({ finished: true, waiting: true, failed: true }),
       ),
     ).toBe(false);
   });
@@ -256,53 +255,103 @@ describe("what is worth interrupting for", () => {
         createAttentionPolicy().shouldDeliver(
           signal(activity({ kind: "waiting", need })),
           NOBODY_LOOKING,
-          preferences({ notifiesWhenAgentWaits: true }),
+          preferences({ waiting: true }),
         ),
       ).toBe(true);
       expect(
         createAttentionPolicy().shouldDeliver(
           signal(activity({ kind: "waiting", need })),
           NOBODY_LOOKING,
-          preferences({ notifiesWhenAgentWaits: false }),
+          preferences({ waiting: false }),
         ),
       ).toBe(false);
     }
   });
 
-  test("an agent that finished is, either outcome, unless the finished preference is off", () => {
-    for (const outcome of ["completed", "failed"] as const) {
-      expect(
-        createAttentionPolicy().shouldDeliver(
-          signal(activity({ kind: "finished", outcome })),
-          NOBODY_LOOKING,
-          preferences({ notifiesWhenAgentFinishes: true }),
-        ),
-      ).toBe(true);
-      expect(
-        createAttentionPolicy().shouldDeliver(
-          signal(activity({ kind: "finished", outcome })),
-          NOBODY_LOOKING,
-          preferences({ notifiesWhenAgentFinishes: false }),
-        ),
-      ).toBe(false);
-    }
-  });
-
-  test("the waiting and finished preferences gate each other's signals, not their own", () => {
+  test("an agent that finished is, unless the finished preference is off", () => {
     expect(
       createAttentionPolicy().shouldDeliver(
-        signal(activity({ kind: "waiting", need: "permission" })),
+        signal(activity({ kind: "finished", outcome: "completed" })),
         NOBODY_LOOKING,
-        preferences({ notifiesWhenAgentFinishes: false, notifiesWhenAgentWaits: true }),
+        preferences({ finished: true }),
       ),
     ).toBe(true);
     expect(
       createAttentionPolicy().shouldDeliver(
         signal(activity({ kind: "finished", outcome: "completed" })),
         NOBODY_LOOKING,
-        preferences({ notifiesWhenAgentFinishes: true, notifiesWhenAgentWaits: false }),
+        preferences({ finished: false }),
+      ),
+    ).toBe(false);
+  });
+
+  test("an agent that failed is, unless the failed preference is off", () => {
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "finished", outcome: "failed" })),
+        NOBODY_LOOKING,
+        preferences({ failed: true }),
       ),
     ).toBe(true);
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "finished", outcome: "failed" })),
+        NOBODY_LOOKING,
+        preferences({ failed: false }),
+      ),
+    ).toBe(false);
+  });
+
+  test("every event preference gates its own signal and no other", () => {
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "waiting", need: "permission" })),
+        NOBODY_LOOKING,
+        preferences({ waiting: true, finished: false, failed: false }),
+      ),
+    ).toBe(true);
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "finished", outcome: "completed" })),
+        NOBODY_LOOKING,
+        preferences({ finished: true, waiting: false, failed: false }),
+      ),
+    ).toBe(true);
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "finished", outcome: "failed" })),
+        NOBODY_LOOKING,
+        preferences({ failed: true, waiting: false, finished: false }),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("which event a signal belongs to", () => {
+  test("a bell and a named notification share the bell's sound", () => {
+    expect(attentionEvent(signal({ kind: "bell" }))).toBe("bell");
+    expect(attentionEvent(signal(notification))).toBe("bell");
+  });
+
+  test("a failed command belongs to the failed event", () => {
+    expect(attentionEvent(signal(prompt(1, 30)))).toBe("failed");
+  });
+
+  test("an agent's activity splits waiting, finished and failed apart", () => {
+    expect(attentionEvent(signal(activity({ kind: "waiting", need: "permission" })))).toBe(
+      "waiting",
+    );
+    expect(attentionEvent(signal(activity({ kind: "waiting", need: "input" })))).toBe("waiting");
+    expect(attentionEvent(signal(activity({ kind: "finished", outcome: "completed" })))).toBe(
+      "finished",
+    );
+    expect(attentionEvent(signal(activity({ kind: "finished", outcome: "failed" })))).toBe(
+      "failed",
+    );
+  });
+
+  test("an agent that is working belongs to no event, because it never notifies", () => {
+    expect(attentionEvent(signal(activity({ kind: "working" })))).toBeUndefined();
   });
 });
 
@@ -481,10 +530,10 @@ describe("routing a signal to delivery", () => {
 
   test("the preferences are read per signal, so a flipped switch takes effect at once", () => {
     const [first, second] = [terminalID(), terminalID()];
-    let notifiesOnBell = false;
+    let bell = false;
 
     const { mirror, source, delivery } = routed({
-      preferences: () => preferences({ notifiesOnBell }),
+      preferences: () => preferences({ bell }),
     });
 
     mirror.apply(
@@ -500,7 +549,7 @@ describe("routing a signal to delivery", () => {
 
     expect(delivery.delivered).toEqual([]);
 
-    notifiesOnBell = true;
+    bell = true;
     source.emit(signal({ kind: "bell" }, { terminal: second, session: "s1" as SessionID }));
 
     expect(delivery.delivered.map((entry) => entry.terminalID)).toEqual([second]);

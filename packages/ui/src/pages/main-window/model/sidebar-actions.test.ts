@@ -11,6 +11,7 @@ import {
   inertNativeShell,
   recordingAppearance,
   recordingConfirmations,
+  recordingNotificationSound,
   recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import { createViewState } from "../../../shared/model/index.ts";
@@ -88,6 +89,7 @@ function harness(options: {
       service: recordingService(),
       appearance: recordingAppearance(),
       restartDaemon: noop,
+      sound: recordingNotificationSound(),
     },
     confirmations,
   };

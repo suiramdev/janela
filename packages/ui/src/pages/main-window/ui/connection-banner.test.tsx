@@ -27,6 +27,7 @@ import {
   recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
+  recordingNotificationSound,
   recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import {
@@ -131,6 +132,7 @@ function fakeEnvironment(options: {
             service: recordingService(),
             appearance: recordingAppearance(),
             restartDaemon: options.onRestart ?? (() => {}),
+            sound: recordingNotificationSound(),
           },
   };
 }

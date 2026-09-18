@@ -1,4 +1,9 @@
-import type { AttentionPreferences } from "@janela/client";
+import {
+  DEFAULT_ATTENTION_PREFERENCES,
+  type AttentionEvent,
+  type AttentionEventPreference,
+  type AttentionPreferences,
+} from "@janela/client";
 
 import type { CommandID } from "../config/index.ts";
 
@@ -13,11 +18,7 @@ export interface GlobalSettings {
 
   readonly terminalFontSize: number;
 
-  readonly notifiesOnBell: boolean;
-
-  readonly notifiesWhenAgentFinishes: boolean;
-
-  readonly notifiesWhenAgentWaits: boolean;
+  readonly notifications: AttentionPreferences;
 
   readonly silencedConfirmations?: readonly ConfirmationKey[];
 
@@ -38,9 +39,7 @@ export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   theme: "system",
   terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
-  notifiesOnBell: false,
-  notifiesWhenAgentFinishes: true,
-  notifiesWhenAgentWaits: true,
+  notifications: DEFAULT_ATTENTION_PREFERENCES,
 };
 
 export const CONFIRMATION_KEYS: readonly ConfirmationKey[] = ["closeTerminals"];
@@ -61,12 +60,14 @@ export function withTheme(settings: GlobalSettings, theme: ThemePreference): Glo
   return settings.theme === theme ? settings : { ...settings, theme };
 }
 
-export function attentionPreferences(settings: GlobalSettings): AttentionPreferences {
-  return {
-    notifiesOnBell: settings.notifiesOnBell,
-    notifiesWhenAgentFinishes: settings.notifiesWhenAgentFinishes,
-    notifiesWhenAgentWaits: settings.notifiesWhenAgentWaits,
-  };
+export function withNotificationEvent(
+  settings: GlobalSettings,
+  event: AttentionEvent,
+  preference: AttentionEventPreference,
+): GlobalSettings {
+  const notifications = { ...settings.notifications, [event]: preference };
+
+  return { ...settings, notifications };
 }
 
 export function withTerminalFontFamily(settings: GlobalSettings, family: string): GlobalSettings {

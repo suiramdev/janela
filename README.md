@@ -75,7 +75,7 @@ configuration.
 | Projects and sessions | Collapsible projects, sessions as buttons, standalone sessions too |
 | Worktree-backed sessions | One action to create, one confirmation — that explains itself — to destroy |
 | Splits and tabs | Terminals arranged per session, persisted where you left them |
-| Notifications | Sidebar badges from real terminal signals, plus Notification Centre when you are elsewhere |
+| Notifications | Sidebar badges from real terminal signals, plus Notification Centre when you are elsewhere, with a sound per event of your choosing |
 | GitHub / GitLab | PR and CI state for a session's branch, and "new session from PR", via your own `gh`/`glab` |
 | `.worktreeinclude` | Carry `.env`, `node_modules` and friends into a new worktree |
 | Project automation | Commands on worktree creation, session start, and session teardown |

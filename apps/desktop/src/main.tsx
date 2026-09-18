@@ -1,6 +1,5 @@
 import { setLogSink, type LogRecord } from "@janela/support";
 import {
-  attentionPreferences,
   ClientEnvironmentProvider,
   MainWindow,
   SettingsScreen,
@@ -25,13 +24,18 @@ import {
   tauriCommandSource,
 } from "./adapters/menu.ts";
 import { tauriDirectoryPicker, tauriNativeShell } from "./adapters/native.ts";
+import { tauriNotificationSound } from "./adapters/notification-sound.ts";
 import { tauriWindowControls } from "./adapters/window-controls.ts";
 import { liveEnvironment } from "./environment.ts";
 
 import "@janela/design/styles.css";
 
+const notificationSound = tauriNotificationSound();
+
 const environment = liveEnvironment({
-  attentionPreferences: () => attentionPreferences(view.settings),
+  attentionPreferences: () => view.settings.notifications,
+  playAttentionSound: (event) =>
+    void notificationSound.play(view.settings.notifications[event].sound),
 });
 
 const view = createViewState(environment.sessions);
@@ -65,6 +69,7 @@ const clientEnvironment: ClientEnvironment = {
     },
     restartDaemon: () =>
       void environment.stopBackgroundService().then(() => environment.connection.connect()),
+    sound: notificationSound,
   },
 };
 

@@ -375,6 +375,15 @@ client knows what is focused. `apps/desktop` delivers
 (`apps/desktop/src/adapters/notification-delivery.ts`), because notifications are an
 app-level capability.
 
+The **sound** a notification makes is delivery too, chosen per attention event —
+the bell, an agent waiting, an agent finishing, an agent failing — and it is played by the app
+rather than named on the banner: macOS resolves a notification's sound name
+against its own sound directories, so a file the user chose from anywhere else
+could never have travelled that way. `apps/desktop/src-tauri/src/sound.rs` plays
+both halves of the setting through `NSSound`, which keeps one mechanism and makes
+the sound arrive even when the banner was refused
+([`packages/desktop.md`](packages/desktop.md) § sound.rs).
+
 The rest of what only an app can do — the clipboard, the directory picker, the
 window controls, the menu bar, settings storage — is the same shape and is not a
 sixth seam: the ports are declared in `packages/ui/src/shared/model/client-environment.tsx`,

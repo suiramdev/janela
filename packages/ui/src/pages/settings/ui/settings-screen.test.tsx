@@ -13,6 +13,7 @@ import {
   fakeSession,
   fakeSettings,
   recordingAppearance,
+  recordingNotificationSound,
   recordingService,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
@@ -26,6 +27,7 @@ import {
   type SettingsTabID,
   withDraftProjectSettings,
   withDraftSettings,
+  withNotificationEvent,
   withSilencedConfirmation,
   withTerminalFontSize,
 } from "../../../shared/model/index.ts";
@@ -80,6 +82,7 @@ function props(
     terminalStates: states(),
     service: recordingService(),
     appearance: recordingAppearance(),
+    sound: recordingNotificationSound(),
     connection: fakeClientEnvironment().connection,
     projects,
     draft,
@@ -376,19 +379,60 @@ describe("the Permissions pane", () => {
 });
 
 describe("the Notifications pane", () => {
-  test("offers the bell switch and states what always delivers regardless", () => {
+  test("is one row per event, each with its own switch and sound", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("notifications"))} />);
 
-    expect(markup).toContain("Notify when a terminal rings the bell");
-    expect(markup).toContain("always deliver");
+    expect([...markup.matchAll(/role="switch"/g)]).toHaveLength(4);
+    expect([...markup.matchAll(/<select/g)]).toHaveLength(4);
+    expect(markup).toContain("A terminal rings the bell");
+    expect(markup).toContain("An agent is waiting for you");
+    expect(markup).toContain("An agent finishes");
+    expect(markup).toContain("An agent stops with an error");
   });
 
-  test("is three switches, not a rule builder", () => {
+  test("says what always delivers regardless of the switch", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("notifications"))} />);
 
-    expect([...markup.matchAll(/role="switch"/g)]).toHaveLength(3);
-    expect(markup).toContain("Notify when an agent finishes");
-    expect(markup).toContain("Notify when an agent is waiting for you");
+    expect(markup).toContain("always delivers");
+  });
+
+  test("each row's sound reads that event's setting, not another's", () => {
+    const settings = withNotificationEvent(DEFAULT_GLOBAL_SETTINGS, "failed", {
+      notifies: true,
+      sound: { kind: "system", name: "Basso" },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SettingsPane {...props(tabRoute("notifications"))} settings={settings} />,
+    );
+
+    const selected = [...markup.matchAll(/<option[^>]*value="([^"]*)" selected=""/g)].map(
+      (match) => match[1],
+    );
+
+    expect(selected).toEqual(["silent", "silent", "silent", "system:Basso"]);
+  });
+
+  test("a row whose switch is off cannot be given a sound", () => {
+    const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("notifications"))} />);
+    const bellSelect = /<select[^>]*aria-label="Sound — A terminal rings the bell"[^>]*/.exec(
+      markup,
+    );
+    const waitingSelect = /<select[^>]*aria-label="Sound — An agent is waiting for you"[^>]*/.exec(
+      markup,
+    );
+
+    expect(bellSelect?.[0]).toContain('disabled=""');
+    expect(waitingSelect?.[0]).not.toContain('disabled=""');
+  });
+
+  test("the browser client, which cannot play a sound, shows the switches alone", () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPane {...props(tabRoute("notifications"))} sound={undefined} />,
+    );
+
+    expect([...markup.matchAll(/role="switch"/g)]).toHaveLength(4);
+    expect(markup).not.toContain("<select");
   });
 });
 
