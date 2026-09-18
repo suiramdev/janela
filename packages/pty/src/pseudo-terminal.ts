@@ -32,6 +32,7 @@ export interface PseudoTerminalConfiguration {
   readonly workingDirectory: string;
   readonly environment: Readonly<Record<string, string>>;
   readonly initialSize: TerminalSize;
+  readonly replicaPathVariable?: string;
 }
 
 export type PseudoTerminalFailureDetail =
@@ -241,12 +242,17 @@ export function spawnPseudoTerminal(
   const environmentVector = cStringArray(
     Object.entries(configuration.environment).map(([key, value]) => `${key}=${value}`),
   );
+  const replicaPathVariable =
+    configuration.replicaPathVariable === undefined
+      ? undefined
+      : cString(configuration.replicaPathVariable);
   const pidOut = new Int32Array(1);
   const reachableUntilTheChildHasExeced = [
     executable,
     workingDirectory,
     argumentVector,
     environmentVector,
+    replicaPathVariable,
     pidOut,
   ];
   const handle = library.jpty_spawn(
@@ -254,6 +260,7 @@ export function spawnPseudoTerminal(
     ptr(argumentVector.pointers),
     ptr(environmentVector.pointers),
     ptr(workingDirectory),
+    replicaPathVariable === undefined ? null : ptr(replicaPathVariable),
     clampToWinsizeField(configuration.initialSize.columns),
     clampToWinsizeField(configuration.initialSize.rows),
     ptr(pidOut),

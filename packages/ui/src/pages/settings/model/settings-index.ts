@@ -9,9 +9,11 @@ import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scri
 export type SettingsSectionID =
   | "appearanceFont"
   | "notificationsBell"
+  | "notificationsAgents"
   | "shortcuts"
   | "profilesDefault"
   | "profilesList"
+  | "integrationsHooks"
   | "closingConfirmation"
   | "notificationPermission"
   | "daemon"
@@ -124,6 +126,52 @@ export const NOTIFICATIONS_BELL_SECTION: SettingsSection = {
   keywords: ["bell", "alert", "badge", "banner", "notification centre", "sound", "attention"],
 };
 
+export const NOTIFICATIONS_AGENTS_SECTION: SettingsSection = {
+  id: "notificationsAgents",
+  title: "Agents",
+  hint: "An agent whose integration is installed tells Janela when it finishes a turn and when it is waiting on you. Both are shown in the sidebar whatever you choose here; this is only about interrupting you.",
+  fields: ["Notify when an agent finishes", "Notify when an agent is waiting for you"],
+  keywords: [
+    "agent",
+    "claude",
+    "codex",
+    "opencode",
+    "omp",
+    "finished",
+    "done",
+    "waiting",
+    "permission",
+    "question",
+    "turn",
+    "notification",
+  ],
+};
+
+export const INTEGRATIONS_HOOKS_SECTION: SettingsSection = {
+  id: "integrationsHooks",
+  title: "Activity reporting",
+  hint: "Each agent has its own hook or extension mechanism. Installing one adds a short entry to that agent's configuration which tells the terminal when the agent is working, waiting or finished. Janela reads nothing else — not the transcript, not the output.",
+  fields: [],
+  keywords: [
+    "hook",
+    "hooks",
+    "extension",
+    "plugin",
+    "install",
+    "activity",
+    "status",
+    "spinner",
+    "claude",
+    "codex",
+    "opencode",
+    "omp",
+    "oh my pi",
+    "settings.json",
+    "hooks.json",
+    "config.toml",
+  ],
+};
+
 export const DAEMON_SECTION: SettingsSection = {
   id: "daemon",
   title: "Daemon",
@@ -232,7 +280,7 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     title: "Notifications",
     description:
       "When Janela may interrupt you. It never notifies for the terminal you are looking at, and never while its window is frontmost and that session is selected.",
-    sections: [NOTIFICATIONS_BELL_SECTION],
+    sections: [NOTIFICATIONS_BELL_SECTION, NOTIFICATIONS_AGENTS_SECTION],
   },
   {
     id: "shortcuts",
@@ -245,8 +293,8 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     id: "integrations",
     title: "Integrations",
     description:
-      "The launch profiles that start claude, codex or a shell in a new terminal. Janela starts them and reads from them; it does not wrap, parse or manage what they do.",
-    sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION],
+      "The launch profiles that start claude, codex, omp or a shell in a new terminal, and the hooks those agents can use to tell Janela what they are doing. Janela starts them and listens; it does not wrap, parse or manage what they do.",
+    sections: [PROFILES_DEFAULT_SECTION, PROFILES_LIST_SECTION, INTEGRATIONS_HOOKS_SECTION],
   },
   {
     id: "permissions",

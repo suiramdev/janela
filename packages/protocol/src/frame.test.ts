@@ -37,8 +37,8 @@ describe("protocol versioning", () => {
   });
 
   test("automation became one script per event inside ProjectSettings, so it is a wire change: version 10, speaking 10 only", () => {
-    expect(PROTOCOL_VERSION).toBe(10);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(10);
+    expect(PROTOCOL_VERSION).toBe(11);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(11);
   });
 });
 

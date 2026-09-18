@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Instant, Session, SessionID, TerminalID } from "@janela/core";
+import type { AgentActivity, Instant, Session, SessionID, TerminalID } from "@janela/core";
 import type { AttentionKind, AttentionSignal } from "@janela/protocol";
 
 import {
@@ -10,6 +10,7 @@ import {
   routeAttention,
   type AttentionContext,
   type AttentionDelivering,
+  type AttentionPreferences,
   type AttentionRoutingOptions,
   type AttentionSource,
 } from "./attention-policy.ts";
@@ -48,6 +49,22 @@ const prompt = (exitCode: number | undefined, durationSeconds: number): Attentio
   exitCode === undefined
     ? { kind: "promptFinished", durationSeconds }
     : { kind: "promptFinished", exitCode, durationSeconds };
+
+const DEFAULT_PREFERENCES: AttentionPreferences = {
+  notifiesOnBell: false,
+  notifiesWhenAgentFinishes: true,
+  notifiesWhenAgentWaits: true,
+};
+
+const preferences = (overrides: Partial<AttentionPreferences>): AttentionPreferences => ({
+  ...DEFAULT_PREFERENCES,
+  ...overrides,
+});
+
+const activity = (reported: AgentActivity): AttentionKind => ({
+  kind: "activity",
+  activity: reported,
+});
 
 function at(seconds: number): Instant {
   return `2026-01-01T00:00:${String(seconds).padStart(2, "0")}.000Z` as Instant;
@@ -144,7 +161,7 @@ function emitter(): AttentionSource & { emit(emitted: AttentionSignal): void } {
 
 function routed(
   overrides: Partial<
-    Pick<AttentionRoutingOptions, "isApplicationActive" | "focusedTerminalID">
+    Pick<AttentionRoutingOptions, "isApplicationActive" | "focusedTerminalID" | "preferences">
   > = {},
 ) {
   const stores = createStores();
@@ -159,6 +176,7 @@ function routed(
     delivery,
     isApplicationActive: overrides.isApplicationActive ?? ((): boolean => false),
     focusedTerminalID: overrides.focusedTerminalID ?? ((): TerminalID | undefined => undefined),
+    preferences: overrides.preferences ?? ((): AttentionPreferences => DEFAULT_PREFERENCES),
     log: logger.log,
   });
 
@@ -168,27 +186,122 @@ function routed(
 let counter = 0;
 
 describe("what is worth interrupting for", () => {
-  test("a bare bell never is, even when nobody is looking", () => {
+  test("a bare bell is not, while the bell preference is off", () => {
     const policy = createAttentionPolicy();
 
-    expect(policy.shouldDeliver(signal({ kind: "bell" }), NOBODY_LOOKING)).toBe(false);
+    expect(
+      policy.shouldDeliver(signal({ kind: "bell" }), NOBODY_LOOKING, DEFAULT_PREFERENCES),
+    ).toBe(false);
+  });
+
+  test("a bare bell is, once the bell preference is on", () => {
+    const policy = createAttentionPolicy();
+
+    expect(
+      policy.shouldDeliver(
+        signal({ kind: "bell" }),
+        NOBODY_LOOKING,
+        preferences({ notifiesOnBell: true }),
+      ),
+    ).toBe(true);
   });
 
   test("a notification is, because the program asked for one by name", () => {
     const policy = createAttentionPolicy();
 
-    expect(policy.shouldDeliver(signal(notification), NOBODY_LOOKING)).toBe(true);
+    expect(policy.shouldDeliver(signal(notification), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
+      true,
+    );
   });
 
   test("a finished prompt is, only when it failed and ran long enough", () => {
     const policy = createAttentionPolicy();
 
-    expect(policy.shouldDeliver(signal(prompt(1, 2)), NOBODY_LOOKING)).toBe(false);
-    expect(policy.shouldDeliver(signal(prompt(1, 15)), NOBODY_LOOKING)).toBe(true);
-    expect(policy.shouldDeliver(signal(prompt(0, 15)), NOBODY_LOOKING)).toBe(false);
-    expect(policy.shouldDeliver(signal(prompt(undefined, 15)), NOBODY_LOOKING)).toBe(false);
+    expect(policy.shouldDeliver(signal(prompt(1, 2)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
+      false,
+    );
+    expect(policy.shouldDeliver(signal(prompt(1, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
+      true,
+    );
+    expect(policy.shouldDeliver(signal(prompt(0, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
+      false,
+    );
     expect(
-      policy.shouldDeliver(signal(prompt(1, LONG_RUNNING_THRESHOLD_SECONDS)), NOBODY_LOOKING),
+      policy.shouldDeliver(signal(prompt(undefined, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES),
+    ).toBe(false);
+    expect(
+      policy.shouldDeliver(
+        signal(prompt(1, LONG_RUNNING_THRESHOLD_SECONDS)),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
+    ).toBe(true);
+  });
+
+  test("an agent that is working never is, whatever the preferences say", () => {
+    const policy = createAttentionPolicy();
+
+    expect(
+      policy.shouldDeliver(
+        signal(activity({ kind: "working" })),
+        NOBODY_LOOKING,
+        preferences({ notifiesWhenAgentFinishes: true, notifiesWhenAgentWaits: true }),
+      ),
+    ).toBe(false);
+  });
+
+  test("an agent waiting on the user is, unless the waiting preference is off", () => {
+    for (const need of ["permission", "input"] as const) {
+      expect(
+        createAttentionPolicy().shouldDeliver(
+          signal(activity({ kind: "waiting", need })),
+          NOBODY_LOOKING,
+          preferences({ notifiesWhenAgentWaits: true }),
+        ),
+      ).toBe(true);
+      expect(
+        createAttentionPolicy().shouldDeliver(
+          signal(activity({ kind: "waiting", need })),
+          NOBODY_LOOKING,
+          preferences({ notifiesWhenAgentWaits: false }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  test("an agent that finished is, either outcome, unless the finished preference is off", () => {
+    for (const outcome of ["completed", "failed"] as const) {
+      expect(
+        createAttentionPolicy().shouldDeliver(
+          signal(activity({ kind: "finished", outcome })),
+          NOBODY_LOOKING,
+          preferences({ notifiesWhenAgentFinishes: true }),
+        ),
+      ).toBe(true);
+      expect(
+        createAttentionPolicy().shouldDeliver(
+          signal(activity({ kind: "finished", outcome })),
+          NOBODY_LOOKING,
+          preferences({ notifiesWhenAgentFinishes: false }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  test("the waiting and finished preferences gate each other's signals, not their own", () => {
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "waiting", need: "permission" })),
+        NOBODY_LOOKING,
+        preferences({ notifiesWhenAgentFinishes: false, notifiesWhenAgentWaits: true }),
+      ),
+    ).toBe(true);
+    expect(
+      createAttentionPolicy().shouldDeliver(
+        signal(activity({ kind: "finished", outcome: "completed" })),
+        NOBODY_LOOKING,
+        preferences({ notifiesWhenAgentFinishes: true, notifiesWhenAgentWaits: false }),
+      ),
     ).toBe(true);
   });
 });
@@ -205,7 +318,9 @@ describe("the user is looking straight at it", () => {
   test("all three together suppress the notification", () => {
     const policy = createAttentionPolicy();
 
-    expect(policy.shouldDeliver(signal(notification, { terminal }), looking)).toBe(false);
+    expect(
+      policy.shouldDeliver(signal(notification, { terminal }), looking, DEFAULT_PREFERENCES),
+    ).toBe(false);
   });
 
   test("any one of the three flipped delivers it", () => {
@@ -216,18 +331,28 @@ describe("the user is looking straight at it", () => {
     ] satisfies AttentionContext[]) {
       const policy = createAttentionPolicy();
 
-      expect(policy.shouldDeliver(signal(notification, { terminal }), context)).toBe(true);
+      expect(
+        policy.shouldDeliver(signal(notification, { terminal }), context, DEFAULT_PREFERENCES),
+      ).toBe(true);
     }
   });
 
   test("a suppressed signal is not recorded, so the next one still gets through", () => {
     const policy = createAttentionPolicy();
 
-    expect(policy.shouldDeliver(signal(notification, { terminal, seconds: 0 }), looking)).toBe(
-      false,
-    );
     expect(
-      policy.shouldDeliver(signal(notification, { terminal, seconds: 1 }), NOBODY_LOOKING),
+      policy.shouldDeliver(
+        signal(notification, { terminal, seconds: 0 }),
+        looking,
+        DEFAULT_PREFERENCES,
+      ),
+    ).toBe(false);
+    expect(
+      policy.shouldDeliver(
+        signal(notification, { terminal, seconds: 1 }),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
     ).toBe(true);
   });
 });
@@ -238,7 +363,11 @@ describe("coalescing", () => {
     const terminal = terminalID();
 
     const delivered = [0, 1, 2, 4].map((seconds) =>
-      policy.shouldDeliver(signal(notification, { terminal, seconds }), NOBODY_LOOKING),
+      policy.shouldDeliver(
+        signal(notification, { terminal, seconds }),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
     );
 
     expect(delivered).toEqual([true, false, false, false]);
@@ -246,6 +375,7 @@ describe("coalescing", () => {
       policy.shouldDeliver(
         signal(notification, { terminal, seconds: COALESCING_WINDOW_SECONDS }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
   });
@@ -255,10 +385,18 @@ describe("coalescing", () => {
     const [first, second] = [terminalID(), terminalID()];
 
     expect(
-      policy.shouldDeliver(signal(notification, { terminal: first, seconds: 0 }), NOBODY_LOOKING),
+      policy.shouldDeliver(
+        signal(notification, { terminal: first, seconds: 0 }),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
     ).toBe(true);
     expect(
-      policy.shouldDeliver(signal(notification, { terminal: second, seconds: 1 }), NOBODY_LOOKING),
+      policy.shouldDeliver(
+        signal(notification, { terminal: second, seconds: 1 }),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
     ).toBe(true);
   });
 
@@ -270,10 +408,15 @@ describe("coalescing", () => {
       policy.shouldDeliver(
         signal(notification, { terminal, occurredAt: "not-a-date" }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
     expect(
-      policy.shouldDeliver(signal(notification, { terminal, seconds: 1 }), NOBODY_LOOKING),
+      policy.shouldDeliver(
+        signal(notification, { terminal, seconds: 1 }),
+        NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
+      ),
     ).toBe(true);
   });
 });
@@ -287,12 +430,14 @@ describe("forgetSession", () => {
       policy.shouldDeliver(
         signal(notification, { terminal: mine, session: SESSION, seconds: 0 }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal: theirs, session: OTHER_SESSION, seconds: 0 }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
 
@@ -302,12 +447,14 @@ describe("forgetSession", () => {
       policy.shouldDeliver(
         signal(notification, { terminal: mine, session: SESSION, seconds: 1 }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal: theirs, session: OTHER_SESSION, seconds: 1 }),
         NOBODY_LOOKING,
+        DEFAULT_PREFERENCES,
       ),
     ).toBe(false);
   });
@@ -330,6 +477,33 @@ describe("routing a signal to delivery", () => {
         kind: notification,
       },
     ]);
+  });
+
+  test("the preferences are read per signal, so a flipped switch takes effect at once", () => {
+    const [first, second] = [terminalID(), terminalID()];
+    let notifiesOnBell = false;
+
+    const { mirror, source, delivery } = routed({
+      preferences: () => preferences({ notifiesOnBell }),
+    });
+
+    mirror.apply(
+      snapshot([
+        named("s1", "api server", [
+          [first, "claude"],
+          [second, "codex"],
+        ]),
+      ]),
+    );
+
+    source.emit(signal({ kind: "bell" }, { terminal: first, session: "s1" as SessionID }));
+
+    expect(delivery.delivered).toEqual([]);
+
+    notifiesOnBell = true;
+    source.emit(signal({ kind: "bell" }, { terminal: second, session: "s1" as SessionID }));
+
+    expect(delivery.delivered.map((entry) => entry.terminalID)).toEqual([second]);
   });
 
   test("the terminal the user is staring at is not interrupted, and its badge is not touched", () => {

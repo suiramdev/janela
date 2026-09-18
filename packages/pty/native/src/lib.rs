@@ -51,6 +51,7 @@
 
 use libc::{c_char, c_int, c_void, pid_t};
 use std::collections::VecDeque;
+use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
 
@@ -590,6 +591,14 @@ fn exit_code_of(status: c_int) -> i32 {
 /// `argv` and `envp` are NULL-terminated arrays of C strings, exactly as
 /// `execve` wants them. Nothing here parses a command line.
 ///
+/// `tty_variable` is optional: when it names a variable, the child's environment
+/// is the caller's entries with `<tty_variable>=<replica path>` appended — and
+/// any entry the caller already had under that name dropped, so the child sees
+/// exactly one. A program the terminal starts can then reach *this* terminal by
+/// path even with no controlling terminal of its own, which is what a harness
+/// hook needs. The vector is built here, in the parent: the child may not
+/// allocate.
+///
 /// Returns a non-negative handle, or `-errno` when the terminal could not be
 /// opened, or `-(2000 + errno)` when the child could not be started. `out_pid`
 /// receives the pid, and carries nothing else.
@@ -597,15 +606,17 @@ fn exit_code_of(status: c_int) -> i32 {
 /// # Safety
 ///
 /// `path` and `cwd` must be NUL-terminated C strings, `argv` and `envp`
-/// NULL-terminated arrays of them, and `out_pid` writable for one `i32`. All five
-/// must stay valid until this returns — which is also when the child has finished
-/// with them, because it has either exec'd or died by then.
+/// NULL-terminated arrays of them, `tty_variable` either NULL or a NUL-terminated
+/// C string, and `out_pid` writable for one `i32`. All of them must stay valid
+/// until this returns — which is also when the child has finished with them,
+/// because it has either exec'd or died by then.
 #[no_mangle]
 pub unsafe extern "C" fn jpty_spawn(
     path: *const c_char,
     argv: *const *const c_char,
     envp: *const *const c_char,
     cwd: *const c_char,
+    tty_variable: *const c_char,
     cols: u16,
     rows: u16,
     out_pid: *mut i32,
@@ -670,11 +681,21 @@ pub unsafe extern "C" fn jpty_spawn(
     };
     let mut master: c_int = -1;
     let mut replica: c_int = -1;
+    // `openpty`'s name argument is Darwin's own `ptsname` answer, copied into a
+    // buffer we own: `ptsname` names the replica, but it names it in a static
+    // buffer shared by every thread, and this call site is reachable from more
+    // than one. Asked for only when someone wants the path.
+    let mut replica_name = [0 as c_char; libc::PATH_MAX as usize];
+    let name_out = if tty_variable.is_null() {
+        std::ptr::null_mut()
+    } else {
+        replica_name.as_mut_ptr()
+    };
     if unsafe {
         libc::openpty(
             &mut master,
             &mut replica,
-            std::ptr::null_mut(),
+            name_out,
             std::ptr::null_mut(),
             &size as *const libc::winsize as *mut libc::winsize,
         )
@@ -693,6 +714,22 @@ pub unsafe extern "C" fn jpty_spawn(
             failure,
         );
     }
+
+    // The child may not allocate, so its environment is assembled here. The
+    // vector points into `entry`, and both live until this function returns,
+    // which is past the point where the child has exec'd or died.
+    let replica_environment = if tty_variable.is_null() {
+        None
+    } else {
+        // SAFETY: `tty_variable` is a NUL-terminated C string by this function's
+        // contract, `replica_name` was filled by `openpty` above, and `envp` is a
+        // NULL-terminated array of C strings.
+        Some(unsafe { environment_with_replica_path(tty_variable, replica_name.as_ptr(), envp) })
+    };
+    let child_envp = match &replica_environment {
+        Some((_, vector)) => vector.as_ptr(),
+        None => envp,
+    };
 
     // Prepared here because the child may not build them: `getrlimit` is not
     // async-signal-safe, and zeroing a struct in the child is a memset the
@@ -720,7 +757,7 @@ pub unsafe extern "C" fn jpty_spawn(
             child_exec(
                 path,
                 argv,
-                envp,
+                child_envp,
                 cwd,
                 master,
                 replica,
@@ -830,6 +867,64 @@ fn read_failure_report(err_read: c_int) -> Option<(i32, i32)> {
     } else {
         Some((STAGE_EXECVE, libc::EINVAL))
     }
+}
+
+/// The caller's environment plus `<variable>=<replica_path>`, as the owned entry
+/// and the NULL-terminated vector `execve` wants.
+///
+/// Any entry the caller already had under `variable` is left out, so the child
+/// reads one answer rather than whichever of two `getenv` happens to find first:
+/// a terminal started from inside another one inherits a path that names the
+/// wrong terminal, and silently reporting to it is worse than not reporting.
+///
+/// # Safety
+///
+/// `variable` and `replica_path` must be NUL-terminated C strings, and `envp` a
+/// NULL-terminated array of them.
+unsafe fn environment_with_replica_path(
+    variable: *const c_char,
+    replica_path: *const c_char,
+    envp: *const *const c_char,
+) -> (Vec<u8>, Vec<*const c_char>) {
+    // SAFETY: three NUL-terminated reads, per this function's contract. This runs
+    // in the parent, before the fork, so allocation is allowed here.
+    let name = unsafe { CStr::from_ptr(variable) }.to_bytes();
+    let path = unsafe { CStr::from_ptr(replica_path) }.to_bytes();
+    let mut entry = Vec::with_capacity(name.len() + path.len() + 2);
+    entry.extend_from_slice(name);
+    entry.push(b'=');
+    entry.extend_from_slice(path);
+    entry.push(0);
+
+    let mut vector: Vec<*const c_char> = Vec::new();
+    let mut cursor = envp;
+    loop {
+        // SAFETY: the walk stops at the NULL the contract promises.
+        let existing = unsafe { *cursor };
+        if existing.is_null() {
+            break;
+        }
+        // SAFETY: an entry of a NULL-terminated environment vector is a
+        // NUL-terminated C string.
+        if !unsafe { names_variable(existing, name) } {
+            vector.push(existing);
+        }
+        cursor = unsafe { cursor.add(1) };
+    }
+    vector.push(entry.as_ptr() as *const c_char);
+    vector.push(std::ptr::null());
+
+    (entry, vector)
+}
+
+/// # Safety
+///
+/// `entry` must be a NUL-terminated C string.
+unsafe fn names_variable(entry: *const c_char, name: &[u8]) -> bool {
+    // SAFETY: one NUL-terminated read, per this function's contract.
+    let bytes = unsafe { CStr::from_ptr(entry) }.to_bytes();
+
+    bytes.starts_with(name) && bytes.get(name.len()) == Some(&b'=')
 }
 
 /// Everything between `fork` and `execve`.
@@ -1247,6 +1342,13 @@ mod tests {
     /// Spawns a child and returns its handle and pid. Argument vectors are held
     /// by the caller for the duration of the call, as on the TypeScript side.
     fn spawn(program: &str, arguments: &[&str]) -> (i32, i32) {
+        spawn_exporting(program, arguments, None)
+    }
+
+    /// `variable`, when given, is also seeded in the caller's environment with a
+    /// path that names the wrong device, so the child reading the right one is
+    /// evidence that the stale entry was dropped rather than shadowed.
+    fn spawn_exporting(program: &str, arguments: &[&str], variable: Option<&str>) -> (i32, i32) {
         let path = cstring(program);
         let owned: Vec<Vec<u8>> = arguments.iter().map(|value| cstring(value)).collect();
         let mut argv: Vec<*const c_char> = owned
@@ -1256,11 +1358,20 @@ mod tests {
         argv.push(std::ptr::null());
         let term = cstring("TERM=xterm-256color");
         let search_path = cstring("PATH=/usr/bin:/bin");
-        let envp: Vec<*const c_char> = vec![
+        let stale = cstring(&format!("{}=/dev/null", variable.unwrap_or("JANELA_UNSET")));
+        let mut envp: Vec<*const c_char> = vec![
             term.as_ptr() as *const c_char,
             search_path.as_ptr() as *const c_char,
-            std::ptr::null(),
         ];
+        if variable.is_some() {
+            envp.push(stale.as_ptr() as *const c_char);
+        }
+        envp.push(std::ptr::null());
+        let exported = variable.map(cstring);
+        let tty_variable = match &exported {
+            Some(name) => name.as_ptr() as *const c_char,
+            None => std::ptr::null(),
+        };
         let cwd = cstring("/");
         let mut pid: i32 = 0;
         // SAFETY: every buffer is owned by this frame and outlives the call.
@@ -1270,6 +1381,7 @@ mod tests {
                 argv.as_ptr(),
                 envp.as_ptr(),
                 cwd.as_ptr() as *const c_char,
+                tty_variable,
                 80,
                 24,
                 &mut pid,
@@ -1347,6 +1459,37 @@ mod tests {
         assert!(
             !seen.contains("OPEN="),
             "the child inherited a descriptor: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn the_child_is_told_the_path_of_its_own_replica() {
+        let _exclusive = exclusive();
+        // The child prints the exported path, then writes through it. The second
+        // write arriving on the master is what proves the path names *this*
+        // terminal rather than merely looking like a tty.
+        let (handle, _) = spawn_exporting(
+            "/bin/sh",
+            &["sh", "-c", r#"printf "%s|" "$T"; printf marker > "$T""#],
+            Some("T"),
+        );
+        assert!(handle >= 0, "spawn failed with {handle}");
+        let seen = drain_until(handle, "marker");
+        jpty_close(handle);
+
+        let (exported, tail) = seen
+            .split_once('|')
+            .unwrap_or_else(|| panic!("the child printed no path: {seen:?}"));
+        let digits = exported
+            .strip_prefix("/dev/ttys")
+            .unwrap_or_else(|| panic!("not a replica path: {exported:?}"));
+        assert!(
+            !digits.is_empty() && digits.chars().all(|value| value.is_ascii_digit()),
+            "not a replica path: {exported:?}"
+        );
+        assert!(
+            tail.contains("marker"),
+            "the write through the exported path did not reach the master: {seen:?}"
         );
     }
     #[test]

@@ -1,4 +1,5 @@
 import type { GridSize, Project, Session, TerminalID } from "@janela/core";
+import type { IntegrationService } from "@janela/integrations";
 import {
   FrameError,
   FrameKind,
@@ -65,6 +66,7 @@ export interface DaemonServerOptions {
   readonly launchProfiles: LaunchProfileService;
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
+  readonly integrations: IntegrationService;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
   readonly handshakeDeadlineMs?: number;
@@ -136,7 +138,7 @@ const DELIVERED = (): boolean => true;
 const SEND_FAILED = (): boolean => false;
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, launchProfiles, directories, log } = options;
+  const { terminals, sessions, projects, launchProfiles, directories, integrations, log } = options;
   const dispatch =
     options.dispatch ??
     createRequestDispatch({
@@ -145,6 +147,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       launchProfiles,
       directories,
       terminals,
+      integrations,
       log,
       announce: () =>
         server.publish(

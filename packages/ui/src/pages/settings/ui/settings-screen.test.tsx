@@ -89,6 +89,7 @@ function props(
     sessions: [fakeSession()],
     terminalStates: states(),
     service: recordingService(),
+    connection: fakeClientEnvironment().connection,
     projects,
     draft,
     onRecordingShortcut: noop,
@@ -402,10 +403,12 @@ describe("the Notifications pane", () => {
     expect(markup).toContain("always deliver");
   });
 
-  test("is one switch, not a rule builder", () => {
+  test("is three switches, not a rule builder", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("notifications"))} />);
 
-    expect([...markup.matchAll(/role="switch"/g)]).toHaveLength(1);
+    expect([...markup.matchAll(/role="switch"/g)]).toHaveLength(3);
+    expect(markup).toContain("Notify when an agent finishes");
+    expect(markup).toContain("Notify when an agent is waiting for you");
   });
 });
 

@@ -204,8 +204,10 @@ no number, or it is not.
 | 7 | `SessionCreationIntent`'s `newWorktree` case gains `shareBranch`, which asks the daemon for `git worktree add --force` so a branch already checked out somewhere can have a second worktree; its `name` now also names the directory the daemon places that worktree in, which is what keeps two worktrees of one branch off the same path. |
 | 8 | `listDirectory` joins `ClientMessage`: a client that has no folder picker of its own — a browser page — asks the daemon to read one folder of the Mac's filesystem, and gets a `DirectoryListing` back as `text`. |
 | 9 | `moveTerminal` joins `ClientMessage`: a terminal pane leaves its place in the layout and docks beside another pane (`beside`, at one of four edges), at the right of a whole tab (`tab`), or in a new tab of its own (`newTab`). The daemon applies it and persists the result, so every client mirrors the drop. |
+| 10 | `ProjectSettings` changed shape on the wire: `automation` is a script per event (`AutomationScripts`, keyed by `AutomationEvent`) instead of a list of `AutomationCommand` argv rows, each script carrying its own timeout. `updateProjectSettings` is the one message that carries it, and a peer of either age would read the other's `automation` as the wrong kind of thing entirely — a list where a record belongs, or the reverse. |
+| 11 | `integrations`, `installIntegration` and `removeIntegration` join `ClientMessage`: a client asks what Janela's activity-reporting hooks look like in each harness's own configuration, and asks for one to be installed or removed. `AttentionKind` gains `activity`, and `TerminalState` carries an `AgentActivity` on both `running` and `needsAttention`, so a harness that says what it is doing reaches the sidebar and the notification policy. |
 
-`MINIMUM_SUPPORTED_VERSION` is 9: it moved with the version, as it did up to 6 and again at 8 — a v8 daemon's discriminant table does not know `moveTerminal`, and the first pane a user dragged would close its connection, so the handshake refuses instead.
+`MINIMUM_SUPPORTED_VERSION` is 11: it moved with the version, as it did up to 6 and again at 8, 9 and 10 — a v10 daemon's discriminant table does not know `integrations`, and the first client that opened the Integrations tab would close its connection; a v10 *client* would not know the `activity` attention kind either. New discriminants are exactly the change the tables refuse, so the handshake refuses instead.
 
 A v5 peer does not degrade, it *disconnects*: its `decodeClientMessage` matches
 the discriminant against an exhaustive table and refuses anything absent from it,
@@ -229,12 +231,17 @@ background service is older", whose only button is "Restart the background
 service" — rather than reporting a handshake failure. Nothing after `hello` is
 decoded from a refused peer.
 
-v8 and v9 are new discriminants again, so the rule of v6 applies: a v7 daemon
-meeting a v8 client would close the socket the moment a browser user pressed ⌘O,
-and a v8 daemon meeting a v9 client the moment a pane was dropped, with no reply
-to correlate. Refusing the handshake instead costs the user one restart of the
-background service — which the skew banner offers, and which never touches a
-terminal.
+v8, v9 and v11 are new discriminants again, so the rule of v6 applies: a v7
+daemon meeting a v8 client would close the socket the moment a browser user
+pressed ⌘O, a v8 daemon meeting a v9 client the moment a pane was dropped, and a
+v10 daemon meeting a v11 client the moment the Integrations tab asked what is
+installed, with no reply to correlate. v10 is the other shape — a *field* that
+changed meaning, `ProjectSettings.automation` — which the discriminant check
+cannot catch at all: both peers decode `updateProjectSettings` happily and then
+disagree about what `automation` is, which is worse than a closed socket and is
+why that one moved the minimum too. Refusing the handshake instead costs the
+user one restart of the background service — which the skew banner offers, and
+which never touches a terminal.
 
 `TerminalState.running` gained an optional `progress` field **without a version
 bump**, and by the rule at the top of this section that is what compatible means.
@@ -244,6 +251,12 @@ so a v9 peer that predates the field ignores it and shows a plain "running"
 terminal — the progress bar is the thing it does not get, not the connection.
 `attention` and `terminalExited` needed nothing at all: both were already in the
 v9 discriminant table.
+
+`TerminalState`'s `activity` is the same *kind* of field and would have needed no
+bump either — a v10 client ignoring it shows a plain "running" terminal. v11
+exists for the three new requests and for `AttentionKind`'s new `activity` case,
+which is a discriminant inside a message and therefore the one thing an older
+client's own `Match` over attention kinds is not prepared for.
 
 ## removal-plan.ts, branch-overview.ts, directory-listing.ts
 

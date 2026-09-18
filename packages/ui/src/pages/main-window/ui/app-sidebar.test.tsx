@@ -41,6 +41,7 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain('aria-label="fix/pty — needs attention"');
     expect(markup).toContain("dmx-matrix-3");
     expect(markup).toContain("text-attention");
+    expect(markup).toContain("dmx-ripple-echo");
   });
 
   test("a session whose agent is mid-turn is working, and spins muted for it", () => {
@@ -73,6 +74,60 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain("text-failure");
   });
 
+  test("a session whose agent said it finished is done, in green, and does not spin", () => {
+    const shipped = session("feat/hooks", { terminals: [terminal("t1")] });
+
+    const environment = fakeEnvironment({
+      sessions: [shipped],
+      states: {
+        [terminalID("t1")]: {
+          kind: "needsAttention",
+          activity: { kind: "finished", outcome: "completed" },
+        },
+      },
+    });
+
+    const markup = renderSidebar(environment);
+
+    expect(markup).toContain('aria-label="feat/hooks — finished"');
+    expect(markup).toContain("dmx-matrix-3");
+    expect(markup).toContain("text-success");
+    expect(markup).not.toContain("dmx-ripple-echo");
+  });
+
+  test("every status paints the same glyph box, so the label never shifts", () => {
+    const environment = fakeEnvironment({
+      sessions: [
+        session("waiting", { terminals: [terminal("t1")] }),
+        session("broken", { terminals: [terminal("t2")] }),
+        session("shipped", { terminals: [terminal("t3")] }),
+        session("busy", { terminals: [terminal("t4")] }),
+        session("alive", { terminals: [terminal("t5")] }),
+        session("asleep", { terminals: [terminal("t6")] }),
+      ],
+      states: {
+        [terminalID("t1")]: { kind: "needsAttention" },
+        [terminalID("t2")]: { kind: "exited", code: 1 },
+        [terminalID("t3")]: {
+          kind: "needsAttention",
+          activity: { kind: "finished", outcome: "completed" },
+        },
+        [terminalID("t4")]: { kind: "running", progress: { kind: "indeterminate" } },
+        [terminalID("t5")]: { kind: "running" },
+        [terminalID("t6")]: { kind: "idle" },
+      },
+    });
+
+    const boxes = [
+      ...renderSidebar(environment).matchAll(/<div role="status"[^>]*style="([^"]*)"/gu),
+    ].map((match) => match[1]);
+
+    expect(boxes).toHaveLength(6);
+    expect(new Set(boxes).size).toBe(1);
+    expect(boxes[0]).toContain("min-width:16px");
+    expect(boxes[0]).toContain("width:16px");
+  });
+
   test("a session with nothing pending paints no indicator, but keeps the column", () => {
     const running = session("chore/logs", { terminals: [terminal("t1")] });
     const idle = session("chore/notes", { terminals: [terminal("t2")] });
@@ -87,9 +142,9 @@ describe("AppSidebar markup", () => {
     expect(markup).toContain('aria-label="chore/logs — running"');
     expect(markup).toContain('aria-label="chore/notes — idle"');
     expect(markup).toContain("invisible");
-    expect(markup).not.toContain("text-running");
     expect(markup).not.toContain("text-attention");
     expect(markup).not.toContain("text-failure");
+    expect(markup).not.toContain("text-success");
   });
 
   test("project rows are disclosures and the selected session is current", () => {

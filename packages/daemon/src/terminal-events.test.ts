@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { Session, TerminalID, TerminalState } from "@janela/core";
+import type { AgentActivity, Session, TerminalID, TerminalState } from "@janela/core";
 import {
   FrameKind,
   decodeDaemonMessage,
@@ -17,6 +17,7 @@ import {
   clientHello,
   fakeDirectories,
   fakeDispatch,
+  fakeIntegrations,
   fakeLaunchProfiles,
   fakeProjects,
   fakeRegistry,
@@ -94,6 +95,7 @@ function fixture(terminals: readonly FakeTerminal[], sessions: readonly Session[
     launchProfiles: fakeLaunchProfiles(),
     directories: fakeDirectories(),
     terminals: registry,
+    integrations: fakeIntegrations(),
     log: logger,
     dispatch: fakeDispatch(registry),
     handshakeDeadlineMs: 25,
@@ -337,6 +339,77 @@ describe("the state frames a progress keepalive produces", () => {
 
     expect(latest?.type === "state" && latest.update.terminalStates).toEqual({
       [terminal.id]: { kind: "running" },
+    });
+  });
+});
+
+describe("the frames an agent's activity produces", () => {
+  const WAITING: AgentActivity = { kind: "waiting", need: "permission" };
+
+  test("working rides on the state and raises nothing", async () => {
+    const terminal = fakeTerminal(crypto.randomUUID() as TerminalID);
+    const daemon = fixture([terminal], [sessionWith(terminal)]);
+    const client = await daemon.watch();
+
+    terminal.setState({ kind: "running", activity: { kind: "working" } });
+    events(terminal).onActivity({ kind: "working" });
+
+    await until(() => statesFor(client, terminal.id).length === 1, "the activity state frame");
+
+    expect(statesFor(client, terminal.id)[0]).toEqual({
+      [terminal.id]: { kind: "running", activity: { kind: "working" } },
+    });
+    expect(client.controls().some((message) => message.type === "attention")).toBe(false);
+  });
+
+  test("waiting is one attention signal carrying the activity, beside its state frame", async () => {
+    const terminal = fakeTerminal(crypto.randomUUID() as TerminalID);
+    const daemon = fixture([terminal], [sessionWith(terminal)]);
+    const client = await daemon.watch();
+
+    terminal.setState({ kind: "needsAttention", activity: WAITING });
+    events(terminal).onActivity(WAITING);
+
+    await until(
+      () => client.controls().some((message) => message.type === "attention"),
+      "the activity signal",
+    );
+
+    const signals = client
+      .controls()
+      .flatMap((message) => (message.type === "attention" ? [message.signal] : []));
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.kind).toEqual({ kind: "activity", activity: WAITING });
+    expect(signals[0]?.terminalID).toBe(terminal.id);
+    expect(statesFor(client, terminal.id)[0]).toEqual({
+      [terminal.id]: { kind: "needsAttention", activity: WAITING },
+    });
+  });
+
+  test("a repeated report publishes one state frame, and a changed one publishes another", async () => {
+    const terminal = fakeTerminal(crypto.randomUUID() as TerminalID);
+    const daemon = fixture([terminal], [sessionWith(terminal)]);
+    const client = await daemon.watch();
+
+    terminal.setState({ kind: "running", activity: { kind: "working" } });
+
+    for (let report = 0; report < 5; report += 1) {
+      events(terminal).onActivity({ kind: "working" });
+    }
+
+    await until(() => statesFor(client, terminal.id).length === 1, "the first activity frame");
+
+    terminal.setState({ kind: "needsAttention", activity: WAITING });
+    events(terminal).onActivity(WAITING);
+
+    await until(() => statesFor(client, terminal.id).length === 2, "the changed activity frame");
+
+    const frames = statesFor(client, terminal.id);
+
+    expect(frames).toHaveLength(2);
+    expect(frames[1]).toEqual({
+      [terminal.id]: { kind: "needsAttention", activity: WAITING },
     });
   });
 });

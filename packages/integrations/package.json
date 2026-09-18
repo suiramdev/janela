@@ -1,0 +1,23 @@
+{
+  "name": "@janela/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The hooks Janela installs into an agent's own configuration so it can report what it is doing.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/core": "workspace:*",
+    "@janela/support": "workspace:*",
+    "effect": "4.0.0-rc.115"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

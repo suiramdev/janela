@@ -4,6 +4,8 @@ import {
   instant,
   type GridSize,
   type Identifier,
+  type IntegrationID,
+  type IntegrationOverview,
   type LaunchProfile,
   type LaunchProfileID,
   type Project,
@@ -13,6 +15,7 @@ import {
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
+import type { IntegrationService } from "@janela/integrations";
 import {
   FrameKind,
   decodeDaemonMessage,
@@ -97,6 +100,11 @@ export interface FakeRegistry extends TerminalRegistry {
   readonly registerCalls: { count: number };
   readonly hangUpAllCalls: { count: number };
   add(terminal: LiveTerminal): void;
+}
+
+export interface FakeIntegrations extends IntegrationService {
+  readonly installs: IntegrationID[];
+  readonly removals: IntegrationID[];
 }
 
 export interface TransportPair {
@@ -474,6 +482,29 @@ export function fakeDirectories(
   list: DirectoryBrowsing["list"] = () => Promise.reject(new Error(NOT_CALLED)),
 ): DirectoryBrowsing {
   return { list };
+}
+
+export function fakeIntegrations(
+  overview: IntegrationOverview = { integrations: [] },
+): FakeIntegrations {
+  const installs: IntegrationID[] = [];
+  const removals: IntegrationID[] = [];
+
+  return {
+    installs,
+    removals,
+    overview: () => Promise.resolve(overview),
+    install: (id) => {
+      installs.push(id);
+
+      return Promise.resolve();
+    },
+    remove: (id) => {
+      removals.push(id);
+
+      return Promise.resolve();
+    },
+  };
 }
 
 export function fakeListing(overrides: Partial<DirectoryListing> = {}): DirectoryListing {

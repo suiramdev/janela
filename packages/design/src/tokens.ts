@@ -9,7 +9,7 @@ export const TERMINAL_INSETS = { top: 8, leading: 10, bottom: 8, trailing: 6 } a
 export const COLOR = {
   terminalBackground: "--janela-terminal-background",
   attention: "--janela-attention",
-  running: "--janela-running",
+  success: "--janela-success",
   failure: "--janela-failure",
 } as const;
 

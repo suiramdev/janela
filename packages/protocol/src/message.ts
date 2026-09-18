@@ -1,8 +1,10 @@
 import type {
   AbsolutePath,
+  AgentActivity,
   Axis,
   GridSize,
   Instant,
+  IntegrationID,
   LaunchProfile,
   LaunchProfileID,
   Project,
@@ -112,6 +114,17 @@ export type ClientMessage =
       readonly type: "removeTerminal";
       readonly id: RequestID;
       readonly terminalID: TerminalID;
+    }
+  | { readonly type: "integrations"; readonly id: RequestID }
+  | {
+      readonly type: "installIntegration";
+      readonly id: RequestID;
+      readonly integrationID: IntegrationID;
+    }
+  | {
+      readonly type: "removeIntegration";
+      readonly id: RequestID;
+      readonly integrationID: IntegrationID;
     };
 
 export interface TerminalInput {
@@ -196,4 +209,5 @@ export type AttentionKind =
       readonly kind: "promptFinished";
       readonly exitCode?: number;
       readonly durationSeconds: number;
-    };
+    }
+  | { readonly kind: "activity"; readonly activity: AgentActivity };

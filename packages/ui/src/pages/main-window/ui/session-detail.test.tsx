@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { TerminalID } from "@janela/core";
+import type { TerminalID, TerminalState } from "@janela/core";
 import { singleTerminalLayout } from "@janela/core";
 import { SidebarProvider, SizeProvider, sizeMap, type SizeVariant } from "@janela/design";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -105,6 +105,54 @@ describe("SessionDetail markup", () => {
 
     expect(exited).toContain('data-slot="badge"');
     expect(exited).toContain("exited (1)");
+  });
+
+  test("a pane badges what the agent said, and badges a bad ending as destructive", () => {
+    const withTerminal = session("s", {
+      terminals: [terminal("t1", "zsh")],
+      layout: singleTerminalLayout(terminalID("t1")),
+    });
+
+    const paneFor = (state: TerminalState): string =>
+      renderDetail(
+        fakeEnvironment({
+          sessions: [withTerminal],
+          states: { [terminalID("t1")]: state },
+          status: { kind: "connected" },
+        }),
+        "s",
+      );
+
+    const waiting = paneFor({
+      kind: "needsAttention",
+      activity: { kind: "waiting", need: "permission" },
+    });
+
+    expect(waiting).toContain('aria-label="Terminal: zsh — waiting for permission"');
+    expect(waiting).toContain('data-slot="badge"');
+    expect(waiting).toContain('data-variant="secondary"');
+    expect(waiting).toContain("waiting for permission");
+
+    const finished = paneFor({
+      kind: "needsAttention",
+      activity: { kind: "finished", outcome: "completed" },
+    });
+
+    expect(finished).toContain('data-variant="secondary"');
+    expect(finished).toContain("finished");
+
+    const stopped = paneFor({
+      kind: "needsAttention",
+      activity: { kind: "finished", outcome: "failed" },
+    });
+
+    expect(stopped).toContain('data-variant="destructive"');
+    expect(stopped).toContain("stopped with an error");
+
+    const working = paneFor({ kind: "running", activity: { kind: "working" } });
+
+    expect(working).toContain('aria-label="Terminal: zsh — working"');
+    expect(working).not.toContain('data-slot="badge"');
   });
 
   test("each tab and each terminal carries its own close control", () => {

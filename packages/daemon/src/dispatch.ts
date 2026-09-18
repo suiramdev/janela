@@ -1,9 +1,18 @@
-import type { GridSize, Project, Session, TerminalID, TerminalState } from "@janela/core";
+import {
+  isIntegrationID,
+  type GridSize,
+  type Project,
+  type Session,
+  type TerminalID,
+  type TerminalState,
+} from "@janela/core";
+import type { IntegrationService } from "@janela/integrations";
 import {
   FrameError,
   frameErrorLabel,
   serializeBranchOverview,
   serializeDirectoryListing,
+  serializeIntegrationOverview,
   serializeRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -50,6 +59,7 @@ export interface RequestDispatchOptions {
   readonly launchProfiles: LaunchProfileService;
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
+  readonly integrations: IntegrationService;
   readonly log: Logger;
   readonly announce: () => Promise<void>;
 }
@@ -148,7 +158,16 @@ export function fullStateSnapshot(world: StateWorld): StateUpdate {
 }
 
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const { sessions, projects, launchProfiles, directories, terminals, log, announce } = options;
+  const {
+    sessions,
+    projects,
+    launchProfiles,
+    directories,
+    terminals,
+    integrations,
+    log,
+    announce,
+  } = options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
     const terminal = terminals.get(terminalID);
@@ -364,6 +383,29 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
               terminal.snapshotText({ includeScrollback: request.includeScrollback === true }),
             ),
           );
+        },
+
+        integrations: async () =>
+          textReply(id, serializeIntegrationOverview(await integrations.overview())),
+
+        installIntegration: async (request) => {
+          if (!isIntegrationID(request.integrationID)) {
+            throw new TypeError("installIntegration with an unknown integration");
+          }
+
+          await integrations.install(request.integrationID);
+
+          return acknowledged(id);
+        },
+
+        removeIntegration: async (request) => {
+          if (!isIntegrationID(request.integrationID)) {
+            throw new TypeError("removeIntegration with an unknown integration");
+          }
+
+          await integrations.remove(request.integrationID);
+
+          return acknowledged(id);
         },
       }),
     );

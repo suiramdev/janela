@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import type {
   GridSize,
+  IntegrationReport,
   LaunchProfile,
   LaunchProfileID,
   PaneDestination,
@@ -19,6 +20,7 @@ import {
   encodeInput,
   parseBranchOverview,
   parseDirectoryListing,
+  parseIntegrationOverview,
   parseRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -42,6 +44,7 @@ import { createDaemonServer, type DaemonServer } from "./server.ts";
 import {
   clientHello,
   fakeDirectories,
+  fakeIntegrations,
   fakeListing,
   fakeLaunchProfiles,
   fakeProfile,
@@ -53,6 +56,7 @@ import {
   memoryListener,
   recordingLogger,
   wireControl,
+  type FakeIntegrations,
   type FakeRegistry,
   type FakeTerminal,
   type Recorded,
@@ -159,6 +163,7 @@ function fixture(
     readonly profiles?: readonly LaunchProfile[];
     readonly profileOverrides?: Partial<LaunchProfileService>;
     readonly directories?: DirectoryBrowsing;
+    readonly integrations?: FakeIntegrations;
   } = {},
 ): Fixture {
   const registry = fakeRegistry(options.terminals ?? []);
@@ -172,6 +177,7 @@ function fixture(
     launchProfiles: fakeLaunchProfiles(options.profiles ?? [], options.profileOverrides ?? {}),
     directories: options.directories ?? fakeDirectories(),
     terminals: registry,
+    integrations: options.integrations ?? fakeIntegrations(),
     log: logger,
     handshakeDeadlineMs: 250,
   });
@@ -1223,6 +1229,64 @@ describe("launch profiles", () => {
 
     expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
     expect(removed).toEqual([going]);
+  });
+});
+
+describe("integrations", () => {
+  const CLAUDE: IntegrationReport = {
+    id: "claude",
+    name: "Claude Code",
+    executable: "claude",
+    isAvailable: true,
+    configPath: "/Users/ada/.claude/settings.json",
+    reports: ["starts working", "waits for permission"],
+    status: { kind: "absent" },
+  };
+
+  test("the overview round-trips as text", async () => {
+    const daemon = fixture({ integrations: fakeIntegrations({ integrations: [CLAUDE] }) });
+    const peer = await daemon.connect();
+
+    await peer.send(request({ type: "integrations", id: 1 as RequestID }));
+    const reply = await peer.reply(1 as RequestID);
+
+    if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+
+    expect(parseIntegrationOverview(reply.text)).toEqual({ integrations: [CLAUDE] });
+  });
+
+  test("installing and removing name the integration the client asked for", async () => {
+    const integrations = fakeIntegrations();
+    const daemon = fixture({ integrations });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      request({ type: "installIntegration", id: 1 as RequestID, integrationID: "codex" }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+
+    await peer.send(
+      request({ type: "removeIntegration", id: 2 as RequestID, integrationID: "omp" }),
+    );
+
+    expect(await peer.reply(2 as RequestID)).toEqual({ type: "acknowledged", id: 2 as RequestID });
+    expect(integrations.installs).toEqual(["codex"]);
+    expect(integrations.removals).toEqual(["omp"]);
+  });
+
+  test("an integration nobody ships is refused, and nothing is installed", async () => {
+    const integrations = fakeIntegrations();
+    const daemon = fixture({ integrations });
+    const peer = await daemon.connect();
+
+    await peer.send(
+      wireControl({ type: "installIntegration", id: 1, integrationID: "emacs-doctor" }),
+    );
+    const reply = await peer.reply(1 as RequestID);
+
+    expect(reply.type).toBe("failed");
+    expect(integrations.installs).toEqual([]);
   });
 });
 

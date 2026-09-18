@@ -133,6 +133,7 @@ describe("the manifest is complete", () => {
       "@janela/pty",
       "@janela/db",
       "@janela/forge",
+      "@janela/integrations",
       "@janela/terminal",
       "@janela/session",
       "@janela/daemon",

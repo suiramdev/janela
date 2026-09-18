@@ -23,6 +23,46 @@ Purely cosmetic, and that is the point: people navigate a list of thirty entries
 by colour far faster than by name, and a colour costs nothing to learn. `"none"`
 is a value rather than an absent field.
 
+## agent-activity.ts
+
+The spelling of what a harness says about itself, in the one place all three
+layers reach: the hook `@janela/integrations` writes into a harness's own
+configuration, the emulator in `@janela/terminal` that reads it back off the
+byte stream, and the views that render it. Put the codec in the daemon and the
+hook template would be guessing at the grammar the daemon happens to accept.
+
+```text
+ESC ] 7770 ; <payload> BEL
+
+payload ∈ working | waiting;permission | waiting;input
+        | finished;completed | finished;failed
+```
+
+`AGENT_ACTIVITY_OSC` is `7770`, named once and imported everywhere — the
+emulator registers it beside 9, 777 and 133, and a second literal in a hook
+template is how a channel stops working with nothing to grep for.
+`formatAgentActivity` is the only place the payload words exist, and
+`agentActivityEscape` is the only place the introducer and the BEL do; the
+shell one-liner and both JavaScript templates build their strings from one or
+the other rather than spelling `\x1b]7770` themselves.
+
+`parseAgentActivity` is strict about the grammar and silent about everything
+else: it returns `undefined` and never throws. A third field (`working;a;b`) is
+rejected, a qualifier on `working` is rejected, `waiting` and `finished` are
+rejected without a qualifier or with one outside their two values, and any
+other first word is rejected. Nothing is trimmed, nothing is case-folded: this
+payload is written by templates in this repository, so accepting `Working ` or
+`WAITING;input` would only let a broken writer look correct in one direction
+and fail in the other. An unrecognised payload is not something a user can act
+on, so the emulator consumes the sequence, leaves the grid alone, and reports
+nothing.
+
+`agentActivityText` is the human sentence — "working", "waiting for
+permission", "waiting for your answer", "finished", "stopped with an error". It
+lives beside the grammar rather than in the views because a terminal's state
+text and its tab badge (`model/tab-rows.ts` in `@janela/ui`) would otherwise
+word the same fact twice. It is the only user-facing copy in the file.
+
 ## identifiers.ts
 
 A branded string gives what a phantom type gave before: a `TerminalID` can never
@@ -59,11 +99,46 @@ describing the same moment compare equal as strings — a database round-trip
 through `DATETIME` and an offset-bearing string from a forge must not produce two
 different values for one timestamp.
 
+## integration.ts
+
+What a harness's activity-reporting hook looks like right now, as a value. The
+package that reads and writes those hooks is daemon-side
+(`@janela/integrations`); what crosses the socket to Settings is this, and it is
+recomputed per request rather than stored — the user may edit
+`~/.claude/settings.json` between two openings of the tab, and a cached answer
+would be wrong precisely when it mattered.
+
+`INTEGRATION_IDS` is a closed list of four — `claude`, `codex`, `opencode`,
+`omp` — and `IntegrationID` is derived from it, so the protocol schema, the
+daemon's validation (`isIntegrationID`) and the daemon's registry cannot drift
+apart. `isIntegrationID` exists because an id arriving over the socket is an
+untrusted string; the daemon rejects a bad one as a `TypeError`, like every
+other malformed request.
+
+`IntegrationStatus` has four cases and the interesting one is `unreadable`,
+which carries a reason. A configuration file Janela cannot parse is not an
+error to report and move on from: it is a file we must leave byte-for-byte
+alone, and the only person who can fix it is the user — hence a status with a
+reason, and a `configPath` in the report so they can go and look.
+
+`IntegrationReport.isAvailable` is the same question `profileAvailability`
+asks and is answered the same way, in the daemon, against the user's real
+`PATH`. A harness that is not installed still gets a row: the row is where the
+user finds out that the hook they are about to install is for something they do
+not have. `reports` is the list of things this harness will make Janela show —
+user-facing copy, owned by the integration rather than by the view, because
+what a hook can report differs per harness and a view guessing at it would be
+the one place the two could disagree.
+
 ## launch-profile.ts
 
-`LaunchProfile` is Janela's entire "agent integration" surface, and that is
-intentional. We do not wrap Claude Code, parse Codex's output, or model an
-agent's task graph. See `docs/product.md` § Non-goals.
+`LaunchProfile` is how Janela *starts* an agent, and starting is still the whole
+of what it does: we do not wrap Claude Code, parse Codex's output, or model an
+agent's task graph. The other half of what "agent support" now means is
+`integration.ts` above and `@janela/integrations` — a hook the harness runs to
+say what it is doing — and the two halves never meet: a profile names a command,
+an integration names a configuration file, and neither reads the other. See
+`docs/product.md` § Non-goals.
 
 `iconName` names a Lucide icon from `@janela/design` (it was an SF Symbol name
 before the client became a WebView). It is presentational either way, and a name
@@ -80,9 +155,12 @@ profile from deletion; a user overrides one by copying it.
 
 `BUILT_IN_PROFILES` carry no id: ids are assigned at seed time, because a
 hardcoded id would collide with a user's own copy of a built-in, and names are
-the identity seeding matches on. These are *suggestions, not integrations* — if
+the identity seeding matches on. These are *suggestions, not wrappers* — if
 the binary is not on the user's `PATH` the profile is hidden rather than shown
-broken, and adding an entry must never require code changes elsewhere.
+broken, and adding an entry must never require code changes elsewhere. Five
+ship: Shell, Claude Code, Codex, OpenCode, and **Oh My Pi** (`omp`, icon `bot`,
+`isAgent`), which arrived with activity reporting — a harness Janela can hook
+is a harness worth offering to start, and offering it cost exactly one row.
 
 ### Availability
 
@@ -343,11 +421,22 @@ are lazy, which is how forty configured terminals cost nothing.
 not a hidden process with a bespoke output view: everything Janela runs on the
 user's behalf runs somewhere the user can watch it, scroll it, and Ctrl-C it.
 
-`TerminalState` is coarse, and note what is absent: there is no `waitingForUser`
-or `agentThinking`. Janela does not attempt to parse agent semantics out of a byte
-stream. It reports what the *terminal* told it — OSC 9 / OSC 777 notifications,
-OSC 133 prompt marks, BEL — and nothing more. `exited` carries the status so the
-UI can distinguish 0 from 130, and a `failed` message is safe to show a user.
+`TerminalState` is coarse, and there is still no `waitingForUser` and no
+`agentThinking`: Janela does not parse agent semantics out of a byte stream. It
+reports what the *terminal* told it — OSC 9 / OSC 777 notifications, OSC 133
+prompt marks, BEL — and, since a harness can be made to say so, `OSC 7770`.
+`exited` carries the status so the UI can distinguish 0 from 130, and a `failed`
+message is safe to show a user.
+
+`AgentActivity`, `AgentNeed` and `AgentOutcome` live here rather than beside the
+codec in `agent-activity.ts` because they are *state*, and `TerminalState` is
+what crosses the socket. `running` carries `activity` beside `progress` and
+`needsAttention` carries it alone; both are optional, both are exactly what was
+said, and a terminal that has never had a harness in it encodes as it always
+did. Which of them is set is the daemon's decision and is described in
+[`terminal.md`](terminal.md) § What an activity report does to the state: a
+`waiting` or `finished` report raises attention, `working` clears it, and only
+`start()` clears the activity itself.
 
 A *session's* status is derived from its terminals rather than stored: two
 sources of truth for the thing the sidebar is judged on would be one too many.

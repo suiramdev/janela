@@ -9,7 +9,12 @@ import {
   fakeTerminal,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
-import { filterSidebar, mergedExpansions } from "./sidebar-filter.ts";
+import {
+  SESSION_FILTERS,
+  SESSION_FILTER_TITLE,
+  filterSidebar,
+  mergedExpansions,
+} from "./sidebar-filter.ts";
 
 const NO_STATES: Readonly<Record<TerminalID, TerminalState>> = {};
 
@@ -43,6 +48,12 @@ const running = fakeSession({
 });
 
 const RUNNING_STATES = states([terminalID("t-run"), { kind: "running" }]);
+
+describe("SESSION_FILTERS", () => {
+  test("the menu offers every filter that has a title, each exactly once", () => {
+    expect(Object.keys(SESSION_FILTER_TITLE).toSorted()).toEqual(SESSION_FILTERS.toSorted());
+  });
+});
 
 describe("filterSidebar", () => {
   test("`all` returns the very same arrays", () => {

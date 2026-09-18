@@ -1,5 +1,5 @@
 import type { AttentionDelivering } from "@janela/client";
-import type { SessionID, TerminalID } from "@janela/core";
+import { agentActivityText, type SessionID, type TerminalID } from "@janela/core";
 import type { AttentionSignal } from "@janela/protocol";
 import { log, type Logger } from "@janela/support";
 import type { PluginListener } from "@tauri-apps/api/core";
@@ -236,8 +236,16 @@ export function notificationContent(input: {
             : `A command failed with status ${finished.exitCode} after ${seconds}s.`,
       };
     }),
+    Match.when({ kind: "activity" }, (reported) => ({
+      title,
+      body: asSentence(agentActivityText(reported.activity)),
+    })),
     Match.exhaustive,
   );
+}
+
+function asSentence(text: string): string {
+  return `${text.slice(0, 1).toUpperCase()}${text.slice(1)}.`;
 }
 
 async function raiseWindow(): Promise<void> {

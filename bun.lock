@@ -28,6 +28,7 @@
         "@janela/daemon": "workspace:*",
         "@janela/db": "workspace:*",
         "@janela/git": "workspace:*",
+        "@janela/integrations": "workspace:*",
         "@janela/protocol": "workspace:*",
         "@janela/pty": "workspace:*",
         "@janela/session": "workspace:*",
@@ -131,6 +132,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@janela/core": "workspace:*",
+        "@janela/integrations": "workspace:*",
         "@janela/protocol": "workspace:*",
         "@janela/session": "workspace:*",
         "@janela/support": "workspace:*",
@@ -192,6 +194,18 @@
     },
     "packages/git": {
       "name": "@janela/git",
+      "version": "0.0.0",
+      "dependencies": {
+        "@janela/core": "workspace:*",
+        "@janela/support": "workspace:*",
+        "effect": "4.0.0-rc.115",
+      },
+      "devDependencies": {
+        "@janela/test-support": "workspace:*",
+      },
+    },
+    "packages/integrations": {
+      "name": "@janela/integrations",
       "version": "0.0.0",
       "dependencies": {
         "@janela/core": "workspace:*",
@@ -457,6 +471,8 @@
     "@janela/gateway": ["@janela/gateway@workspace:apps/gateway"],
 
     "@janela/git": ["@janela/git@workspace:packages/git"],
+
+    "@janela/integrations": ["@janela/integrations@workspace:packages/integrations"],
 
     "@janela/janelad": ["@janela/janelad@workspace:apps/daemon"],
 

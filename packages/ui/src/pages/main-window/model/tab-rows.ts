@@ -1,4 +1,5 @@
 import {
+  agentActivityText,
   paneTerminalIDs,
   type LayoutTab,
   type SessionLayout,
@@ -34,16 +35,38 @@ export function terminalStateText(state: TerminalState | undefined): string {
 
   return Match.value(state).pipe(
     Match.when({ kind: "idle" }, () => "idle"),
-    Match.when({ kind: "running" }, () => "running"),
-    Match.when({ kind: "needsAttention" }, () => "needs attention"),
+    Match.when({ kind: "running" }, (running) =>
+      running.activity === undefined ? "running" : agentActivityText(running.activity),
+    ),
+    Match.when({ kind: "needsAttention" }, (attention) =>
+      attention.activity === undefined ? "needs attention" : agentActivityText(attention.activity),
+    ),
     Match.when({ kind: "exited" }, (exited) => `exited (${exited.code})`),
     Match.when({ kind: "failed" }, (failed) => failed.message),
     Match.exhaustive,
   );
 }
 
+export function terminalBadgeText(state: TerminalState | undefined): string | undefined {
+  if (state?.kind === "running") return undefined;
+
+  if (state?.kind === "needsAttention") {
+    const activity = state.activity;
+
+    if (activity === undefined || activity.kind === "working") return undefined;
+
+    return agentActivityText(activity);
+  }
+
+  return terminalStateText(state);
+}
+
 export function isFailureState(state: TerminalState | undefined): boolean {
   if (state === undefined) return false;
+
+  if (state.kind === "needsAttention") {
+    return state.activity?.kind === "finished" && state.activity.outcome === "failed";
+  }
 
   return state.kind === "failed" || (state.kind === "exited" && state.code !== 0);
 }

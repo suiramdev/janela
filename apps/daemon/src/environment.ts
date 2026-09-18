@@ -11,6 +11,7 @@ import {
 } from "@janela/daemon";
 import { openDatabase, type JanelaDatabase } from "@janela/db";
 import { gitRunner, worktreeService } from "@janela/git";
+import { createIntegrationService } from "@janela/integrations";
 import { readPeerCredential } from "@janela/pty";
 import {
   createDirectoryBrowser,
@@ -26,6 +27,7 @@ import {
   type StateObserving,
 } from "@janela/session";
 import { log, type Logger } from "@janela/support";
+import { processRunner } from "@janela/support/process";
 import { createTerminalRegistry, type TerminalRegistry } from "@janela/terminal";
 import { Effect, Option, Schema } from "effect";
 
@@ -123,6 +125,11 @@ export async function daemonEnvironment(
     launchProfiles,
     directories: createDirectoryBrowser({ home: absolutePath(homedir()) }),
     terminals,
+    integrations: createIntegrationService({
+      home: { directory: homedir(), environment: shell.resolved },
+      processes: processRunner(),
+      log: logger,
+    }),
     log: log("protocol"),
   });
 

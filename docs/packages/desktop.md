@@ -41,6 +41,18 @@ linked, so it could not if it tried.
   connection does.
 - `document.hasFocus()` is the browser's answer to "is this window frontmost", and it
   is synchronous — the policy is consulted on the signal path.
+- `attentionPreferences` is a dep, not an import, for the same reason `TerminalFocus`
+  is: the answers live in `GlobalSettings`, which is `@janela/ui`'s, and
+  `liveEnvironment` may not reach for a React tree. So `DEFAULT_ATTENTION_PREFERENCES`
+  restates the three `DEFAULT_GLOBAL_SETTINGS` values — bell off, both agent switches
+  on — and a test in `environment.test.ts` pins it against
+  `attentionPreferences(DEFAULT_GLOBAL_SETTINGS)`, since a test may import the UI
+  package where the composition root may not. A headless environment therefore
+  notifies for a waiting or finished agent and stays quiet for a bell, exactly as a
+  fresh install does.
+- The dep is a function called per signal, not a value: settings change while the app
+  runs, and a captured snapshot would keep notifying after the user turned the switch
+  off.
 
 ## `src/main.tsx`
 
@@ -51,6 +63,11 @@ linked, so it could not if it tried.
 - `view` and the confirmation queue are built here rather than in `liveEnvironment()`
   so the composition root stays about the daemon connection. The queue needs both the
   window it was silenced in and the storage the next launch reads.
+- The attention preferences read `view.settings`, which is the live authority: the
+  window loads the stored settings into it at mount and the Settings screen writes
+  every save back. The closure is passed to `liveEnvironment()` above the line that
+  builds `view`, which is safe because nothing calls it until a signal arrives — and
+  it is the only order that works, since `view` needs `environment.sessions`.
 - `connect()` and the native menu are started in an effect, after first paint, and
   neither is awaited. StrictMode fires the effect twice in development, which is
   harmless: `connect()` is idempotent while a loop is running, and registration
@@ -146,8 +163,16 @@ happened.
   capability set stops meaning anything. `core:window:allow-set-focus` may be absent,
   in which case the session is still selected and the window simply did not come
   forward.
-- The bare-bell branch in `notificationContent` exists so the mapping is total, not
-  because the policy ever delivers one.
+- The bare-bell branch in `notificationContent` used to exist only so the mapping was
+  total; `notifiesOnBell` is live now, so it is a body the user can actually read.
+- An `activity` body is `agentActivityText` from `@janela/core` with the first letter
+  capitalised and a full stop added: "Waiting for permission.", "Finished.",
+  "Stopped with an error." — the harness's own report, punctuated. The words are not
+  restated here, because the sidebar, the tooltip and this banner must not drift into
+  three different vocabularies for one state, and translating an enum twice is how
+  that starts. The title is unchanged: every signal names its session and terminal
+  the same way, because that is the routing fact a click needs, not something about
+  the signal.
 - The privacy test drives the whole lifecycle past a recording logger and pins all
   four strings, not just the body: the composed title carries the terminal's OSC 0
   title, which is the user's output too. It also asserts something *was* logged and

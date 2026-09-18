@@ -45,6 +45,14 @@ export const BUILT_IN_PROFILES: readonly Omit<LaunchProfile, "id">[] = [
     isAgent: true,
     isBuiltIn: true,
   },
+  {
+    name: "Oh My Pi",
+    iconName: "bot",
+    command: ["omp"],
+    environment: {},
+    isAgent: true,
+    isBuiltIn: true,
+  },
 ];
 
 export function usesLoginShell(profile: Pick<LaunchProfile, "command">): boolean {

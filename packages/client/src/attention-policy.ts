@@ -6,7 +6,11 @@ import { Match } from "effect";
 import type { SessionStore } from "./stores.ts";
 
 export interface AttentionPolicy {
-  shouldDeliver(signal: AttentionSignal, context: AttentionContext): boolean;
+  shouldDeliver(
+    signal: AttentionSignal,
+    context: AttentionContext,
+    preferences: AttentionPreferences,
+  ): boolean;
 
   forgetSession(id: SessionID): void;
 }
@@ -15,6 +19,12 @@ export interface AttentionContext {
   readonly isApplicationActive: boolean;
   readonly selectedSessionID?: SessionID | undefined;
   readonly focusedTerminalID?: TerminalID | undefined;
+}
+
+export interface AttentionPreferences {
+  readonly notifiesOnBell: boolean;
+  readonly notifiesWhenAgentFinishes: boolean;
+  readonly notifiesWhenAgentWaits: boolean;
 }
 
 export interface AttentionDelivering {
@@ -38,6 +48,7 @@ export interface AttentionRoutingOptions {
   readonly delivery: AttentionDelivering;
   readonly isApplicationActive: () => boolean;
   readonly focusedTerminalID: () => TerminalID | undefined;
+  readonly preferences: () => AttentionPreferences;
   readonly log?: Logger;
 }
 
@@ -63,7 +74,11 @@ export function createAttentionPolicy(): AttentionPolicy {
   const delivered = new Map<TerminalID, { readonly sessionID: SessionID; readonly at: number }>();
 
   return {
-    shouldDeliver(signal: AttentionSignal, context: AttentionContext): boolean {
+    shouldDeliver(
+      signal: AttentionSignal,
+      context: AttentionContext,
+      preferences: AttentionPreferences,
+    ): boolean {
       const now = Date.parse(signal.occurredAt);
 
       for (const [terminalID, entry] of delivered) {
@@ -82,7 +97,7 @@ export function createAttentionPolicy(): AttentionPolicy {
         return false;
       }
 
-      if (!isWorthInterrupting(signal)) return false;
+      if (!isWorthInterrupting(signal, preferences)) return false;
 
       delivered.set(signal.terminalID, { sessionID: signal.sessionID, at: now });
 
@@ -97,9 +112,9 @@ export function createAttentionPolicy(): AttentionPolicy {
   };
 }
 
-function isWorthInterrupting(signal: AttentionSignal): boolean {
+function isWorthInterrupting(signal: AttentionSignal, preferences: AttentionPreferences): boolean {
   return Match.value(signal.kind).pipe(
-    Match.when({ kind: "bell" }, () => false),
+    Match.when({ kind: "bell" }, () => preferences.notifiesOnBell),
     Match.when({ kind: "notification" }, () => true),
     Match.when(
       { kind: "promptFinished" },
@@ -107,6 +122,14 @@ function isWorthInterrupting(signal: AttentionSignal): boolean {
         finished.exitCode !== undefined &&
         finished.exitCode !== 0 &&
         finished.durationSeconds >= LONG_RUNNING_THRESHOLD_SECONDS,
+    ),
+    Match.when({ kind: "activity" }, (reported) =>
+      Match.value(reported.activity).pipe(
+        Match.when({ kind: "working" }, () => false),
+        Match.when({ kind: "waiting" }, () => preferences.notifiesWhenAgentWaits),
+        Match.when({ kind: "finished" }, () => preferences.notifiesWhenAgentFinishes),
+        Match.exhaustive,
+      ),
     ),
     Match.exhaustive,
   );
@@ -135,7 +158,7 @@ export function routeAttention(options: AttentionRoutingOptions): AttentionRouti
       focusedTerminalID: focused,
     };
 
-    if (!policy.shouldDeliver(signal, context)) return;
+    if (!policy.shouldDeliver(signal, context, options.preferences())) return;
 
     const session = sessions.sessions.find((candidate) => candidate.id === signal.sessionID);
     const terminal = session?.terminals.find((candidate) => candidate.id === signal.terminalID);

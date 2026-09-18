@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { TerminalProgress } from "@janela/core";
+import { agentActivityEscape, type AgentActivity, type TerminalProgress } from "@janela/core";
 import { Terminal } from "@xterm/headless";
 import { Predicate } from "effect";
 
@@ -29,6 +29,7 @@ interface RecordingSink extends TerminalEventSink {
   readonly notifications: TerminalNotification[];
   readonly marks: PromptMark[];
   readonly progress: (TerminalProgress | undefined)[];
+  readonly activities: AgentActivity[];
 }
 
 const encoder = new TextEncoder();
@@ -144,6 +145,7 @@ function recordingSink(): RecordingSink {
   const notifications: TerminalNotification[] = [];
   const marks: PromptMark[] = [];
   const progress: (TerminalProgress | undefined)[] = [];
+  const activities: AgentActivity[] = [];
 
   return {
     titles,
@@ -151,11 +153,13 @@ function recordingSink(): RecordingSink {
     notifications,
     marks,
     progress,
+    activities,
     onTitle: (title) => titles.push(title),
     onWorkingDirectory: (path) => directories.push(path),
     onAttention: (notification) => notifications.push(notification),
     onPromptMark: (mark) => marks.push(mark),
     onProgress: (reported) => progress.push(reported),
+    onActivity: (activity) => activities.push(activity),
     onExit: () => {
       throw new Error("the emulator knows nothing about processes and must never emit onExit");
     },
@@ -280,6 +284,23 @@ describe("events", () => {
       undefined,
     ]);
     expect(sink.notifications).toEqual([]);
+  });
+
+  test("OSC 7770 reports an agent's activity, ignores a bogus payload, and paints nothing", () => {
+    const target = emulator(20, 3);
+    const sink = recordingSink();
+    target.events = sink;
+
+    feed(target, "screen");
+
+    const revision = target.revision;
+
+    feed(target, agentActivityEscape({ kind: "waiting", need: "permission" }));
+    feed(target, "\x1b]7770;bogus\x07");
+
+    expect(sink.activities).toEqual([{ kind: "waiting", need: "permission" }]);
+    expect(target.snapshotText({ includeScrollback: true })).toBe("screen");
+    expect(target.repaintSince(revision)).toHaveLength(0);
   });
 
   test("OSC 133 marks arrive with their exit code", () => {

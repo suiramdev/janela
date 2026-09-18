@@ -3,6 +3,7 @@ export { DirectoryPickerHost, MainWindow } from "./pages/main-window/index.ts";
 export { SettingsScreen } from "./pages/settings/index.ts";
 
 export {
+  attentionPreferences,
   ClientEnvironmentProvider,
   commandsWithShortcuts,
   createConfirmationQueue,

@@ -117,12 +117,34 @@ this decides what it means; shipping focus state to the daemon would be a chatty
 protocol serving no one.
 
 The rules, stated once so the implementation cannot drift: already delivered → no;
-the user is looking straight at it → no; a bare BEL → badge but do not interrupt,
+the user is looking straight at it → no; a bare BEL → whatever `notifiesOnBell` says,
 because programs ring it for reasons the user has not agreed are important; an
 OSC 9 / OSC 777 → deliver, because the program asked by name and that is consent; a
 finished prompt → deliver only when it failed *and* ran longer than
-`LONG_RUNNING_THRESHOLD_SECONDS` (10 s), since short commands failing is normal work.
+`LONG_RUNNING_THRESHOLD_SECONDS` (10 s), since short commands failing is normal work;
+a reported agent activity → `waiting` asks `notifiesWhenAgentWaits`, `finished` asks
+`notifiesWhenAgentFinishes` for either outcome, and `working` is never worth
+interrupting for.
 
+**`AttentionPreferences` is the user's answer, read per signal.** `routeAttention`
+takes `preferences: () => AttentionPreferences` and calls it for every signal rather
+than capturing a value, so a switch flipped in Settings is in force for the next
+signal with no restart and no subscription. It is three booleans and no more: what
+the user is asked in Settings is exactly what the policy branches on, so there is no
+mapping layer to get wrong. Which of the three a signal consults is the policy's
+call, not the caller's — the app supplies the answers, never the verdict.
+
+- `notifiesOnBell` was, until agent activity landed, a *dead* setting: the switch
+  saved and reloaded, and `isWorthInterrupting` returned `false` for a bell whatever
+  it held. It is now what it always claimed to be. The bell still badges the sidebar
+  when it is off — that channel needs no permission.
+- `notifiesWhenAgentFinishes` and `notifiesWhenAgentWaits` default to **on**, unlike
+  the bell: an agent reports activity only because the user installed its integration,
+  which is the consent a bare BEL lacks. The sidebar shows both states whatever the
+  preferences say; these decide only whether Janela also interrupts.
+- `working` is a state, never a signal. The daemon does not raise it (see
+  `@janela/daemon`'s relay), and the policy refuses it a second time here so a future
+  caller that does raise one cannot notify a user every time an agent picks up a tool.
 - The coalescing window is 5 s: a build that rings the bell four times is one
   notification, and the alternative trains users to dismiss without reading. The
   boundary is inclusive.

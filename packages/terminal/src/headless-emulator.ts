@@ -2,7 +2,7 @@
 
 import { hostname } from "node:os";
 
-import type { GridSize } from "@janela/core";
+import { AGENT_ACTIVITY_OSC, parseAgentActivity, type GridSize } from "@janela/core";
 import type { TerminalBytes } from "@janela/pty";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/headless";
@@ -273,6 +273,15 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       if (mark !== undefined) {
         this.events?.onPromptMark(mark);
+      }
+
+      return true;
+    });
+    this.terminal.parser.registerOscHandler(AGENT_ACTIVITY_OSC, (payload) => {
+      const activity = parseAgentActivity(payload);
+
+      if (activity !== undefined) {
+        this.events?.onActivity(activity);
       }
 
       return true;

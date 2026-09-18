@@ -77,8 +77,9 @@ const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean
 
 const STATUS_ICON = {
   attention: statusGlyph(Dotm3x3_15, "text-attention", true),
-  working: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
   failed: statusGlyph(Dotm3x3_15, "text-failure", true),
+  done: statusGlyph(Dotm3x3_15, "text-success", false),
+  working: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
   running: statusGlyph(Dotm3x3_20, "invisible", false),
   idle: statusGlyph(Dotm3x3_20, "invisible", false),
 } satisfies Record<SessionStatus, IconComponent>;

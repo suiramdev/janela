@@ -136,6 +136,26 @@ notification — the split is decided by whether the first field is a bare
 sub-command number, which is why the two parsers can disagree about the same
 sequence without either being wrong.
 
+**Agent activity, `OSC 7770`, is not parsed here.** Its codec lives in
+`@janela/core` (`agent-activity.ts`) because three layers must agree on the
+spelling: the hook `@janela/integrations` writes into a harness's own
+configuration, the emulator that reads it back, and the client that renders it.
+A parser in this package would make the daemon the only place that knows the
+grammar, and the hook would drift from it silently. `headless-emulator.ts`
+registers `AGENT_ACTIVITY_OSC` beside 9, 777 and 133 and hands the payload to
+`parseAgentActivity`; a payload that is not one of `working`,
+`waiting;permission`, `waiting;input`, `finished;completed`,
+`finished;failed` reports nothing. Either way the handler returns `true`, so the
+sequence is consumed and **the grid is untouched** — a harness saying what it is
+doing must never print a stray character into the user's screen.
+`headless-emulator.test.ts` feeds a real escape and a bogus one and asserts both
+the single report and an unchanged snapshot.
+
+This is the same shape as `OSC 9;4`: the program *says* what it is doing. Janela
+never reads a harness's output for meaning (non-negotiable 3), so an agent's
+state comes from a hook the user chose to install, not from pattern-matching
+prose.
+
 `parsePromptMark` returns only the three marks Janela acts on. `B` (end of
 prompt) and kitty's `P` property extension are perfectly valid and simply carry
 nothing this layer can use, so they are ignored rather than treated as malformed.
@@ -439,6 +459,29 @@ restarted terminal does not inherit the last run's 80% and an exited one does no
 leave a bar on screen forever. `OSC 9 ; 4 ; 0` clears it the same way from the
 other direction, which is a program saying it is done rather than a program
 ending.
+
+### What an activity report does to the state
+
+`onActivity` stores the report and moves attention with it: `working` clears
+attention, `waiting` and `finished` raise it. The harness is the authority on
+whether it is blocked, so a report is allowed to *lower* the flag a previous
+report raised — that is how a session stops glowing when the user answers a
+permission prompt inside the agent rather than through Janela. Attention has one
+flag, not one per source: a `working` report clears a bell that rang before it,
+and a bell that rings after it raises attention again. The last event wins, in
+arrival order, because a terminal either wants the user now or it does not.
+
+`send()` and `fullRepaintFor()` keep clearing attention — the user typed, or
+looked — but they **do not** clear the activity. "The user has seen it" and
+"the agent is waiting for permission" are different facts: the sidebar stops
+glowing while the row still says what the agent is doing. The activity therefore
+rides on both live states: `needsAttention` carries it when attention is up, and
+`running` carries it beside `progress` when it is not. Both are optional on the
+wire, so a terminal that has never had a harness in it is byte-identical to
+before.
+
+Like progress, **an activity does not survive the process that reported it**:
+`start()` clears it, so a restarted agent does not open already "finished".
 
 ### Size negotiation
 

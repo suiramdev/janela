@@ -1,4 +1,4 @@
-import type { GridSize, TerminalProgress } from "@janela/core";
+import type { AgentActivity, GridSize, TerminalProgress } from "@janela/core";
 import type { TerminalBytes } from "@janela/pty";
 
 export interface TerminalEmulating {
@@ -20,6 +20,7 @@ export interface TerminalEventSink {
   onAttention(notification: TerminalNotification): void;
   onPromptMark(mark: PromptMark): void;
   onProgress(progress: TerminalProgress | undefined): void;
+  onActivity(activity: AgentActivity): void;
   onExit(code: number): void;
 }
 

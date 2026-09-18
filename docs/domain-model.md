@@ -263,37 +263,62 @@ process with a bespoke output view.
 ```swift
 public enum TerminalState: Hashable, Sendable {
     case idle                    // configured, nothing spawned. Costs ~nothing.
-    case running(progress: TerminalProgress?) // optional, and only if the program said so
-    case needsAttention          // the terminal asked for it
+    case running(progress: TerminalProgress?, activity: AgentActivity?)
+                                 // both optional, and only if the program said so
+    case needsAttention(activity: AgentActivity?)  // the terminal asked for it
     case exited(code: Int32)
     case failed(message: String)
+}
+
+public enum AgentActivity: Hashable, Sendable {
+    case working
+    case waiting(need: AgentNeed)         // .permission | .input
+    case finished(outcome: AgentOutcome)  // .completed | .failed
 }
 ```
 
 `.idle` is a first-class state, not an absence. It is what makes 40 open terminals
 cheap, and it is why allocation happens in `start()` rather than `init`.
 
-**There is no `.waitingForUser` or `.agentThinking`**, and adding one would mean
-reversing a deliberate decision rather than filling a gap. Janela reports what
-the *terminal* told it — BEL, OSC 9/777, OSC 133 — and never infers agent
-semantics from a byte stream.
+**There is still no `.waitingForUser` and no `.agentThinking`**, and the decision
+that sentence recorded holds in its substance: Janela infers nothing about an
+agent from a byte stream. What changed is that a harness may now *say* what it is
+doing. It writes `OSC 7770` with a payload of `working`, `waiting;permission`,
+`waiting;input`, `finished;completed` or `finished;failed`; the daemon's emulator
+parses it and `activity` carries the claim verbatim, exactly as `progress`
+carries what a build claimed about itself. The state is what was said, never what
+was deduced, and a terminal no harness reports in carries no `activity` at all —
+the ordinary case. The hook that makes a harness report is installed only when
+the user asks for it, into the harness's own configuration rather than into ours;
+see [`packages/integrations.md`](packages/integrations.md).
 
-`progress` is the one thing `.running` carries, and it is terminal-reported in
-exactly the sense BEL is: a program writes `OSC 9 ; 4`, and Janela relays the
-report. It is `TerminalProgress` — `indeterminate`, or `normal`, `error` or
-`warning` with a `percent` from 0 to 100 — and it is absent far more often than
-it is present, because most programs never emit it. A running terminal without
-progress is the normal case, not a degraded one.
+`progress` is the older of the two reports `.running` carries, and it is
+terminal-reported in exactly the sense BEL is: a program writes `OSC 9 ; 4`, and
+Janela relays the report. It is `TerminalProgress` — `indeterminate`, or
+`normal`, `error` or `warning` with a `percent` from 0 to 100 — and it is absent
+far more often than it is present, because most programs never emit it. A
+running terminal without progress is the normal case, not a degraded one.
 
-That is an addition to the sentence above, not an exception to it. Progress is
-still the program's own claim about itself, carried verbatim; it is not a
-measurement Janela takes and not a signal it reads anything into. A build that
-reports 80% is a build that *said* 80%, and a terminal that reports nothing is a
-terminal Janela has nothing to say about — never one it guesses at.
+That is an addition to the sentence above, not an exception to it, and so is
+`activity`. Progress is still the program's own claim about itself, carried
+verbatim; it is not a measurement Janela takes and not a signal it reads
+anything into. A build that reports 80% is a build that *said* 80%, and a
+terminal that reports nothing is a terminal Janela has nothing to say about —
+never one it guesses at.
+
+**What a report does to attention.** `waiting` and `finished` raise it;
+`working` clears it, because the harness is the authority on whether it is
+blocked and may lower a flag its own earlier report raised. The two older
+clearings are unchanged: input sent to the terminal clears attention, and so does
+a client attaching and taking its full repaint. Neither clears the `activity` —
+"the user has looked" and "the agent is waiting for permission" are different
+facts, so a row stops glowing while still saying what the agent is doing. Only
+`start()` clears it, so a restarted agent does not open already finished.
 
 A session's status is **derived** from its terminals, never stored: a session is
-running if any terminal is running, and wants attention if any unfocused terminal
-does. Storing it would create two sources of truth for the thing the sidebar is
+running if any terminal is running, wants attention if any unfocused terminal
+does, and is *done* when an agent reported that it finished and nobody has looked
+yet. Storing it would create two sources of truth for the thing the sidebar is
 judged on.
 
 The daemon computes `TerminalState` and pushes it; clients render what they were
@@ -360,9 +385,11 @@ to `sh -c`, so the quoting bug class does not exist here. An empty `command` mea
 "notify me when agents finish". It grants no special behaviour, because agents get
 no special behaviour.
 
-Built-ins ship for Shell, Claude Code, Codex and OpenCode. These are *suggestions,
-not integrations*: if the binary is not on the user's `PATH`, the profile is hidden
-rather than shown broken. Adding one must never require code changes elsewhere.
+Built-ins ship for Shell, Claude Code, Codex, OpenCode and Oh My Pi. These are
+*suggestions, not wrappers*: if the binary is not on the user's `PATH`, the
+profile is hidden rather than shown broken. Adding one must never require code
+changes elsewhere. A profile is not an integration either — it starts a harness;
+an integration is the hook that harness runs.
 
 ---
 
@@ -444,7 +471,7 @@ What a terminal reported, normalised, before any policy is applied:
 
 ```swift
 public struct AttentionSignal: Hashable, Sendable {
-    public enum Kind { case bell, notification(title: String?, body: String), promptFinished(exitCode: Int32?) }
+    public enum Kind { case bell, notification(title: String?, body: String), promptFinished(exitCode: Int32?), activity(AgentActivity) }
     public var kind: Kind
     public var terminalID: TerminalID
     public var at: Date
@@ -455,6 +482,47 @@ The signal is a fact, produced by the daemon's emulator and pushed to every
 subscribed client. Whether it becomes a badge, a Notification Centre delivery, or
 nothing at all is policy — and policy lives in `JanelaClient`, because only a client
 knows what is focused and whether anyone is looking.
+
+`activity` is the newest kind and the only one a program produces on purpose
+about itself: the daemon raises it for `waiting` and `finished` reports and never
+for `working`, which is state and not news.
+
+### `IntegrationReport`
+
+Not a fifth noun. Nothing in the tree holds one, nothing persists one, and the
+user never names one: it is what the daemon answers when a client asks what
+Janela's activity-reporting hooks look like *right now*, recomputed per request
+by reading each harness's own configuration.
+
+```swift
+public enum IntegrationID: String, Hashable, Sendable, Codable {
+    case claude, codex, opencode, omp
+}
+
+public enum IntegrationStatus: Hashable, Sendable {
+    case installed                   // every current entry is there, verbatim
+    case outdated                    // ours is there and is not what we would write now
+    case absent                      // nothing of ours
+    case unreadable(reason: String)  // the file exists and will not parse
+}
+
+public struct IntegrationReport: Hashable, Sendable {
+    public var id: IntegrationID
+    public var name: String          // "Claude Code"
+    public var executable: String    // the binary we look for
+    public var isAvailable: Bool     // it is on the daemon's PATH
+    public var configPath: String    // the file the user can open and read
+    public var reports: [String]     // what this harness will make Janela show
+    public var status: IntegrationStatus
+}
+```
+
+The four ids are a closed list, `INTEGRATION_IDS`, and the protocol schema
+derives from it, so a fifth harness is one id plus one implementation
+([`packages/integrations.md`](packages/integrations.md) § Adding a harness).
+`unreadable` is a status rather than a failure because a configuration Janela
+cannot parse is one it must leave exactly as it found it, and the user is the
+one who can fix it — `configPath` is in the report for that reason.
 
 ---
 
@@ -469,7 +537,7 @@ and belongs here before it belongs in code.
 | **Worktree as an entity** | It has no independent lifecycle. It is provenance on a session. |
 | **Nested projects / folders / tags** | The sidebar is two levels. Hierarchy past that is a cost users pay to organise something they mostly search. |
 | **Task / run / job** | A running thing is a terminal. Automation is a command with an event, not a job with a queue. |
-| **Agent** | An agent is a launch profile that happens to be an agent. |
+| **Agent** | An agent is a launch profile that happens to be an agent. What one says about itself is `AgentActivity`, a value on a terminal's state, not an entity with a lifecycle. |
 | **Per-session settings** | Settings are global or per-project. Sessions carry state, not configuration. |
 | **Saved layouts** | The layout is wherever you left it, stored on the session. Not a named object with its own management UI. |
 | **Pull request / issue as an entity** | `ForgeState` is a cache on a session. We do not own forge objects and must never look like we do. |
@@ -498,10 +566,19 @@ model erodes.
 | client | frontend, UI (when you mean the process) |
 | attach / detach | connect, open, subscribe (when you mean one terminal) |
 | connect / disconnect | attach (when you mean the socket) |
+| integration | plugin, add-on, agent support |
+| harness | wrapper, runner, agent (when you mean the program itself) |
 
-Two of these are worth stating twice, because they are the ones that will slip:
+Four of these are worth stating twice, because they are the ones that will slip:
 
 - **A tab belongs to a session and holds terminals.** It is not a session and it is
   not a terminal.
 - **"Workspace" means nothing here.** If a sentence needs it, the sentence is
   describing either a project or a session and has not decided which.
+- **An integration is the hook Janela installs**, in a harness's own
+  configuration, so that harness can report what it is doing. It is not a plugin
+  *of* Janela, and Janela has no plugin API to be one of.
+- **A harness is the program a launch profile starts** — Claude Code, Codex,
+  OpenCode, Oh My Pi. The word is accepted, and only while the subject is hooks
+  and activity reporting; everywhere else the thing being named is a launch
+  profile. "Hook" still never means an automation script: that row stands.

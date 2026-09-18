@@ -97,7 +97,7 @@
 
   --janela-terminal-background: #ffffff;
   --janela-attention: #007aff;
-  --janela-running: #34c759;
+  --janela-success: #34c759;
   --janela-failure: #ff3b30;
 
   /* shadcn/ui, `neutral`, light. */
@@ -215,7 +215,7 @@
   :root {
     --janela-terminal-background: #1e1e1e;
     --janela-attention: #0a84ff;
-    --janela-running: #30d158;
+    --janela-success: #30d158;
     --janela-failure: #ff453a;
 
     --background: oklch(0.145 0 0);
@@ -319,7 +319,7 @@
   :root {
     --janela-terminal-background: #ffffff;
     --janela-attention: #0040dd;
-    --janela-running: #248a3d;
+    --janela-success: #248a3d;
     --janela-failure: #d70015;
 
     --muted-foreground: oklch(0.371 0 0);
@@ -347,7 +347,7 @@
   :root {
     --janela-terminal-background: #000000;
     --janela-attention: #409cff;
-    --janela-running: #30db5b;
+    --janela-success: #30db5b;
     --janela-failure: #ff6961;
 
     --muted-foreground: oklch(0.87 0 0);
@@ -379,7 +379,7 @@
 @theme inline {
   --color-terminal-background: var(--janela-terminal-background);
   --color-attention: var(--janela-attention);
-  --color-running: var(--janela-running);
+  --color-success: var(--janela-success);
   --color-failure: var(--janela-failure);
   --radius-small: 6px;
   --radius-medium: 10px;

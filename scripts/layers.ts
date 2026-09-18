@@ -67,6 +67,13 @@ export const PACKAGES: readonly PackageSpec[] = [
     deps: ["@janela/support", "@janela/core"],
   },
   {
+    name: "@janela/integrations",
+    dir: "packages/integrations",
+    layer: 3,
+    side: "daemon",
+    deps: ["@janela/support", "@janela/core"],
+  },
+  {
     name: "@janela/terminal",
     dir: "packages/terminal",
     layer: 4,
@@ -98,6 +105,7 @@ export const PACKAGES: readonly PackageSpec[] = [
       "@janela/protocol",
       "@janela/session",
       "@janela/terminal",
+      "@janela/integrations",
     ],
   },
   {
@@ -115,6 +123,7 @@ export const PACKAGES: readonly PackageSpec[] = [
       "@janela/terminal",
       "@janela/session",
       "@janela/daemon",
+      "@janela/integrations",
     ],
   },
   {
@@ -306,12 +315,13 @@ export const GATED_MODULES: readonly GatedModule[] = [
       "@janela/git",
       "@janela/forge",
       "@janela/pty",
+      "@janela/integrations",
       "@janela/session",
       "@janela/janelad",
       "@janela/gateway",
     ],
     reason:
-      "@janela/support is isomorphic so a browser client can link it; its subprocess half is daemon-only and lives behind this subpath.",
+      "@janela/support is isomorphic so a browser client can link it; its subprocess half is daemon-only and lives behind this subpath. @janela/integrations uses only `which`, to say whether a harness is on the PATH before offering to hook it.",
   },
 ];
 

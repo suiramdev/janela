@@ -25,6 +25,9 @@
       "path": "../../packages/terminal"
     },
     {
+      "path": "../../packages/integrations"
+    },
+    {
       "path": "../../packages/test-support"
     }
   ]

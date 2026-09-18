@@ -456,6 +456,11 @@ rather than empty when they do not apply. A script tests `set -u`-safely for the
 variable, and an empty `JANELA_BRANCH` on a detached worktree would read as a
 branch whose name is the empty string.
 
+One `JANELA_*` variable a terminal gets does not come from here: `JANELA_TTY`,
+set by `@janela/pty` because its value does not exist until the terminal does.
+`terminal-launch.ts` below names it; `janelaVariables` stays a function of the
+session alone.
+
 ## terminal-launch.ts
 
 `@janela/terminal` receives an answer rather than computing one, because this is
@@ -483,8 +488,9 @@ agreed to them, which is the keyboard belonging to the terminal rather than to
 the running program — non-negotiable 4. So the declaration is the narrow one,
 and it is true: this terminal does understand the ConEmu progress extension.
 
-That declaration is all Janela can do, and it is not enough for every harness.
-What each one needs, measured:
+That declaration is all Janela can do with the escapes a harness already emits on
+its own, and it is not enough for any of them. What each one does unassisted,
+measured:
 
 | Harness | Working (`9;4`) | Attention |
 | --- | --- | --- |
@@ -492,9 +498,20 @@ What each one needs, measured:
 | omp 18.2.4, and `pi` on its profile | only when the user sets `terminal.showProgress` (default off) | `ask.notify` |
 | Codex 0.153.4 | never — the binary contains no `9;4` | `tui.notifications` (default off) emits OSC 9 or BEL |
 
-A harness that stays silent leaves its session showing a live shell, which is
-what it is. Janela reports what the terminal told it and infers nothing, so the
-remaining gaps are settings in the user's own tools, not signals to guess at.
+Activity itself travels through the integration `@janela/integrations` installs
+into the harness's own configuration: the harness *says* what it is doing through
+its own hook mechanism, and the hook writes one escape to `$JANELA_TTY`. The
+`9;4` facts above are unchanged and still drive progress — a harness that emits
+it keeps showing it, whether or not an integration is installed. A harness that
+stays silent with nothing installed leaves its session showing a live shell,
+which is what it is: Janela reports what the terminal told it and infers nothing.
+
+`replicaPathVariable` is `REPLICA_PATH_VARIABLE` — `JANELA_TTY` — on every launch
+this function returns, and `@janela/pty` fills it with the path of the terminal's
+own replica (`/dev/ttys004`). A hook or extension a harness spawns writes its
+activity escape there because it has nowhere else to write it: measured, Claude
+Code spawns hooks with no controlling terminal, so `/dev/tty` fails with `ENXIO`,
+and stdout belongs to the harness that is reading the hook's reply.
 
 An empty argv is the login shell, dash-prefixed — the case that makes the app feel
 like Terminal.app. A `script` is the login shell too, as `[$SHELL, "-c", script]`,

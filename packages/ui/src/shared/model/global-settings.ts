@@ -1,3 +1,4 @@
+import type { AttentionPreferences } from "@janela/client";
 import type { LaunchProfileID } from "@janela/core";
 
 import type { CommandID } from "../config/index.ts";
@@ -10,6 +11,10 @@ export interface GlobalSettings {
   readonly terminalFontSize: number;
 
   readonly notifiesOnBell: boolean;
+
+  readonly notifiesWhenAgentFinishes: boolean;
+
+  readonly notifiesWhenAgentWaits: boolean;
 
   readonly defaultProfileID?: LaunchProfileID;
 
@@ -32,9 +37,19 @@ export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
   notifiesOnBell: false,
+  notifiesWhenAgentFinishes: true,
+  notifiesWhenAgentWaits: true,
 };
 
 export const CONFIRMATION_KEYS: readonly ConfirmationKey[] = ["closeTerminals"];
+
+export function attentionPreferences(settings: GlobalSettings): AttentionPreferences {
+  return {
+    notifiesOnBell: settings.notifiesOnBell,
+    notifiesWhenAgentFinishes: settings.notifiesWhenAgentFinishes,
+    notifiesWhenAgentWaits: settings.notifiesWhenAgentWaits,
+  };
+}
 
 export function withTerminalFontFamily(settings: GlobalSettings, family: string): GlobalSettings {
   const trimmed = family.trim();

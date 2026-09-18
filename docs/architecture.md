@@ -20,7 +20,7 @@ thesis, and several choices only make sense in its light.
 │    notifications · file dialogs ·  │     │  @janela/session the brain           │
 │    sidecar · THE SOCKET            │     │  @janela/terminal PTY + emulator     │
 │         ▲                          │     │  git │ pty │ db │ forge              │
-│         │ Tauri IPC (raw bytes)    │     │                                      │
+│         │ Tauri IPC (raw bytes)    │     │  integrations                        │
 │         ▼                          │     │                                      │
 │  src/ ───── WebView                │     │                                      │
 │    @janela/ui        views         │     │                                      │
@@ -119,6 +119,7 @@ compiler stopped doing it.
                   ↙          ↘
     ==== daemon ====           ==== client ====
     git   pty   db   forge     client        connection, mirror, attention policy
+    integrations
          ↓                        ↓
     terminal                   design        tokens and reusable controls
          ↓                        ↓
@@ -151,6 +152,7 @@ by accident.
 | `@janela/pty` | `PseudoTerminal`, the native reader, sizing, signals | Know about sessions or clients |
 | `@janela/db` | Prisma store, schema, migrations, repositories | Contain business rules, or let a Prisma type escape |
 | `@janela/forge` | Running `gh` / `glab` | Own credentials, block a request, or import `@janela/git` |
+| `@janela/integrations` | Reading, writing and removing Janela's activity-reporting hooks in each harness's own configuration (Claude Code, Codex, OpenCode, Oh My Pi) | Run while an agent works, read a transcript, or reach for anything in `@janela/support/process` but `which` |
 | `@janela/terminal` | `LiveTerminal`, authoritative grid, damage tracking, repaint encoding | Be imported *through* — no emulator type leaks upward |
 | `@janela/session` | Project and session lifecycle, automation, `ShellEnvironment`, removal planning | Import a view layer, or know a socket exists |
 | `@janela/daemon` | Listener, connections, subscriptions, peer-credential checks, the frame loop | Contain product logic that belongs in `@janela/session` |
@@ -288,7 +290,12 @@ In scope:
 - **`Schema` at every untrusted boundary** — socket control frames, persisted
   JSON, configuration, IPC payloads. It replaces `typeof`, `in` and `as`, which
   are guesses about a value's shape rather than evidence about it. Parse at the
-  edge, then work with the domain value.
+  edge, then work with the domain value. Another program's configuration is such
+  a boundary and the least trustworthy of them: `@janela/integrations` parses
+  every harness's hook document — Claude Code's and Codex's JSON, the trust keys
+  in Codex's `config.toml` — with `Schema.decodeUnknownOption`, so a file it
+  cannot make sense of becomes the `unreadable` status the user is shown rather
+  than a crash or, worse, an overwrite.
 - **`Schema.TaggedError` / `Data.TaggedError` for closed failure sets**, so a
   caller can branch with `Match.tag`, `Effect.catchTag` or `Predicate.isTagged`
   and the compiler can tell it when a case is missing. Never read `_tag`.
@@ -437,6 +444,61 @@ screens per second of changed cells reach the app.
 **Attach** is the same encoder run against the whole grid instead of the damage set,
 which is why reconnecting after an hour costs one screen and is correct for
 full-screen TUIs rather than lucky.
+
+---
+
+## Agent activity — the decision of 2026-09-17
+
+Janela used to have no way at all to know that an agent had finished or was
+waiting for an answer, and that was written down as a principle rather than as a
+gap: we report what the terminal told us and never read meaning into a byte
+stream ([`product.md`](product.md) § 2). The direction changed on one word. The
+refusal was about *inference*; it was never about *listening*. A harness can be
+made to say what it is doing, in one sequence, and a claim a program volunteers
+about itself is the same kind of fact as `OSC 9 ; 4` progress or a BEL.
+
+So: a harness writes `ESC ] 7770 ; <payload> BEL` — `working`,
+`waiting;permission`, `waiting;input`, `finished;completed`, `finished;failed` —
+the daemon's emulator parses it beside 9, 777 and 133, `TerminalState` carries
+it, the sidebar draws it and the client may notify. Nothing reads a transcript,
+a session file, a window title or a line of output. Three decisions inside that
+are worth finding here.
+
+**The channel is in-band, through the PTY.** The daemon already parses every
+byte of every terminal, so an OSC sequence costs one more handler on a path that
+was being walked anyway: no port, no token, no second listener, no daemon
+network face to defend (§ What is deliberately absent). The alternative — a
+socket the hook connects to — needs an address the hook can find and an identity
+the daemon can check, and the terminal is already both. What it needs instead is
+a path to write to, because a hook is a program the *harness* spawns: measured,
+Claude Code spawns hooks with no controlling terminal, so `/dev/tty` fails with
+`ENXIO`, and the hook's stdout belongs to the harness reading its reply. The
+replica's path therefore travels to the child as `JANELA_TTY`, set by
+`@janela/pty` because its value does not exist until the terminal does
+([`packages/pty.md`](packages/pty.md), [`packages/session.md`](packages/session.md)).
+The same variable is the safety guard: a hook run by an agent Janela did not
+start finds it unset and does nothing.
+
+**Installing is a daemon capability, behind the protocol.** The hooks live in
+`$HOME`, and availability is a question about the daemon's `PATH`, so
+`@janela/integrations` sits on the daemon side at layer 3, beside `git`, `pty`,
+`db` and `forge`, depending on nothing but `@janela/support` and
+`@janela/core` — and on `@janela/support/process` for `which` alone. It is
+reached by three messages (`integrations`, `installIntegration`,
+`removeIntegration`), which is what non-negotiable 6 requires: the app has no
+privileged path, so the browser client already installs hooks today and the
+future CLI gets it with no new code. Settings is only the surface that asks.
+
+**Codex needs trust entries as well as hooks.** Codex will not run a hook it has
+not been told to trust, so `config.toml` gets one `[hooks.state."…"]` block per
+handler, keyed by `<hooks.json path>:<label>:<groupIndex>:<handlerIndex>` and
+carrying the SHA-256 of the handler it trusts. The key is index-based, so the
+blocks can only be computed after the new `hooks.json` layout is known —
+appending our entry behind another tool's puts us at group index 1, and a block
+naming index 0 would trust the wrong hook. A hooks file that is right with a
+trust block that is missing or stale reports `outdated` rather than `installed`,
+because that is exactly the state in which Codex stops and asks the user
+([`packages/integrations.md`](packages/integrations.md) § Codex trust blocks).
 
 ---
 

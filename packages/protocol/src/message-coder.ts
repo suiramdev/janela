@@ -69,6 +69,9 @@ const CLIENT_MESSAGE_TYPES = exhaustiveLiterals<ClientMessage["type"]>()([
   "createTerminal",
   "removeTerminal",
   "snapshotText",
+  "integrations",
+  "installIntegration",
+  "removeIntegration",
 ]);
 
 const DAEMON_MESSAGE_TYPES = exhaustiveLiterals<DaemonMessage["type"]>()([

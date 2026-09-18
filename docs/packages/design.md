@@ -70,6 +70,12 @@ system became custom properties that adapt through `prefers-color-scheme` and
   the window edge without making the first column look indented.
 - `failure` is text and glyphs for a terminal that exited non-zero, including a failed
   automation script, whose terminal stays open showing exactly why.
+- `success` is systemGreen, per appearance, and the sidebar spends it on a session
+  whose agent reported that it finished: the status column is for what wants the
+  user, and a turn that ended well wants them, briefly. It replaced `running`, which
+  carried the same four values and lost its last reader when a plain running shell
+  stopped painting a dot — a green that means "a process is alive" said nothing the
+  row did not already say, and two identical tokens are one drift waiting to happen.
 - `TERMINAL_FONT_STACK` is only the default — Settings overrides it, and
   `xtermRendering` is what applies either one. SF Mono first because it ships with
   macOS, has the coverage agents need and hints well at small sizes; then a stack,

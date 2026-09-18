@@ -74,6 +74,21 @@ function shell(script: string): PseudoTerminal {
   return spawn("/bin/sh", ["sh", "-c", script]);
 }
 
+function shellExporting(script: string, replicaPathVariable: string): PseudoTerminal {
+  const terminal = spawnPseudoTerminal({
+    executable: "/bin/sh",
+    arguments: ["sh", "-c", script],
+    workingDirectory: tmpdir(),
+    environment: HERMETIC_ENVIRONMENT,
+    initialSize: DEFAULT_TERMINAL_SIZE,
+    replicaPathVariable,
+  });
+
+  started.push(terminal);
+
+  return terminal;
+}
+
 function poll(
   step: () => boolean,
   describeTimeout: () => string,
@@ -314,6 +329,20 @@ describe("spawning and reading", () => {
     terminal.close();
 
     expect(performance.now() - before).toBeLessThan(250);
+  });
+});
+
+describe("the replica path variable", () => {
+  test("a child writing to the named variable reaches its own terminal", async () => {
+    const terminal = shellExporting('printf marker > "$JANELA_TTY"', "JANELA_TTY");
+
+    expect(await drainUntil(terminal, /marker/)).toContain("marker");
+  });
+
+  test("no variable is exported when the configuration does not name one", async () => {
+    const terminal = shell('printf "[%s]" "$JANELA_TTY"');
+
+    expect(await drainUntil(terminal, /\[]/)).toContain("[]");
   });
 });
 

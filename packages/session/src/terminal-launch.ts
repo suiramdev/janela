@@ -14,6 +14,7 @@ import {
   DECLARED_CONEMU_ANSI,
   DECLARED_TERM,
   janelaVariables,
+  REPLICA_PATH_VARIABLE,
   type JanelaVariablesInput,
   type ShellEnvironment,
 } from "./shell-environment.ts";
@@ -68,6 +69,7 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
       workingDirectory,
       environment,
       initialSize: DEFAULT_INITIAL_SIZE,
+      replicaPathVariable: REPLICA_PATH_VARIABLE,
     };
   }
 
@@ -81,6 +83,7 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
       workingDirectory,
       environment,
       initialSize: DEFAULT_INITIAL_SIZE,
+      replicaPathVariable: REPLICA_PATH_VARIABLE,
     };
   }
 
@@ -98,5 +101,6 @@ export async function resolveTerminalLaunch(input: TerminalLaunchInput): Promise
     workingDirectory,
     environment,
     initialSize: DEFAULT_INITIAL_SIZE,
+    replicaPathVariable: REPLICA_PATH_VARIABLE,
   };
 }

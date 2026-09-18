@@ -104,10 +104,31 @@ The sharp edge of this principle: Janela reports what the **terminal** told it �
 OSC 9 notifications, OSC 133 prompt marks, the bell — and never guesses agent
 semantics from a byte stream.
 
-The same principle decides the integrations. Forge support shells out to the user's
-own `gh` and `glab`, already authenticated, rather than asking for a token.
-Automation scripts run in a real terminal you can watch, rather than in a
-hidden process whose output we invent a UI for.
+What that admits, and what it still refuses. A harness — Claude Code, Codex,
+OpenCode, Oh My Pi — may now *tell* the terminal what it is doing: working,
+waiting for permission, waiting for an answer, finished, or stopped with an
+error. It says so with one escape sequence, exactly as a build says how far
+along it is with `OSC 9 ; 4`, and Janela relays the claim without checking it.
+Janela installs the hook that makes a harness say so only when the user asks for
+it, in Settings › Integrations › Activity reporting, and installs it in the
+harness's *own* configuration — Claude Code's `settings.json` hooks, Codex's
+`hooks.json` plus the trust entries `config.toml` needs, an OpenCode plugin, an
+Oh My Pi extension. What lands there is short and readable: one line of shell
+for Claude Code and Codex, a small plugin file for the other two. It is also
+inert outside Janela, because it writes to `$JANELA_TTY`, a variable that exists
+only in a terminal this app spawned — the same agent started from Terminal.app
+or over SSH runs the hook, finds nothing, and exits.
+
+Nothing else moved. Janela does not read transcripts or session files, does not
+parse a harness's output, does not guess from a window title or a prompt, and
+models no task. Being *told* and reading *into* are different acts, and only the
+first one happens here: an agent that says nothing is an agent Janela has
+nothing to say about, which is the normal case and not a degraded one.
+
+The same principle decides how Janela reaches the user's other tools. Forge
+support shells out to the user's own `gh` and `glab`, already authenticated,
+rather than asking for a token. Automation scripts run in a real terminal you
+can watch, rather than in a hidden process whose output we invent a UI for.
 
 ### 3. Switching is the feature
 
@@ -124,7 +145,9 @@ That means:
   over the app while a script runs; automation runs in a terminal you can watch or
   ignore.
 - **The state you need is on the button.** Which sessions are running, which one
-  wants attention, which branch a session is on — visible without opening it.
+  wants attention, which branch a session is on — and, where a harness reports
+  it, which agent has finished and which is waiting for you — visible without
+  opening it.
 
 This is also why splits and tabs exist inside a session rather than at the top
 level: an agent, its dev server and a scratch shell are one *place*, and they
@@ -243,7 +266,9 @@ Listed so they can be pointed at, not re-litigated.
 - **Not a forge client.** We show the state of the branch a session is on and can
   start a session from a PR. No review UI, no comment threads, no merge button.
 - **Not an agent runtime.** Janela does not schedule agents, retry them, chain
-  them, or read their output for meaning.
+  them, or read their output for meaning. It does listen to what an agent says
+  about itself, through a hook the agent runs — a report it volunteers, never an
+  interpretation we take.
 - **Not a multiplexer replacement.** We took exactly one thing from tmux — sessions
   that outlive their client — and deliberately left the rest: no scripting language,
   no config file, no session sharing between users, and no key-binding surface

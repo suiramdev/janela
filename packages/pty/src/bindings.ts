@@ -12,6 +12,7 @@ export interface NativePtyLibrary {
     argv: Pointer,
     envp: Pointer,
     cwd: Pointer,
+    replicaPathVariable: Pointer | null,
     columns: number,
     rows: number,
     outPid: Pointer,
@@ -60,6 +61,7 @@ const openNativeLibrary: Effect.Effect<NativePtyLibrary, NativeLibraryUnavailabl
     dlopen(libraryPath, {
       jpty_spawn: {
         args: [
+          FFIType.ptr,
           FFIType.ptr,
           FFIType.ptr,
           FFIType.ptr,

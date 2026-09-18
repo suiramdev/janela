@@ -19,6 +19,8 @@ const StoredSettings = Schema.Struct({
   terminalFontFamily: Schema.optionalKey(Schema.String).pipe(Schema.catchDecoding(absent)),
   terminalFontSize: Schema.optionalKey(Schema.Number).pipe(Schema.catchDecoding(absent)),
   notifiesOnBell: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
+  notifiesWhenAgentFinishes: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
+  notifiesWhenAgentWaits: Schema.optionalKey(Schema.Boolean).pipe(Schema.catchDecoding(absent)),
   defaultProfileID: Schema.optionalKey(Schema.String.check(Schema.isUUID())).pipe(
     Schema.catchDecoding(absent),
   ),
@@ -67,6 +69,14 @@ export function parseSettings(raw: string | null): GlobalSettings {
 
   if (fields.notifiesOnBell !== undefined) {
     settings = { ...settings, notifiesOnBell: fields.notifiesOnBell };
+  }
+
+  if (fields.notifiesWhenAgentFinishes !== undefined) {
+    settings = { ...settings, notifiesWhenAgentFinishes: fields.notifiesWhenAgentFinishes };
+  }
+
+  if (fields.notifiesWhenAgentWaits !== undefined) {
+    settings = { ...settings, notifiesWhenAgentWaits: fields.notifiesWhenAgentWaits };
   }
 
   if (fields.terminalFontFamily !== undefined && fields.terminalFontFamily.length > 0) {

@@ -454,6 +454,28 @@ describe("what the user reads", () => {
       "A command finished after 12s.",
     );
   });
+
+  test("a reported activity gets the agent's own words as a sentence, under the same title", () => {
+    expect(
+      notificationContent(
+        input({ kind: "activity", activity: { kind: "waiting", need: "permission" } }),
+      ),
+    ).toEqual({ title: "api server — claude", body: "Waiting for permission." });
+    expect(
+      notificationContent(input({ kind: "activity", activity: { kind: "waiting", need: "input" } }))
+        .body,
+    ).toBe("Waiting for your answer.");
+    expect(
+      notificationContent(
+        input({ kind: "activity", activity: { kind: "finished", outcome: "completed" } }),
+      ).body,
+    ).toBe("Finished.");
+    expect(
+      notificationContent(
+        input({ kind: "activity", activity: { kind: "finished", outcome: "failed" } }),
+      ).body,
+    ).toBe("Stopped with an error.");
+  });
 });
 
 describe("non-negotiable 11: bodies are never logged and never persisted", () => {

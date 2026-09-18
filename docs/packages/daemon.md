@@ -329,6 +329,23 @@ worktree. Only the answer to "also delete the directory" is theirs. `snapshotTex
 requires no attachment — reading what is on screen is the CLI's whole job, and it
 never renders.
 
+`integrations` answers with a **text** reply carrying
+`serializeIntegrationOverview`, the same shape as `removalPlan` and
+`projectBranches`: a report per harness, read from the user's own configuration
+files at request time rather than mirrored into the state snapshot. The overview
+is not state a client merges — it is the answer to a question the Settings
+screen asks while it is open, and putting it in `StateUpdate` would make every
+state frame pay for four file reads. `installIntegration` and
+`removeIntegration` acknowledge after the service call, so a client that sees
+`acknowledged` may re-ask for the overview and get the truth.
+
+All three take an `integrationID` off the wire, and all three check it with
+`isIntegrationID` before it reaches the service. `decodeClientMessage` stops at
+the discriminant, so `integrationID` arrives as whatever the peer typed; the id
+selects a template that writes into a file under the user's home, which makes it
+exactly the kind of field the paragraph above is about. An unknown one is a
+`TypeError` and therefore a `failed` reply, like an impossible viewport.
+
 `fullStateSnapshot` is composed **per announcement, not per frame**, so its cost is
 human-rate. It exists because a client merges by id and therefore **cannot express
 a removal**: the only way to say "that session is gone" is to send a complete list
@@ -468,8 +485,9 @@ the same rule as any other control traffic.
   about one terminal, and re-sending the projects and sessions to say a percent
   moved would put the cost of a snapshot on the most frequent message the daemon
   sends.
-- An **`attention`** signal for a bell, a notification, or a finished prompt, each
-  with the terminal and session it came from, an id, and the time it happened. The
+- An **`attention`** signal for a bell, a notification, a finished prompt, or an
+  agent that is waiting or has finished, each with the terminal and session it
+  came from, an id, and the time it happened. The
   state frame goes first: a client that renders the signal before it has the state
   behind it would badge a terminal it still believes is idle.
 - A **`terminalExited`** frame after the state frame, for the same reason.
@@ -481,12 +499,24 @@ emitted on a timer — a 1 Hz keepalive repeating the same percent is ordinary
 behaviour — and without the comparison a single downloading terminal would send
 sixty identical frames a minute to every connected client, each one a wake-up and
 an encode. With it, an unchanged keepalive costs one map lookup and produces
-nothing. The signature includes the progress kind and percent, so a *real* change
-still goes out on the next report.
+nothing. The signature includes the progress kind and percent **and the agent
+activity**, so a *real* change still goes out on the next report.
 
 The map is keyed by terminal id and cleared in `terminalRemoved`, so a terminal
 that is removed and re-registered publishes its first state rather than being
 deduped against a predecessor's.
+
+**An agent's activity is state; only waiting and finished are also a signal.**
+`onActivity` always reconciles, and raises `{ kind: "activity", activity }` for
+`waiting` and `finished`. `working` is deliberately state-only: a harness
+reports it at every prompt and after every tool call, and a notification per
+tool call is a notification nobody would keep switched on. The two that do
+interrupt are the two the user asked to be told about — the agent wants
+permission, or it is done — and `@janela/client` decides whether either becomes
+an actual notification (`AttentionPreferences`, [`client.md`](client.md)). The
+repeat rule is not symmetric and that is intentional: `reconcile` dedupes
+identical state, so a `working` heartbeat costs one map lookup, while a repeated
+`waiting` raises again, because a harness only re-asks when it is asking again.
 
 `server.ts` also calls `reconcile` directly after `dispatch.input`: sending input
 clears attention on the terminal, and that is a state change no terminal event will

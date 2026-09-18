@@ -9,6 +9,7 @@ import {
   SecurityCheckIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DaemonConnection } from "@janela/client";
 import type {
   LaunchProfile,
   LaunchProfileAvailability,
@@ -85,6 +86,7 @@ import {
   tabInfo,
 } from "../model/settings-index.ts";
 import { SettingsAppearance } from "./appearance-settings.tsx";
+import { SettingsIntegrations } from "./integrations-settings.tsx";
 import { SettingsProfiles } from "./launch-profiles.tsx";
 import { SettingsNotifications } from "./notification-settings.tsx";
 import { Pane, PaneHeader } from "./pane.tsx";
@@ -129,6 +131,7 @@ export interface SettingsPaneProps {
   readonly sessions: readonly Session[];
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
+  readonly connection: Pick<DaemonConnection, "request">;
   readonly projects: readonly Project[];
   readonly draft: SettingsDraft;
   readonly reveal?: SettingsReveal | undefined;
@@ -480,14 +483,17 @@ function PaneBody(
       />
     )),
     Match.when("integrations", () => (
-      <SettingsProfiles
-        profiles={props.profiles}
-        availability={props.availability}
-        settings={settings}
-        onChangeSettings={changeSettings}
-        draft={draft}
-        onChangeDraft={onChangeDraft}
-      />
+      <>
+        <SettingsProfiles
+          profiles={props.profiles}
+          availability={props.availability}
+          settings={settings}
+          onChangeSettings={changeSettings}
+          draft={draft}
+          onChangeDraft={onChangeDraft}
+        />
+        <SettingsIntegrations connection={props.connection} />
+      </>
     )),
     Match.when("permissions", () => (
       <SettingsPermissions
@@ -656,6 +662,7 @@ export function SettingsScreen(props: { readonly route: SettingsRoute }): ReactE
             sessions={sessions}
             terminalStates={terminalStates}
             service={environment.local?.service}
+            connection={connection}
             projects={projects}
             draft={draft}
             reveal={reveal}

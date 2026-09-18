@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@janela/core": "workspace:*",
+    "@janela/integrations": "workspace:*",
     "@janela/protocol": "workspace:*",
     "@janela/session": "workspace:*",
     "@janela/support": "workspace:*",

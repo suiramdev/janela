@@ -128,6 +128,7 @@ import resolves and runs.
                   ↙          ↘
     ==== daemon ====           ==== client ====
     git   pty   db   forge     client        connection, mirror, attention policy
+    integrations
          ↓                        ↓
     terminal                   design        tokens and reusable controls
          ↓                        ↓
@@ -177,6 +178,9 @@ before it belongs in code.
 3. **Never reimplement the user's tools.** Janela starts `claude`, it does not wrap
    it, parse its output, or model its tasks. Same for git beyond worktree
    plumbing, for `gh`/`glab` beyond reading state, and for the shell.
+   The one sanctioned way to know what an agent is doing is the hook it runs
+   itself, installed on request into its own configuration — see
+   [`docs/packages/integrations.md`](docs/packages/integrations.md).
 4. **The terminal owns the keyboard.** Do not add key bindings that shadow what a
    TUI expects. `Ctrl-anything` belongs to the running program — including split
    and tab navigation, which uses `⌘`-based chords only.

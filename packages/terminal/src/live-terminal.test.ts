@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 
 import type {
+  AgentActivity,
   GridSize,
   Instant,
   SessionID,
@@ -38,6 +39,7 @@ interface RecordingSink extends TerminalEvents {
   readonly notifications: TerminalNotification[];
   readonly marks: PromptMark[];
   readonly progress: (TerminalProgress | undefined)[];
+  readonly activities: AgentActivity[];
   readonly completions: PromptCompletion[];
   readonly failures: string[];
   readonly exits: number[];
@@ -159,6 +161,7 @@ function recordingSink(): RecordingSink {
   const notifications: TerminalNotification[] = [];
   const marks: PromptMark[] = [];
   const progress: (TerminalProgress | undefined)[] = [];
+  const activities: AgentActivity[] = [];
   const completions: PromptCompletion[] = [];
   const failures: string[] = [];
   const exits: number[] = [];
@@ -169,6 +172,7 @@ function recordingSink(): RecordingSink {
     notifications,
     marks,
     progress,
+    activities,
     completions,
     failures,
     exits,
@@ -177,6 +181,7 @@ function recordingSink(): RecordingSink {
     onAttention: (notification) => notifications.push(notification),
     onPromptMark: (mark) => marks.push(mark),
     onProgress: (reported) => progress.push(reported),
+    onActivity: (activity) => activities.push(activity),
     onPromptFinished: (completion) => completions.push(completion),
     onFailure: (message) => failures.push(message),
     onExit: (code) => exits.push(code),
@@ -518,6 +523,78 @@ describe("progress", () => {
     terminal.send(new Uint8Array([0x0a]));
 
     expect(terminal.state).toEqual({ kind: "running", progress: { kind: "indeterminate" } });
+  });
+});
+
+describe("agent activity", () => {
+  const WAITING: AgentActivity = { kind: "waiting", need: "permission" };
+
+  test("waiting raises attention and rides on the state, and input clears only the attention", async () => {
+    const terminal = live(
+      "t-activity-waiting",
+      shellLaunch("stty raw -echo; printf '\\033]7770;waiting;permission\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.activities.length > 0, "the activity report");
+
+    expect(sink.activities).toEqual([WAITING]);
+    expect(terminal.state).toEqual({ kind: "needsAttention", activity: WAITING });
+
+    terminal.send(new Uint8Array([0x0a]));
+
+    expect(terminal.state).toEqual({ kind: "running", activity: WAITING });
+  });
+
+  test("working after waiting clears the attention the harness itself raised", async () => {
+    const terminal = live(
+      "t-activity-working",
+      shellLaunch(
+        "stty raw -echo; printf '\\033]7770;waiting;permission\\007\\033]7770;working\\007'; exec cat",
+      ),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.activities.length > 1, "both activity reports");
+
+    expect(sink.activities).toEqual([WAITING, { kind: "working" }]);
+    expect(terminal.state).toEqual({ kind: "running", activity: { kind: "working" } });
+  });
+
+  test("a finished agent needs attention, and its outcome travels with the state", async () => {
+    const terminal = live(
+      "t-activity-finished",
+      shellLaunch("stty raw -echo; printf '\\033]7770;finished;failed\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.activities.length > 0, "the activity report");
+
+    expect(terminal.state).toEqual({
+      kind: "needsAttention",
+      activity: { kind: "finished", outcome: "failed" },
+    });
+  });
+
+  test("a restart forgets the last report", async () => {
+    const terminal = live(
+      "t-activity-restart",
+      shellLaunch("stty raw -echo; printf '\\033]7770;finished;completed\\007'; exec cat"),
+    );
+    const sink = recordingSink();
+    terminal.events = sink;
+    await terminal.start();
+
+    await drainUntil(terminal, () => sink.activities.length > 0, "the activity report");
+    await terminal.restart();
+
+    expect(terminal.state).toEqual({ kind: "running" });
   });
 });
 

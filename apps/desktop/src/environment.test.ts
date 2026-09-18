@@ -8,13 +8,13 @@ import {
   PROTOCOL_VERSION,
 } from "@janela/protocol";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
-import { createViewState } from "@janela/ui";
+import { attentionPreferences, createViewState, DEFAULT_GLOBAL_SETTINGS } from "@janela/ui";
 import { PluginListener } from "@tauri-apps/api/core";
 import type { Options } from "@tauri-apps/plugin-notification";
 
 import type { NotificationPlugin } from "./adapters/notification-delivery.ts";
 import type { BridgeInvoke } from "./adapters/transport.ts";
-import { CLIENT_NAME, liveEnvironment } from "./environment.ts";
+import { CLIENT_NAME, DEFAULT_ATTENTION_PREFERENCES, liveEnvironment } from "./environment.ts";
 
 type ShellAnswer = number | string | ArrayBuffer | undefined;
 
@@ -92,6 +92,19 @@ const ATTENTION = encodeFrame(
       terminalID: TERMINAL_ID,
       sessionID: SESSION_ID,
       id: "signal-1",
+      occurredAt: instant("2026-01-01T00:00:10.000Z"),
+    },
+  }),
+);
+
+const AGENT_WAITING = encodeFrame(
+  encodeDaemonMessage({
+    type: "attention",
+    signal: {
+      kind: { kind: "activity", activity: { kind: "waiting", need: "permission" } },
+      terminalID: TERMINAL_ID,
+      sessionID: SESSION_ID,
+      id: "signal-2",
       occurredAt: instant("2026-01-01T00:00:10.000Z"),
     },
   }),
@@ -369,6 +382,55 @@ describe("liveEnvironment", () => {
       sessionID: SESSION_ID,
       terminalID: TERMINAL_ID,
     });
+  });
+
+  test("a reported activity notifies on the defaults, which leave agents on", async () => {
+    const shell = fakeShell();
+    const plugin = recordingPlugin();
+
+    const environment = liveEnvironment({
+      invoke: shell.invoke,
+      plugin,
+      isApplicationActive: () => false,
+    });
+
+    await environment.start();
+
+    shell.push(SNAPSHOT);
+    shell.push(AGENT_WAITING);
+    await until(() => plugin.sent.length > 0);
+
+    expect(plugin.sent[0]?.title).toBe("api server — claude");
+    expect(plugin.sent[0]?.body).toBe("Waiting for permission.");
+  });
+
+  test("the default preferences are the settings defaults, restated because @janela/ui is out of reach here", () => {
+    expect(DEFAULT_ATTENTION_PREFERENCES).toEqual(attentionPreferences(DEFAULT_GLOBAL_SETTINGS));
+  });
+
+  test("the preferences the app supplies decide, so a waiting agent can stay quiet", async () => {
+    const shell = fakeShell();
+    const plugin = recordingPlugin();
+
+    const environment = liveEnvironment({
+      invoke: shell.invoke,
+      plugin,
+      isApplicationActive: () => false,
+      attentionPreferences: () => ({
+        notifiesOnBell: false,
+        notifiesWhenAgentFinishes: false,
+        notifiesWhenAgentWaits: false,
+      }),
+    });
+
+    await environment.start();
+
+    shell.push(SNAPSHOT);
+    shell.push(AGENT_WAITING);
+    shell.push(ATTENTION);
+    await until(() => plugin.sent.length > 0);
+
+    expect(plugin.sent.map((sent) => sent.body)).toEqual(["needs input"]);
   });
 
   test("a click selects the session and focuses the pane the view installed", async () => {

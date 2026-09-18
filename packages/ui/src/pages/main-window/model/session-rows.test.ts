@@ -51,6 +51,27 @@ describe("sessionStatus", () => {
     ).toBe("working");
   });
 
+  test("running wins over a failure", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "exited", code: 1 },
+        [terminalID("b")]: { kind: "running" },
+      }),
+    ).toBe("running");
+  });
+
+  test("an agent that stopped with an error outranks a sibling still working", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running", progress: { kind: "indeterminate" } },
+        [terminalID("b")]: {
+          kind: "needsAttention",
+          activity: { kind: "finished", outcome: "failed" },
+        },
+      }),
+    ).toBe("failed");
+  });
+
   test("attention beats working", () => {
     expect(
       sessionStatus(withTerminals, {
@@ -60,13 +81,64 @@ describe("sessionStatus", () => {
     ).toBe("attention");
   });
 
-  test("running wins over a failure", () => {
+  test("an agent waiting on the user needs attention, whichever it waits for", () => {
+    for (const need of ["permission", "input"] as const) {
+      expect(
+        sessionStatus(withTerminals, {
+          [terminalID("a")]: { kind: "needsAttention", activity: { kind: "waiting", need } },
+        }),
+      ).toBe("attention");
+    }
+  });
+
+  test("an agent that finished is done, and one that stopped badly is a failure", () => {
     expect(
       sessionStatus(withTerminals, {
-        [terminalID("a")]: { kind: "exited", code: 1 },
-        [terminalID("b")]: { kind: "running" },
+        [terminalID("a")]: {
+          kind: "needsAttention",
+          activity: { kind: "finished", outcome: "completed" },
+        },
       }),
-    ).toBe("running");
+    ).toBe("done");
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: {
+          kind: "needsAttention",
+          activity: { kind: "finished", outcome: "failed" },
+        },
+      }),
+    ).toBe("failed");
+  });
+
+  test("an agent reporting work is working, with no progress bar in sight", () => {
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running", activity: { kind: "working" } },
+      }),
+    ).toBe("working");
+  });
+
+  test("a finished agent outranks one still working, and attention outranks both", () => {
+    const finished = {
+      kind: "needsAttention",
+      activity: { kind: "finished", outcome: "completed" },
+    } as const;
+
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: { kind: "running", activity: { kind: "working" } },
+        [terminalID("b")]: finished,
+      }),
+    ).toBe("done");
+    expect(
+      sessionStatus(withTerminals, {
+        [terminalID("a")]: finished,
+        [terminalID("b")]: {
+          kind: "needsAttention",
+          activity: { kind: "waiting", need: "permission" },
+        },
+      }),
+    ).toBe("attention");
   });
 
   test("a non-zero exit is a failure and a zero exit is not", () => {

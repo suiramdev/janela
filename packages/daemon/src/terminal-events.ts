@@ -1,4 +1,11 @@
-import { now, type TerminalID, type TerminalProgress, type TerminalState } from "@janela/core";
+import {
+  formatAgentActivity,
+  now,
+  type AgentActivity,
+  type TerminalID,
+  type TerminalProgress,
+  type TerminalState,
+} from "@janela/core";
 import type { AttentionKind, DaemonMessage, StateUpdate } from "@janela/protocol";
 import type { Logger } from "@janela/support";
 import type {
@@ -83,6 +90,15 @@ export function createTerminalEvents(options: TerminalEventOptions): TerminalEve
         onProgress: () => {
           reconcile(terminal);
         },
+        onActivity: (activity: AgentActivity) => {
+          if (activity.kind === "working") {
+            reconcile(terminal);
+
+            return;
+          }
+
+          raise(terminal, { kind: "activity", activity });
+        },
         onFailure: () => {
           reconcile(terminal);
         },
@@ -115,10 +131,20 @@ function attentionKind(notification: TerminalNotification): AttentionKind {
 function stateSignature(state: TerminalState): string {
   return Match.value(state).pipe(
     Match.when({ kind: "idle" }, () => "idle"),
-    Match.when({ kind: "needsAttention" }, () => "needsAttention"),
+    Match.when({ kind: "needsAttention" }, (attention) =>
+      attention.activity === undefined
+        ? "needsAttention"
+        : `needsAttention:${formatAgentActivity(attention.activity)}`,
+    ),
     Match.when({ kind: "exited" }, (exited) => `exited:${exited.code}`),
     Match.when({ kind: "failed" }, (failed) => `failed:${failed.message}`),
-    Match.when({ kind: "running" }, (running) => `running:${progressSignature(running.progress)}`),
+    Match.when(
+      { kind: "running" },
+      (running) =>
+        `running:${progressSignature(running.progress)}:${
+          running.activity === undefined ? "none" : formatAgentActivity(running.activity)
+        }`,
+    ),
     Match.exhaustive,
   );
 }

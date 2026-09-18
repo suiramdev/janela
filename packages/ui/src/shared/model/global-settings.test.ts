@@ -6,6 +6,7 @@ import {
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_SIZE_BOUNDS,
+  attentionPreferences,
   withDefaultProfileID,
   withTerminalFontFamily,
   withTerminalFontSize,
@@ -19,6 +20,11 @@ describe("the defaults", () => {
 
   test("leave the bell quiet", () => {
     expect(DEFAULT_GLOBAL_SETTINGS.notifiesOnBell).toBe(false);
+  });
+
+  test("let an agent interrupt, because that is the report the user asked for", () => {
+    expect(DEFAULT_GLOBAL_SETTINGS.notifiesWhenAgentFinishes).toBe(true);
+    expect(DEFAULT_GLOBAL_SETTINGS.notifiesWhenAgentWaits).toBe(true);
   });
 });
 
@@ -81,5 +87,22 @@ describe("withDefaultProfileID", () => {
     const set = withDefaultProfileID(DEFAULT_GLOBAL_SETTINGS, newLaunchProfileID());
 
     expect(Object.hasOwn(withDefaultProfileID(set, undefined), "defaultProfileID")).toBe(false);
+  });
+});
+
+describe("attentionPreferences", () => {
+  test("carries the three notification switches and nothing else", () => {
+    expect(
+      attentionPreferences({
+        ...DEFAULT_GLOBAL_SETTINGS,
+        terminalFontFamily: "Menlo",
+        notifiesOnBell: true,
+        notifiesWhenAgentWaits: false,
+      }),
+    ).toEqual({
+      notifiesOnBell: true,
+      notifiesWhenAgentFinishes: true,
+      notifiesWhenAgentWaits: false,
+    });
   });
 });

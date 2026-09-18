@@ -1,5 +1,6 @@
 import { setLogSink, type LogRecord } from "@janela/support";
 import {
+  attentionPreferences,
   ClientEnvironmentProvider,
   MainWindow,
   SettingsScreen,
@@ -28,7 +29,9 @@ import { liveEnvironment } from "./environment.ts";
 
 import "@janela/design/styles.css";
 
-const environment = liveEnvironment();
+const environment = liveEnvironment({
+  attentionPreferences: () => attentionPreferences(view.settings),
+});
 
 const view = createViewState(environment.sessions);
 

@@ -210,6 +210,35 @@ child and is **not** merged with the parent's: the caller decides exactly what t
 child sees. There is no shell anywhere on this path, so there is no quoting bug
 class (AGENTS.md § argv is always an array).
 
+### `replicaPathVariable`: the child is told where its terminal is
+
+`PseudoTerminalConfiguration.replicaPathVariable` is the *name* of a variable,
+and when it is given the child's environment gains
+`<name>=/dev/ttys<n>` — the path of the replica end of the terminal it is
+running on. `openpty` fills that path into a buffer we own; `ptsname` is what
+names a replica, and Darwin's `openpty` name argument is `ptsname`'s answer
+copied out of the static buffer it would otherwise hand back, which matters
+because that buffer is shared by every thread.
+
+A name rather than a fixed `JANELA_TTY`, because this layer has no opinion on the
+product's namespace: `@janela/session` owns the `JANELA_*` variables a terminal
+gets and passes one of them down (`REPLICA_PATH_VARIABLE`), exactly as it decides
+`TERM` and `argv[0]`. A constant here would be a second place naming a product
+variable, in the one package that is otherwise pure plumbing.
+
+**The parent builds the vector.** Between `fork` and `execve` the child may not
+allocate, so `jpty_spawn` assembles the child's `envp` before the fork: the
+caller's entries, minus any that already carry that name, plus one it owns. The
+entry and the vector live in the `jpty_spawn` frame, which outlives the fork —
+the same lifetime argument the marshalling section makes. Dropping a caller entry
+of the same name is not tidiness: `execve` accepts duplicates and `getenv`
+answers with whichever it finds first, so a terminal started from inside another
+one would report to the wrong terminal — worse than not reporting at all.
+
+The consumer is a harness hook: a program spawned by the agent running in the
+terminal, with no controlling terminal of its own, which needs a path to write
+its activity escape to. See [`session.md`](session.md).
+
 ### Ctrl-C is a byte, not a signal
 
 Interrupting the foreground job means **writing `CTRL_C` (`0x03`)** and letting the

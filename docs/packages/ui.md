@@ -105,6 +105,15 @@ opening over them.
   size arrives as a number, so no per-render style object), and the tint is applied
   last because `SidebarMenuButton` hands its icon the row's lit/unlit colour and a
   session's state is not a hover state.
+- **Six statuses, and only four paint.** `attention` and `failed` animate, in
+  `text-attention` and `text-failure`. `done` is `text-success` and deliberately
+  **static**: a finished agent is news, not an alarm, and a green dot pulsing in
+  a list of thirty rows is a second alarm competing with the real one. `working`
+  is an animated glyph in the muted foreground, because the row is saying "not
+  yet" rather than "look". `running` and `idle` are `invisible` — a live shell
+  says nothing the row does not already say — which is what retired the
+  `running` colour token in favour of `success` ([`design.md`](design.md)): it
+  lost its last reader when a plain running terminal stopped painting a dot.
 - The status is also in the accessible name: a colour alone is a state a screen
   reader cannot read and a colour-blind user cannot distinguish.
 - Header controls and group actions are hoisted elements, because `render` takes an
@@ -570,6 +579,20 @@ it everywhere would make the gesture worthless.
 - Grouping happens here rather than through `SessionStore.inProject`, which builds a
   fresh array per call and would be a new reference every render.
 - `statusText` travels beside the colour, never instead of it.
+- **Six statuses in one precedence: attention, failed, done, working, running,
+  idle.** `attention` is a `needsAttention` with no activity or with a `waiting`
+  one, and it returns immediately — a question beats every other kind of news.
+  `done` is a `finished/completed` nobody has looked at yet; `working` is a
+  `running` terminal with `progress` or with a `working` report; `running` is
+  any other live terminal.
+- **Failure arrives from two places, and they rank differently.** An agent that
+  reported `finished/failed` is ranked *above* `done` and `working`; a non-zero
+  `exited` or a `failed` terminal is ranked *below* them, which is why the loop
+  collects `signalled` and `exited` as two flags and not one. A dev server that
+  died hours ago must not hide an agent that is working right now, and an agent
+  that stopped with an error is unseen news the user has not had yet. Both still
+  render as `failed`: the row says what it is, and the ordering only decides
+  which terminal in a session gets to speak for it.
 
 ### `model/sidebar-filter.ts`
 
@@ -595,6 +618,17 @@ it everywhere would make the gesture worthless.
   that is a user agreeing to the opposite of what happens.
 - An absent state reads as idle, which is what the daemon's `idle` means —
   configured, nothing spawned — not an inference about a running process.
+- `terminalStateText` defers to `agentActivityText` from `@janela/core` whenever
+  an activity is present, so a pane bar never words the same fact differently
+  from anywhere else that renders it.
+- `terminalBadgeText` is that text filtered to what is worth a badge: nothing
+  for a plain `running` terminal, and nothing for an attention that is bare or
+  merely `working`, because those are what the glyph already says. A badge
+  earns its pixels by carrying something the colour cannot — "waiting for
+  permission", "stopped with an error", an exit code.
+- `isFailureState` counts a `finished/failed` report as a failure beside a
+  non-zero exit, so a tab reads the same whether the shell or the agent in it
+  was the one that failed.
 
 ### `model/terminal-attach.ts`
 
@@ -640,9 +674,10 @@ positional shape is deliberate — a sidebar test reads better as
   before either cut, holding three unrelated things, which is what a pane named
   after nothing always becomes, and it put the most destructive surface in the
   product behind the blandest label. The map now: the terminal font under
-  Appearance; the bell under Notifications; forge reading and launch profiles under
-  Integrations — both are "the tools Janela reaches", and a profile is still a
-  command, not a wrapper; the close-terminal confirmation, the notification
+  Appearance; the bell and the two agent switches under Notifications; forge
+  reading, launch profiles and the activity-reporting hooks under
+  Integrations — all three are "the tools Janela reaches", and a profile is
+  still a command, not a wrapper; the close-terminal confirmation, the notification
   permission's explanation and the daemon's stop controls under Permissions,
   because all three are "what may it do, and what does it ask first".
 - **No pane is empty, and two categories wait in this file rather than in code.**
@@ -781,11 +816,45 @@ its stop controls are the largest permission of all.
 
 ### The Integrations tab
 
-Renders `SettingsProfiles` directly; there is no pane file of its own. It once began
-with a GitHub/GitLab row per hosted project, editing `isForgeEnabled` through the
-draft. That switch is gone — reading pull request state is what a hosted project
-does, and a missing or logged-out CLI was already silence — so the tab is the launch
-profiles, which are the remaining "tools Janela reaches".
+Two sections, and no pane file of its own: it renders `SettingsProfiles` and
+`SettingsIntegrations` in that order. It once began with a GitHub/GitLab row per
+hosted project, editing `isForgeEnabled` through the draft. That switch is gone —
+reading pull request state is what a hosted project does, and a missing or
+logged-out CLI was already silence — so what remains is the tools Janela reaches:
+the launch profiles that start them, and the hooks that let them say what they are
+doing. A profile is still a command, not a wrapper.
+
+### `ui/integrations-settings.tsx`
+
+*Activity reporting*: one row per harness, carrying the file Janela would write,
+the things that harness will then report, a status badge, and one button whose
+verb is the status — Install, Update or Remove.
+
+- **It is not part of the draft and it has no Save.** Every other pane edits
+  `SettingsDraft` and lands with the bar's one Save. Installing a hook writes a
+  file in the user's `$HOME`, through the daemon; that is an action, not a
+  preference, and staging it would hide "I will write to `~/.codex`" behind a
+  button labelled Save on a screen with six other pending edits.
+- **It loads on mount and re-reads after every action.** The user may have edited
+  `settings.json` by hand since the tab was last open, so the overview is asked
+  for rather than cached, and `actOnIntegration` installs or removes and then asks
+  again. The badge is therefore what the daemon just read back off disk, never
+  what the client assumed its write achieved.
+- **A failed request is shown, not swallowed.** Everywhere else in this package a
+  rejected request is swallowed and the stale mirror keeps rendering, because there
+  is nothing the user could do. Here there is: the list is replaced by a
+  destructive `Alert` holding `RequestFailed.failure.summary`, or "Could not reach
+  the background service." when the rejection was not one of ours.
+- **One row at a time.** `pending` holds the id of the row whose request is in
+  flight and disables its button, so a second click cannot queue a second install
+  of the same hook. An `unreadable` row is disabled outright: a configuration
+  Janela cannot parse is one it must not write, and the row still says which file
+  and why, because the user is the only person who can fix it.
+- `connection` arrives as a prop of `SettingsPane` rather than from
+  `useClientEnvironment()`, typed `Pick<DaemonConnection, "request">`. The screen
+  already has the connection — it is what a save writes through — and taking the
+  narrowest shape as a prop is what lets `IntegrationsList` be rendered from a
+  state value in a test with no connection at all.
 
 ### `ui/shortcuts-settings.tsx`
 
@@ -803,12 +872,24 @@ shared across clients; they show *None* and record like any other row.
 
 ### `ui/notification-settings.tsx`
 
-One switch. "Not the terminal you are looking at" and "only when Janela is not
-frontmost" are facts, not preferences, and a mis-tuned notification policy trains
-users to distrust the badge. The bell is the one genuine choice, because a bell means
-whatever the program ringing it decided; an explicit OSC 9 or OSC 777 is consent, not
-a choice. In-app state is unaffected by this pane: the badge is the daemon's and needs
-no permission.
+Two sections, three switches. "Not the terminal you are looking at" and "only when
+Janela is not frontmost" are facts, not preferences, and a mis-tuned notification
+policy trains users to distrust the badge. Among what a *terminal* reports the bell
+is the one genuine choice, because a bell means whatever the program ringing it
+decided; an explicit OSC 9 or OSC 777 is consent, not a choice.
+
+**Agents** is the second section, and its two switches — finished, waiting —
+default **on** while the bell defaults off. The asymmetry is where the consent came
+from: a bell arrives from any program that happens to write `\a`, whereas an
+activity report exists only because the user installed that harness's integration
+one tab away. Defaulting those on honours a decision already taken rather than
+guessing at one, and it is also why the bell switch stopped being decorative — it
+was saved and reloaded and read by nothing until the attention policy grew
+preferences ([`client.md`](client.md)).
+
+In-app state is unaffected by this pane, and both hints in it say so: the sidebar
+shows a finished or waiting agent whatever the switches hold. The badge is the
+daemon's and needs no permission.
 
 ### `ui/launch-profiles.tsx`
 
@@ -989,6 +1070,30 @@ choice made without knowing the cost is not a choice.
   the messages have to be the same answer or the sentence is a lie about the button
   beside it.
 
+### `model/integrations.ts`
+
+The three requests and the wording around them, kept out of the view so the pane is
+markup and this is testable without rendering one.
+
+- `loadIntegrations` parses the daemon's text reply with `parseIntegrationOverview`
+  from `@janela/protocol`. A reply carrying no text is an `OverviewMissing`
+  `TypeError`, never an empty list: "the daemon said nothing" and "no harness is
+  hooked" are different answers, and only the second one is the user's business.
+- `integrationAction` maps status to verb — installed → Remove, outdated → Update,
+  absent or unreadable → Install — so the button's label and what its click sends
+  cannot disagree.
+- `integrationStatusText` orders the row's one line by what the user can act on:
+  `unreadable` and its reason first, then "`codex` is not on your PATH" whatever
+  the configuration says, and only then Installed / Needs updating / Not installed.
+  A hook for a program the user does not have is not what a badge should be
+  discussing.
+- `integrationFailureSummary` is the single place a `RequestFailed` is told from any
+  other rejection, so the pane's alert carries the daemon's own summary when there
+  is one and a plain sentence when the connection was simply gone.
+- Every function takes `IntegrationRequesting` as a parameter — the same
+  dependency-injection rule the rest of the package follows, and the reason none of
+  this needs a connection to test.
+
 ---
 
 ## `shared/model`
@@ -1087,6 +1192,10 @@ not: it is the fallback for a project that expressed no preference, and the proj
   `defaultProfileID`.
 - `notifiesOnBell` is off by default, because programs ring the bell for reasons the user
   has not agreed are important. An explicit OSC 9 or OSC 777 delivers regardless.
+- `notifiesWhenAgentFinishes` and `notifiesWhenAgentWaits` are on by default, and the
+  difference from the bell is consent: an activity report exists only because the user
+  installed that harness's integration, while a bell arrives from any program that
+  writes `\a`. Neither affects the sidebar, which shows both states regardless.
 - `TERMINAL_FONT_SIZE_BOUNDS` is not taste: below the minimum the grid stops being
   legible and above the maximum an 80-column view no longer fits a laptop display, and
   both ends produce "the app is broken" reports. A number input yields `NaN` for an empty

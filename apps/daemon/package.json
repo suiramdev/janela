@@ -19,6 +19,7 @@
     "@janela/daemon": "workspace:*",
     "@janela/db": "workspace:*",
     "@janela/git": "workspace:*",
+    "@janela/integrations": "workspace:*",
     "@janela/protocol": "workspace:*",
     "@janela/pty": "workspace:*",
     "@janela/session": "workspace:*",

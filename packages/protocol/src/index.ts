@@ -2,6 +2,7 @@ export * from "./branch-overview.ts";
 export * from "./directory-listing.ts";
 export * from "./frame.ts";
 export * from "./handshake.ts";
+export * from "./integration-overview.ts";
 export * from "./message-coder.ts";
 export * from "./message.ts";
 export * from "./removal-plan.ts";

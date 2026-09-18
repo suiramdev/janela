@@ -203,4 +203,23 @@ describe("resolveTerminalLaunch", () => {
     expect(launch.environment["JANELA_AUTOMATION_EVENT"]).toBe("worktreeCreated");
     expect(fake.whichCalls).toEqual([]);
   });
+
+  test("every launch names JANELA_TTY, which is what a harness hook writes to", async () => {
+    const loginShell = await resolveTerminalLaunch({
+      session,
+      terminal: descriptor(),
+      shell,
+      processes: scriptedProcesses().processes,
+    });
+    const fromArgv = await resolveTerminalLaunch({
+      session,
+      terminal: descriptor(),
+      command: ["/usr/bin/env", "-0"],
+      shell,
+      processes: scriptedProcesses().processes,
+    });
+
+    expect(loginShell.replicaPathVariable).toBe("JANELA_TTY");
+    expect(fromArgv.replicaPathVariable).toBe("JANELA_TTY");
+  });
 });

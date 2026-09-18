@@ -1,4 +1,5 @@
 import type {
+  AgentActivity,
   GridSize,
   SessionID,
   TerminalDescriptor,
@@ -61,6 +62,7 @@ export interface TerminalLaunch {
   readonly workingDirectory: string;
   readonly environment: Readonly<Record<string, string>>;
   readonly initialSize: GridSize;
+  readonly replicaPathVariable?: string;
 }
 
 export interface LiveTerminalOptions {
@@ -159,6 +161,7 @@ class PtyLiveTerminal implements LiveTerminal {
   private failure: string | undefined;
   private attention = false;
   private progress: TerminalProgress | undefined;
+  private activity: AgentActivity | undefined;
   private commandStartedAt: number | undefined;
 
   private readonly clients = new Map<string, AttachedClient>();
@@ -206,6 +209,11 @@ class PtyLiveTerminal implements LiveTerminal {
       this.progress = progress;
       this.events?.onProgress(progress);
     },
+    onActivity: (activity) => {
+      this.activity = activity;
+      this.attention = activity.kind !== "working";
+      this.events?.onActivity(activity);
+    },
     onExit: () => {
       throw new Error("the emulator knows nothing about processes; drain() emits onExit");
     },
@@ -235,13 +243,21 @@ class PtyLiveTerminal implements LiveTerminal {
       return { kind: "idle" };
     }
 
+    const activity = this.activity;
+
     if (this.attention) {
-      return { kind: "needsAttention" };
+      return activity === undefined
+        ? { kind: "needsAttention" }
+        : { kind: "needsAttention", activity };
     }
 
     const progress = this.progress;
 
-    return progress === undefined ? { kind: "running" } : { kind: "running", progress };
+    return {
+      kind: "running",
+      ...(progress !== undefined && { progress }),
+      ...(activity !== undefined && { activity }),
+    };
   }
 
   get displayTitle(): string {
@@ -257,6 +273,7 @@ class PtyLiveTerminal implements LiveTerminal {
     this.failure = undefined;
     this.attention = false;
     this.progress = undefined;
+    this.activity = undefined;
     this.commandStartedAt = undefined;
     this.title = undefined;
     delete this.reportedWorkingDirectory;
@@ -271,6 +288,9 @@ class PtyLiveTerminal implements LiveTerminal {
         workingDirectory: this.launch.workingDirectory,
         environment: this.launch.environment,
         initialSize: { columns: size.columns, rows: size.rows, ...NO_PIXEL_SIZE },
+        ...(this.launch.replicaPathVariable !== undefined && {
+          replicaPathVariable: this.launch.replicaPathVariable,
+        }),
       }),
     );
 

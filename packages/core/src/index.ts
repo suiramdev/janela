@@ -1,5 +1,7 @@
 export * from "./accent.ts";
+export * from "./agent-activity.ts";
 export * from "./identifiers.ts";
+export * from "./integration.ts";
 export * from "./launch-profile.ts";
 export * from "./project.ts";
 export * from "./session-layout.ts";

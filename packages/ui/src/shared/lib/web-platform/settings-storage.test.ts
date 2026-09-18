@@ -46,6 +46,13 @@ describe("parseSettings", () => {
     expect(settings.notifiesOnBell).toBe(true);
   });
 
+  test("a file written before the agent switches existed keeps them on", () => {
+    const settings = parseSettings(JSON.stringify({ terminalFontSize: 14 }));
+
+    expect(settings.notifiesWhenAgentFinishes).toBe(true);
+    expect(settings.notifiesWhenAgentWaits).toBe(true);
+  });
+
   test("a font size from another era is clamped rather than trusted", () => {
     expect(parseSettings(JSON.stringify({ terminalFontSize: 400 })).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.maximum,
@@ -73,6 +80,22 @@ describe("localStorageSettings", () => {
     await store.save({ ...DEFAULT_GLOBAL_SETTINGS, terminalFontSize: 16 });
 
     expect((await store.load()).terminalFontSize).toBe(16);
+  });
+
+  test("an agent switch turned off survives the round trip", async () => {
+    const storage = memoryStorage();
+    const store = localStorageSettings(storage);
+
+    await store.save({
+      ...DEFAULT_GLOBAL_SETTINGS,
+      notifiesWhenAgentFinishes: false,
+      notifiesWhenAgentWaits: false,
+    });
+
+    const loaded = await store.load();
+
+    expect(loaded.notifiesWhenAgentFinishes).toBe(false);
+    expect(loaded.notifiesWhenAgentWaits).toBe(false);
   });
 
   test("a store that refuses to write loses a preference, not the session", async () => {
