@@ -90,6 +90,35 @@ Four things that will bite you once each:
 
 ---
 
+## Branches
+
+`dev` is the default branch and where work lands. `main` is the released state.
+
+- **Branch off `dev`, and open every pull request against `dev`.** It is the
+  repository default, so `gh pr create` already targets it and a fresh clone
+  starts there.
+- **Neither branch takes a direct push.** Both require a pull request, and the
+  four CI checks must be green: `Lint, typecheck & test`, `Build the PTY
+  library`, `Compile the daemon sidecar`, `Bundle and verify the app`. No
+  approval is required — GitHub forbids approving your own pull request, and a
+  one-maintainer repository that demanded one would merge nothing.
+- **`main` moves when a version ships**, through a pull request from `dev`.
+  Nothing else writes to it.
+- **A `v*` tag is immutable.** Once pushed it cannot be moved or deleted, so a
+  released version always means the same commit.
+- Neither branch can be deleted or force-pushed by anyone, including an admin.
+  The escape hatch is deliberate friction: disable the ruleset in **Settings →
+  Rules**, act, enable it again. It leaves an audit-log entry, which is the
+  point.
+
+Required checks are not `strict`: a pull request does not have to be rebased
+onto the tip of `dev` to merge. That keeps a queue of open pull requests from
+re-running the macOS matrix on every merge, and costs the case where two
+independently green branches break once combined — which the push run on `dev`
+then reports.
+
+---
+
 ## Repository layout
 
 ```text
