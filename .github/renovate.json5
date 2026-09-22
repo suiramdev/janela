@@ -1,0 +1,257 @@
+{
+  // Renovate keeps every third-party version in this repository current. It runs
+  // as the Mend-hosted GitHub App; nothing here is a workflow, and no secret is
+  // involved. See docs/dependencies.md for the policy behind these settings and
+  // for what a human still has to do.
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",
+    ":dependencyDashboard",
+    // New actions arrive pinned to a commit SHA with a version comment, which is
+    // the rule .github/workflows/ci.yml already states in prose. A tag can be
+    // moved to point at new code; a SHA cannot.
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitTypeAll(chore)",
+  ],
+
+  // `dev` is where work lands and `main` is the released state. Renovate follows
+  // the repository default, which is `dev` — this says so out loud, so that
+  // changing the default branch never starts aiming dependency PRs at `main`.
+  baseBranchPatterns: ["dev"],
+
+  timezone: "Europe/Paris",
+  // One batch a week. A dependency bot that interrupts on its own schedule gets
+  // muted, and a muted bot updates nothing.
+  schedule: ["before 6am on monday"],
+  prConcurrentLimit: 6,
+  prHourlyLimit: 4,
+
+  semanticCommitScope: "deps",
+  labels: ["dependencies"],
+  configMigration: true,
+
+  // A release that is pulled, yanked or found to be compromised is usually
+  // caught within a day or two. Waiting three costs nothing here and is the
+  // cheapest supply-chain defence available to a repository this size.
+  minimumReleaseAge: "3 days",
+
+  // `bunfig.toml` sets `exact = true` and the workspace packages pin exactly, so
+  // for almost everything this is a straight version replacement. Where a range
+  // survives — the root's tooling devDependencies — bumping it is what makes the
+  // update visible in review instead of silent in bun.lock.
+  rangeStrategy: "bump",
+
+  // The lockfile is authoritative and CI installs with --frozen-lockfile, so
+  // transitive drift is only ever corrected deliberately. Once a month, by
+  // itself, green or not at all.
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on the first day of the month"],
+    automerge: true,
+  },
+
+  // A vulnerability is not a weekly chore. These ignore the schedule and the
+  // release-age floor.
+  vulnerabilityAlerts: {
+    labels: ["dependencies", "security"],
+    schedule: ["at any time"],
+    minimumReleaseAge: null,
+    prCreation: "immediate",
+  },
+  // Cargo has no GitHub advisory feed of its own here; OSV covers both halves.
+  osvVulnerabilityAlerts: true,
+
+  // The spikes are throwaway proofs of a technique. They are not built, not
+  // tested, and not shipped.
+  ignorePaths: ["spikes/**"],
+
+  // Two version numbers live in workflow `env:` blocks with a "keep in sync"
+  // comment above them. A comment is not a mechanism; these are.
+  customManagers: [
+    {
+      customType: "regex",
+      description: "BUN_VERSION in the workflows, kept level with `packageManager`",
+      managerFilePatterns: ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      matchStrings: ["BUN_VERSION:\\s*[\"']?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"],
+      depNameTemplate: "bun",
+      datasourceTemplate: "npm",
+      versioningTemplate: "npm",
+    },
+    {
+      customType: "regex",
+      description: "NODE_VERSION in the workflows, kept level with .node-version",
+      managerFilePatterns: ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      matchStrings: ["NODE_VERSION:\\s*[\"']?(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)[\"']?"],
+      depNameTemplate: "node",
+      datasourceTemplate: "node-version",
+      versioningTemplate: "node",
+    },
+  ],
+
+  packageRules: [
+    {
+      description: [
+        'Cargo manifests carry deliberate minor-level ranges — `libc = "0.2"`, ',
+        '`tauri = "2.11"`. A patch belongs in Cargo.lock, not in a diff.',
+      ],
+      matchManagers: ["cargo"],
+      rangeStrategy: "update-lockfile",
+    },
+
+    // ---- Things that must move together ----
+
+    {
+      description: [
+        "oxslop declares a peer of an exact oxlint and its rules are built ",
+        "against that release of the JS plugin API. Separating these two PRs ",
+        "is how the linter drifts out from under the plugin.",
+      ],
+      groupName: "oxc toolchain",
+      matchPackageNames: ["oxlint", "oxslop", "oxfmt"],
+    },
+    {
+      description: "The Tauri npm packages and the Rust crates are one release train.",
+      groupName: "Tauri",
+      matchPackageNames: ["@tauri-apps/**", "tauri", "tauri-build", "tauri-plugin-**"],
+    },
+    {
+      groupName: "React",
+      matchPackageNames: ["react", "react-dom", "@types/react", "@types/react-dom"],
+    },
+    {
+      groupName: "Vite",
+      matchPackageNames: ["vite", "@vitejs/**"],
+    },
+    {
+      groupName: "Tailwind CSS",
+      matchPackageNames: ["tailwindcss", "@tailwindcss/**", "tw-animate-css"],
+    },
+    {
+      description: "The client and the generator are one version by construction.",
+      groupName: "Prisma",
+      matchPackageNames: ["prisma", "@prisma/**"],
+    },
+    {
+      description: [
+        "The emulator and its addons share a protocol. @janela/terminal and ",
+        "@janela/terminal-ui are the only packages allowed to name them, and ",
+        "they must name the same version.",
+      ],
+      groupName: "xterm.js",
+      matchPackageNames: ["@xterm/**"],
+    },
+    {
+      groupName: "Steiger",
+      matchPackageNames: ["steiger", "@feature-sliced/**"],
+    },
+    {
+      groupName: "Hugeicons",
+      matchPackageNames: ["@hugeicons/**"],
+    },
+    {
+      groupName: "objc2",
+      matchPackageNames: ["objc2", "objc2-**"],
+    },
+
+    // ---- The toolchain, which is recorded in more than one place ----
+
+    {
+      description: [
+        "`packageManager` in package.json and BUN_VERSION in the workflows. ",
+        "One PR, because CI's pin must never sit below the lockfile's floor.",
+      ],
+      groupName: "bun",
+      matchDatasources: ["npm"],
+      matchPackageNames: ["bun"],
+      commitMessageTopic: "bun",
+      semanticCommitScope: "ci",
+    },
+    {
+      description: [
+        ".node-version and NODE_VERSION in the workflows. Node exists here for ",
+        "Prisma's CLI and nothing we ship runs on it.",
+      ],
+      groupName: "node",
+      matchDatasources: ["node-version"],
+      commitMessageTopic: "Node",
+      semanticCommitScope: "ci",
+    },
+    {
+      description: [
+        "`engines` states the floor a contributor's machine must clear, not the ",
+        "version we build with. Raising it is a decision about who can build ",
+        "Janela, which is not a dependency update.",
+      ],
+      matchDepTypes: ["engines"],
+      enabled: false,
+    },
+
+    // ---- CI's own versions ----
+
+    {
+      description: "Anything under .github/workflows is a CI change and says so.",
+      matchManagers: ["github-actions"],
+      semanticCommitScope: "ci",
+    },
+    {
+      description: [
+        "The runner image is pinned so that signing, notarization and the ",
+        "bundle verify against a known macOS. Moving it is a decision, not a ",
+        "refresh — but it has to surface, because images get retired.",
+      ],
+      groupName: "GitHub runners",
+      matchDepTypes: ["github-runner"],
+      schedule: ["before 6am on the first day of the month"],
+      automerge: false,
+    },
+
+    // ---- What may merge itself ----
+    //
+    // The four required checks are the gate in every case: automerge here means
+    // GitHub's own auto-merge, which waits for them. Nothing that ships in the
+    // app merges without a human.
+
+    {
+      description: "Re-pinning an action to the current SHA of a tag it already uses.",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["digest", "pinDigest"],
+      semanticCommitScope: "ci",
+      automerge: true,
+    },
+    {
+      description: "Tooling that cannot reach a user's machine, below a major.",
+      matchDepTypes: ["devDependencies"],
+      matchUpdateTypes: ["patch", "minor"],
+      automerge: true,
+    },
+    {
+      description: [
+        "Tailwind and Vite are devDependencies whose output ships — the CSS in ",
+        "the bundle, and the bundle itself. CI proves they still build, not ",
+        "that the window still looks right.",
+      ],
+      matchPackageNames: ["tailwindcss", "@tailwindcss/**", "tw-animate-css", "vite", "@vitejs/**"],
+      automerge: false,
+    },
+    {
+      description: [
+        "effect is on a release-candidate line and sits at a seam in every ",
+        "package — schemas, tagged errors, the frame decoders. An rc bump is ",
+        "read, not merged.",
+      ],
+      matchPackageNames: ["effect"],
+      automerge: false,
+      labels: ["dependencies", "prerelease"],
+    },
+    {
+      description: "A major is a change of direction until proven otherwise.",
+      matchUpdateTypes: ["major"],
+      automerge: false,
+      minimumReleaseAge: "14 days",
+    },
+  ],
+
+  automergeStrategy: "squash",
+  platformAutomerge: true,
+}
