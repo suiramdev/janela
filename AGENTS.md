@@ -53,7 +53,7 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run generate` | Regenerate the Prisma client | After touching `schema.prisma` |
 | `bun run desktop` | A `janelad` **and** the Tauri app, in one terminal | When you need to see the window |
 | `bun run desktop:only` | The Tauri app alone — `tauri dev`, and it starts no daemon | When a daemon is already running |
-| `bun run desktop:build` | `tauri build` — the signed bundle | To make a release |
+| `bun run desktop:build` | `tauri build` — the ad-hoc signed bundle, for checking a build by hand | When `bun run check` is not enough; a release is the `Release` workflow |
 | `bun run web` | A `janelad`, the gateway **and** the browser client's Vite server, in one terminal | When you want the window in a browser at `http://localhost:1421` |
 | `bun run web:only` | The gateway and the Vite server alone — no daemon | When a daemon is already running |
 | `bun run web:isolated` | A `janelad`, the gateway **and** a watching web build under a private `HOME` in `/tmp/janela-iso/<id>` and a private port — never touches your own daemon | In an agent worktree, or whenever another checkout may be running |
@@ -63,6 +63,7 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run daemon:build` | Compile the `janelad` sidecar | Before `desktop:build`, or to run the compiled one by hand |
 | `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
 | `bun run daemon:status` | Which `janelad` is resident, from where, and who is connected | When two checkouts might be fighting |
+| `bun run version [X.Y.Z]` | Print the agreed version, or stamp a new one into every site | Before cutting a release — see `docs/releasing.md` |
 
 The grammar: the noun is the `apps/<dir>` it runs; bare runs it with a daemon,
 `:only` runs the client alone, `:build` builds it, `:isolated` runs it under a
@@ -103,7 +104,9 @@ Four things that will bite you once each:
   approval is required — GitHub forbids approving your own pull request, and a
   one-maintainer repository that demanded one would merge nothing.
 - **`main` moves when a version ships**, through a pull request from `dev`.
-  Nothing else writes to it.
+  Nothing else writes to it. The version is stamped with `bun run version` first,
+  and the release itself is the `Release` workflow run on `main` — the whole
+  procedure is in [`docs/releasing.md`](docs/releasing.md).
 - **A `v*` tag is immutable.** Once pushed it cannot be moved or deleted, so a
   released version always means the same commit.
 - Neither branch can be deleted or force-pushed by anyone, including an admin.

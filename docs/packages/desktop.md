@@ -310,6 +310,27 @@ row should have its leading space back. Only the shell can answer that.
   browser client ([`ui.md`](ui.md) § web-platform). The stylesheet and its token
   test live in `@janela/design` for the same reason ([`design.md`](design.md)).
 
+## `src/adapters/app-update.ts`
+
+`AppUpdating`, answered with `tauri-plugin-updater` and `tauri-plugin-process`: the
+decision logic lives in `@janela/ui`'s `app-update.ts` ([`ui.md`](ui.md) §
+`app-update.ts`), and this file is the plumbing — the plugin's `check()`, the
+download's `Started`/`Progress`/`Finished` events folded into a running fraction,
+`Update.close()` in an `ensuring` so the Rust-side handle is released on failure
+too, and `relaunch()`.
+
+- **A development build refuses to check** (`import.meta.env.DEV`): a `tauri dev`
+  binary is not inside a `.app` the updater could swap, so the adapter rejects
+  before the plugin is asked, and `scheduleUpdateChecks` is not installed at all.
+  Check for Updates… in dev therefore shows the failure copy, which is correct —
+  a dev build genuinely cannot update itself.
+- `scheduleUpdateChecks` is 30 s after launch and then daily, always quiet: the
+  update exists whether or not the user asked, but a failure to look for one is
+  never worth a banner (§ Non-negotiables 10).
+- Takes `check` and `relaunch` as optional deps defaulting to the plugin exports,
+  the same testing seam as `menu.ts` and `native.ts`; the updater endpoint and the
+  public key live in `tauri.conf.json` under `plugins.updater`.
+
 ## `src-tauri/src/tray.rs` — the status item
 
 The daemon outlives the app, which leaves a user who has quit with nothing on screen
@@ -436,10 +457,17 @@ passes `cargo build` and `tauri build` happily:
   be set explicitly whenever `APPLE_CERTIFICATE` is used, because Tauri checks that
   the identity is contained in the certificate's name.
 - Notarization and stapling happen *inside* `tauri build` (`notarytool submit --wait`,
-  then stapling unless `--skip-stapling`). There is no separate step and no release
-  workflow yet; a release is produced by running `bun run desktop:build` from the
-  repository root with `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and
-  `APPLE_TEAM_ID` set.
+  then stapling unless `--skip-stapling`). A release is the `Release` workflow
+  (`.github/workflows/release.yml`) run on `main`: it runs `bundle:release`, which is
+  `bundle` plus `src-tauri/tauri.release.conf.json` — a config overlay adding the dmg
+  target and `createUpdaterArtifacts`. The overlay exists because
+  `createUpdaterArtifacts` demands `TAURI_SIGNING_PRIVATE_KEY`, and a contributor's
+  `bun run desktop:build` or CI's shell job must keep working without the key. The
+  procedure and the secrets are in [`../releasing.md`](../releasing.md).
+- `updater-manifest.ts` writes `latest.json` — the updater's manifest — from the
+  `.sig` file the bundler left beside `Janela.app.tar.gz`. It points at the versioned
+  release URL, not `latest/download`, so the manifest published with v0.2.0 offers
+  v0.2.0 even after v0.3.0 exists.
 - `sidecar.ts` runs before `tauri dev`, `tauri build` and the CI shell job, because
   tauri-build copies the sidecar at *compile* time and fails if it is missing. It is a
   copy, not a symlink: the bundler needs a real file to sign.

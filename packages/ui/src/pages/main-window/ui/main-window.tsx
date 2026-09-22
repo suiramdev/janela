@@ -16,6 +16,7 @@ import { ConfirmationHost } from "./confirmation-host.tsx";
 import { ConnectionBanner } from "./connection-banner.tsx";
 import { SessionDetail } from "./session-detail.tsx";
 import { SheetHost } from "./sheets/sheet-host.tsx";
+import { UpdateBanner } from "./update-banner.tsx";
 import { WelcomeScreen } from "./welcome.tsx";
 
 export interface MainWindowProps {
@@ -98,6 +99,7 @@ export function MainWindow(props: MainWindowProps): ReactElement {
               </>
             )}
             <ConnectionBanner />
+            <UpdateBanner />
             <SheetHost dispatch={run} />
             <ConfirmationHost />
           </SidebarProvider>

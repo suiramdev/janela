@@ -31,7 +31,9 @@ containing nothing else. Verified in the migration spikes and asserted by
 the manifest would make `bun build --compile` embed it, and a daemon whose
 version depends on a file being next to it reports the wrong version from a
 bundle. The app's own version lives in `tauri.conf.json`; the two are released
-together.
+together, and `bun run version` is what keeps the literal and `tauri.conf.json`
+equal — it stamps both, and the `Release` workflow refuses when they disagree
+([`../releasing.md`](../releasing.md)).
 
 **A refused argument stops the process before it opens anything** — before
 `defaultDatabasePath()`, before any `mkdir`, before the log sink — so an argument

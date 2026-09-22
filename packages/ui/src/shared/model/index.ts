@@ -1,3 +1,5 @@
+export * from "./app-update.ts";
+
 export * from "./background-service.ts";
 
 export * from "./client-environment.tsx";

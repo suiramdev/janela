@@ -5,6 +5,7 @@ export { SettingsScreen } from "./pages/settings/index.ts";
 export {
   ClientEnvironmentProvider,
   commandsWithShortcuts,
+  createAppUpdateFlow,
   createConfirmationQueue,
   createDirectoryPickerQueue,
   createViewState,
@@ -16,6 +17,10 @@ export {
   withTerminalFontSize,
   withTheme,
   type AppearanceControl,
+  type AppUpdateFlow,
+  type AppUpdateState,
+  type AppUpdating,
+  type AvailableUpdate,
   type ClientEnvironment,
   type Clipboard,
   type CommandSource,

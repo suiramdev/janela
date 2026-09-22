@@ -13,6 +13,7 @@ import {
 
 import { COMMANDS } from "../../../shared/config/index.ts";
 import {
+  type RecordingAppUpdates,
   type RecordingConfirmations,
   type RecordingDirectoryPicker,
   type RecordingNativeShell,
@@ -26,6 +27,7 @@ import {
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingNotificationSound,
+  recordingAppUpdates,
   recordingService,
   states,
 } from "../../../shared/lib/test-fakes/index.ts";
@@ -53,6 +55,7 @@ interface Harness {
   readonly directories: RecordingDirectoryPicker;
   readonly confirmations: RecordingConfirmations;
   readonly service: RecordingService;
+  readonly updates: RecordingAppUpdates;
   appears: Session | undefined;
 }
 
@@ -110,6 +113,8 @@ function harness(options: {
 
   const service = recordingService();
 
+  const updates = recordingAppUpdates();
+
   const target: CommandTarget = {
     projects: projectStore,
     sessions: sessionStore,
@@ -123,6 +128,7 @@ function harness(options: {
             appearance: recordingAppearance(),
             restartDaemon: () => {},
             sound: recordingNotificationSound(),
+            updates,
           },
     directories,
     confirmations,
@@ -148,6 +154,7 @@ function harness(options: {
     directories,
     confirmations,
     service,
+    updates,
     get appears(): Session | undefined {
       return appearing;
     },
@@ -746,5 +753,23 @@ describe("Stop the Daemon", () => {
     await createCommandDispatch(context.target)("stopDaemon");
 
     expect(context.confirmations.asked).toEqual([]);
+  });
+});
+
+describe("Check for Updates", () => {
+  test("asks the updater for an announced check", async () => {
+    const context = harness({});
+
+    await createCommandDispatch(context.target)("checkForUpdates");
+
+    expect(context.updates.calls).toEqual(["check:announced"]);
+  });
+
+  test("does nothing on a client that is not on the daemon's Mac", async () => {
+    const context = harness({ local: false });
+
+    await createCommandDispatch(context.target)("checkForUpdates");
+
+    expect(context.updates.calls).toEqual([]);
   });
 });
