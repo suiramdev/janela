@@ -1,12 +1,17 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
 
-  // ---- @jliocsar/begone-slop: rules that police *evidence* rather than style,
-  // plus the Effect v4 idioms. `extends` here does not take a package
-  // specifier — oxlint resolves it relative to this file — so the path is
-  // explicit. The preset sets `"plugins": []`; our own `plugins` array below is
-  // later and wins, which is how oxlint's own plugin rules stay on.
-  "extends": ["./node_modules/@jliocsar/begone-slop/preset.json"],
+  // ---- oxslop: rules that police *evidence* rather than style, plus the
+  // Effect v4 idioms. `extends` here does not take a package specifier —
+  // oxlint resolves it relative to this file — so the path is explicit.
+  // `recommended` is core + style + testing; `effect` is opt-in per project
+  // and this one is an Effect project. Each preset registers the plugin
+  // itself, and the `jsPlugins` array below adds to that list rather than
+  // replacing it, which is how @shadcn/lint joins them.
+  "extends": [
+    "./node_modules/oxslop/presets/recommended.json",
+    "./node_modules/oxslop/presets/effect.json"
+  ],
 
   "plugins": ["import", "typescript", "unicorn", "promise", "react", "react-perf", "jsx-a11y"],
 
@@ -18,9 +23,9 @@
   //
   // Registered with no rules enabled: what this project allows a screen to
   // restyle is a design decision, not a setup step. Rules go in "rules" below,
-  // next to the ones already there. Oxlint's JS plugin API is alpha, and it
-  // arrived in 1.80 — which is why the oxlint pin moved off 1.79.
-  "jsPlugins": ["@shadcn/lint", "@jliocsar/begone-slop"],
+  // next to the ones already there. Oxlint's JS plugin API is alpha, which is
+  // why package.json pins oxlint to the exact release oxslop peers on.
+  "jsPlugins": ["@shadcn/lint"],
   "settings": {
     "shadcn": {
       // The primitives are not under a `components/ui` directory and there is
@@ -67,6 +72,14 @@
     "promise/no-return-wrap": "error",
     "no-async-promise-executor": "error",
 
+    // ---- Arrived with oxlint 1.85, which oxslop pins. Its only remedy is to
+    // mutate the object the callback just built — `Object.assign` or a direct
+    // property assignment — and every value that flows through these maps is a
+    // domain value that crosses the socket. `{ ...command, accelerator }` is
+    // the shape this codebase is built on; a per-item allocation in a list the
+    // length of the command palette is not the cost this rule is priced for.
+    "oxc/no-map-spread": "off",
+
     "import/no-cycle": "error",
     "import/no-self-import": "error",
     "import/no-duplicates": "error",
@@ -86,10 +99,23 @@
 
     // A `src/index.ts` is a package's `exports` entry and, inside @janela/ui, the
     // one door Steiger allows into a slice. Re-exporting is its whole job.
-    "begone-slop/no-reexport-only-modules": [
-      "error",
-      { "allowedFilenames": ["index.ts"], "routeDirectoryNames": ["src"] }
-    ]
+    // `allowFiles` matches on a substring of the path, so the leading separator
+    // is what keeps this to a file *named* index.ts.
+    "oxslop/no-reexport-only-modules": ["error", { "allowFiles": ["/index.ts"] }],
+
+    // ---- The two oxslop style rules its `recommended` preset leaves off and
+    // this project wants on. Both are conventions AGENTS.md already states.
+
+    // docs/conventions.md § Comments: intent is carried by names, types and
+    // structure. `allowJsdoc` defaults to true; here it does not, because the
+    // exempt set is closed — SAFETY:, @ts-expect-error, tooling directives,
+    // triple-slash references and shebangs — and a JSDoc block is none of them.
+    "oxslop/no-comments": ["error", { "allowJsdoc": false }],
+
+    // `param?: T` and `param: T | undefined` differ under
+    // exactOptionalPropertyTypes, and only the second says which one a caller
+    // has to pass.
+    "oxslop/no-optional-function-parameters": "error"
   },
   "overrides": [
     {
@@ -345,6 +371,9 @@
       //                            purpose: a scrollable region has to be
       //                            reachable by keyboard, which is why it also
       //                            carries `role="group"`
+      //   unicorn/consistent-function-scoping  the sidebar's header predicate and
+      //                            the dot-matrix key builder are declared beside
+      //                            their only caller upstream
       //   jsx-a11y/no-static-element-interactions, interactive-supports-focus
       //                            the command menu's rows are `role="option"`
       //                            in a listbox the *field* owns: focus never
@@ -355,9 +384,12 @@
       //                            its `onMouseDown` is what stops a click from
       //                            taking focus off the field
       //
-      // Every `begone-slop/*` rule is off here for the same reason: rewriting
+      // Every `oxslop/*` rule is off here for the same reason: rewriting
       // someone else's component to our evidence standard is work the next
-      // `shadcn add --overwrite` throws away.
+      // `shadcn add --overwrite` throws away. The list is spelled out rather
+      // than blanketed because oxlint has no per-plugin off switch, so a new
+      // oxslop release adding a rule turns it on here too — which is the
+      // moment to decide whether the registry copies should pass it.
       //
       // What stays on is everything load-bearing: no `any`, no `!`, no
       // `console`, the import restrictions, and `consistent-type-imports`. The
@@ -392,58 +424,72 @@
         "jsx-a11y/no-noninteractive-tabindex": "off",
         "jsx-a11y/no-static-element-interactions": "off",
         "jsx-a11y/interactive-supports-focus": "off",
+        "unicorn/consistent-function-scoping": "off",
 
-        "begone-slop/statement-order": "off",
-        "begone-slop/padding-line-between-statements": "off",
-        "begone-slop/expect-padding": "off",
-        "begone-slop/no-comments": "off",
-        "begone-slop/no-tag-access": "off",
-        "begone-slop/no-shadowed-error-field": "off",
-        "begone-slop/no-switch": "off",
-        "begone-slop/no-try-catch": "off",
-        "begone-slop/no-in-operator": "off",
-        "begone-slop/no-service-option": "off",
-        "begone-slop/no-effect-asvoid": "off",
-        "begone-slop/no-disable-validation": "off",
-        "begone-slop/no-banned-type-assertions": "off",
-        "begone-slop/no-optional-function-parameters": "off",
-        "begone-slop/no-sql-type-parameter": "off",
-        "begone-slop/pipe-max-arguments": "off",
-        "begone-slop/no-reflect-get": "off",
-        "begone-slop/no-reflect-apply": "off",
-        "begone-slop/no-conditional-empty-object-spread": "off",
-        "begone-slop/require-safety-comment-for-type-assertion": "off",
-        "begone-slop/no-chained-type-assertions": "off",
-        "begone-slop/no-unknown-parameters": "off",
-        "begone-slop/no-unknown-returns": "off",
-        "begone-slop/no-unknown-type-aliases": "off",
-        "begone-slop/no-silent-error-swallow": "off",
-        "begone-slop/no-shadowed-standard-array-static": "off",
-        "begone-slop/no-nested-effect-array-methods": "off",
-        "begone-slop/prefer-option-from-nullable": "off",
-        "begone-slop/prefer-effect-match": "off",
-        "begone-slop/no-cascading-layer-provide": "off",
-        "begone-slop/no-nested-layer-provide": "off",
-        "begone-slop/no-reexport-only-modules": "off",
-        "begone-slop/no-unsafe-dictionary-type": "off",
-        "begone-slop/no-known-value-widening": "off",
-        "begone-slop/no-widen-then-assert": "off",
-        "begone-slop/no-object-parameters": "off",
-        "begone-slop/no-module-mocking": "off",
-        "begone-slop/no-runtime-typeof": "off"
+        "oxslop/no-banned-type-assertions": "off",
+        "oxslop/no-chained-type-assertions": "off",
+        "oxslop/no-unknown-parameters": "off",
+        "oxslop/no-unknown-returns": "off",
+        "oxslop/no-unknown-type-aliases": "off",
+        "oxslop/no-object-parameters": "off",
+        "oxslop/no-unsafe-dictionary-type": "off",
+        "oxslop/no-reflect-get": "off",
+        "oxslop/no-reflect-apply": "off",
+        "oxslop/no-runtime-typeof": "off",
+        "oxslop/no-in-operator": "off",
+        "oxslop/no-conditional-empty-object-spread": "off",
+        "oxslop/no-widen-then-assert": "off",
+        "oxslop/no-known-value-widening": "off",
+        "oxslop/require-safety-comment-for-type-assertion": "off",
+
+        "oxslop/no-tag-access": "off",
+        "oxslop/no-manual-tagged-construction": "off",
+        "oxslop/no-nested-layer-provide": "off",
+        "oxslop/no-cascading-layer-provide": "off",
+        "oxslop/no-service-option": "off",
+        "oxslop/no-disable-validation": "off",
+        "oxslop/no-silent-error-swallow": "off",
+        "oxslop/no-yieldless-gen": "off",
+        "oxslop/prefer-effect-match": "off",
+        "oxslop/prefer-option-from-nullable": "off",
+        "oxslop/pipe-max-arguments": "off",
+        "oxslop/no-try-catch": "off",
+        "oxslop/no-switch": "off",
+
+        "oxslop/no-comments": "off",
+        "oxslop/no-narration-comments": "off",
+        "oxslop/no-emoji": "off",
+        "oxslop/no-reexport-only-modules": "off",
+        "oxslop/no-optional-function-parameters": "off",
+        "oxslop/no-reduce-accumulator-copy": "off",
+        "oxslop/require-readable-spacing": "off",
+        "oxslop/no-module-mocking": "off"
       }
     },
     {
       // Tests are allowed the assertions production code is not — which is
       // exactly what `require-safety-comment-for-type-assertion` asks a
-      // justification for. `expect-padding` is the one begone-slop rule its
-      // preset leaves off, because it only means anything where `expect()` runs.
+      // justification for. `expect-padding` is scoped to test globs by the
+      // preset already; it is repeated here so it also reaches the fakes in
+      // @janela/test-support, whose filenames are not `*.test.ts`.
       "files": ["**/*.test.ts", "**/*.test.tsx", "packages/test-support/**"],
       "rules": {
         "typescript/no-non-null-assertion": "off",
         "no-console": "off",
-        "begone-slop/require-safety-comment-for-type-assertion": "off",
-        "begone-slop/expect-padding": "error"
+        "oxslop/require-safety-comment-for-type-assertion": "off",
+        "oxslop/expect-padding": "error"
+      }
+    },
+    {
+      // ---- Ambient module declarations. `*.sql` and `*.dylib` are imported
+      // with a Bun import attribute that TypeScript has no shape for, and the
+      // reason the specifier is declared at all is a build fact — it is why
+      // `bun build --compile` can embed them — which no name or type can
+      // carry. oxslop's no-comments has no file-level exemption, so these two
+      // get theirs here.
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "oxslop/no-comments": "off"
       }
     },
     {

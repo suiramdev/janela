@@ -37,7 +37,7 @@ describe("signposts", () => {
 
     setSignpostSink(sink);
 
-    begin("connect").end();
+    begin("connect").end(undefined);
 
     expect(records[0]).not.toHaveProperty("id");
     expect(records[0]).not.toHaveProperty("fields");
@@ -72,7 +72,7 @@ describe("signposts", () => {
 
     setSignpostSink(sink);
 
-    mark.end();
+    mark.end(undefined);
 
     expect(records).toEqual([]);
   });
@@ -81,10 +81,10 @@ describe("signposts", () => {
     const { sink, records } = recording();
 
     setSignpostSink(sink);
-    begin("forge").end();
+    begin("forge").end(undefined);
     setSignpostSink(undefined);
 
-    begin("forge").end();
+    begin("forge").end(undefined);
 
     expect(records).toHaveLength(1);
   });

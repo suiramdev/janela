@@ -302,6 +302,7 @@ describe("lifecycle", () => {
       "t-exit",
       shellLaunch("stty raw -echo; printf JANELA_T21; read _; exit 7"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
 
@@ -454,6 +455,7 @@ describe("attention", () => {
       "t-osc",
       shellLaunch("printf '\\033]0;Hello\\007\\033]7;file://localhost/tmp/dir\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -472,6 +474,7 @@ describe("attention", () => {
       shellLaunch("printf '\\033]9;JANELA_SECRET_BODY\\007'; exec cat"),
       { log: logger },
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -489,6 +492,7 @@ describe("progress", () => {
       "t-progress",
       shellLaunch("stty raw -echo; printf '\\033]9;4;3\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -511,6 +515,7 @@ describe("progress", () => {
       "t-progress-percent",
       shellLaunch("stty raw -echo; printf '\\033]9;4;1;40\\007'; read _; exit 0"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -534,6 +539,7 @@ describe("progress", () => {
       "t-progress-bell",
       shellLaunch("stty raw -echo; printf '\\033]9;4;3\\007\\a'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -556,6 +562,7 @@ describe("agent activity", () => {
       "t-activity-waiting",
       shellLaunch("stty raw -echo; printf '\\033]7770;waiting;permission\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -575,6 +582,7 @@ describe("agent activity", () => {
       "t-activity-waiting-repaint",
       shellLaunch("stty raw -echo; printf '\\033]7770;waiting;input\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     const waiting = { kind: "waiting", need: "input" } as const;
     terminal.events = sink;
@@ -603,6 +611,7 @@ describe("agent activity", () => {
         "stty raw -echo; printf '\\033]7770;waiting;permission\\007\\033]7770;working\\007'; exec cat",
       ),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -618,6 +627,7 @@ describe("agent activity", () => {
       "t-activity-finished",
       shellLaunch("stty raw -echo; printf '\\033]7770;finished;failed\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -635,6 +645,7 @@ describe("agent activity", () => {
       "t-activity-restart",
       shellLaunch("stty raw -echo; printf '\\033]7770;finished;completed\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -654,6 +665,7 @@ describe("prompt marks", () => {
         "stty raw -echo; printf '\\033]133;C\\007'; read _; printf '\\033]133;D;3\\007'; exec cat",
       ),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -679,6 +691,7 @@ describe("prompt marks", () => {
       "t-prompt-orphan",
       shellLaunch("stty raw -echo; printf '\\033]133;D;0\\007'; exec cat"),
     );
+
     const sink = recordingSink();
     terminal.events = sink;
     await terminal.start();
@@ -698,6 +711,7 @@ describe("size negotiation", () => {
         { columns: 80, rows: 40 },
       ]),
     ).toEqual({ columns: 80, rows: 10 });
+
     expect(negotiatedSize([{ columns: 100, rows: 40 }])).toEqual({ columns: 100, rows: 40 });
   });
 
@@ -729,6 +743,7 @@ describe("size negotiation", () => {
         rows: 24,
       }),
     );
+
     await terminal.start();
     await drainUntil(
       terminal,
@@ -750,6 +765,7 @@ describe("size negotiation", () => {
       "t-grid",
       shellLaunch("stty raw -echo; printf 'READY\\r\\n'; exec cat", { columns: 80, rows: 24 }),
     );
+
     await terminal.start();
     terminal.attach("a", { columns: 100, rows: 40 });
     await drainUntil(
@@ -786,18 +802,18 @@ describe("size negotiation", () => {
   });
 });
 
+async function attached(id: string, client: string, viewport: GridSize): Promise<LiveTerminal> {
+  const terminal = live(id, shellLaunch("exec cat", viewport));
+  terminal.attach(client, viewport);
+  await terminal.start();
+  terminal.fullRepaintFor(client);
+
+  expect(terminal.repaintFor(client)).toHaveLength(0);
+
+  return terminal;
+}
+
 describe("the negotiated size on the wire", () => {
-  async function attached(id: string, client: string, viewport: GridSize): Promise<LiveTerminal> {
-    const terminal = live(id, shellLaunch("exec cat", viewport));
-    terminal.attach(client, viewport);
-    await terminal.start();
-    terminal.fullRepaintFor(client);
-
-    expect(terminal.repaintFor(client)).toHaveLength(0);
-
-    return terminal;
-  }
-
   test("a smaller client joining is announced to the client already attached", async () => {
     const terminal = await attached("t-announce-join", "big", { columns: 127, rows: 45 });
 
@@ -836,6 +852,7 @@ describe("the negotiated size on the wire", () => {
     const terminal = live("t-announce-delta", shellLaunch("exec cat"), {
       createEmulator: (options) => deltaOnlyEmulator(options.size),
     });
+
     terminal.attach("big", { columns: 127, rows: 45 });
     await terminal.start();
     terminal.fullRepaintFor("big");
@@ -900,6 +917,7 @@ describe("repaints", () => {
       () => terminal.snapshotText({ includeScrollback: false }).includes("READY"),
       "the shell to be ready",
     );
+
     terminal.fullRepaintFor("a");
 
     expect(terminal.repaintFor("a")).toHaveLength(0);
@@ -920,6 +938,7 @@ describe("repaints", () => {
         "stty raw -echo; for i in $(seq -w 1 60); do printf 'line-%s\\n' $i; done; exec cat",
       ),
     );
+
     await terminal.start();
     terminal.attach("a", { columns: 80, rows: 24 });
     await drainUntil(
@@ -966,6 +985,7 @@ describe("repaints", () => {
               "the shell to be ready",
             ),
           );
+
           terminal.fullRepaintFor("a");
           terminal.repaintFor("a");
         }),
@@ -1003,6 +1023,7 @@ describe("a lost descriptor", () => {
       log: logger,
       spawn: () => scripted,
     });
+
     const sink = recordingSink();
     terminal.events = sink;
 
@@ -1013,6 +1034,7 @@ describe("a lost descriptor", () => {
       kind: "failed",
       message: "Couldn't read from this terminal.",
     });
+
     expect(sink.exits).toEqual([]);
     expect(scripted.closes).toBe(1);
 

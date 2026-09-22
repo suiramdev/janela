@@ -138,6 +138,7 @@ describe("createSidebarActions", () => {
       kind: "settings",
       route: { kind: "project", projectID: projectID("p") },
     });
+
     expect(target.view.sheet).toBeUndefined();
   });
 
@@ -200,6 +201,7 @@ describe("createSidebarActions", () => {
       { type: "markSession", sessionID: sessionID("s"), unread: true },
       { type: "markSession", sessionID: sessionID("s"), unread: false },
     ]);
+
     expect(confirmations.titles).toEqual([]);
   });
 });
@@ -227,6 +229,7 @@ describe("sessionRemovalPrompt", () => {
     expect(sessionRemovalPrompt(session, { ...SAFE, liveTerminalCount: 1 }).message).toContain(
       "1 running terminal ends",
     );
+
     expect(sessionRemovalPrompt(session, { ...SAFE, liveTerminalCount: 3 }).message).toContain(
       "3 running terminals end",
     );

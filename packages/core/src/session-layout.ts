@@ -276,6 +276,7 @@ export function closeTerminal(layout: SessionLayout, terminal: TerminalID): Sess
 
   const focusedTerminalID =
     tab.focusedTerminalID === terminal ? firstTerminalID(sibling) : tab.focusedTerminalID;
+
   const tabs = layout.tabs.map((existing, at) =>
     at === index ? { ...tab, root, focusedTerminalID } : existing,
   );

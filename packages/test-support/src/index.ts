@@ -10,7 +10,7 @@ export interface TemporaryDirectory extends AsyncDisposable {
 export interface GitFixture extends AsyncDisposable {
   readonly path: string;
   git(...args: string[]): Promise<string>;
-  commit(file: string, contents: string, message?: string): Promise<void>;
+  commit(file: string, contents: string, message: string | undefined): Promise<void>;
 }
 
 interface GitEnvironment extends Record<string, string> {
@@ -70,6 +70,7 @@ export async function gitFixture(label = "git"): Promise<GitFixture> {
       stdout: "pipe",
       stderr: "pipe",
     });
+
     const [standardOutput, standardError, code] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),

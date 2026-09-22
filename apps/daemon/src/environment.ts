@@ -83,6 +83,7 @@ export async function daemonEnvironment(
     sessionsChanged: (updated) => deferred.server?.sessionsChanged(updated) ?? Promise.resolve(),
     projectsChanged: (updated) => deferred.server?.projectsChanged(updated) ?? Promise.resolve(),
   };
+
   const deferredRemoval: DeferredRemovalObserver = {};
   const projects = createProjectService({
     repository: database.projects,
@@ -93,6 +94,7 @@ export async function daemonEnvironment(
     },
     log: logger,
   });
+
   const sessions = createSessionService({
     repository: database.sessions,
     projects,
@@ -151,6 +153,7 @@ export async function daemonEnvironment(
         ownUid,
         log: log("protocol"),
       });
+
       const bound = await bindDaemonSocket({ server, path, ownUid, log: log("protocol") });
 
       if (bound.kind === "already-serving") return;

@@ -102,6 +102,7 @@ describe("constructing and reading a layout", () => {
       tabs: [{ root: { kind: "terminal", id: id("a") }, focusedTerminalID: id("a") }],
       focusedTabIndex: 0,
     });
+
     expect(Object.keys(tabAt(singleTerminalLayout(id("a"))))).not.toContain("title");
   });
 
@@ -452,9 +453,11 @@ describe("moveTerminal", () => {
     expect(moveTerminal(before, id("a"), { kind: "beside", terminal: id("a"), edge: "left" })).toBe(
       before,
     );
+
     expect(
       moveTerminal(before, id("a"), { kind: "beside", terminal: id("nobody"), edge: "left" }),
     ).toBe(before);
+
     expect(moveTerminal(before, id("c"), { kind: "newTab" })).toBe(before);
     expect(moveTerminal(before, id("c"), { kind: "tab", index: 1 })).toBe(before);
     expect(moveTerminal(before, id("a"), { kind: "tab", index: -1 })).toBe(before);
@@ -468,6 +471,7 @@ describe("moveTerminal", () => {
     expect(
       moveTerminal(before, id("x"), { kind: "beside", terminal: id("deep"), edge: "left" }),
     ).toBe(before);
+
     expect(moveTerminal(before, id("x"), { kind: "tab", index: 0 })).toBe(before);
   });
 });
@@ -478,6 +482,7 @@ describe("repairLayout", () => {
       [tab(terminal("x")), tab(split(terminal("a"), terminal("b")), "a"), tab(terminal("c"))],
       1,
     );
+
     const after = repairLayout(before, [id("a"), id("b"), id("c")]);
 
     expect(after.tabs).toHaveLength(2);
@@ -526,6 +531,7 @@ describe("repairLayout", () => {
         "a",
       ),
     ]);
+
     const after = repairLayout(before, [id("a"), id("b"), id("c")]);
     const { root } = tabAt(after);
 
@@ -586,6 +592,7 @@ describe("layoutViolations", () => {
     expect(reasons.some((reason) => reason.includes(`deeper than ${MAXIMUM_PANE_DEPTH}`))).toBe(
       true,
     );
+
     expect(reasons.some((reason) => reason.includes("ghost"))).toBe(true);
     expect(reasons.some((reason) => reason.includes("more than once"))).toBe(true);
     expect(reasons.some((reason) => reason.includes("focusedTabIndex 7"))).toBe(true);

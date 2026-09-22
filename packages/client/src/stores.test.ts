@@ -38,6 +38,7 @@ describe("the mirror", () => {
       id("c"),
       id("d"),
     ]);
+
     expect(stores.sessions.sessions[0]?.name).toBe("a-renamed");
     expect(stores.sessions.sessions[2]?.name).toBe("c-renamed");
     expect(stores.sessions.sessions[1]).toBe(untouched);
@@ -68,6 +69,7 @@ describe("the mirror", () => {
       "p2" as ProjectID,
       "p3" as ProjectID,
     ]);
+
     expect(stores.projects.find("p2" as ProjectID)?.name).toBe("renamed");
     expect(stores.projects.find("nope" as ProjectID)).toBeUndefined();
   });
@@ -82,6 +84,7 @@ describe("the mirror", () => {
         [two]: { kind: "idle" },
       }),
     );
+
     stores.mirror.apply(partial([], [], { [two]: { kind: "exited", code: 0 } }));
 
     expect(stores.sessions.terminalStates[one]).toEqual({ kind: "running" });
@@ -188,6 +191,7 @@ describe("selection when the user has not chosen", () => {
         activeAt("b", "2026-03-01T11:00:00.000Z"),
       ]),
     );
+
     stores.sessions.selection = id("a");
 
     stores.mirror.apply(
@@ -224,6 +228,7 @@ describe("derived views", () => {
       id("in"),
       id("also"),
     ]);
+
     expect(stores.sessions.standaloneSessions.map((session) => session.id)).toEqual([id("alone")]);
   });
 

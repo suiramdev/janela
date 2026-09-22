@@ -167,6 +167,7 @@ function measureEntry(absolute: string): Effect.Effect<Measurement> {
 
       if (Option.isNone(listing)) {
         skipped += 1;
+
         continue;
       }
 
@@ -179,6 +180,7 @@ function measureEntry(absolute: string): Effect.Effect<Measurement> {
 
         if (entry.isDirectory()) {
           stack.push(child);
+
           continue;
         }
 
@@ -216,6 +218,7 @@ export function worktreeIncluding(
       for (const path of request.paths) {
         if (Option.isSome(decodeIncludePath(path))) {
           accepted.push(path);
+
           continue;
         }
 
@@ -254,6 +257,7 @@ export function worktreeIncluding(
           capBytes,
           entries: present.length,
         });
+
         options.onOversized?.(oversized);
 
         return { copied: [], totalBytes: 0, usedFallbackCopy: false, skipped, oversized };
@@ -363,6 +367,7 @@ export function worktreeIncluding(
               logger.debug("worktreeinclude entry skipped", {
                 reason: failureCode(listing.failure),
               });
+
               continue;
             }
 
@@ -383,15 +388,18 @@ export function worktreeIncluding(
 
                 if (Result.isFailure(made)) {
                   skipped += 1;
+
                   continue;
                 }
 
                 stack.push({ source: childSource, destination: childDestination });
+
                 continue;
               }
 
               if (!entry.isFile()) {
                 skipped += 1;
+
                 continue;
               }
 
@@ -399,6 +407,7 @@ export function worktreeIncluding(
 
               if (Result.isFailure(info)) {
                 skipped += 1;
+
                 continue;
               }
 
@@ -421,6 +430,7 @@ export function worktreeIncluding(
 
         if (Option.isNone(info)) {
           skipped += 1;
+
           continue;
         }
 

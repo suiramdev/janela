@@ -180,6 +180,7 @@ export async function seedDotfiles(realHome: string, isolated: string): Promise<
       () => true,
       () => false,
     );
+
     const targetExists = await lstat(target).then(
       () => true,
       () => false,
@@ -276,6 +277,7 @@ async function ensureDaemon(home: string): Promise<Piped | undefined> {
         ? "  `pgrep` cannot name it; `lsof -U | grep janelad` shows the process holding the socket."
         : resident.replaceAll(/^/gm, "  "),
     );
+
     console.log("  Leaving it alone. To hand over to this checkout: bun run daemon:restart");
 
     return undefined;
@@ -293,6 +295,7 @@ async function ensureDaemon(home: string): Promise<Piped | undefined> {
       ? `janelad did not bind ${socketPath} within ${READY_DEADLINE_MS / 1000}s. Not starting the app.`
       : `janelad exited ${failure} before it bound its socket. Not starting the app.`,
   );
+
   console.error("If this is a fresh checkout, `bun run bootstrap` first.");
   process.exit(1);
 }
@@ -478,6 +481,7 @@ function printIsolatedBanner(home: string, port: number, linked: readonly string
   console.log(
     `database: ${join(home, "Library", "Application Support", "sh.janela.Janela", "janela.sqlite")}`,
   );
+
   console.log(`daemon log: ${join(home, "Library", "Logs", "sh.janela.Janela", "janelad.log")}`);
   console.log(`app: http://localhost:${port}`);
   console.log(`dotfiles linked: ${linked.length === 0 ? "none new" : linked.join(", ")}`);

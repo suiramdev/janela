@@ -42,7 +42,7 @@ interface RecordingLogger {
 interface Fixture {
   readonly database: TemporaryDatabase;
   readonly records: readonly Record_[];
-  corrupt(sql: string, parameters?: readonly (string | number | null)[]): void;
+  corrupt(sql: string, parameters: readonly (string | number | null)[] | undefined): void;
 }
 
 const DEV_SCRIPT: AutomationScript = { script: "pnpm dev", timeoutSeconds: 30 };
@@ -254,10 +254,12 @@ describe("projects", () => {
         script: "# later\ndocker compose down",
         timeoutSeconds: 5,
       };
+
       const automation: AutomationScripts = {
         worktreeCreated: { script: 'cp "$JANELA_PROJECT_DIRECTORY/.env" .env', timeoutSeconds: 30 },
         sessionTeardown: teardown,
       };
+
       const value = project({
         git: { remoteURL: "git@github.com:x/y.git", defaultBranch: "main", forge: "gitHub" },
         settings: {
@@ -316,7 +318,7 @@ describe("projects", () => {
     await withDatabase(async ({ database, records, corrupt }) => {
       const value = project({ git: { remoteURL: "ssh://git@example.test/x", forge: "gitHub" } });
       await database.projects.save(value);
-      corrupt(`UPDATE Project SET forge = 'bitbucket'`);
+      corrupt(`UPDATE Project SET forge = 'bitbucket'`, undefined);
 
       const read = await database.projects.find(value.id);
 
@@ -337,8 +339,9 @@ describe("projects", () => {
           automation: {},
         },
       });
+
       await database.projects.save(value);
-      corrupt(`UPDATE Project SET worktreeRootPath = NULL`);
+      corrupt(`UPDATE Project SET worktreeRootPath = NULL`, undefined);
 
       expect(reasonsOf(await failureOf(database.projects.find(value.id)))).toEqual([
         "worktreeRootPath missing on custom worktreeRoot",
@@ -354,8 +357,9 @@ describe("projects", () => {
           automation: { sessionStart: DEV_SCRIPT },
         },
       });
+
       await database.projects.save(value);
-      corrupt(`UPDATE AutomationScript SET event = 'onTuesday'`);
+      corrupt(`UPDATE AutomationScript SET event = 'onTuesday'`, undefined);
 
       expect(reasonsOf(await failureOf(database.projects.find(value.id)))).toEqual([
         "automation onTuesday: event unknown",
@@ -383,6 +387,7 @@ describe("sessions", () => {
         role: { kind: "automation", event: "sessionStart" },
         startsAutomatically: false,
       });
+
       const scratch = terminal({
         title: "logs",
         workingDirectoryOverride: absolutePath("/tmp/logs"),
@@ -412,6 +417,7 @@ describe("sessions", () => {
         accent: "teal",
         isPinned: true,
       });
+
       await database.sessions.save(value);
 
       expect(await database.sessions.find(value.id)).toEqual(value);
@@ -446,10 +452,12 @@ describe("sessions", () => {
         "first",
         "second",
       ]);
+
       expect((await database.sessions.inProject(owner.id)).map((s) => s.name)).toEqual([
         "first",
         "second",
       ]);
+
       expect((await database.sessions.standalone()).map((s) => s.name)).toEqual(["loose"]);
     });
   });
@@ -466,6 +474,7 @@ describe("sessions", () => {
         terminals: [keep, doomed],
         layout: oneTab(keep.id),
       });
+
       const second = worktreeSession(owner.id, { name: "second" });
       await database.sessions.save(first);
       await database.sessions.save(second);
@@ -487,6 +496,7 @@ describe("sessions", () => {
       const value = session({
         lastActiveAt: "2020-01-01T00:00:00.000Z" as Session["lastActiveAt"],
       });
+
       await database.sessions.save(value);
 
       await database.sessions.touch(value.id);
@@ -515,6 +525,7 @@ describe("cascades", () => {
         ...doomed,
         settings: { ...doomed.settings, automation: { sessionStart: DEV_SCRIPT } },
       });
+
       await database.projects.save(survivor);
 
       const inDoomed = worktreeSession(doomed.id);
@@ -558,11 +569,12 @@ describe("a backing that is representable in SQL and meaningless in the domain",
       const value = worktreeSession(owner.id);
       await database.sessions.save(value);
 
-      corrupt(`UPDATE Session SET worktreeOwnership = NULL`);
+      corrupt(`UPDATE Session SET worktreeOwnership = NULL`, undefined);
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "worktreeOwnership is not managed or adopted",
       ]);
+
       expect(await failureOf(database.sessions.all())).toBeInstanceOf(CorruptRecord);
     });
   });
@@ -574,7 +586,7 @@ describe("a backing that is representable in SQL and meaningless in the domain",
       const value = worktreeSession(owner.id);
       await database.sessions.save(value);
 
-      corrupt(`UPDATE Session SET worktreeIncludedPaths = '".env node_modules"'`);
+      corrupt(`UPDATE Session SET worktreeIncludedPaths = '".env node_modules"'`, undefined);
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "worktreeIncludedPaths is not a JSON array of strings",
@@ -586,7 +598,10 @@ describe("a backing that is representable in SQL and meaningless in the domain",
     await withDatabase(async ({ database, corrupt }) => {
       const value = session();
       await database.sessions.save(value);
-      corrupt(`UPDATE Session SET worktreeBranch = 'main', worktreeOwnership = 'managed'`);
+      corrupt(
+        `UPDATE Session SET worktreeBranch = 'main', worktreeOwnership = 'managed'`,
+        undefined,
+      );
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "worktreeBranch set on folder backing",
@@ -601,7 +616,7 @@ describe("a backing that is representable in SQL and meaningless in the domain",
       await database.projects.save(owner);
       const value = session({ projectID: owner.id, backing: { kind: "projectDirectory" } });
       await database.sessions.save(value);
-      corrupt(`UPDATE Session SET projectId = NULL`);
+      corrupt(`UPDATE Session SET projectId = NULL`, undefined);
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "projectDirectory backing requires a project",
@@ -613,7 +628,7 @@ describe("a backing that is representable in SQL and meaningless in the domain",
     await withDatabase(async ({ database, corrupt }) => {
       const value = session();
       await database.sessions.save(value);
-      corrupt(`UPDATE Session SET backingKind = 'symlink'`);
+      corrupt(`UPDATE Session SET backingKind = 'symlink'`, undefined);
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "backingKind is not folder, projectDirectory or worktree",
@@ -625,7 +640,7 @@ describe("a backing that is representable in SQL and meaningless in the domain",
     await withDatabase(async ({ database, corrupt }) => {
       const value = session();
       await database.sessions.save(value);
-      corrupt(`UPDATE Terminal SET role = 'daemon'`);
+      corrupt(`UPDATE Terminal SET role = 'daemon'`, undefined);
 
       expect(reasonsOf(await failureOf(database.sessions.find(value.id)))).toEqual([
         "terminal 0: role unknown",
@@ -637,7 +652,7 @@ describe("a backing that is representable in SQL and meaningless in the domain",
     await withDatabase(async ({ database, records, corrupt }) => {
       const value = session({ accent: "pink" });
       await database.sessions.save(value);
-      corrupt(`UPDATE Session SET accent = 'plaid'`);
+      corrupt(`UPDATE Session SET accent = 'plaid'`, undefined);
 
       expect((await database.sessions.find(value.id))?.accent).toBe("none");
       expect(records).toContainEqual({
@@ -672,6 +687,7 @@ describe("layout", () => {
         ],
         focusedTabIndex: 0,
       };
+
       corrupt(`UPDATE Session SET layout = ?`, [JSON.stringify(stored)]);
 
       const read = await database.sessions.find(value.id);
@@ -711,8 +727,9 @@ describe("layout", () => {
           focusedTabIndex: 0,
         },
       });
+
       await database.sessions.save(value);
-      corrupt(`UPDATE Session SET layout = 'not json'`);
+      corrupt(`UPDATE Session SET layout = 'not json'`, undefined);
 
       const read = await database.sessions.find(value.id);
 
@@ -724,6 +741,7 @@ describe("layout", () => {
         ],
         focusedTabIndex: 0,
       });
+
       expect(records).toContainEqual({
         level: "warning",
         message: "layout unreadable, rebuilt",
@@ -739,6 +757,7 @@ describe("layout", () => {
       await database.sessions.save(value);
       corrupt(
         `UPDATE Session SET layout = '{"tabs":[{"root":{"kind":"grid"},"focusedTerminalID":"x"}],"focusedTabIndex":0}'`,
+        undefined,
       );
 
       expect((await database.sessions.find(value.id))?.layout).toEqual(oneTab(only.id));
@@ -750,6 +769,7 @@ describe("layout", () => {
       const terminals = Array.from({ length: MAXIMUM_PANE_DEPTH + 1 }, (_, index) =>
         terminal({ title: `t${index}` }),
       );
+
       const ids = terminals.map((t) => t.id);
       const first = ids[0];
 
@@ -801,6 +821,7 @@ describe("layout", () => {
         ],
         focusedTabIndex: 0,
       });
+
       expect(records).toContainEqual({
         level: "warning",
         message: "layout unreadable, rebuilt",
@@ -823,6 +844,7 @@ describe("layout", () => {
         ],
         focusedTabIndex: 0,
       };
+
       corrupt(`UPDATE Session SET layout = ?`, [
         JSON.stringify({ ...stored, focusedTabIndex: 1.5 }),
       ]);
@@ -835,6 +857,7 @@ describe("layout", () => {
         message: "layout repaired",
         fields: { sessionID: value.id, reason: "focusedTabIndex 1.5 outside 0..1" },
       });
+
       expect(
         records.filter((record) => record.message === "layout unreadable, rebuilt"),
       ).toHaveLength(0);
@@ -864,6 +887,7 @@ describe("save refuses", () => {
       expect(reasonsOf(await failureOf(database.sessions.save(value)))).toEqual([
         "folder backing must not belong to a project",
       ]);
+
       expect(await database.sessions.find(value.id)).toBeUndefined();
     });
   });

@@ -200,6 +200,7 @@ export function fakeDaemon(): FakeDaemon {
     openTransport: (): MessageTransport => {
       if (daemon.refuseOpens > 0) {
         daemon.refuseOpens -= 1;
+
         throw new Error("socket unavailable");
       }
 

@@ -99,6 +99,7 @@ describe("parseSettings", () => {
     expect(parseSettings(JSON.stringify({ terminalFontSize: 400 })).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.maximum,
     );
+
     expect(parseSettings(JSON.stringify({ terminalFontSize: 1 })).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.minimum,
     );
@@ -108,6 +109,7 @@ describe("parseSettings", () => {
     expect(parseSettings(JSON.stringify({ terminalFontFamily: "" }))).toEqual(
       DEFAULT_GLOBAL_SETTINGS,
     );
+
     expect(parseSettings(JSON.stringify({ terminalFontFamily: "Menlo" })).terminalFontFamily).toBe(
       "Menlo",
     );
@@ -121,6 +123,7 @@ describe("parseSettings", () => {
         }),
       ).notifications.failed.sound,
     ).toEqual({ kind: "system", name: "Submarine" });
+
     expect(
       parseSettings(
         JSON.stringify({
@@ -240,6 +243,7 @@ describe("silenced confirmations", () => {
         "silencedConfirmations",
       ),
     ).toBe(false);
+
     expect(
       Object.hasOwn(
         parseSettings(JSON.stringify({ silencedConfirmations: "yes" })),

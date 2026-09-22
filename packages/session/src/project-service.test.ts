@@ -72,6 +72,7 @@ async function withProjects(
             },
             log: logger,
           });
+
           await projects.load();
 
           await work({
@@ -112,6 +113,7 @@ describe("addProject", () => {
         defaultBranch: "main",
         forge: "gitHub",
       });
+
       expect((await fixture.database.projects.find(added.id))?.git?.defaultBranch).toBe("main");
     });
   });
@@ -217,6 +219,7 @@ describe("addProject", () => {
       expect(fixture.records.map((record) => record.message)).toEqual([
         "project git refresh failed",
       ]);
+
       expect(fixture.records[0]?.fields).toEqual({ project: added.id, reason: "Error" });
     });
   });
@@ -234,6 +237,7 @@ describe("load", () => {
         observer: recordingObserver().observer,
         sessions: { projectRemoving: async () => {} },
       });
+
       await restarted.load();
 
       expect(restarted.projects.map((project) => project.id)).toEqual([added.id]);

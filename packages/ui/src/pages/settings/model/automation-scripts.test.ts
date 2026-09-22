@@ -66,11 +66,13 @@ describe("automationViolations", () => {
         fakeSettings({ automation: { sessionStart: { script: "pnpm dev", timeoutSeconds: 0 } } }),
       ),
     ).toEqual([]);
+
     expect(
       automationViolations(
         fakeSettings({ automation: { sessionTeardown: { script: "# soon", timeoutSeconds: 0 } } }),
       ),
     ).toEqual([]);
+
     expect(
       automationViolations(
         fakeSettings({

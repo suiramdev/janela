@@ -128,6 +128,7 @@ export function gitRunner(options: GitRunnerOptions = {}): GitRunning {
         (entry): entry is [string, string] => entry[1] !== undefined,
       ),
     );
+
   const configured = options.executable;
 
   let resolving: Promise<string> | undefined;

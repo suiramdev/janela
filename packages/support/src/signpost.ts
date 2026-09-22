@@ -23,7 +23,7 @@ export interface SignpostSink {
 
 export interface Signpost {
   readonly observed: boolean;
-  end(fields?: SignpostFields): void;
+  end(fields: SignpostFields | undefined): void;
 }
 
 type PendingRecord = { -readonly [Key in keyof SignpostRecord]: SignpostRecord[Key] };

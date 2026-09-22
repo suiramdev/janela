@@ -51,7 +51,7 @@ interface Harness {
   readonly sessions: SessionStore;
   readonly projects: ProjectStore;
   readonly mirror: MirrorApplying;
-  handshake(index?: number): Promise<FakeConnection>;
+  handshake(index: number | undefined): Promise<FakeConnection>;
 }
 
 const id = (name: string): SessionID => name as SessionID;
@@ -128,6 +128,7 @@ describe("the handshake", () => {
         clientName: "test",
       },
     });
+
     expect(peer.controls()).toHaveLength(1);
     expect(connection.status.kind).toBe("connecting");
 
@@ -139,6 +140,7 @@ describe("the handshake", () => {
       id: 1 as RequestID,
       scope: { kind: "state" },
     });
+
     expect(connection.status.kind).toBe("connected");
 
     await started;
@@ -167,6 +169,7 @@ describe("the handshake", () => {
       type: "refused",
       refusal: { kind: "incompatibleVersion", daemonMinimum: 2, daemonCurrent: 3 },
     });
+
     await until(() => connection.status.kind === "refused", "the refusal");
 
     expect(connection.status).toEqual({
@@ -250,7 +253,7 @@ describe("the handshake", () => {
 
   test("the deadline is disarmed once the daemon answers", async () => {
     const { connection, handshake, logger } = harness({ handshakeDeadlineMs: 30 });
-    const peer = await handshake();
+    const peer = await handshake(undefined);
 
     await Bun.sleep(80);
 
@@ -324,7 +327,7 @@ describe("reconnecting", () => {
 
   test("a clean EOF reconnects and re-subscribes", async () => {
     const { daemon, handshake } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
 
     first.end();
     await until(() => daemon.connections.length === 2, "a second connection");
@@ -344,7 +347,7 @@ describe("reconnecting", () => {
 
   test("a daemon killed mid-frame cannot corrupt the connection that replaces it", async () => {
     const { connection, handshake, sessions, logger } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
 
     first.say(stateMessage(snapshot([fakeSession("s1"), fakeSession("s2")])));
     await until(() => sessions.sessions.length === 2, "the first snapshot");
@@ -391,7 +394,7 @@ describe("reconnecting", () => {
 
   test("a frame from a torn-down connection never reaches the mirror", async () => {
     const { daemon, connection, handshake, sessions } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
     first.keepsDeliveringAfterClose = true;
 
     first.say(stateMessage(snapshot([fakeSession("s1")])));
@@ -415,7 +418,7 @@ describe("reconnecting", () => {
 describe("requests", () => {
   test("acknowledged resolves, text resolves its payload, failed rejects", async () => {
     const { connection, handshake } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     const terminal = terminalID();
 
     const renamed = connection.request({
@@ -445,6 +448,7 @@ describe("requests", () => {
       type: "removeProject",
       projectID: fixtureID<"Project">("p"),
     });
+
     await until(() => peer.controls().length === 5, "the third request");
     peer.say({
       type: "failed",
@@ -467,7 +471,7 @@ describe("requests", () => {
 
   test("a resize carries no id and expects no reply", async () => {
     const { connection, handshake } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
 
     expect(
       await connection.request({
@@ -493,7 +497,7 @@ describe("requests", () => {
 
   test("a reply for a request nobody is waiting on is logged, not thrown", async () => {
     const { connection, handshake, logger } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
 
     peer.say({ type: "acknowledged", id: 99 as RequestID });
     await until(() => logger.with("reply for unknown request").length > 0, "the log line");
@@ -505,7 +509,7 @@ describe("requests", () => {
 describe("terminal traffic", () => {
   test("input reaches the daemon byte for byte, valid UTF-8 or not", async () => {
     const { connection, handshake } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     const terminal = terminalID();
 
     const invalid = Uint8Array.of(0xff, 0xfe, 0x80, 0xc3, 0x28);
@@ -521,7 +525,7 @@ describe("terminal traffic", () => {
 
   test("input while disconnected is dropped, not buffered", async () => {
     const { daemon, connection, handshake } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
     const terminal = terminalID();
 
     first.end();
@@ -539,7 +543,7 @@ describe("terminal traffic", () => {
 
   test("output is routed to the handler for its terminal, and dropped after detach", async () => {
     const { connection, handshake, sessions, logger } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     const [one, two] = [terminalID(), terminalID()];
 
     peer.say(stateMessage(snapshot([fakeSession("s1", [one, two])])));
@@ -577,7 +581,7 @@ describe("terminal traffic", () => {
 
   test("output naming a terminal we do not hold closes the connection", async () => {
     const { daemon, connection, handshake, sessions, logger } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
 
     peer.say(stateMessage(snapshot([fakeSession("s1", [terminalID()])])));
     await until(() => sessions.sessions.length === 1, "the snapshot");
@@ -590,6 +594,7 @@ describe("terminal traffic", () => {
       error: "unknownTerminal",
       terminalID: stranger,
     });
+
     expect(sessions.sessions[0]?.terminals.map((terminal) => terminal.id)).not.toContain(stranger);
 
     await until(() => daemon.connections.length === 2, "the reconnect");
@@ -597,7 +602,7 @@ describe("terminal traffic", () => {
 
   test("an Input frame from the daemon is a direction violation", async () => {
     const { connection, handshake, logger } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
 
     const payload = new Uint8Array(RAW_HEADER_LENGTH + 1);
     peer.push(encodeFrame({ kind: FrameKind.Input, payload }));
@@ -608,7 +613,7 @@ describe("terminal traffic", () => {
 
   test("a terminalExited is merged as the fact it is", async () => {
     const { connection, handshake, sessions } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     const terminal = terminalID();
 
     peer.say(
@@ -618,6 +623,7 @@ describe("terminal traffic", () => {
         }),
       ),
     );
+
     await until(() => sessions.sessions.length === 1, "the snapshot");
 
     expect(sessions.isRunning(id("s1"))).toBe(true);
@@ -634,7 +640,7 @@ describe("terminal traffic", () => {
 describe("attention", () => {
   test("signals reach the handler, and their body reaches nothing else", async () => {
     const { connection, handshake, logger, sessions, projects } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     const terminal = terminalID();
     const body = "SECRET-BODY-4c1f";
 
@@ -653,6 +659,7 @@ describe("attention", () => {
         occurredAt: instant("2026-01-01T00:00:00.000Z"),
       },
     });
+
     await until(() => delivered.length === 1, "the signal");
 
     expect(delivered).toEqual(["signal-1"]);
@@ -670,7 +677,7 @@ describe("attention", () => {
 
   test("handlers can be removed", async () => {
     const { connection, handshake } = harness();
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     let count = 0;
 
     const stop = connection.onAttention(() => {
@@ -702,7 +709,7 @@ describe("attention", () => {
 describe("disconnect", () => {
   test("closes the transport, stops retrying, and can be reconnected", async () => {
     const { daemon, connection, handshake, delays } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
 
     await connection.disconnect();
 
@@ -743,7 +750,7 @@ describe("disconnect", () => {
 
   test("in-flight requests fail rather than waiting forever", async () => {
     const { connection, handshake } = harness();
-    await handshake();
+    await handshake(undefined);
 
     const rejection = connection
       .request({ type: "removeSession", sessionID: id("s1"), deletesDirectory: false })
@@ -764,7 +771,7 @@ describe("disconnect", () => {
       seen.push(connection.status.kind);
     });
 
-    const peer = await handshake();
+    const peer = await handshake(undefined);
     peer.end();
     await until(() => connection.status.kind === "reconnecting", "the reconnect");
 
@@ -788,7 +795,7 @@ describe("a transport that will not open", () => {
 
   test("a send that fails takes the connection down once, not twice", async () => {
     const { daemon, connection, handshake } = harness();
-    const first = await handshake();
+    const first = await handshake(undefined);
     first.writesFail = true;
 
     const pending = connection.request({ type: "renameSession", sessionID: id("s1"), name: "x" });

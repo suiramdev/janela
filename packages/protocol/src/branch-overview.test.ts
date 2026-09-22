@@ -96,9 +96,11 @@ describe("the branch overview on the wire", () => {
     expect(() => parseBranchOverview(corrupted("worktrees", [{ isMain: true }]))).toThrow(
       TypeError,
     );
+
     expect(() => parseBranchOverview(corrupted("worktrees", [{ directory: "/x" }]))).toThrow(
       TypeError,
     );
+
     expect(() => parseBranchOverview(corrupted("worktrees", [null]))).toThrow(TypeError);
     expect(() => parseBranchOverview(corrupted("worktrees", { directory: "/x" }))).toThrow(
       TypeError,

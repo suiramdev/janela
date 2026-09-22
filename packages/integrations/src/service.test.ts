@@ -67,12 +67,14 @@ describe("overview", () => {
       "opencode",
       "omp",
     ]);
+
     expect(overview.integrations.map((report) => report.isAvailable)).toEqual([
       true,
       false,
       false,
       false,
     ]);
+
     expect(overview.integrations.every((report) => report.reports.length === 3)).toBe(true);
     expect(overview.integrations.every((report) => report.status.kind === "absent")).toBe(true);
   });
@@ -95,6 +97,7 @@ describe("claude", () => {
       "Stop",
       "StopFailure",
     ]);
+
     expect(commandOf(hooks, "UserPromptSubmit")).toContain("]7770;working");
     expect(commandOf(hooks, "PermissionRequest")).toContain("]7770;waiting;permission");
     expect(commandOf(hooks, "Stop")).toContain("]7770;finished;completed");
@@ -184,6 +187,7 @@ describe("claude", () => {
       kind: "unreadable",
       reason: "settings.json is not a JSON object Janela can edit",
     });
+
     await expect(home.service.install("claude")).rejects.toThrow(path);
     expect(await readFile(path, "utf8")).toBe("{ not json\n");
   });
@@ -204,6 +208,7 @@ describe("codex", () => {
       "PostToolUse",
       "Stop",
     ]);
+
     expect(timeoutOf(hooks, "Stop")).toBe(10);
 
     const blocks = readTrustBlocks(await readFile(codexConfig(home.home), "utf8"));
@@ -214,9 +219,11 @@ describe("codex", () => {
       `${hooksPath}:post_tool_use:0:0`,
       `${hooksPath}:stop:0:0`,
     ]);
+
     expect(blocks[3]?.hash).toBe(
       codexTrustHash({ label: "stop", command: commandOf(hooks, "Stop"), timeout: 10 }),
     );
+
     expect(await home.status("codex")).toEqual({ kind: "installed" });
   });
 
@@ -232,6 +239,7 @@ describe("codex", () => {
       directory: linked,
       environment: { PATH: "/usr/bin:/bin", HOME: linked },
     };
+
     const service = createIntegrationService({ home, processes });
 
     await service.install("codex");
@@ -263,6 +271,7 @@ describe("codex", () => {
         2,
       )}\n`,
     );
+
     await seed(
       configPath,
       `model = "gpt-5"\n\n[hooks.state."${hooksPath}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:foreign"\n`,
@@ -278,6 +287,7 @@ describe("codex", () => {
     expect(blocks.find((block) => block.key === `${hooksPath}:user_prompt_submit:0:0`)?.hash).toBe(
       "sha256:foreign",
     );
+
     expect(await readFile(configPath, "utf8")).toContain(`model = "gpt-5"`);
     expect(await home.status("codex")).toEqual({ kind: "installed" });
   });
@@ -336,6 +346,7 @@ describe("codex", () => {
         2,
       )}\n`,
     );
+
     await seed(configPath, `model = "gpt-5"\n`);
 
     await home.service.install("codex");
@@ -387,6 +398,7 @@ async function fixture(): Promise<Fixture> {
     directory: directory.path,
     environment: { PATH: "/usr/bin:/bin", HOME: directory.path },
   };
+
   const service = createIntegrationService({ home, processes });
 
   return {

@@ -97,7 +97,10 @@ export interface SettingsReveal {
   readonly at: number;
 }
 
-export type SettingsSelecting = (route: SettingsRoute, section?: SettingsSectionID) => void;
+export type SettingsSelecting = (
+  route: SettingsRoute,
+  section: SettingsSectionID | undefined,
+) => void;
 
 export interface SettingsSidebarProps {
   readonly route: SettingsRoute;

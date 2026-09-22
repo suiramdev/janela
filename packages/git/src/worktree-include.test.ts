@@ -37,7 +37,7 @@ interface IncludeWorld extends AsyncDisposable {
   readonly repository: AbsolutePath;
   readonly include: WorktreeIncluding;
   readonly git: (...args: string[]) => Promise<string>;
-  readonly commit: (file: string, contents: string, message?: string) => Promise<void>;
+  readonly commit: (file: string, contents: string, message: string | undefined) => Promise<void>;
   readonly inRepository: (...components: string[]) => string;
   readonly scratch: (...components: string[]) => AbsolutePath;
   readonly write: (relative: string, contents: string | Buffer) => Promise<void>;
@@ -102,7 +102,7 @@ async function setup(label: string, options: WorktreeIncludeOptions = {}): Promi
 }
 
 async function seed(world: IncludeWorld): Promise<void> {
-  await world.commit(".gitignore", ".env\nnode_modules/\n.venv/\n");
+  await world.commit(".gitignore", ".env\nnode_modules/\n.venv/\n", undefined);
   await world.write(".env", "SECRET=1\n");
   await world.write("node_modules/pkg/index.js", "module.exports = 1;\n");
   await world.write("junk.log", "noise\n");
@@ -279,6 +279,7 @@ describe("worktreeinclude copying", () => {
       worktree,
       paths: await world.include.resolve(world.repository),
     });
+
     const after = statfsSync(worktree);
 
     expect([...report.copied]).toEqual(["big.bin"]);
@@ -390,6 +391,7 @@ describe("worktreeinclude copying", () => {
     expect(await readFile(join(worktree, "node_modules/pkg/index.js"), "utf8")).toBe(
       "module.exports = 1;\n",
     );
+
     expect(report.skipped ?? 0).toBeGreaterThanOrEqual(1);
     expect([...report.copied]).toEqual([".env", "node_modules/"]);
   });

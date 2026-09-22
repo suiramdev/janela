@@ -25,6 +25,7 @@ async function fakeGit(
     '#!/bin/sh\necho "${GIT_OPTIONAL_LOCKS-unset}"\nfor argument in "$@"; do echo "$argument"; done\n',
     "utf8",
   );
+
   await chmod(script, 0o755);
 
   return {
@@ -90,6 +91,7 @@ describe("gitRunner", () => {
     expect((await runner.run(["worktree", "add", "x"], fake.directory)).split("\n")[0]).toBe(
       "unset",
     );
+
     expect((await runner.run(["worktree", "list"], fake.directory)).split("\n")[0]).toBe("0");
   });
 

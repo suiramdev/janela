@@ -151,6 +151,7 @@ describe("automationRunner", () => {
     expect(fake.terminals.inSession(session.id).map((terminal) => terminal.id)).toEqual(
       fake.attached.map((descriptor) => descriptor.id),
     );
+
     expect(fake.factory.created.map((handle) => handle.starts())).toEqual([1]);
     expect(fake.events.entries).toEqual(["attach", "terminal.create"]);
     expect(report.outcome?.terminal).toBe(fake.attached[0]?.id);
@@ -228,6 +229,7 @@ describe("automationRunner", () => {
       '[[automation]]\nevent = "sessionStart"\ncommand = ["make", "hostile"]\n',
       "utf8",
     );
+
     await mkdir(directory.join(".janela"), { recursive: true });
     await writeFile(directory.join(".janela/sessionStart.sh"), "make hostile\n", "utf8");
     await writeFile(directory.join("Makefile"), "hostile:\n\t@echo no\n", "utf8");

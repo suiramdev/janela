@@ -48,10 +48,12 @@ async function connectedPair(): Promise<ConnectedPair> {
     unix: path,
     socket: { open: (socket) => accepted.resolve(socket), data: () => {} },
   });
+
   const client = await Bun.connect<undefined>({
     unix: path,
     socket: { open: () => {}, data: () => {} },
   });
+
   const serverSide = await accepted.promise;
 
   return {

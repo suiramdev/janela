@@ -42,6 +42,7 @@ import type { Prisma } from "../generated/prisma/client.ts";
 import { CorruptRecord, InvalidRecord } from "./errors.ts";
 
 export type ProjectRow = Prisma.ProjectGetPayload<{ include: { automation: true } }>;
+
 export type SessionRow = Prisma.SessionGetPayload<{ include: { terminals: true } }>;
 
 export interface ProjectColumns {
@@ -613,6 +614,7 @@ export function decodeSession(row: SessionRow, log: Logger): Session {
     row.projectId === null
       ? undefined
       : readIdentifier<"Project">(row.projectId, "projectId", reasons);
+
   const projectMissing = row.projectId !== null && projectID === undefined;
 
   const backing = directory === undefined ? undefined : decodeBacking(row, directory, reasons);

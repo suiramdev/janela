@@ -146,6 +146,7 @@ describe("column types", () => {
         ColumnTypeEnum.Numeric,
         ColumnTypeEnum.Int64,
       ]);
+
       expect(result.rows).toEqual([
         ["42", 1, 2.5, new Uint8Array([1, 2]), "2020-01-01T00:00:00+00:00", "x", 1, 1.5, 5],
       ]);
@@ -167,6 +168,7 @@ describe("column types", () => {
         ColumnTypeEnum.Text,
         ColumnTypeEnum.Bytes,
       ]);
+
       expect(result.rows).toEqual([[1, 3, 1.5, "x", new Uint8Array([1, 2])]]);
     });
   });
@@ -465,6 +467,7 @@ describe("open", () => {
         await adapter.executeScript(
           `INSERT INTO p VALUES ('p1'); INSERT INTO c VALUES ('c1', 'p1');`,
         );
+
         await adapter.executeRaw(q(`DELETE FROM p WHERE id = 'p1'`));
 
         expect(await adapter.queryRaw(q(`SELECT count(*) FROM c`))).toMatchObject({ rows: [[0]] });
@@ -504,6 +507,7 @@ describe("errors", () => {
         expect(await failureOf(adapter.executeRaw(q(`INSERT INTO p VALUES ('p1')`)))).toMatchObject(
           { kind: "UniqueConstraintViolation", constraint: { fields: ["id"] } },
         );
+
         expect(
           await failureOf(adapter.executeRaw(q(`INSERT INTO c VALUES ('c1', NULL)`))),
         ).toMatchObject({ kind: "NullConstraintViolation", constraint: { fields: ["pid"] } });
@@ -517,10 +521,12 @@ describe("errors", () => {
         kind: "TableDoesNotExist",
         table: "nope",
       });
+
       expect(await failureOf(adapter.queryRaw(q(`SELECT nope FROM r`)))).toMatchObject({
         kind: "ColumnNotFound",
         column: "nope",
       });
+
       expect(
         await failureOf(adapter.executeRaw(q(`INSERT INTO r (nope) VALUES ('x')`))),
       ).toMatchObject({ kind: "ColumnNotFound", column: "nope" });

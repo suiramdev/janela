@@ -64,7 +64,7 @@ export interface ViewState {
   settingsDraftSaved(): void;
   revertSettingsDraft(): void;
 
-  showSettings(route?: SettingsRoute): void;
+  showSettings(route: SettingsRoute | undefined): void;
   showWorkspace(): void;
 
   registerSurface(terminalID: TerminalID, handle: TerminalSurfaceHandle): () => void;

@@ -63,7 +63,7 @@ interface Fixture {
   readonly dispatch: FakeDispatch;
   readonly records: Recorded[];
   with(message: string): Recorded[];
-  connect(hello?: Frame): Promise<TestClient>;
+  connect(hello: Frame | undefined): Promise<TestClient>;
   open(): TestClient;
   readonly serving: Promise<void>;
   stop(): Promise<void>;
@@ -122,6 +122,7 @@ function testClient(pair: TransportPair): TestClient {
 
       if (next.done === true) {
         finished = true;
+
         throw new Error("the daemon closed the connection");
       }
 
@@ -184,9 +185,9 @@ function fixture(
     records,
     with: withMessage,
     serving,
-    open: () => testClient(listener.connect()),
+    open: () => testClient(listener.connect(undefined)),
     async connect(hello = clientHello()): Promise<TestClient> {
-      const client = testClient(listener.connect());
+      const client = testClient(listener.connect(undefined));
       client.read();
       await client.send(hello);
       await until(() => client.controls().length > 0, "the daemon's hello");
@@ -208,7 +209,7 @@ describe("the handshake", () => {
   test("a compatible peer is answered with the daemon's own range", async () => {
     const daemon = fixture();
 
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     expect(client.controls()).toEqual([
       {
@@ -220,6 +221,7 @@ describe("the handshake", () => {
         },
       },
     ]);
+
     expect(daemon.server.connectionCount).toBe(1);
     expect(daemon.with("client connected")[0]?.fields?.["uid"]).toBe(501);
 
@@ -234,7 +236,7 @@ describe("the handshake", () => {
     const daemon = fixture({ terminals: [terminal] });
     const liveBefore = daemon.registry.liveCount;
 
-    const client = testClient(daemon.listener.connect());
+    const client = testClient(daemon.listener.connect(undefined));
     client.read();
     await client.send(clientHello({ protocolVersion: 1, minimumSupported: 1 }));
     await until(() => client.controls().length > 0, "the refusal");
@@ -255,7 +257,7 @@ describe("the handshake", () => {
     expect(daemon.registry.liveCount).toBe(liveBefore);
     expect(daemon.server.connectionCount).toBe(0);
 
-    await daemon.connect();
+    await daemon.connect(undefined);
 
     expect(daemon.server.connectionCount).toBe(1);
   });
@@ -263,7 +265,7 @@ describe("the handshake", () => {
   test("anything other than a valid hello first is a protocol violation", async () => {
     const daemon = fixture();
 
-    const early = testClient(daemon.listener.connect());
+    const early = testClient(daemon.listener.connect(undefined));
     early.read();
     await early.send(subscribeToState());
     await until(() => early.controls().length > 0, "the refusal");
@@ -273,23 +275,25 @@ describe("the handshake", () => {
       refusal: { kind: "protocolViolation" },
     });
 
-    const wrongType = testClient(daemon.listener.connect());
+    const wrongType = testClient(daemon.listener.connect(undefined));
     wrongType.read();
     await wrongType.send(
       malformedHello({ protocolVersion: "2", minimumSupported: 2, clientName: "test" }),
     );
+
     await until(() => wrongType.controls().length > 0, "the refusal");
 
     expect(wrongType.controls()[0]).toEqual({
       type: "refused",
       refusal: { kind: "protocolViolation" },
     });
+
     expect(daemon.server.connectionCount).toBe(0);
   });
 
   test("a second hello on an established connection is refused and closes it", async () => {
     const daemon = fixture();
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     await client.send(clientHello());
     await until(() => client.ended(), "the connection to close");
@@ -298,6 +302,7 @@ describe("the handshake", () => {
       type: "refused",
       refusal: { kind: "protocolViolation" },
     });
+
     expect(daemon.server.connectionCount).toBe(0);
   });
 
@@ -312,7 +317,7 @@ describe("the handshake", () => {
     expect(silent.ended()).toBe(true);
     expect(daemon.server.connectionCount).toBe(0);
 
-    await daemon.connect();
+    await daemon.connect(undefined);
 
     expect(daemon.server.connectionCount).toBe(1);
   });
@@ -321,11 +326,11 @@ describe("the handshake", () => {
 describe("connection failures", () => {
   test("a malformed control frame closes that connection and no other", async () => {
     const daemon = fixture();
-    const healthy = await daemon.connect();
+    const healthy = await daemon.connect(undefined);
     await healthy.send(subscribeToState());
     await until(() => daemon.dispatch.requests.length === 1, "the subscription");
 
-    const broken = await daemon.connect();
+    const broken = await daemon.connect(undefined);
     await broken.send({ kind: FrameKind.Control, payload: new TextEncoder().encode("{") });
     await until(() => broken.ended(), "the broken connection to close");
 
@@ -341,7 +346,7 @@ describe("connection failures", () => {
 
   test("an input frame naming an unknown terminal closes the connection and creates nothing", async () => {
     const daemon = fixture();
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
     const unknown = terminalID();
 
     await client.send(encodeInput({ terminalID: unknown, bytes: new TextEncoder().encode("x") }));
@@ -358,7 +363,7 @@ describe("connection failures", () => {
   test("a client sending an output frame is a direction violation", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     await client.send(encodeOutput({ terminalID: terminal.id, bytes: new Uint8Array([1]) }));
     await until(() => client.ended(), "the connection to close");
@@ -369,11 +374,12 @@ describe("connection failures", () => {
   test("input reaches the dispatcher, and the connection keeps answering after it", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     await client.send(
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("ls") }),
     );
+
     await until(() => daemon.dispatch.inputs.length === 1, "the input");
 
     expect(daemon.dispatch.inputs[0]).toEqual({
@@ -395,9 +401,9 @@ describe("connection failures", () => {
 describe("fan-out", () => {
   test("only state subscribers hear about sessions", async () => {
     const daemon = fixture();
-    const subscriber = await daemon.connect();
-    const terminalScoped = await daemon.connect();
-    const silent = await daemon.connect();
+    const subscriber = await daemon.connect(undefined);
+    const terminalScoped = await daemon.connect(undefined);
+    const silent = await daemon.connect(undefined);
 
     await subscriber.send(subscribeToState());
     await terminalScoped.send(
@@ -407,6 +413,7 @@ describe("fan-out", () => {
         scope: { kind: "terminal", terminalID: terminalID() },
       }),
     );
+
     await until(() => daemon.dispatch.requests.length === 2, "both subscriptions");
 
     const session = fakeSession("s1");
@@ -427,6 +434,7 @@ describe("fan-out", () => {
         isFullSnapshot: true,
       },
     });
+
     expect(terminalScoped.controls().some((message) => message.type === "state")).toBe(false);
     expect(silent.controls()).toHaveLength(1);
   });
@@ -435,10 +443,10 @@ describe("fan-out", () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
 
-    const reading = await daemon.connect();
+    const reading = await daemon.connect(undefined);
     await reading.send(subscribeToState());
 
-    const stalled = testClient(daemon.listener.connect());
+    const stalled = testClient(daemon.listener.connect(undefined));
     await stalled.send(clientHello());
     await stalled.receive();
     await stalled.send(subscribeToState());
@@ -469,6 +477,7 @@ describe("fan-out", () => {
         CONTROL_QUEUE_CAPACITY + 2,
       "the reading client to receive every update",
     );
+
     const names = reading
       .controls()
       .filter((message) => message.type === "state")
@@ -477,6 +486,7 @@ describe("fan-out", () => {
     expect(names).toEqual(
       Array.from({ length: CONTROL_QUEUE_CAPACITY + 2 }, (_unused, index) => `s${index}`),
     );
+
     expect(terminal.stopCalls.count).toBe(0);
     expect(daemon.registry.hangUpAllCalls.count).toBe(0);
   });
@@ -486,7 +496,7 @@ describe("attachment and output", () => {
   test("an attached client gets a full repaint first, then deltas, and nothing after detach", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     await client.send(
       encodeClientMessage({
@@ -496,6 +506,7 @@ describe("attachment and output", () => {
         viewport: VIEWPORT,
       }),
     );
+
     await until(() => terminal.attached.size === 1, "the viewport to register");
 
     expect(terminal.attached.get("c1")).toEqual(VIEWPORT);
@@ -510,6 +521,7 @@ describe("attachment and output", () => {
     await client.send(
       encodeClientMessage({ type: "detach", id: REQUEST_ID, terminalID: terminal.id }),
     );
+
     await until(() => terminal.attached.size === 0, "the detach");
     const afterDetach = client.outputs().length;
 
@@ -525,7 +537,7 @@ describe("attachment and output", () => {
   test("closing a connection detaches its viewports and never stops the terminal", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const client = await daemon.connect();
+    const client = await daemon.connect(undefined);
 
     await client.send(
       encodeClientMessage({
@@ -535,6 +547,7 @@ describe("attachment and output", () => {
         viewport: VIEWPORT,
       }),
     );
+
     await until(() => terminal.attached.size === 1, "the viewport to register");
 
     await client.close();
@@ -548,7 +561,7 @@ describe("attachment and output", () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
 
-    const client = testClient(daemon.listener.connect());
+    const client = testClient(daemon.listener.connect(undefined));
     await client.send(clientHello());
     await client.receive();
     await client.send(
@@ -559,6 +572,7 @@ describe("attachment and output", () => {
         viewport: VIEWPORT,
       }),
     );
+
     await client.receive();
     await until(() => terminal.attached.size === 1, "the viewport to register");
 
@@ -610,10 +624,10 @@ describe("attachment and output", () => {
       viewport: VIEWPORT,
     });
 
-    const alive = await daemon.connect();
+    const alive = await daemon.connect(undefined);
     await alive.send(attach);
 
-    const dead = testClient(daemon.listener.connect());
+    const dead = testClient(daemon.listener.connect(undefined));
     await dead.send(clientHello());
     await dead.receive();
     await dead.send(attach);
@@ -636,9 +650,11 @@ describe("attachment and output", () => {
     expect(terminal.repaintCalls.filter((client) => client === "c1").length).toBeGreaterThanOrEqual(
       frames - 1,
     );
+
     expect(terminal.repaintCalls.filter((client) => client === "c2").length).toBeLessThanOrEqual(
       OUTPUT_QUEUE_CAPACITY + 2,
     );
+
     expect(daemon.server.connectionCount).toBe(2);
     expect(terminal.stopCalls.count).toBe(0);
   });
@@ -668,15 +684,15 @@ describe("lifecycle", () => {
 
     expect(withIdle.server.canExitWhenIdle()).toBe(true);
 
-    await withIdle.connect();
+    await withIdle.connect(undefined);
 
     expect(withIdle.server.canExitWhenIdle()).toBe(false);
   });
 
   test("aborting resolves serve, closes the listener, and ends every client", async () => {
     const daemon = fixture();
-    const first = await daemon.connect();
-    const second = await daemon.connect();
+    const first = await daemon.connect(undefined);
+    const second = await daemon.connect(undefined);
 
     await daemon.stop();
 

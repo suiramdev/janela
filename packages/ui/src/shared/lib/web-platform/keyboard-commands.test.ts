@@ -112,6 +112,7 @@ describe("commandForChord", () => {
     expect(commandForChord(chord("BracketRight", { shiftKey: true }), COMMANDS)).toBe(
       "nextSession",
     );
+
     expect(commandForChord(chord("BracketRight"), COMMANDS)).toBe("nextTab");
   });
 
@@ -119,6 +120,7 @@ describe("commandForChord", () => {
     expect(
       commandForChord(chord("BracketRight", { metaKey: false, ctrlKey: true }), COMMANDS),
     ).toBeUndefined();
+
     expect(commandForChord(chord("BracketRight", { ctrlKey: true }), COMMANDS)).toBeUndefined();
   });
 
@@ -172,6 +174,7 @@ describe("keyboardCommandSource", () => {
     keyboardCommandSource(target, () => COMMANDS, NEVER_HELD, NEVER_RECORDING).subscribe((id) => {
       received.push(id);
     });
+
     target.registered[0]?.listener(event(chord("KeyC"), calls));
 
     expect(received).toEqual([]);
@@ -192,6 +195,7 @@ describe("keyboardCommandSource", () => {
     ).subscribe((id) => {
       received.push(id);
     });
+
     target.registered[0]?.listener(event(chord("KeyN"), calls));
 
     expect(received).toEqual([]);
@@ -217,6 +221,7 @@ describe("keyboardCommandSource", () => {
     ).subscribe((id) => {
       received.push(id);
     });
+
     target.registered[0]?.listener(event(chord("KeyN"), calls));
 
     expect(received).toEqual([]);

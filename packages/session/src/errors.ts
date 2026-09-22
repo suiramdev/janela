@@ -80,6 +80,7 @@ export class ExecutableUnavailable extends UserFacingError {
     super("executable not found on PATH", {
       recoverySuggestion: "Install it, or start a plain shell instead.",
     });
+
     this.summary = `${executable} isn't installed.`;
     this.executable = executable;
   }

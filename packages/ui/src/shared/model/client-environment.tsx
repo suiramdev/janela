@@ -84,6 +84,7 @@ export interface ClientEnvironment {
 
   readonly onFocusedTerminalChange?: (id: TerminalID | undefined) => void;
 }
+
 export const NO_WINDOW_CONTROLS: WindowControls = {
   areVisible: false,
   subscribe: () => () => {},

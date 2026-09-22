@@ -146,6 +146,7 @@ describe("withFraction", () => {
     expect(fractionOf(withFraction(split, root, 9))).toBe(0.95);
     expect(fractionOf(withFraction(split, root, Number.NaN))).toBe(0.5);
   });
+
   test("a path that names nothing leaves the tree alone", () => {
     expect(withFraction(split, ["first"], 0.2)).toBe(split);
     expect(withFraction(split, ["second", "first", "second"], 0.2)).toBe(split);

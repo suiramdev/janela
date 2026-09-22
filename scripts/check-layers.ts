@@ -242,6 +242,7 @@ async function checkManifestIntegrity(): Promise<void> {
           "manifest/unknown-dep",
           `${pkg.name} declares a dependency on ${dep}, which is not in the manifest.`,
         );
+
         continue;
       }
 
@@ -347,6 +348,7 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
             "import/unknown-package",
             `imports ${specifier}, which is not a package in scripts/layers.ts.`,
           );
+
           continue;
         }
 
@@ -359,6 +361,7 @@ async function checkImports(pkg: PackageSpec): Promise<void> {
               : !SIDES_MAY_DEPEND_ON[pkg.side].includes(targetSpec.side)
                 ? `${pkg.name} is ${pkg.side}-side and ${target} is ${targetSpec.side}-side. They meet only at @janela/core and @janela/protocol.`
                 : `${target} is not in ${pkg.name}'s declared dependencies.`;
+
           fail(
             rel,
             line,
@@ -421,6 +424,7 @@ function report(): void {
           "change, which is the point of this gate.\n",
       ),
     );
+
     process.exit(1);
   }
 

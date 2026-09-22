@@ -106,7 +106,7 @@ function fixture(terminals: readonly FakeTerminal[], sessions: readonly Session[
     listener,
     records,
     async watch(): Promise<Watcher> {
-      const client = reader(listener.connect().clientSide);
+      const client = reader(listener.connect(undefined).clientSide);
       await client.send(clientHello());
       await until(() => client.controls().length > 0, "the daemon's hello");
       await client.send(SUBSCRIBE);
@@ -197,6 +197,7 @@ describe("a terminal's own events", () => {
       title: "Claude",
       body: "JANELA_SECRET_BODY",
     });
+
     expect(JSON.stringify(daemon.records)).not.toContain("JANELA_SECRET_BODY");
     expect(JSON.stringify(daemon.records)).not.toContain("Claude");
   });
@@ -357,6 +358,7 @@ describe("the frames an agent's activity produces", () => {
     expect(statesFor(client, terminal.id)[0]).toEqual({
       [terminal.id]: { kind: "running", activity: { kind: "working" } },
     });
+
     expect(client.controls().some((message) => message.type === "attention")).toBe(false);
   });
 

@@ -90,6 +90,7 @@ describe("resolveShellEnvironment", () => {
       "-c",
       "printf '\\0JANELA_ENVIRONMENT\\0'; /usr/bin/env -0",
     ]);
+
     expect(invocation?.workingDirectory).toBe("/Users/x");
     expect(invocation?.environment).toEqual({
       PATH: "/usr/bin:/bin",
@@ -119,6 +120,7 @@ describe("resolveShellEnvironment", () => {
       HOME: "/Users/x",
       API_TOKEN: "s3cret-value",
     });
+
     expect(records).toEqual([
       {
         level: "warning",
@@ -316,6 +318,7 @@ describe("janelaVariables", () => {
       "JANELA_SESSION_NAME",
       "JANELA_TERMINAL_ID",
     ]);
+
     expect(variables["JANELA_SESSION_DIRECTORY"]).toBe("/Users/x/code/janela");
   });
 
@@ -349,6 +352,7 @@ describe("janelaVariables", () => {
       "JANELA_SESSION_NAME",
       "JANELA_TERMINAL_ID",
     ]);
+
     expect(variables["JANELA_PROJECT_DIRECTORY"]).toBe("/Users/x/code/janela");
     expect(variables["JANELA_BRANCH"]).toBe("feature/x");
   });

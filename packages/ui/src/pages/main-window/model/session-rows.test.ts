@@ -58,6 +58,7 @@ describe("sessionStatus", () => {
       expect(
         sessionStatus(withTerminals, { [terminalID("a")]: { kind: "needsAttention", activity } }),
       ).toBe("unread");
+
       expect(
         sessionStatus(withTerminals, { [terminalID("a")]: { kind: "running", activity } }),
       ).toBe("idle");
@@ -91,9 +92,11 @@ describe("sessionStatus", () => {
     expect(sessionStatus(withTerminals, { [terminalID("a")]: { kind: "exited", code: 130 } })).toBe(
       "error",
     );
+
     expect(
       sessionStatus(withTerminals, { [terminalID("a")]: { kind: "failed", message: "no such" } }),
     ).toBe("error");
+
     expect(sessionStatus(withTerminals, { [terminalID("a")]: { kind: "exited", code: 0 } })).toBe(
       "idle",
     );
@@ -106,6 +109,7 @@ describe("sessionStatus", () => {
         [terminalID("b")]: FINISHED_UNSEEN,
       }),
     ).toBe("running");
+
     expect(
       sessionStatus(withTerminals, {
         [terminalID("a")]: WORKING,
@@ -121,6 +125,7 @@ describe("sessionStatus", () => {
         [terminalID("b")]: FINISHED_SEEN,
       }),
     ).toBe("unread");
+
     expect(
       sessionStatus(withTerminals, {
         [terminalID("a")]: FINISHED_UNSEEN,
@@ -133,6 +138,7 @@ describe("sessionStatus", () => {
     expect(
       sessionStatus(withTerminals, { [terminalID("a")]: WORKING, [terminalID("b")]: STOPPED }),
     ).toBe("error");
+
     expect(
       sessionStatus(withTerminals, {
         [terminalID("a")]: { kind: "exited", code: 1 },
@@ -179,11 +185,13 @@ describe("sessionMark", () => {
     expect(sessionMark(withTerminals, { [terminalID("a")]: { kind: "exited", code: 0 } })).toBe(
       "none",
     );
+
     expect(
       sessionMark(withTerminals, {
         [terminalID("a")]: { kind: "running", activity: { kind: "working" } },
       }),
     ).toBe("none");
+
     expect(sessionMark(withTerminals, { [terminalID("a")]: { kind: "exited", code: 1 } })).toBe(
       "none",
     );
@@ -235,6 +243,7 @@ describe("sidebarRows", () => {
       "unread",
       "read",
     ]);
+
     expect(
       rows[1]?.kind === "project" && rows[1].sessions.map((entry) => [entry.status, entry.mark]),
     ).toEqual([["unread", "read"]]);

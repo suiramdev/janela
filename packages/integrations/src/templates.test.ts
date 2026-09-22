@@ -82,24 +82,31 @@ describe("the OpenCode plugin", () => {
     expect(
       await reportOf({ type: "session.status", properties: { status: { type: "busy" } } }),
     ).toBe(agentActivityEscape({ kind: "working" }));
+
     expect(
       await reportOf({ type: "session.status", properties: { status: { type: "idle" } } }),
     ).toBe(agentActivityEscape({ kind: "finished", outcome: "completed" }));
+
     expect(await reportOf({ type: "permission.asked" })).toBe(
       agentActivityEscape({ kind: "waiting", need: "permission" }),
     );
+
     expect(await reportOf({ type: "question.asked" })).toBe(
       agentActivityEscape({ kind: "waiting", need: "input" }),
     );
+
     expect(await reportOf({ type: "question.replied" })).toBe(
       agentActivityEscape({ kind: "working" }),
     );
+
     expect(await reportOf({ type: "session.idle" })).toBe(
       agentActivityEscape({ kind: "finished", outcome: "completed" }),
     );
+
     expect(await reportOf({ type: "session.error" })).toBe(
       agentActivityEscape({ kind: "finished", outcome: "failed" }),
     );
+
     expect(await reportOf({ type: "session.updated" })).toBe("");
   });
 
@@ -151,18 +158,23 @@ describe("the Oh My Pi extension", () => {
     expect(await reportOf("agent_end", undefined)).toBe(
       agentActivityEscape({ kind: "finished", outcome: "completed" }),
     );
+
     expect(await reportOf("tool_approval_requested", undefined)).toBe(
       agentActivityEscape({ kind: "waiting", need: "permission" }),
     );
+
     expect(await reportOf("tool_approval_resolved", undefined)).toBe(
       agentActivityEscape({ kind: "working" }),
     );
+
     expect(await reportOf("tool_execution_start", "ask")).toBe(
       agentActivityEscape({ kind: "waiting", need: "input" }),
     );
+
     expect(await reportOf("tool_execution_end", "ask")).toBe(
       agentActivityEscape({ kind: "working" }),
     );
+
     expect(await reportOf("tool_execution_start", "bash")).toBe("");
     expect(await reportOf("tool_execution_end", "bash")).toBe("");
   });

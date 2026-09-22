@@ -31,6 +31,7 @@ export class UnexpectedFailure extends UserFacingError {
     super(summary, {
       recoverySuggestion: "If this keeps happening, please file an issue with the log.",
     });
+
     this.summary = summary;
     this.underlying = cause;
   }

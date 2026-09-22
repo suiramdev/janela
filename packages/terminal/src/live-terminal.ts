@@ -253,12 +253,21 @@ class PtyLiveTerminal implements LiveTerminal {
     }
 
     const progress = this.progress;
+    const running: {
+      kind: "running";
+      progress?: TerminalProgress;
+      activity?: AgentActivity;
+    } = { kind: "running" };
 
-    return {
-      kind: "running",
-      ...(progress !== undefined && { progress }),
-      ...(activity !== undefined && { activity }),
-    };
+    if (progress !== undefined) {
+      running.progress = progress;
+    }
+
+    if (activity !== undefined) {
+      running.activity = activity;
+    }
+
+    return running;
   }
 
   get displayTitle(): string {
@@ -282,6 +291,12 @@ class PtyLiveTerminal implements LiveTerminal {
     this.emulator = undefined;
 
     const size = this.clients.size > 0 ? negotiatedSize(this.viewports()) : this.launch.initialSize;
+    const replicaPathVariable: { replicaPathVariable?: string } = {};
+
+    if (this.launch.replicaPathVariable !== undefined) {
+      replicaPathVariable.replicaPathVariable = this.launch.replicaPathVariable;
+    }
+
     const spawned = Result.try(() =>
       this.spawn({
         executable: this.launch.executable,
@@ -289,9 +304,7 @@ class PtyLiveTerminal implements LiveTerminal {
         workingDirectory: this.launch.workingDirectory,
         environment: this.launch.environment,
         initialSize: { columns: size.columns, rows: size.rows, ...NO_PIXEL_SIZE },
-        ...(this.launch.replicaPathVariable !== undefined && {
-          replicaPathVariable: this.launch.replicaPathVariable,
-        }),
+        ...replicaPathVariable,
       }),
     );
 
@@ -388,7 +401,7 @@ class PtyLiveTerminal implements LiveTerminal {
   }
 
   detach(client: string): GridSize | undefined {
-    this.clients.get(client)?.attachMark?.end();
+    this.clients.get(client)?.attachMark?.end(undefined);
     this.clients.delete(client);
 
     if (this.clients.size === 0) {
@@ -420,7 +433,7 @@ class PtyLiveTerminal implements LiveTerminal {
     if (mark.observed) {
       mark.end({ client, bytes: bytes.length, full: false });
     } else {
-      mark.end();
+      mark.end(undefined);
     }
 
     return bytes;
@@ -444,7 +457,7 @@ class PtyLiveTerminal implements LiveTerminal {
     if (mark.observed) {
       mark.end({ client, bytes: bytes.length, full: true });
     } else {
-      mark.end();
+      mark.end(undefined);
     }
 
     const attachMark = entry.attachMark;
@@ -453,7 +466,7 @@ class PtyLiveTerminal implements LiveTerminal {
       if (attachMark.observed) {
         attachMark.end({ client, bytes: bytes.length });
       } else {
-        attachMark.end();
+        attachMark.end(undefined);
       }
 
       delete entry.attachMark;

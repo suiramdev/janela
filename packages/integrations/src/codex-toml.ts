@@ -24,11 +24,13 @@ export function readTrustBlocks(text: string): readonly TrustBlock[] {
       const quoted = header[1];
 
       key = quoted === undefined ? undefined : Option.getOrUndefined(decodeKey(quoted));
+
       continue;
     }
 
     if (ANY_HEADER.test(line)) {
       key = undefined;
+
       continue;
     }
 

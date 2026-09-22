@@ -55,6 +55,7 @@ describe("withTerminalFontSize", () => {
     expect(withTerminalFontSize(DEFAULT_GLOBAL_SETTINGS, 2).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.minimum,
     );
+
     expect(withTerminalFontSize(DEFAULT_GLOBAL_SETTINGS, 999).terminalFontSize).toBe(
       TERMINAL_FONT_SIZE_BOUNDS.maximum,
     );
@@ -68,6 +69,7 @@ describe("withTerminalFontSize", () => {
     expect(withTerminalFontSize(DEFAULT_GLOBAL_SETTINGS, Number.NaN).terminalFontSize).toBe(
       DEFAULT_TERMINAL_FONT_SIZE,
     );
+
     expect(
       withTerminalFontSize(DEFAULT_GLOBAL_SETTINGS, Number.POSITIVE_INFINITY).terminalFontSize,
     ).toBe(DEFAULT_TERMINAL_FONT_SIZE);

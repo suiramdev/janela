@@ -114,9 +114,11 @@ async function socketClient(path: string): Promise<SocketClient> {
       frames.push({ kind: frame.kind, payload: Uint8Array.from(frame.payload) });
     }
   });
+
   socket.on("close", () => {
     finished = true;
   });
+
   socket.on("error", () => {
     finished = true;
   });
@@ -267,6 +269,7 @@ async function coldStartedListener(): Promise<ColdStart> {
     dispatch,
     handshakeDeadlineMs: 500,
   });
+
   const serving = daemon.serve(listener, controller.signal);
 
   return {
@@ -362,6 +365,7 @@ describe("the socket listener", () => {
         viewport: VIEWPORT,
       }),
     );
+
     await until(() => terminal.attached.size === 1, "the viewport to register");
     stalled.stopReading();
 
@@ -413,6 +417,7 @@ describe("the socket listener", () => {
         viewport: VIEWPORT,
       }),
     );
+
     await until(() => terminal.attached.size === 1, "the viewport to register");
 
     for (let index = 0; index < OUTPUT_QUEUE_CAPACITY; index += 1) {

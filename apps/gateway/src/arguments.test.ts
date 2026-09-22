@@ -34,6 +34,7 @@ describe("parseGatewayArguments", () => {
       port: 1,
       webRoot: undefined,
     });
+
     expect(parseGatewayArguments(["--port", "65535"])).toEqual({
       kind: "serve",
       port: 65535,
@@ -46,6 +47,7 @@ describe("parseGatewayArguments", () => {
       kind: "usage",
       problem: "--port needs a value",
     });
+
     expect(parseGatewayArguments(["--web-root"])).toEqual({
       kind: "usage",
       problem: "--web-root needs a value",

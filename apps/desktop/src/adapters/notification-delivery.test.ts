@@ -276,6 +276,7 @@ describe("delivery", () => {
       (previous) => previous.then(() => adapter.deliver(input(NOTIFICATION))),
       Promise.resolve(),
     );
+
     await adapter.withdraw(SESSION);
 
     expect(plugin.sent).toHaveLength(MAXIMUM_OUTSTANDING_NOTIFICATIONS + 20);
@@ -320,12 +321,15 @@ describe("delivery", () => {
     await adapter.deliver(
       input({ kind: "activity", activity: { kind: "waiting", need: "input" } }),
     );
+
     await adapter.deliver(
       input({ kind: "activity", activity: { kind: "finished", outcome: "completed" } }),
     );
+
     await adapter.deliver(
       input({ kind: "activity", activity: { kind: "finished", outcome: "failed" } }),
     );
+
     await adapter.deliver(input({ kind: "promptFinished", exitCode: 1, durationSeconds: 30 }));
 
     expect(events).toEqual(["bell", "waiting", "finished", "failed", "failed"]);
@@ -502,6 +506,7 @@ describe("what the user reads", () => {
       title: "api server — claude",
       body: "build finished",
     });
+
     expect(
       notificationContent(input({ kind: "notification", title: "codex", body: "needs input" })),
     ).toEqual({ title: "api server — claude", body: "codex: needs input" });
@@ -512,6 +517,7 @@ describe("what the user reads", () => {
       notificationContent(input({ kind: "promptFinished", exitCode: 130, durationSeconds: 42.4 }))
         .body,
     ).toBe("A command failed with status 130 after 42s.");
+
     expect(notificationContent(input({ kind: "promptFinished", durationSeconds: 12 })).body).toBe(
       "A command finished after 12s.",
     );
@@ -523,15 +529,18 @@ describe("what the user reads", () => {
         input({ kind: "activity", activity: { kind: "waiting", need: "permission" } }),
       ),
     ).toEqual({ title: "api server — claude", body: "Waiting for permission." });
+
     expect(
       notificationContent(input({ kind: "activity", activity: { kind: "waiting", need: "input" } }))
         .body,
     ).toBe("Waiting for your answer.");
+
     expect(
       notificationContent(
         input({ kind: "activity", activity: { kind: "finished", outcome: "completed" } }),
       ).body,
     ).toBe("Finished.");
+
     expect(
       notificationContent(
         input({ kind: "activity", activity: { kind: "finished", outcome: "failed" } }),

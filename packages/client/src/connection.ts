@@ -271,6 +271,7 @@ export function createConnection(options: {
         () => undefined,
         (cause: unknown) => {
           failSend(cause);
+
           throw new ConnectionUnavailable();
         },
       );
@@ -337,7 +338,7 @@ export function createConnection(options: {
           throw new RefusedAfterHandshake(refused.refusal);
         }),
         Match.when({ type: "hello" }, () => {
-          log.warning("second hello");
+          log.warning("second hello", undefined);
 
           throw new Error("protocol violation");
         }),
@@ -452,7 +453,7 @@ export function createConnection(options: {
         return "failed";
       }
 
-      log.info("connection closed before hello");
+      log.info("connection closed before hello", undefined);
       teardown("closed before hello");
 
       return "failed";
@@ -505,6 +506,7 @@ export function createConnection(options: {
         daemonMinimum: refusal.daemonMinimum,
         daemonCurrent: refusal.daemonCurrent,
       });
+
       setStatus({ kind: "refused", refusal });
       teardown("incompatible version");
 

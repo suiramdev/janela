@@ -102,6 +102,7 @@ export function installDaemonLogSink(options: DaemonLogSinkOptions): DaemonLogSi
     ((line: string): void => {
       Result.try(() => writeSync(STDERR_DESCRIPTOR, line));
     });
+
   const opening = Result.try(() =>
     openLogFile(options.path, options.limitBytes ?? LOG_FILE_LIMIT_BYTES),
   );

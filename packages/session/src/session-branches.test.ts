@@ -70,6 +70,7 @@ async function setup(label: string): Promise<World> {
     name: "notes",
     directory: scratch.join("notes") as AbsolutePath,
   };
+
   delete folder.git;
 
   await database.projects.save(project);
@@ -87,6 +88,7 @@ async function setup(label: string): Promise<World> {
     sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
     log: logger,
   });
+
   await projects.load();
 
   const sessions = createSessionService({
@@ -100,6 +102,7 @@ async function setup(label: string): Promise<World> {
     createTerminal: fakeCreateTerminal(events).create,
     log: logger,
   });
+
   await sessions.load();
 
   return {

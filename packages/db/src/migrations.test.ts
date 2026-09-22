@@ -153,6 +153,7 @@ describe("migrate", () => {
       expect(applied.map((row) => row.migration_name)).toEqual(
         MIGRATIONS.map((migration) => migration.name),
       );
+
       expect(applied.every((row) => row.finished_at !== null)).toBe(true);
 
       await database.migrate();
@@ -221,6 +222,7 @@ describe("migrate", () => {
       seed.run(
         `INSERT INTO "Project" (id, name, directory, addedAt) VALUES ('p', 'janela', '/tmp/janela', 0)`,
       );
+
       seed.run(
         `INSERT INTO "AutomationCommand" (id, projectId, event, command, isEnabled, timeoutSeconds, position)
            VALUES ('a', 'p', 'worktreeCreated', '["cp",".env","it''s here"]', 1, 30, 1),
@@ -228,6 +230,7 @@ describe("migrate", () => {
                   ('c', 'p', 'sessionTeardown', '["docker","compose","down"]', 1, 12, 0),
                   ('d', 'p', 'sessionTeardown', '["make","clean"]', 1, 99, 1)`,
       );
+
       seed.close();
 
       expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 1);
@@ -252,6 +255,7 @@ describe("migrate", () => {
           timeoutSeconds: 30,
         },
       ]);
+
       expect(tableNames(path)).not.toContain("AutomationCommand");
 
       await connection.dispose();
@@ -273,6 +277,7 @@ describe("migrate", () => {
         `INSERT INTO "Project" (id, name, directory, worktreeRoot, worktreeRootPath, isForgeEnabled, accent, addedAt)
            VALUES ('p', 'janela', '/tmp/janela', 'custom', '/tmp/trees', 0, 'blue', 0)`,
       );
+
       seed.close();
 
       expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 2);
@@ -283,6 +288,7 @@ describe("migrate", () => {
           .all()
           .map((column) => column.name),
       );
+
       const row = readOnly(path, (database) =>
         database
           .query<{ worktreeRoot: string; worktreeRootPath: string; accent: string }, []>(
@@ -317,14 +323,17 @@ describe("migrate", () => {
         `INSERT INTO "LaunchProfile" (id, name, iconName, command, environment)
            VALUES ('lp', 'Claude Code', 'sparkles', '["claude"]', '{}')`,
       );
+
       seed.run(
         `INSERT INTO "Project" (id, name, directory, addedAt, defaultProfileId)
            VALUES ('p', 'janela', '/tmp/janela', 0, 'lp')`,
       );
+
       seed.run(
         `INSERT INTO "Session" (id, projectId, name, directory, backingKind, layout, position, createdAt, lastActiveAt)
            VALUES ('s', 'p', 'feature', '/tmp/janela', 'projectDirectory', '{}', 0, 0, 0)`,
       );
+
       seed.close();
 
       expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 3);
@@ -335,11 +344,13 @@ describe("migrate", () => {
           .all()
           .map((column) => column.name),
       );
+
       const sessions = readOnly(path, (database) =>
         database
           .query<{ id: string; projectId: string }, []>(`SELECT id, projectId FROM "Session"`)
           .all(),
       );
+
       const foreignKeys = await connection.queryRaw({
         sql: "PRAGMA foreign_keys",
         args: [],
@@ -370,14 +381,17 @@ describe("migrate", () => {
         `INSERT INTO "LaunchProfile" (id, name, iconName, command, environment)
            VALUES ('lp', 'Claude Code', 'sparkles', '["claude"]', '{}')`,
       );
+
       seed.run(
         `INSERT INTO "Session" (id, name, directory, backingKind, layout, position, createdAt, lastActiveAt)
            VALUES ('s', 'feature', '/tmp/janela', 'folder', '{}', 0, 0, 0)`,
       );
+
       seed.run(
         `INSERT INTO "Terminal" (id, sessionId, title, startsAutomatically, role, position, createdAt, profileId)
            VALUES ('t', 's', 'claude', 1, 'user', 0, 0, 'lp')`,
       );
+
       seed.close();
 
       expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 4);
@@ -388,6 +402,7 @@ describe("migrate", () => {
           .all()
           .map((column) => column.name),
       );
+
       const terminals = readOnly(path, (database) =>
         database
           .query<{ id: string; sessionId: string; title: string }, []>(
@@ -395,6 +410,7 @@ describe("migrate", () => {
           )
           .all(),
       );
+
       const indexes = readOnly(path, (database) =>
         database
           .query<{ name: string }, []>(
@@ -403,6 +419,7 @@ describe("migrate", () => {
           .all()
           .map((index) => index.name),
       );
+
       const foreignKeys = await connection.queryRaw({
         sql: "PRAGMA foreign_keys",
         args: [],
@@ -432,6 +449,7 @@ describe("migrate", () => {
            VALUES ('seeded', '0', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)`,
         [name],
       );
+
       seed.close();
 
       const database = await openDatabase({ path: absolutePath(path) });

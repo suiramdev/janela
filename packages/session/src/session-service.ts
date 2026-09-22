@@ -89,7 +89,10 @@ export interface SessionService {
 
   rename(id: SessionID, name: string): Promise<void>;
 
-  createTerminal(id: SessionID, options?: NewTerminalOptions): Promise<TerminalDescriptor>;
+  createTerminal(
+    id: SessionID,
+    options: NewTerminalOptions | undefined,
+  ): Promise<TerminalDescriptor>;
 
   startTerminal(id: TerminalID): Promise<void>;
   stopTerminal(id: TerminalID): Promise<void>;
@@ -427,6 +430,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     const live = this.deps.terminals
       .inSession(id)
       .filter((terminal) => isLive(terminal.state)).length;
+
     const binding = worktreeOf(session);
     const project = this.projectOf(session);
 

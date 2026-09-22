@@ -139,6 +139,7 @@ describe("the frame loop", () => {
       full: new Uint8Array(0),
       delta: new Uint8Array(0),
     });
+
     const { loop, deliveries } = harness([terminal]);
 
     loop.attach("c1", terminal.id);
@@ -315,6 +316,7 @@ describe("the frame loop", () => {
         return terminal.fullRepaintFor(client);
       },
     };
+
     const { loop } = harness([observed], []);
     const enumerated = harness([observed]);
 
@@ -356,10 +358,12 @@ describe("the frame loop", () => {
 
         if (failuresLeft > 0) {
           failuresLeft -= 1;
+
           throw new Error("read failed");
         }
       },
     };
+
     const { loop, deliveries } = harness([flaky]);
 
     loop.attach("c1", flaky.id);

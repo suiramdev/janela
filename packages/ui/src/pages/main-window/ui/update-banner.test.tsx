@@ -40,6 +40,7 @@ describe("updateBannerModel", () => {
     expect(updateBannerModel({ kind: "checking", announced: false }, false)).toEqual({
       kind: "none",
     });
+
     expect(updateBannerModel({ kind: "checking", announced: true }, false)).toEqual({
       kind: "strip",
       text: "Checking for updates…",
@@ -50,6 +51,7 @@ describe("updateBannerModel", () => {
     expect(
       updateBannerModel({ kind: "downloading", version: "0.2.0", fraction: 0.5 }, false),
     ).toEqual({ kind: "strip", text: "Downloading Janela 0.2.0… 50%" });
+
     expect(
       updateBannerModel({ kind: "downloading", version: "0.2.0", fraction: undefined }, false),
     ).toEqual({ kind: "strip", text: "Downloading Janela 0.2.0…" });
@@ -66,6 +68,7 @@ describe("updateBannerModel", () => {
       dismissLabel: "Later",
       destructive: false,
     });
+
     expect(ready).toMatchObject({
       kind: "notice",
       title: "Janela 0.2.0 is installed. Restart Janela to finish.",

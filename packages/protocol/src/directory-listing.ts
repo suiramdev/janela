@@ -67,6 +67,7 @@ export function parseDirectoryListing(text: string): DirectoryListing {
     decodeListingText(text),
     (error) => new TypeError(`not a directory listing: ${error.message}`),
   );
+
   const wire = Result.getOrThrowWith(decoded, (error) => error);
 
   const parsed: DecodedListing = {

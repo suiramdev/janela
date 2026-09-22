@@ -167,6 +167,7 @@ export function frameDecoder(): FrameDecoder {
           kind: expectedKind,
           payload: buffer.subarray(FRAME_HEADER_LENGTH, expected),
         });
+
         returnsViewIntoBuffer = true;
         held = 0;
         expected = 0;
@@ -179,6 +180,7 @@ export function frameDecoder(): FrameDecoder {
         if (chunk.length - offset < total) {
           expected = total;
           expectedKind = header.kind;
+
           break;
         }
 
@@ -186,6 +188,7 @@ export function frameDecoder(): FrameDecoder {
           kind: header.kind,
           payload: chunk.subarray(offset + FRAME_HEADER_LENGTH, offset + total),
         });
+
         offset += total;
       }
 

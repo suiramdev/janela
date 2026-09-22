@@ -18,6 +18,7 @@ export class MigrationFailed extends UserFacingError {
     super(`migration ${migration} failed`, {
       recoverySuggestion: "If this keeps happening, please file an issue with the log.",
     });
+
     this.migration = migration;
     this.underlying = cause;
   }

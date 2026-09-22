@@ -25,9 +25,11 @@ describe("gridThatFits", () => {
     expect(gridThatFits({ width: 800, height: 400 }, { width: 0, height: 16 })).toEqual(
       MINIMUM_GRID,
     );
+
     expect(gridThatFits({ width: 800, height: 400 }, { width: 8, height: Number.NaN })).toEqual(
       MINIMUM_GRID,
     );
+
     expect(gridThatFits({ width: 800, height: 400 }, { width: -8, height: 16 })).toEqual(
       MINIMUM_GRID,
     );

@@ -9,6 +9,8 @@ import {
 } from "./osc.ts";
 import { MAX_OSC_TEXT_LENGTH } from "./terminal-emulating.ts";
 
+const GRINNING_FACE = "\u{1F600}";
+
 const HOST = "build-box.local";
 
 describe("sanitiseOscText", () => {
@@ -22,10 +24,10 @@ describe("sanitiseOscText", () => {
   });
 
   test("truncates by code point, never leaving a lone surrogate behind", () => {
-    const result = sanitiseOscText("😀".repeat(1024));
+    const result = sanitiseOscText(GRINNING_FACE.repeat(1024));
 
     expect([...result]).toHaveLength(MAX_OSC_TEXT_LENGTH);
-    expect(result).toBe("😀".repeat(1024));
+    expect(result).toBe(GRINNING_FACE.repeat(1024));
   });
 });
 

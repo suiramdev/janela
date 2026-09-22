@@ -54,6 +54,7 @@ describe("availableCommands", () => {
       "revealInFinder",
       "openInTerminal",
     ]);
+
     expect(availableCommands(true)).toBe(COMMANDS);
   });
 });

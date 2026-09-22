@@ -156,8 +156,9 @@ const threeTabSession = async (fixture: Fixture): Promise<SessionID> => {
     kind: "inProject",
     projectID: fixture.project.id,
   });
-  await fixture.sessions.createTerminal(session.id);
-  await fixture.sessions.createTerminal(session.id);
+
+  await fixture.sessions.createTerminal(session.id, undefined);
+  await fixture.sessions.createTerminal(session.id, undefined);
 
   return session.id;
 };
@@ -175,6 +176,7 @@ const splitSession = async (
     kind: "inProject",
     projectID: fixture.project.id,
   });
+
   const first = session.terminals[0]?.id as TerminalID;
   const added = await fixture.sessions.createTerminal(session.id, {
     placement: { kind: "split", beside: first, axis: "horizontal" },
@@ -245,6 +247,7 @@ async function withSessions(
             sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
             log: logger,
           });
+
           await projects.load();
 
           const dependencies: MutableSessionDependencies = {
@@ -347,6 +350,7 @@ describe("createSession", () => {
           branch: "feature/x",
         },
       ]);
+
       expect(session.directory).toBe(absolutePath("/private/Users/x/code/.worktrees/feature-x"));
 
       const backing = session.backing;
@@ -396,6 +400,7 @@ describe("createSession", () => {
       expect(fixture.worktrees.created[0]?.directory).toBe(
         absolutePath("/Users/x/code/.worktrees/review-2"),
       );
+
       expect(session.name).toBe("review 2");
 
       const backing = session.backing;
@@ -411,6 +416,7 @@ describe("createSession", () => {
         projectID: fixture.project.id,
         branch: "feature/x",
       });
+
       await fixture.sessions.createSession({
         kind: "newWorktree",
         projectID: fixture.project.id,
@@ -445,6 +451,7 @@ describe("createSession", () => {
           "publish[t=0]",
           "publish[t=1]",
         ]);
+
         expect(fixture.include?.copies[0]?.worktree).toBe(
           absolutePath("/private/Users/x/code/.worktrees/feature-x"),
         );
@@ -485,6 +492,7 @@ describe("createSession", () => {
           "worktreeCreated",
           "sessionStart",
         ]);
+
         expect(fixture.records.map((record) => record.message)).toContain(
           "worktreeinclude copy failed",
         );
@@ -512,6 +520,7 @@ describe("createSession", () => {
               observer: observer.observer,
               sessions: { projectRemoving: async () => {} },
             });
+
             await projects.load();
 
             const sessions = createSessionService({
@@ -554,6 +563,7 @@ describe("createSession", () => {
         { kind: "automation", event: "sessionStart" },
         { kind: "user" },
       ]);
+
       expect(session.layout.tabs).toHaveLength(2);
       expect(session.layout.focusedTabIndex).toBe(1);
       expect(session.layout.tabs[0]?.focusedTerminalID).toBe(fixture.automation.attached[0]?.id);
@@ -565,6 +575,7 @@ describe("createSession", () => {
         { kind: "automation", event: "sessionStart" },
         { kind: "user" },
       ]);
+
       expect(restored?.terminals[0]?.startsAutomatically).toBe(false);
       expect(restored?.layout).toEqual(session.layout);
     });
@@ -743,6 +754,7 @@ describe("removalPlan", () => {
         projectID: fixture.project.id,
         branch: "feature/x",
       });
+
       const terminal = session.terminals[0]?.id as TerminalID;
       await fixture.sessions.startTerminal(terminal);
 
@@ -794,6 +806,7 @@ describe("removeSession", () => {
           projectID: fixture.project.id,
           branch: "feature/x",
         });
+
         const terminal = session.terminals[0]?.id as TerminalID;
         await fixture.sessions.startTerminal(terminal);
 
@@ -808,6 +821,7 @@ describe("removeSession", () => {
             force: true,
           },
         ]);
+
         expect(fixture.factory.created[0]?.stops()).toBe(1);
         expect(fixture.terminals.get(terminal)).toBeUndefined();
         expect(fixture.terminals.liveCount).toBe(0);
@@ -861,6 +875,7 @@ describe("removeSession", () => {
                 },
               },
             });
+
             await database.projects.save(project);
 
             const observer = recordingObserver(events);
@@ -871,6 +886,7 @@ describe("removeSession", () => {
               observer: observer.observer,
               sessions: { projectRemoving: async () => {} },
             });
+
             await projects.load();
 
             const sessions = createSessionService({
@@ -889,6 +905,7 @@ describe("removeSession", () => {
               projectID: project.id,
               branch: "feature/x",
             });
+
             const plan = await sessions.removalPlan(session.id);
 
             expect(plan.runsTeardownAutomation).toBe(true);
@@ -919,10 +936,12 @@ describe("projectRemoving", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const standalone = await fixture.sessions.createSession({
         kind: "standalone",
         directory: folderDirectory,
       });
+
       await fixture.sessions.startTerminal(inProject.terminals[0]?.id as TerminalID);
 
       await fixture.removeProject(fixture.project.id);
@@ -944,6 +963,7 @@ describe("startTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const terminal = session.terminals[0]?.id as TerminalID;
 
       await fixture.sessions.startTerminal(terminal);
@@ -981,6 +1001,7 @@ describe("startTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const terminal = session.terminals[0]?.id as TerminalID;
       await fixture.sessions.startTerminal(terminal);
 
@@ -998,6 +1019,7 @@ describe("startTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const terminal = session.terminals[0]?.id as TerminalID;
 
       await fixture.sessions.restartTerminal(terminal);
@@ -1051,11 +1073,13 @@ describe("createTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const unknownSession = unknownIdentifier as SessionID;
 
-      expect(await rejection(fixture.sessions.createTerminal(unknownSession))).toBeInstanceOf(
-        UnknownSession,
-      );
+      expect(
+        await rejection(fixture.sessions.createTerminal(unknownSession, undefined)),
+      ).toBeInstanceOf(UnknownSession);
+
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
     });
   });
@@ -1066,6 +1090,7 @@ describe("createTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const first = session.terminals[0]?.id as TerminalID;
 
       const added = await fixture.sessions.createTerminal(session.id, {
@@ -1083,6 +1108,7 @@ describe("createTerminal", () => {
         first: { kind: "terminal", id: first },
         second: { kind: "terminal", id: added.id },
       });
+
       expect(stored?.layout.tabs[0]?.focusedTerminalID).toBe(added.id);
       expect(stored?.terminals.map((terminal) => terminal.id)).toEqual([first, added.id]);
     });
@@ -1094,10 +1120,12 @@ describe("createTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const other = await fixture.sessions.createSession({
         kind: "standalone",
         directory: folderDirectory,
       });
+
       const elsewhere = other.terminals[0]?.id as TerminalID;
 
       expect(
@@ -1107,6 +1135,7 @@ describe("createTerminal", () => {
           }),
         ),
       ).toBeInstanceOf(UnknownTerminal);
+
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(1);
     });
   });
@@ -1125,6 +1154,7 @@ describe("createTerminal", () => {
         const added = await fixture.sessions.createTerminal(session.id, {
           placement: { kind: "split", beside, axis: "horizontal" },
         });
+
         beside = added.id;
       }
 
@@ -1136,6 +1166,7 @@ describe("createTerminal", () => {
           }),
         ),
       ).toBeInstanceOf(LayoutTooDeep);
+
       expect((await fixture.database.sessions.find(session.id))?.terminals).toHaveLength(6);
     });
   });
@@ -1148,10 +1179,12 @@ describe("removeTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const first = session.terminals[0]?.id as TerminalID;
       const added = await fixture.sessions.createTerminal(session.id, {
         placement: { kind: "split", beside: first, axis: "horizontal" },
       });
+
       await fixture.sessions.startTerminal(added.id);
       const live = fixture.factory.created[0];
 
@@ -1174,6 +1207,7 @@ describe("removeTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const only = session.terminals[0]?.id as TerminalID;
 
       await fixture.sessions.removeTerminal(only);
@@ -1193,10 +1227,11 @@ describe("removeTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const only = session.terminals[0]?.id as TerminalID;
 
       await fixture.sessions.removeTerminal(only);
-      const added = await fixture.sessions.createTerminal(session.id);
+      const added = await fixture.sessions.createTerminal(session.id, undefined);
 
       const stored = await fixture.database.sessions.find(session.id);
 
@@ -1284,6 +1319,7 @@ describe("moveTerminal", () => {
         { kind: "terminal", id: first },
         { kind: "terminal", id: second },
       ]);
+
       expect(stored?.layout.focusedTabIndex).toBe(1);
       expect(fixture.sessions.find(id)?.layout.focusedTabIndex).toBe(1);
     });
@@ -1331,15 +1367,18 @@ describe("moveTerminal", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const elsewhere = other.terminals[0]?.id as TerminalID;
       const unknown = unknownIdentifier as SessionID;
 
       expect(
         await rejection(fixture.sessions.moveTerminal(unknown, first, { kind: "newTab" })),
       ).toBeInstanceOf(UnknownSession);
+
       expect(
         await rejection(fixture.sessions.moveTerminal(id, elsewhere, { kind: "newTab" })),
       ).toBeInstanceOf(UnknownTerminal);
+
       expect(
         await rejection(
           fixture.sessions.moveTerminal(id, first, {
@@ -1361,6 +1400,7 @@ describe("load", () => {
         projectID: fixture.project.id,
         branch: "feature/x",
       });
+
       await fixture.sessions.startTerminal(created.terminals[0]?.id as TerminalID);
 
       const registry = createTerminalRegistry();
@@ -1373,6 +1413,7 @@ describe("load", () => {
         observer: recordingObserver().observer,
         processes: scriptedProcesses().processes,
       });
+
       await restarted.load();
 
       expect(restarted.sessions.map((session) => session.id)).toEqual([created.id]);
@@ -1413,6 +1454,7 @@ describe("inProject and standaloneSessions", () => {
         kind: "inProject",
         projectID: fixture.project.id,
       });
+
       const alone = await fixture.sessions.createSession({
         kind: "standalone",
         directory: folderDirectory,

@@ -99,6 +99,7 @@ describe("framing", () => {
       { kind: FrameKind.Input, payload: new Uint8Array(19).fill(0xab) },
       { kind: FrameKind.Output, payload: new Uint8Array(0) },
     ];
+
     const encoded = frames.map((frame) => encodeFrame(frame));
     const stream = new Uint8Array(encoded.reduce((total, one) => total + one.length, 0));
     let at = 0;
@@ -149,6 +150,7 @@ describe("framing", () => {
     expect(reasonOf(() => void decoder.push(header(claimed, FrameKind.Output)))).toEqual(
       new PayloadTooLarge({ claimed }),
     );
+
     expect(decoder.pending).toBe(0);
   });
 

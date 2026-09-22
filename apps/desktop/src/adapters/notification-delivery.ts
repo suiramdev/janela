@@ -120,6 +120,7 @@ export function createNotificationDelivery(
         void activateWindow().catch((cause: unknown) => {
           logger.debug("window activation failed", { error: nameOf(cause) });
         });
+
         void delivery.withdraw(target.sessionID);
       })
       .then(() => undefined)

@@ -80,6 +80,7 @@ describe("launchAgentKickstart", () => {
         timeoutMs: 5000,
       },
     ]);
+
     expect(attempts.records[0]?.fields).toEqual({ exitCode: 0 });
   });
 

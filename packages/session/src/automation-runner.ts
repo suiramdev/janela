@@ -168,6 +168,7 @@ class VisibleAutomationRunner implements AutomationRunning {
       launch,
       log: this.log,
     });
+
     this.deps.terminals.register(live);
 
     const started = await Effect.runPromise(

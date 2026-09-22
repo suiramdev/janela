@@ -46,6 +46,7 @@ function answers(path: string): Promise<boolean> {
     probe.destroy();
     resolve(true);
   });
+
   probe.once("error", () => resolve(false));
 
   return promise;

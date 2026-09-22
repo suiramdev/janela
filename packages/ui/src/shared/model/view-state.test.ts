@@ -179,7 +179,7 @@ describe("screens", () => {
 
     expect(view.screen).toEqual({ kind: "workspace" });
 
-    view.showSettings();
+    view.showSettings(undefined);
 
     expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "appearance" } });
 
@@ -187,7 +187,7 @@ describe("screens", () => {
 
     expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "permissions" } });
 
-    view.showSettings();
+    view.showSettings(undefined);
 
     expect(view.screen).toEqual({ kind: "settings", route: { kind: "tab", tab: "permissions" } });
 
@@ -217,8 +217,9 @@ describe("screens", () => {
     view.subscribe(() => {
       notifications += 1;
     });
+
     view.showSettings({ kind: "project", projectID: projectID("p") });
-    view.showSettings();
+    view.showSettings(undefined);
 
     expect(notifications).toBe(0);
     expect(view.screen).toEqual({ kind: "settings", route });
@@ -250,11 +251,11 @@ describe("the settings draft", () => {
 
   test("survives leaving settings, because Back is not an answer to the bar", () => {
     const view = createViewState(fakeStore([]));
-    view.showSettings();
+    view.showSettings(undefined);
     view.editSettingsDraft(edited(20));
 
     view.showWorkspace();
-    view.showSettings();
+    view.showSettings(undefined);
 
     expect(view.hasUnsavedSettings).toBe(true);
     expect(draftSettings(view.settingsDraft, DEFAULT_GLOBAL_SETTINGS).terminalFontSize).toBe(20);

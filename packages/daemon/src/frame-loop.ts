@@ -140,6 +140,7 @@ export function createFrameLoop(dependencies: FrameLoopDependencies): FrameLoop 
               client,
               error: painted.failure,
             });
+
             attachments.delete(terminalID);
 
             break;

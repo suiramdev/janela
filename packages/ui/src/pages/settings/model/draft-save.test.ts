@@ -134,6 +134,7 @@ describe("what a save writes", () => {
     expect(settingsDraftRequests(second, first)).toEqual([
       { type: "updateProjectSettings", projectID: OTHER.id, settings: fakeSettings() },
     ]);
+
     expect(draftSettingsToSave(second, first)).toBeUndefined();
   });
 

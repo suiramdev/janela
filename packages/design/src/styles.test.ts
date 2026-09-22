@@ -135,6 +135,7 @@ describe("styles.css", () => {
       expect(theme).toContain(
         `--color-${background?.slice("bg-".length)}: var(--surface-${level});`,
       );
+
       expect(theme).toContain(`--${shadow}: var(--shadow-${level});`);
 
       for (const body of [root, dark]) {

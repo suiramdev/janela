@@ -470,6 +470,7 @@ class TransactionLock {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     const previous = this.#tail;
 
     this.#tail = held;

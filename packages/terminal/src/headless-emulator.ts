@@ -212,6 +212,7 @@ export class HeadlessEmulator implements TerminalEmulating {
       allowProposedApi: true,
       logLevel: "off",
     });
+
     this.terminal.loadAddon(this.serializer);
     this.currentSize = { columns: this.terminal.cols, rows: this.terminal.rows };
 
@@ -223,12 +224,14 @@ export class HeadlessEmulator implements TerminalEmulating {
     this.shadow = new Uint32Array(
       this.currentSize.rows * this.currentSize.columns * WORDS_PER_CELL,
     );
+
     this.changedAt = new Float64Array(this.currentSize.rows);
     this.encoder.reserve(this.currentSize);
 
     this.terminal.onBell(() => {
       this.events?.onAttention({});
     });
+
     this.terminal.onTitleChange((title) => {
       this.events?.onTitle(sanitiseOscText(title));
     });
@@ -242,6 +245,7 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return true;
     });
+
     this.terminal.parser.registerOscHandler(9, (payload) => {
       const progress = parseProgress(payload);
 
@@ -259,6 +263,7 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return true;
     });
+
     this.terminal.parser.registerOscHandler(777, (payload) => {
       const notification = parseUrxvtNotification(payload);
 
@@ -268,6 +273,7 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return true;
     });
+
     this.terminal.parser.registerOscHandler(133, (payload) => {
       const mark = parsePromptMark(payload);
 
@@ -277,6 +283,7 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return true;
     });
+
     this.terminal.parser.registerOscHandler(AGENT_ACTIVITY_OSC, (payload) => {
       const activity = parseAgentActivity(payload);
 
@@ -341,6 +348,7 @@ export class HeadlessEmulator implements TerminalEmulating {
     this.shadow = new Uint32Array(
       this.currentSize.rows * this.currentSize.columns * WORDS_PER_CELL,
     );
+
     this.changedAt = new Float64Array(this.currentSize.rows);
     this.encoder.reserve(this.currentSize);
     this.fullFloor = this.currentRevision;
@@ -376,6 +384,7 @@ export class HeadlessEmulator implements TerminalEmulating {
     for (let y = 0; y < rows; y += 1) {
       if ((this.changedAt[y] ?? 0) > revision) {
         anyRow = true;
+
         break;
       }
     }
@@ -499,6 +508,7 @@ export class HeadlessEmulator implements TerminalEmulating {
     this.terminal.onScroll(() => {
       this.scrolls += 1;
     });
+
     this.terminal.buffer.onBufferChange(() => {
       this.invalidate = true;
     });
@@ -508,32 +518,38 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, (parameters) => {
       this.trackPrivateModes(parameters, false);
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ final: "h" }, () => {
       this.modesTouched = true;
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ final: "l" }, () => {
       this.modesTouched = true;
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ final: "r" }, () => {
       this.regionTouched = true;
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ intermediates: "!", final: "p" }, () => {
       this.modesTouched = true;
       this.cursorVisible = true;
 
       return false;
     });
+
     this.terminal.parser.registerCsiHandler({ intermediates: " ", final: "q" }, (parameters) => {
       const style = parameters[0];
       this.cursorStyle = Predicate.isNumber(style) ? style : DEFAULT_CURSOR_STYLE;
@@ -541,6 +557,7 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       return false;
     });
+
     this.terminal.parser.registerEscHandler({ final: "c" }, () => {
       this.invalidate = true;
       this.modesTouched = true;
@@ -656,6 +673,7 @@ export class HeadlessEmulator implements TerminalEmulating {
         (data[offset + 2] ?? 0) !== this.shadow[base + offset + 2]
       ) {
         differs = true;
+
         break;
       }
     }

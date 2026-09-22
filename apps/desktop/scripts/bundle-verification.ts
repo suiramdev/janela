@@ -124,6 +124,7 @@ function checkLayout(app: string, problems: string[]): void {
 
     if (!existsSync(path)) {
       problems.push(`${relative}: missing`);
+
       continue;
     }
 

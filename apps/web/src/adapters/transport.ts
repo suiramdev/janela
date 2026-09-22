@@ -5,7 +5,7 @@ export interface WebSocketLike {
   binaryType: BinaryType;
   readonly bufferedAmount: number;
   send(data: Uint8Array): void;
-  close(code?: number, reason?: string): void;
+  close(code: number | undefined, reason: string | undefined): void;
   addEventListener(type: "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { readonly data: unknown }) => void): void;
   addEventListener(type: "close", listener: (event: { readonly wasClean: boolean }) => void): void;

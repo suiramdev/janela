@@ -59,6 +59,7 @@ export function createTerminalEvents(options: TerminalEventOptions): TerminalEve
         occurredAt: now(),
       },
     });
+
     log.debug("attention raised", { terminalID: terminal.id, attention: kind.kind });
   };
 

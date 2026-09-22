@@ -38,7 +38,7 @@ function ConfirmationDialog(props: {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   const decline = useCallback(() => {
-    queue.answer(false);
+    queue.answer(false, undefined);
   }, [queue]);
 
   const agree = useCallback(() => {
@@ -47,7 +47,7 @@ function ConfirmationDialog(props: {
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) queue.answer(false);
+      if (!open) queue.answer(false, undefined);
     },
     [queue],
   );

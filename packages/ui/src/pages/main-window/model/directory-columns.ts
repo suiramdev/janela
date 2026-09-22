@@ -84,6 +84,7 @@ export function stepSelection(
         ? 0
         : folders.length - 1
       : Math.min(Math.max(index + step, 0), folders.length - 1);
+
   const chosen = folders[next];
 
   if (chosen === undefined || chosen.name === current) return columns;

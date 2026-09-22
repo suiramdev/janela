@@ -1,7 +1,9 @@
 export type Identifier<Subject extends string> = string & { readonly [brand]: Subject };
 
 export type ProjectID = Identifier<"Project">;
+
 export type SessionID = Identifier<"Session">;
+
 export type TerminalID = Identifier<"Terminal">;
 
 export type AbsolutePath = string & { readonly [brand]: "AbsolutePath" };

@@ -108,6 +108,7 @@ function harness(options: HarnessOptions = {}): Harness {
     outcomes: options.outcomes ?? [],
     which: options.which ?? { gh: ghPath, glab: glabPath },
   });
+
   const { logger, records } = recordingLogger();
   const clock = manualClock();
 
@@ -193,6 +194,7 @@ describe("state: decoding gh", () => {
       checks: "passing",
       refreshedAt: instant(new Date(h.clock.now())),
     });
+
     expect(h.records).toEqual([
       {
         level: "debug",
@@ -593,6 +595,7 @@ describe("state: the cache", () => {
     const h = harness({
       outcomes: [{ standardOutput: ghPullRequest() }, { standardOutput: ghPullRequest() }],
     });
+
     const owning = fakeProject();
     const working = fakeSession();
 
@@ -638,6 +641,7 @@ describe("state: the cache", () => {
     const h = harness({
       outcomes: [{ standardOutput: ghPullRequest() }, { standardOutput: ghPullRequest() }],
     });
+
     const owning = fakeProject();
 
     await h.forge.state({ project: owning, session: fakeSession() });
@@ -699,6 +703,7 @@ describe("pullRequestBranch", () => {
         { standardOutput: JSON.stringify({ headRefName: "feat/x", isCrossRepository: false }) },
       ],
     });
+
     const owning = fakeProject();
 
     const branch = await h.forge.pullRequestBranch({ project: owning, number: 42 });
@@ -740,6 +745,7 @@ describe("pullRequestBranch", () => {
         },
       ],
     });
+
     const owning = fakeProject({ git: { forge: "gitLab", defaultBranch: "main" } });
 
     const branch = await h.forge.pullRequestBranch({ project: owning, number: 42 });
@@ -817,6 +823,7 @@ describe("pullRequestBranch", () => {
         { standardOutput: JSON.stringify({ headRefName: "feat/y", isCrossRepository: false }) },
       ],
     });
+
     const owning = fakeProject();
 
     expect(await h.forge.pullRequestBranch({ project: owning, number: 42 })).toBe("feat/x");

@@ -144,6 +144,7 @@ async function run(): Promise<void> {
       if (frame.kind === FrameKind.Control) {
         const message: DaemonMessage = decodeDaemonMessage(frame);
         report(message);
+
         continue;
       }
 
@@ -178,6 +179,7 @@ async function run(): Promise<void> {
         "race any more — #43 fixed that, and the daemon answers a connection accepted\n" +
         "mid-start — so look at whether a daemon is running at all.",
     );
+
     process.exit(1);
   }
 
@@ -219,6 +221,7 @@ async function run(): Promise<void> {
     socket.write(
       encodeFrame(encodeInput({ terminalID, bytes: new TextEncoder().encode(options.send) })),
     );
+
     await pause(700);
   }
 

@@ -219,15 +219,19 @@ describe("what is worth interrupting for", () => {
     expect(policy.shouldDeliver(signal(prompt(1, 2)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
       false,
     );
+
     expect(policy.shouldDeliver(signal(prompt(1, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
       true,
     );
+
     expect(policy.shouldDeliver(signal(prompt(0, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES)).toBe(
       false,
     );
+
     expect(
       policy.shouldDeliver(signal(prompt(undefined, 15)), NOBODY_LOOKING, DEFAULT_PREFERENCES),
     ).toBe(false);
+
     expect(
       policy.shouldDeliver(
         signal(prompt(1, LONG_RUNNING_THRESHOLD_SECONDS)),
@@ -258,6 +262,7 @@ describe("what is worth interrupting for", () => {
           preferences({ waiting: true }),
         ),
       ).toBe(true);
+
       expect(
         createAttentionPolicy().shouldDeliver(
           signal(activity({ kind: "waiting", need })),
@@ -276,6 +281,7 @@ describe("what is worth interrupting for", () => {
         preferences({ finished: true }),
       ),
     ).toBe(true);
+
     expect(
       createAttentionPolicy().shouldDeliver(
         signal(activity({ kind: "finished", outcome: "completed" })),
@@ -293,6 +299,7 @@ describe("what is worth interrupting for", () => {
         preferences({ failed: true }),
       ),
     ).toBe(true);
+
     expect(
       createAttentionPolicy().shouldDeliver(
         signal(activity({ kind: "finished", outcome: "failed" })),
@@ -310,6 +317,7 @@ describe("what is worth interrupting for", () => {
         preferences({ waiting: true, finished: false, failed: false }),
       ),
     ).toBe(true);
+
     expect(
       createAttentionPolicy().shouldDeliver(
         signal(activity({ kind: "finished", outcome: "completed" })),
@@ -317,6 +325,7 @@ describe("what is worth interrupting for", () => {
         preferences({ finished: true, waiting: false, failed: false }),
       ),
     ).toBe(true);
+
     expect(
       createAttentionPolicy().shouldDeliver(
         signal(activity({ kind: "finished", outcome: "failed" })),
@@ -341,10 +350,12 @@ describe("which event a signal belongs to", () => {
     expect(attentionEvent(signal(activity({ kind: "waiting", need: "permission" })))).toBe(
       "waiting",
     );
+
     expect(attentionEvent(signal(activity({ kind: "waiting", need: "input" })))).toBe("waiting");
     expect(attentionEvent(signal(activity({ kind: "finished", outcome: "completed" })))).toBe(
       "finished",
     );
+
     expect(attentionEvent(signal(activity({ kind: "finished", outcome: "failed" })))).toBe(
       "failed",
     );
@@ -396,6 +407,7 @@ describe("the user is looking straight at it", () => {
         DEFAULT_PREFERENCES,
       ),
     ).toBe(false);
+
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal, seconds: 1 }),
@@ -440,6 +452,7 @@ describe("coalescing", () => {
         DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
+
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal: second, seconds: 1 }),
@@ -460,6 +473,7 @@ describe("coalescing", () => {
         DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
+
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal, seconds: 1 }),
@@ -482,6 +496,7 @@ describe("forgetSession", () => {
         DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
+
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal: theirs, session: OTHER_SESSION, seconds: 0 }),
@@ -499,6 +514,7 @@ describe("forgetSession", () => {
         DEFAULT_PREFERENCES,
       ),
     ).toBe(true);
+
     expect(
       policy.shouldDeliver(
         signal(notification, { terminal: theirs, session: OTHER_SESSION, seconds: 1 }),
@@ -568,6 +584,7 @@ describe("routing a signal to delivery", () => {
         [terminal]: { kind: "needsAttention" },
       }),
     );
+
     sessions.selection = "s1" as SessionID;
 
     source.emit(signal(notification, { terminal, session: "s1" as SessionID }));
