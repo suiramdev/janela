@@ -30,6 +30,7 @@
     "daemon:build": "turbo run build --filter=@janela/janelad",
     "daemon:restart": "bun run scripts/daemon-restart.ts",
     "daemon:status": "bun run scripts/daemon-status.ts",
+    "version": "bun run scripts/version.ts",
     "clean": "turbo run clean && rm -rf node_modules .turbo"
   },
   "dependencies": {

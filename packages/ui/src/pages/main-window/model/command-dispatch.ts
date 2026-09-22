@@ -249,6 +249,12 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
   };
 
   const actions = {
+    checkForUpdates: async () => {
+      if (local === undefined) return;
+
+      await local.updates.check({ announced: true });
+    },
+
     openSettings: () => {
       view.showSettings();
     },

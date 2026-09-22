@@ -12,6 +12,7 @@ import {
   recordingAppearance,
   recordingConfirmations,
   recordingNotificationSound,
+  recordingAppUpdates,
   recordingService,
 } from "../../../shared/lib/test-fakes/index.ts";
 import { createViewState } from "../../../shared/model/index.ts";
@@ -90,6 +91,7 @@ function harness(options: {
       appearance: recordingAppearance(),
       restartDaemon: noop,
       sound: recordingNotificationSound(),
+      updates: recordingAppUpdates(),
     },
     confirmations,
   };

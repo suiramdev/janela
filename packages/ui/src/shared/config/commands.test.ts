@@ -49,6 +49,7 @@ describe("availableCommands", () => {
     const missing = COMMANDS.filter((command) => !availableCommands(false).includes(command));
 
     expect(missing.map((command) => command.id)).toEqual([
+      "checkForUpdates",
       "stopDaemon",
       "revealInFinder",
       "openInTerminal",

@@ -8,6 +8,7 @@ import {
 } from "@janela/core";
 import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
+import type { AppUpdateState } from "./app-update.ts";
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from "./global-settings.ts";
 import { type LocalLayoutEntry, resolveLocalLayout, withFocusedTerminal } from "./local-layout.ts";
 import { EMPTY_SETTINGS_DRAFT, type SettingsDraft } from "./settings-draft.ts";
@@ -43,6 +44,8 @@ export interface ViewState {
 
   readonly isRecordingShortcut: boolean;
 
+  readonly appUpdate: AppUpdateState;
+
   applyLayout(sessionID: SessionID, change: (layout: SessionLayout) => SessionLayout): void;
 
   focusTerminal(terminalID: TerminalID): void;
@@ -51,6 +54,7 @@ export interface ViewState {
   closeSheet(): void;
   setSettings(settings: GlobalSettings): void;
   setRecordingShortcut(isRecording: boolean): void;
+  setAppUpdate(state: AppUpdateState): void;
 
   readonly settingsDraft: SettingsDraft;
   readonly savedSettingsDraft: SettingsDraft;
@@ -89,6 +93,7 @@ export function createViewState(sessions: SessionStore): ViewState {
   let settingsDraft = EMPTY_SETTINGS_DRAFT;
   let savedSettingsDraft = EMPTY_SETTINGS_DRAFT;
   let isRecordingShortcut = false;
+  let appUpdate: AppUpdateState = { kind: "idle" };
 
   const surfaces = new Map<TerminalID, TerminalSurfaceHandle>();
 
@@ -130,6 +135,9 @@ export function createViewState(sessions: SessionStore): ViewState {
     },
     get isRecordingShortcut(): boolean {
       return isRecordingShortcut;
+    },
+    get appUpdate(): AppUpdateState {
+      return appUpdate;
     },
     get settingsDraft(): SettingsDraft {
       return settingsDraft;
@@ -178,6 +186,11 @@ export function createViewState(sessions: SessionStore): ViewState {
       if (isRecordingShortcut === next) return;
 
       isRecordingShortcut = next;
+      notify();
+    },
+
+    setAppUpdate(next: AppUpdateState): void {
+      appUpdate = next;
       notify();
     },
 
