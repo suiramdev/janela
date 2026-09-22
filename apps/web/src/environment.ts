@@ -21,6 +21,7 @@ export interface WebEnvironment {
 
   start(): Promise<void>;
 }
+
 export const CLIENT_NAME = "janela-web";
 
 export function webEnvironment(deps: WebEnvironmentDeps = {}): WebEnvironment {

@@ -51,6 +51,7 @@ function throughTheWire(frame: Frame, split: number): Frame {
     ...decoder.push(encoded.subarray(0, split)),
     ...decoder.push(encoded.subarray(split)),
   ];
+
   decoder.end();
 
   const only = decoded[0];
@@ -147,6 +148,7 @@ describe("raw frame header", () => {
     expect(() =>
       encodeInput({ terminalID: "0123456g-89ab-cdef-0123-456789abcdef" as TerminalID, bytes }),
     ).toThrow(TypeError);
+
     expect(() =>
       encodeInput({ terminalID: "0123456789ab-cdef-0123-456789abcdefx" as TerminalID, bytes }),
     ).toThrow(TypeError);

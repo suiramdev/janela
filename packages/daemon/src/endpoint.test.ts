@@ -276,6 +276,7 @@ describe("the socket directory", () => {
     expect(Predicate.isTagged(error.problem, "wrong-mode") ? error.problem.mode : undefined).toBe(
       0o755,
     );
+
     expect(error.reason).toContain("755");
     expect(error.reason).toContain("700");
     expect(error.summary).not.toContain("755");

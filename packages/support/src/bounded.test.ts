@@ -175,6 +175,7 @@ describe("boundedQueue lifecycle", () => {
     expect(() => boundedQueue<number>({ capacity: -1, onOverflow: "dropOldest" })).toThrow(
       RangeError,
     );
+
     expect(() => boundedQueue<number>({ capacity: 1.5, onOverflow: "block" })).toThrow(RangeError);
   });
 });

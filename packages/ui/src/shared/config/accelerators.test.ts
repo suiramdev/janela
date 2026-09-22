@@ -62,6 +62,7 @@ describe("acceleratorForChord", () => {
     expect(acceleratorForChord(chord("BracketRight", { shiftKey: true }))).toBe(
       "CmdOrCtrl+Shift+]",
     );
+
     expect(acceleratorForChord(chord("ArrowLeft", { altKey: true, shiftKey: true }))).toBe(
       "CmdOrCtrl+Shift+Alt+Left",
     );

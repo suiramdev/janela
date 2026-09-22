@@ -52,6 +52,7 @@ function spawnDaemon(home: string, args: readonly string[]): Spawned {
     stdout: "pipe",
     stderr: "pipe",
   });
+
   const chunks: string[] = [];
   const reader = child.stderr.getReader();
 

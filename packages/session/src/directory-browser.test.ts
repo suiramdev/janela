@@ -51,6 +51,7 @@ describe("the directory browser", () => {
     expect((await browser.list(undefined)).entries).toEqual([
       { name: "Documents", kind: "directory" },
     ]);
+
     expect(await browser.list(absolutePath("/"))).not.toHaveProperty("parent");
   });
 

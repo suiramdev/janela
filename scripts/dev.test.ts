@@ -86,6 +86,7 @@ describe("the dev script's line splitter", () => {
       '{"message":"listening"}',
       '{"message":"ready"}',
     ]);
+
     expect(splitter.flush()).toEqual([]);
   });
 
@@ -139,24 +140,24 @@ describe("the preferred gateway port", () => {
   });
 });
 
+async function boundPort(): Promise<number> {
+  const server = createServer();
+  const bound = Promise.withResolvers<void>();
+
+  server.once("error", bound.reject);
+  server.listen(0, "127.0.0.1", bound.resolve);
+  await bound.promise;
+  cleanups.push(async () => {
+    const closed = Promise.withResolvers<void>();
+
+    server.close(() => closed.resolve());
+    await closed.promise;
+  });
+
+  return (server.address() as AddressInfo).port;
+}
+
 describe("the free port search", () => {
-  async function boundPort(): Promise<number> {
-    const server = createServer();
-    const bound = Promise.withResolvers<void>();
-
-    server.once("error", bound.reject);
-    server.listen(0, "127.0.0.1", bound.resolve);
-    await bound.promise;
-    cleanups.push(async () => {
-      const closed = Promise.withResolvers<void>();
-
-      server.close(() => closed.resolve());
-      await closed.promise;
-    });
-
-    return (server.address() as AddressInfo).port;
-  }
-
   test("a bound port is not free", async () => {
     const port = await boundPort();
 
@@ -174,20 +175,20 @@ describe("the free port search", () => {
   });
 });
 
+async function homes(): Promise<{ real: string; isolated: string }> {
+  const real = await mkdtemp("/tmp/janela-dev-real-");
+  const isolated = await mkdtemp("/tmp/janela-dev-iso-");
+  cleanups.push(() => rm(real, { recursive: true, force: true }));
+  cleanups.push(() => rm(isolated, { recursive: true, force: true }));
+  await writeFile(join(real, ".zshrc"), "export SHELL_RC=1\n");
+  await writeFile(join(real, ".gitconfig"), "[user]\n\tname = someone\n");
+  await mkdir(join(real, ".ssh"));
+  await mkdir(join(real, ".claude"));
+
+  return { real, isolated };
+}
+
 describe("seeding the isolated home's dotfiles", () => {
-  async function homes(): Promise<{ real: string; isolated: string }> {
-    const real = await mkdtemp("/tmp/janela-dev-real-");
-    const isolated = await mkdtemp("/tmp/janela-dev-iso-");
-    cleanups.push(() => rm(real, { recursive: true, force: true }));
-    cleanups.push(() => rm(isolated, { recursive: true, force: true }));
-    await writeFile(join(real, ".zshrc"), "export SHELL_RC=1\n");
-    await writeFile(join(real, ".gitconfig"), "[user]\n\tname = someone\n");
-    await mkdir(join(real, ".ssh"));
-    await mkdir(join(real, ".claude"));
-
-    return { real, isolated };
-  }
-
   test("links the rc files that exist and nothing else", async () => {
     const { real, isolated } = await homes();
 

@@ -63,6 +63,7 @@ function receiver(columns: number, rows: number): Terminal {
     logLevel: "off",
     windowOptions: { setWinSizeChars: true },
   });
+
   target.parser.registerCsiHandler({ final: "t" }, (parameters) => {
     if (parameters[0] !== SET_WINDOW_SIZE_CHARS) return false;
 
@@ -283,6 +284,7 @@ describe("events", () => {
       { kind: "normal", percent: 0 },
       undefined,
     ]);
+
     expect(sink.notifications).toEqual([]);
   });
 
@@ -356,22 +358,22 @@ describe("events", () => {
   });
 });
 
-describe("round trip", () => {
-  function paintAlternateScreenTui(target: HeadlessEmulator): void {
-    feed(target, "\x1b[?1049h\x1b[2J\x1b[H");
+function paintAlternateScreenTui(target: HeadlessEmulator): void {
+  feed(target, "\x1b[?1049h\x1b[2J\x1b[H");
 
-    for (let row = 1; row <= 30; row += 1) {
-      feed(
-        target,
-        `\x1b[${row};1H\x1b[4${row % 8}m row ${String(row).padStart(2)} \x1b[0m${"·".repeat(40)}`,
-      );
-    }
-
-    feed(target, "\x1b[15;25H\x1b[1;97;41m [ MODAL ] \x1b[0m");
-    feed(target, "\x1b[30;1H\x1b[7m -- INSERT --                    \x1b[0m");
-    feed(target, "\x1b[5;12H");
+  for (let row = 1; row <= 30; row += 1) {
+    feed(
+      target,
+      `\x1b[${row};1H\x1b[4${row % 8}m row ${String(row).padStart(2)} \x1b[0m${"·".repeat(40)}`,
+    );
   }
 
+  feed(target, "\x1b[15;25H\x1b[1;97;41m [ MODAL ] \x1b[0m");
+  feed(target, "\x1b[30;1H\x1b[7m -- INSERT --                    \x1b[0m");
+  feed(target, "\x1b[5;12H");
+}
+
+describe("round trip", () => {
   test("a full repaint reconstructs colour, truecolor, inverse and wide characters", async () => {
     const source = emulator(80, 24);
     feed(source, "\x1b[H\x1b[2J");
@@ -449,51 +451,52 @@ describe("resize", () => {
   });
 });
 
-describe("damage encoder", () => {
-  async function roundTrip(
-    source: HeadlessEmulator,
-    target: Terminal,
-    steps: readonly Step[],
-  ): Promise<Delta[]> {
-    await replay(target, source.fullRepaint());
+async function roundTrip(
+  source: HeadlessEmulator,
+  target: Terminal,
+  steps: readonly Step[],
+): Promise<Delta[]> {
+  await replay(target, source.fullRepaint());
 
-    expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
+  expect(dumpGrid(target)).toBe(dumpGrid(source.terminal));
 
-    let seen = source.revision;
-    const deltas: Delta[] = [];
+  let seen = source.revision;
+  const deltas: Delta[] = [];
 
-    for (const step of steps) {
-      feed(source, step.feed);
+  for (const step of steps) {
+    feed(source, step.feed);
 
-      const bytes = source.repaintSince(seen);
-      const text = decoder.decode(bytes);
+    const bytes = source.repaintSince(seen);
+    const text = decoder.decode(bytes);
 
-      if (!step.fullAllowed) {
-        expect({ step: escape(step.feed), full: text.startsWith(FULL_REPAINT_PREFIX) }).toEqual({
-          step: escape(step.feed),
-          full: false,
-        });
-      }
-
-      // oxlint-disable-next-line no-await-in-loop -- sequential by nature.
-      await replay(target, new Uint8Array(bytes));
-
-      expect({ step: escape(step.feed), grid: dumpGrid(target) }).toEqual({
+    if (!step.fullAllowed) {
+      expect({ step: escape(step.feed), full: text.startsWith(FULL_REPAINT_PREFIX) }).toEqual({
         step: escape(step.feed),
-        grid: dumpGrid(source.terminal),
+        full: false,
       });
-      expect({ step: escape(step.feed), modes: dumpModes(target) }).toEqual({
-        step: escape(step.feed),
-        modes: dumpModes(source.terminal),
-      });
-
-      seen = source.revision;
-      deltas.push({ text, length: bytes.length });
     }
 
-    return deltas;
+    // oxlint-disable-next-line no-await-in-loop -- sequential by nature.
+    await replay(target, new Uint8Array(bytes));
+
+    expect({ step: escape(step.feed), grid: dumpGrid(target) }).toEqual({
+      step: escape(step.feed),
+      grid: dumpGrid(source.terminal),
+    });
+
+    expect({ step: escape(step.feed), modes: dumpModes(target) }).toEqual({
+      step: escape(step.feed),
+      modes: dumpModes(source.terminal),
+    });
+
+    seen = source.revision;
+    deltas.push({ text, length: bytes.length });
   }
 
+  return deltas;
+}
+
+describe("damage encoder", () => {
   test("typing at a prompt sends one row, not a screen", async () => {
     const source = emulator(80, 24);
     const target = receiver(80, 24);
@@ -672,6 +675,7 @@ describe("damage encoder", () => {
 
       return false;
     });
+
     target.parser.registerCsiHandler({ prefix: "?", final: "h" }, (parameters) => {
       if (parameters[0] === 25) hidden.push(false);
 
@@ -978,6 +982,7 @@ describe("damage encoder", () => {
         step: escape(step.feed),
         grid: dumpGrid(source.terminal),
       });
+
       expect({ index, step: escape(step.feed), modes: dumpModes(target) }).toEqual({
         index,
         step: escape(step.feed),

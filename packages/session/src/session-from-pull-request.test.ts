@@ -133,6 +133,7 @@ async function withSessions(
             sessions: { projectRemoving: (id) => sessions.projectRemoving(id) },
             log: logger,
           });
+
           await projects.load();
 
           const dependencies: MutableSessionDependencies = {
@@ -190,6 +191,7 @@ describe("createSession: fromPullRequest", () => {
           includedPaths: [],
         },
       });
+
       expect(fixture.asked).toEqual([{ project: fixture.project, number: 42 }]);
     });
   });

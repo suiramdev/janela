@@ -16,6 +16,7 @@ export function readPeerCredential(
   const filledLength = Number(
     library.jpty_peer_credential(fd, ptr(buffer), buffer.length, ptr(pidOut)),
   );
+
   const reportedPid = pidOut[0];
   const pid = reportedPid === undefined || reportedPid < 0 ? undefined : reportedPid;
 

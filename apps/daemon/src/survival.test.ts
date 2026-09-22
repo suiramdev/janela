@@ -116,6 +116,7 @@ function accepts(path: string): Promise<boolean> {
     socket.destroy();
     resolve(true);
   });
+
   socket.once("error", () => resolve(false));
 
   return promise;
@@ -146,6 +147,7 @@ async function startDaemon(home: string, alone = false): Promise<DaemonProcess> 
     stdout: "ignore",
     stderr: "pipe",
   });
+
   const lines: string[] = [];
   const reader = spawned.stderr.getReader();
 
@@ -248,6 +250,7 @@ async function probeClient(daemon: DaemonProcess, hello: Hello = DEFAULT_HELLO):
         if (message.type === "state") absorb(message.update);
 
         controls.push(message);
+
         continue;
       }
 
@@ -256,10 +259,12 @@ async function probeClient(daemon: DaemonProcess, hello: Hello = DEFAULT_HELLO):
 
     wake();
   });
+
   socket.once("close", () => {
     closed = true;
     wake();
   });
+
   socket.once("error", () => {
     closed = true;
     wake();
@@ -380,6 +385,7 @@ async function sessionWithShell(
   expect(
     (await probe.ask({ type: "subscribe", id: requestID(), scope: { kind: "state" } })).type,
   ).toBe("acknowledged");
+
   expect(
     (
       await probe.ask({
@@ -393,6 +399,7 @@ async function sessionWithShell(
   const session = await waitFor("the new session is announced with its terminal", () =>
     probe.sessions().find((candidate) => candidate.terminals.length > 0),
   );
+
   const terminalID = session.terminals[0]?.id;
 
   if (terminalID === undefined) throw new Error("a session was announced with no terminal");
@@ -430,6 +437,7 @@ beforeAll(async () => {
     stdout: "pipe",
     stderr: "pipe",
   });
+
   const [status, failure] = await Promise.all([build.exited, new Response(build.stderr).text()]);
 
   if (status !== 0) throw new Error(`compiling the sidecar failed: ${failure}`);
@@ -513,6 +521,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
         () => (daemon.log().includes("client disconnected") ? true : undefined),
         daemon.log,
       );
+
       await Bun.sleep(DETACHED_INTERVAL_MS);
 
       const second = await probeClient(daemon);
@@ -601,6 +610,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
         () => (arriving.repaints().length > 0 ? repaintText(arriving) : undefined),
         daemon.log,
       );
+
       const history = await snapshot(arriving, terminalID, true);
 
       expect(repaint).toContain("line-60");

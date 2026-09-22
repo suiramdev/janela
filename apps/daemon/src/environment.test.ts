@@ -67,6 +67,7 @@ const HELLO = encodeFrame(
 );
 
 setLogSink(nullLogSink);
+
 afterEach(() => setLogSink(nullLogSink));
 
 function terminal(): TerminalDescriptor {
@@ -121,6 +122,7 @@ function firstFrame(socket: Socket): Promise<Frame | undefined> {
 
     if (frame !== undefined) resolve({ kind: frame.kind, payload: new Uint8Array(frame.payload) });
   });
+
   socket.once("close", () => resolve(undefined));
   socket.once("error", () => resolve(undefined));
 
@@ -174,6 +176,7 @@ async function openedDaemon(options: DaemonUnderTestOptions): Promise<DaemonUnde
     foreground: true,
     shell: options.shell,
   });
+
   const controller = new AbortController();
   let loop: Promise<void> | undefined;
 
@@ -199,35 +202,36 @@ async function openedDaemon(options: DaemonUnderTestOptions): Promise<DaemonUnde
   };
 }
 
-describe("daemonEnvironment", () => {
-  async function racedStart(root: string, round: number): Promise<void> {
-    await using daemon = await openedDaemon({
-      databasePath: join(root, `${round}.sqlite`),
-      socketPath: join(root, String(round), "d.sock"),
-      shell,
-    });
-    const arriving = connectedEventually(daemon.socketPath);
+async function racedStart(root: string, round: number): Promise<void> {
+  await using daemon = await openedDaemon({
+    databasePath: join(root, `${round}.sqlite`),
+    socketPath: join(root, String(round), "d.sock"),
+    shell,
+  });
 
-    void daemon.startServing();
+  const arriving = connectedEventually(daemon.socketPath);
 
-    const socket = await arriving;
-    const reply = firstFrame(socket);
+  void daemon.startServing();
 
-    socket.write(HELLO);
+  const socket = await arriving;
+  const reply = firstFrame(socket);
 
-    const frame = await Promise.race([reply, Bun.sleep(REPLY_DEADLINE_MS).then(() => undefined)]);
+  socket.write(HELLO);
 
-    if (frame === undefined) {
-      throw new Error(
-        `round ${round}: the daemon accepted the connection and never answered the hello`,
-      );
-    }
+  const frame = await Promise.race([reply, Bun.sleep(REPLY_DEADLINE_MS).then(() => undefined)]);
 
-    expect(decodeDaemonMessage(frame).type).toBe("hello");
-
-    socket.destroy();
+  if (frame === undefined) {
+    throw new Error(
+      `round ${round}: the daemon accepted the connection and never answered the hello`,
+    );
   }
 
+  expect(decodeDaemonMessage(frame).type).toBe("hello");
+
+  socket.destroy();
+}
+
+describe("daemonEnvironment", () => {
   test("restores persisted sessions as idle, spawning nothing", async () => {
     await using directory = await temporaryDirectory("environment");
     const databasePath = join(directory.path, "janela.sqlite");
@@ -243,6 +247,7 @@ describe("daemonEnvironment", () => {
       projectID: project.id,
       backing: { kind: "projectDirectory" },
     });
+
     await seed.sessions.save(persistedSession("two"));
     await seed.close();
 

@@ -152,6 +152,7 @@ describe("sessionMenuRows", () => {
       "openInTerminal:/src/janela-pty",
       `removeSession:${session.id}`,
     ]);
+
     expect(row(rows, "Remove Session…").destructive).toBe(true);
   });
 

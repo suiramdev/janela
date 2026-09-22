@@ -112,7 +112,7 @@ export interface TransportPair {
 }
 
 export interface MemoryListener extends ConnectionListening {
-  connect(credential?: PeerCredential): TransportPair;
+  connect(credential: PeerCredential | undefined): TransportPair;
   readonly closeCalls: { count: number };
 }
 
@@ -278,7 +278,7 @@ export function fakeTerminal(id: TerminalID, options: FakeTerminalOptions = {}):
             ? { kind: "needsAttention" }
             : { kind: "needsAttention", activity };
       } else {
-        current = { kind: "running", ...(activity !== undefined && { activity }) };
+        current = activity === undefined ? { kind: "running" } : { kind: "running", activity };
       }
     },
     attach: (client, viewport) => {
@@ -316,6 +316,7 @@ export function fakeRegistry(terminals: readonly LiveTerminal[] = []): FakeRegis
   const held = new Map<TerminalID, LiveTerminal>(
     terminals.map((terminal) => [terminal.id, terminal]),
   );
+
   const registerCalls = { count: 0 };
   const hangUpAllCalls = { count: 0 };
   let observer: TerminalRegistryObserving | undefined;

@@ -70,6 +70,7 @@ async function measure(): Promise<void> {
       }
     }
   }, COALESCING_WINDOW_MS);
+
   const startedAt = performance.now();
 
   await Bun.sleep(SETTLE_MS);
@@ -91,10 +92,12 @@ async function measure(): Promise<void> {
   report(
     `throughput           ${(bytes / 1e6 / elapsedSeconds).toFixed(1)} MB/s (budget ${THROUGHPUT_BUDGET_MB_PER_SECOND})`,
   );
+
   report(`total read           ${(bytes / 1e6).toFixed(1)} MB in ${elapsedSeconds.toFixed(2)} s`);
   report(
     `drain calls          ${drains}, largest ${(largestDrain / 1e6).toFixed(2)} MB of ${(DRAIN_BUFFER_SIZE / 1e6).toFixed(2)} MB`,
   );
+
   report(`worst timer lag      ${worstLagMs.toFixed(1)} ms (window ${COALESCING_WINDOW_MS} ms)`);
   report(`neighbour echoed     ${respondedIn}`);
   report(`read failure         ${flood.readFailure?.summary ?? "none"}`);

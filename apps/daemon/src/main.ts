@@ -51,6 +51,7 @@ function serving(foreground: boolean): Effect.Effect<void, unknown> {
       const environment = yield* Effect.acquireRelease(starting(foreground, logger), (open) =>
         Effect.promise(() => open.database.close()),
       );
+
       const controller = new AbortController();
 
       const stop = (): void => {
@@ -67,6 +68,7 @@ function serving(foreground: boolean): Effect.Effect<void, unknown> {
         process.once("SIGINT", stop);
         process.on("SIGPIPE", () => {});
       });
+
       yield* Effect.acquireRelease(
         Effect.sync(() => {
           const idle = createIdleMonitor({
@@ -80,6 +82,7 @@ function serving(foreground: boolean): Effect.Effect<void, unknown> {
         }),
         (idle) => Effect.sync(() => idle.stop()),
       );
+
       yield* Effect.tryPromise({
         try: () => environment.serve(controller.signal),
         catch: (cause: unknown) => cause,

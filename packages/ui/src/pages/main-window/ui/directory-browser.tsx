@@ -383,6 +383,7 @@ function Column(props: {
 }): ReactElement {
   const { directory, index, state, selected, focused, onOpen, onChoose, onKeyDown, register } =
     props;
+
   const listID = useId();
 
   const ref = useCallback(

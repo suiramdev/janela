@@ -242,10 +242,12 @@ export function spawnPseudoTerminal(
   const environmentVector = cStringArray(
     Object.entries(configuration.environment).map(([key, value]) => `${key}=${value}`),
   );
+
   const replicaPathVariable =
     configuration.replicaPathVariable === undefined
       ? undefined
       : cString(configuration.replicaPathVariable);
+
   const pidOut = new Int32Array(1);
   const reachableUntilTheChildHasExeced = [
     executable,
@@ -255,6 +257,7 @@ export function spawnPseudoTerminal(
     replicaPathVariable,
     pidOut,
   ];
+
   const handle = library.jpty_spawn(
     ptr(executable),
     ptr(argumentVector.pointers),
@@ -265,6 +268,7 @@ export function spawnPseudoTerminal(
     clampToWinsizeField(configuration.initialSize.rows),
     ptr(pidOut),
   );
+
   void reachableUntilTheChildHasExeced;
 
   if (handle < 0) {

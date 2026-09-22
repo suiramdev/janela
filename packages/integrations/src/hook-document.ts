@@ -109,6 +109,7 @@ export function withoutJanelaHooks(document: HookDocument): Schema.JsonObject {
   const remaining = Object.fromEntries(
     Object.entries(groups).filter(([, entries]) => entries.length > 0),
   );
+
   const root: DraftJsonObject = {};
 
   for (const [key, value] of Object.entries(document.root)) {
@@ -127,6 +128,7 @@ export function hookStatus(document: HookDocument, plans: readonly HookPlan[]): 
     const mine = (document.groups[plan.event] ?? [])
       .map(janelaEntry)
       .filter((entry) => entry !== undefined);
+
     const only = mine.length === 1 ? mine[0] : undefined;
 
     planned += mine.length;

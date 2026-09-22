@@ -29,7 +29,7 @@ async function setup(label: string): Promise<
     readonly scratch: (...components: string[]) => AbsolutePath;
     readonly gitIn: (directory: string, ...args: string[]) => Promise<string>;
     readonly git: (...args: string[]) => Promise<string>;
-    readonly commit: (file: string, contents: string, message?: string) => Promise<void>;
+    readonly commit: (file: string, contents: string, message: string | undefined) => Promise<void>;
   }
 > {
   const fixture = await gitFixture(label);
@@ -110,6 +110,7 @@ describe("worktrees", () => {
       directory,
       branch: "feat/gone",
     });
+
     await rm(directory, { recursive: true, force: true });
 
     const entry = (await world.service.worktrees(world.repository)).find(
@@ -300,7 +301,7 @@ describe("removalSafety", () => {
     await using world = await setup("wt-rename");
 
     await withOrigin(world);
-    await world.commit("??notes.txt", "notes\n");
+    await world.commit("??notes.txt", "notes\n", undefined);
 
     const created = await world.service.createWorktree({
       repository: world.repository,
@@ -371,6 +372,7 @@ describe("removeWorktree", () => {
       directory,
       branch: "feat/locked",
     });
+
     await world.git("worktree", "lock", "--reason", "busy here", directory);
 
     const entry = (await world.service.worktrees(world.repository)).find(
@@ -392,6 +394,7 @@ describe("removeWorktree", () => {
         force: true,
       }),
     ).rejects.toBeInstanceOf(GitFailure);
+
     expect((await stat(directory)).isDirectory()).toBe(true);
   });
 
@@ -410,6 +413,7 @@ describe("removeWorktree", () => {
     expect(
       (await world.service.worktrees(world.repository)).some((entry) => entry.path === directory),
     ).toBe(false);
+
     await expect(stat(directory)).rejects.toThrow();
   });
 
@@ -422,11 +426,13 @@ describe("removeWorktree", () => {
       directory,
       branch: "feat/dirty-remove",
     });
+
     await writeFile(`${directory}/scratch.txt`, "notes\n", "utf8");
 
     await expect(
       world.service.removeWorktree({ repository: world.repository, directory, force: false }),
     ).rejects.toBeInstanceOf(GitFailure);
+
     expect((await stat(directory)).isDirectory()).toBe(true);
 
     await world.service.removeWorktree({ repository: world.repository, directory, force: true });
@@ -483,6 +489,7 @@ describe("checkoutBranch", () => {
     await expect(
       world.service.checkoutBranch(world.repository, "feat/absent"),
     ).rejects.toBeInstanceOf(GitFailure);
+
     expect(await world.service.branches(world.repository)).toEqual(["main"]);
     expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
   });
@@ -499,6 +506,7 @@ describe("checkoutBranch", () => {
     await expect(
       world.service.checkoutBranch(world.repository, "feat/held"),
     ).rejects.toBeInstanceOf(GitFailure);
+
     expect((await world.git("rev-parse", "--abbrev-ref", "HEAD")).trim()).toBe("main");
   });
 });

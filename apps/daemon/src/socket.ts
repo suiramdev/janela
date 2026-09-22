@@ -30,7 +30,7 @@ export async function bindDaemonSocket(options: BindDaemonSocketOptions): Promis
   verifySocketDirectory(directory, ownUid);
 
   if (await isServing(path)) {
-    log.info("another daemon is already serving");
+    log.info("another daemon is already serving", undefined);
 
     return { kind: "already-serving" };
   }
@@ -48,7 +48,7 @@ export async function bindDaemonSocket(options: BindDaemonSocketOptions): Promis
   await listening.promise;
   await chmod(path, SOCKET_FILE_MODE);
 
-  log.info("listening");
+  log.info("listening", undefined);
 
   return { kind: "bound" };
 }

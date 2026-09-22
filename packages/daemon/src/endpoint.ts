@@ -111,6 +111,7 @@ export class SocketPathTooLong extends UserFacingError {
         `${MAXIMUM_SOCKET_PATH_LENGTH}.`,
       recoverySuggestion: "This can happen when your home directory path is unusually long.",
     });
+
     this.byteCount = byteCount;
   }
 }
@@ -129,6 +130,7 @@ export class SocketDirectoryUnsafe extends UserFacingError {
         `Remove ${directory} and restart Janela; it will be recreated with the ` +
         `right permissions.`,
     });
+
     this.directory = directory;
     this.problem = problem;
   }

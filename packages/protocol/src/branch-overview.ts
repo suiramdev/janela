@@ -58,6 +58,7 @@ export function parseBranchOverview(text: string): BranchOverview {
     decodeOverviewText(text),
     (error) => new TypeError(`not a branch overview: ${error.message}`),
   );
+
   const wire = Result.getOrThrowWith(decoded, (error) => error);
 
   return {

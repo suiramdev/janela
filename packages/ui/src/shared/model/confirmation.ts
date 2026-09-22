@@ -20,7 +20,7 @@ export interface Confirming {
 
 export interface ConfirmationQueue extends Confirming {
   readonly pending: ConfirmationRequest | undefined;
-  answer(agreed: boolean, silence?: boolean): void;
+  answer(agreed: boolean, silence: boolean | undefined): void;
   subscribe(listener: () => void): () => void;
 }
 

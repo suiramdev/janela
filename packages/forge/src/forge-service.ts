@@ -86,6 +86,7 @@ export class PullRequestUnavailable extends UserFacingError {
       recoverySuggestion:
         "Check that you're logged in to gh or glab and that the pull request is in this repository.",
     });
+
     this.number = number;
   }
 }
@@ -304,6 +305,7 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
       subcommand,
       failure: forgeFailureLabel(failed.reason),
     };
+
     const fields = failed.exitCode === undefined ? shape : { ...shape, exitCode: failed.exitCode };
 
     if (isLoudFailure(failed.reason)) log.warning("forge read failed", fields);
@@ -436,19 +438,20 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
 
 export function forgeFailureLabel(failure: ForgeFailure): string {
   return Match.value(failure).pipe(
-    Match.tag("missingBinary", () => "missingBinary"),
-    Match.tag("spawnFailure", () => "spawnFailure"),
-    Match.tag("timeout", () => "timeout"),
-    Match.tag("outputTooLarge", () => "outputTooLarge"),
-    Match.tag("notLoggedIn", () => "notLoggedIn"),
-    Match.tag("rateLimited", () => "rateLimited"),
-    Match.tag("networkFailure", () => "networkFailure"),
-    Match.tag("noPullRequest", () => "noPullRequest"),
-    Match.tag("crossRepository", () => "crossRepository"),
-    Match.tag("malformedOutput", () => "malformedOutput"),
-    Match.tag("unknownShape", () => "unknownShape"),
-    Match.tag("exit", () => "exit"),
-    Match.exhaustive,
+    Match.tagsExhaustive({
+      missingBinary: () => "missingBinary",
+      spawnFailure: () => "spawnFailure",
+      timeout: () => "timeout",
+      outputTooLarge: () => "outputTooLarge",
+      notLoggedIn: () => "notLoggedIn",
+      rateLimited: () => "rateLimited",
+      networkFailure: () => "networkFailure",
+      noPullRequest: () => "noPullRequest",
+      crossRepository: () => "crossRepository",
+      malformedOutput: () => "malformedOutput",
+      unknownShape: () => "unknownShape",
+      exit: () => "exit",
+    }),
   );
 }
 

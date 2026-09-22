@@ -54,6 +54,7 @@ function fakeEvents(): FakeEvents {
       resolve(() => {
         released += 1;
       });
+
       await promise;
     },
     async refuse(): Promise<void> {
@@ -71,6 +72,7 @@ describe("tauriCommandSource", () => {
     tauriCommandSource({ listen: events.listen }).subscribe((id) => {
       received.push(id);
     });
+
     await events.register();
 
     events.emit("newSession");
@@ -111,6 +113,7 @@ describe("tauriCommandSource", () => {
     const unsubscribe = tauriCommandSource({ listen: events.listen }).subscribe((id) => {
       received.push(id);
     });
+
     await events.refuse();
 
     expect(() => unsubscribe()).not.toThrow();
@@ -126,9 +129,11 @@ describe("installNativeMenu", () => {
     await expect(
       installNativeMenu(async (command) => {
         commands.push(command);
+
         throw new Error("menu unavailable");
       }),
     ).resolves.toBeUndefined();
+
     expect(commands).toEqual(["install_menu"]);
   });
 });
@@ -202,6 +207,7 @@ describe("syncNativeShortcuts", () => {
 
       return Promise.resolve();
     }, view);
+
     view.set(DEFAULT_GLOBAL_SETTINGS);
 
     expect(sends).toBe(2);

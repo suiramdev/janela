@@ -58,7 +58,7 @@ describe("createConfirmationQueue", () => {
 
     expect(queue.pending).toEqual(REMOVING);
 
-    queue.answer(true);
+    queue.answer(true, undefined);
 
     expect(await asked).toBe(true);
     expect(queue.pending).toBeUndefined();
@@ -69,7 +69,7 @@ describe("createConfirmationQueue", () => {
     const queue = createConfirmationQueue({ view: backing.view, settings: backing.storage });
 
     const asked = queue.confirm(REMOVING);
-    queue.answer(false);
+    queue.answer(false, undefined);
 
     expect(await asked).toBe(false);
     expect(queue.pending).toBeUndefined();
@@ -85,7 +85,7 @@ describe("createConfirmationQueue", () => {
     expect(await second).toBe(false);
     expect(queue.pending).toEqual(REMOVING);
 
-    queue.answer(true);
+    queue.answer(true, undefined);
 
     expect(await first).toBe(true);
   });
@@ -110,7 +110,7 @@ describe("createConfirmationQueue", () => {
     });
 
     void queue.confirm(REMOVING);
-    queue.answer(false);
+    queue.answer(false, undefined);
     stop();
     void queue.confirm(REMOVING);
 
@@ -155,7 +155,7 @@ describe("don't ask again", () => {
 
     expect(queue.pending).toEqual(REMOVING);
 
-    queue.answer(false);
+    queue.answer(false, undefined);
 
     expect(await asked).toBe(false);
   });

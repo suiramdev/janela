@@ -23,7 +23,7 @@ export function browserClipboard(): Clipboard {
       );
 
       if (Option.isNone(read)) {
-        clipboardLog.warning("clipboard read refused");
+        clipboardLog.warning("clipboard read refused", undefined);
 
         return undefined;
       }

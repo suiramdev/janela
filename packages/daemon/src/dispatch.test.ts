@@ -72,7 +72,7 @@ interface Fixture {
   readonly registry: FakeRegistry;
   readonly records: Recorded[];
   with(message: string): Recorded[];
-  connect(options?: { readonly drains?: boolean }): Promise<Peer>;
+  connect(options: { readonly drains?: boolean } | undefined): Promise<Peer>;
   stop(): Promise<void>;
 }
 
@@ -172,7 +172,7 @@ function fixture(
     records,
     with: withMessage,
     async connect(connectOptions: { readonly drains?: boolean } = {}): Promise<Peer> {
-      const pair = listener.connect();
+      const pair = listener.connect(undefined);
       const transport = pair.clientSide;
       const frames: Frame[] = [];
       const controls: DaemonMessage[] = [];
@@ -266,7 +266,8 @@ describe("terminals", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
@@ -291,7 +292,8 @@ describe("terminals", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "startTerminal", id: 1 as RequestID, terminalID: terminal.id }),
@@ -306,7 +308,8 @@ describe("terminals", () => {
         startTerminal: () => Promise.reject(new ExecutableUnavailable()),
       },
     });
-    const second = await refusing.connect();
+
+    const second = await refusing.connect(undefined);
     await second.send(
       request({ type: "startTerminal", id: 2 as RequestID, terminalID: terminal.id }),
     );
@@ -321,8 +324,8 @@ describe("terminals", () => {
   test("a viewportless attachment types without rendering or resizing", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const reader = await daemon.connect();
-    const renderer = await daemon.connect();
+    const reader = await daemon.connect(undefined);
+    const renderer = await daemon.connect(undefined);
 
     await reader.send(request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id }));
 
@@ -330,16 +333,19 @@ describe("terminals", () => {
       type: "acknowledged",
       id: 1 as RequestID,
     });
+
     expect([...terminal.attached.keys()]).toEqual([]);
 
     await reader.send(
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("q") }),
     );
+
     await until(() => terminal.sendCalls.length === 1, "the input to arrive");
 
     await reader.send(
       request({ type: "resize", terminalID: terminal.id, size: { columns: 200, rows: 60 } }),
     );
+
     await until(() => daemon.with("resize ignored").length === 1, "the ignored resize");
 
     expect(terminal.attachCalls).toEqual([]);
@@ -347,6 +353,7 @@ describe("terminals", () => {
     await renderer.send(
       request({ type: "attach", id: 2 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
     );
+
     await renderer.reply(2 as RequestID);
 
     expect(terminal.attachCalls).toEqual([{ client: "c2", viewport: VIEWPORT }]);
@@ -356,16 +363,18 @@ describe("terminals", () => {
   test("a resize is an attach with a new viewport, from a rendering client only", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const renderer = await daemon.connect();
-    const bystander = await daemon.connect();
+    const renderer = await daemon.connect(undefined);
+    const bystander = await daemon.connect(undefined);
 
     await renderer.send(
       request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
     );
+
     await renderer.reply(1 as RequestID);
     await renderer.send(
       request({ type: "resize", terminalID: terminal.id, size: { columns: 120, rows: 40 } }),
     );
+
     await until(() => terminal.attachCalls.length === 2, "the resize upsert");
 
     expect(terminal.attachCalls).toEqual([
@@ -376,6 +385,7 @@ describe("terminals", () => {
     await bystander.send(
       request({ type: "resize", terminalID: terminal.id, size: { columns: 10, rows: 10 } }),
     );
+
     await until(() => daemon.with("resize ignored").length === 1, "the ignored resize");
 
     expect(terminal.attachCalls).toHaveLength(2);
@@ -385,16 +395,18 @@ describe("terminals", () => {
     const terminal = fakeTerminal(terminalID());
     const other = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal, other] });
-    const attached = await daemon.connect();
-    const stranger = await daemon.connect();
+    const attached = await daemon.connect(undefined);
+    const stranger = await daemon.connect(undefined);
 
     await attached.send(
       request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
     );
+
     await attached.reply(1 as RequestID);
     await attached.send(
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("ls\r") }),
     );
+
     await until(() => terminal.sendCalls.length === 1, "the input");
 
     expect(new TextDecoder().decode(terminal.sendCalls[0])).toBe("ls\r");
@@ -403,6 +415,7 @@ describe("terminals", () => {
     await stranger.send(
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("rm -rf /") }),
     );
+
     await until(
       () => daemon.with("input from a connection not attached").length === 1,
       "the dropped input",
@@ -421,15 +434,17 @@ describe("terminals", () => {
   test("a terminal that refuses input costs a log line, not the connection", async () => {
     const terminal = fakeTerminal(terminalID(), { throwOnSend: new TerminalNotRunning() });
     const daemon = fixture({ terminals: [terminal] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "attach", id: 1 as RequestID, terminalID: terminal.id, viewport: VIEWPORT }),
     );
+
     await peer.reply(1 as RequestID);
     await peer.send(
       encodeInput({ terminalID: terminal.id, bytes: new TextEncoder().encode("ls\r") }),
     );
+
     await until(() => daemon.with("input failed").length === 1, "the failure record");
 
     expect(daemon.with("input failed")[0]?.fields).toEqual({
@@ -447,7 +462,7 @@ describe("terminals", () => {
 
   test("a terminal that is gone is a failure a person can read, not a closed connection", async () => {
     const daemon = fixture();
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
     daemon.registry.add(fakeTerminal(terminalID()));
 
     await peer.send(
@@ -464,7 +479,7 @@ describe("terminals", () => {
   test("snapshotText reads without attaching, which is the CLI's whole job", async () => {
     const terminal = fakeTerminal(terminalID(), { snapshot: "on screen" });
     const daemon = fixture({ terminals: [terminal] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -480,6 +495,7 @@ describe("terminals", () => {
       id: 1 as RequestID,
       text: "on screen",
     });
+
     expect([...terminal.attached.keys()]).toEqual([]);
   });
 
@@ -487,11 +503,12 @@ describe("terminals", () => {
     const rendered = fakeTerminal(terminalID());
     const read = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [rendered, read] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "attach", id: 1 as RequestID, terminalID: rendered.id, viewport: VIEWPORT }),
     );
+
     await peer.reply(1 as RequestID);
     await peer.send(request({ type: "attach", id: 2 as RequestID, terminalID: read.id }));
     await peer.reply(2 as RequestID);
@@ -516,12 +533,14 @@ describe("state", () => {
       state: { kind: "idle" },
       sessionID: second.id,
     });
+
     const daemon = fixture({
       sessions: [first, second],
       projects: [],
       terminals: [terminal],
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
     await peer.reply(1 as RequestID);
@@ -537,6 +556,7 @@ describe("state", () => {
         isFullSnapshot: true,
       },
     });
+
     expect(acknowledged).toEqual({ type: "acknowledged", id: 1 as RequestID });
   });
 
@@ -544,7 +564,7 @@ describe("state", () => {
     const survivor = fakeSession("s1");
     const removed = fakeSession("s2");
     const daemon = fixture({ sessions: [survivor, removed] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
     await peer.reply(1 as RequestID);
@@ -580,7 +600,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const sessionID = "s1" as SessionID;
 
     await peer.send(request({ type: "removalPlan", id: 1 as RequestID, sessionID }));
@@ -612,16 +633,19 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const sessionID = "s1" as SessionID;
 
     await peer.send(
       request({ type: "removeSession", id: 1 as RequestID, sessionID, deletesDirectory: true }),
     );
+
     await peer.reply(1 as RequestID);
     await peer.send(
       request({ type: "removeSession", id: 2 as RequestID, sessionID, deletesDirectory: false }),
     );
+
     await peer.reply(2 as RequestID);
 
     expect(removals.map((removal) => removal.plan.deletesDirectory)).toEqual([true, false]);
@@ -636,13 +660,15 @@ describe("sessions", () => {
       sessionID: session.id,
       state: { kind: "needsAttention" },
     });
+
     const finished = fakeTerminal(terminalID(), {
       sessionID: session.id,
       state: { kind: "needsAttention", activity: { kind: "finished", outcome: "completed" } },
     });
+
     const elsewhere = fakeTerminal(terminalID(), { state: { kind: "needsAttention" } });
     const daemon = fixture({ sessions: [session], terminals: [bell, finished, elsewhere] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "subscribe", id: 1 as RequestID, scope: { kind: "state" } }));
     await peer.reply(1 as RequestID);
@@ -656,6 +682,7 @@ describe("sessions", () => {
       kind: "running",
       activity: { kind: "finished", outcome: "completed" },
     });
+
     expect(elsewhere.markCalls).toEqual([]);
 
     const announced = peer.controls.filter(
@@ -671,7 +698,7 @@ describe("sessions", () => {
     const session = fakeSession("s1");
     const shell = fakeTerminal(terminalID(), { sessionID: session.id });
     const daemon = fixture({ sessions: [session], terminals: [shell] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "markSession", id: 1 as RequestID, sessionID: session.id, unread: true }),
@@ -685,7 +712,7 @@ describe("sessions", () => {
     const session = fakeSession("s1");
     const shell = fakeTerminal(terminalID(), { sessionID: session.id });
     const daemon = fixture({ sessions: [session], terminals: [shell] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -702,6 +729,7 @@ describe("sessions", () => {
       const id = (index + 2) as RequestID;
       // oxlint-disable-next-line no-await-in-loop
       await peer.send(wireControl({ type: "markSession", id, sessionID: session.id, unread }));
+
       // oxlint-disable-next-line no-await-in-loop
       expect((await peer.reply(id)).type).toBe("failed");
     }
@@ -715,7 +743,8 @@ describe("sessions", () => {
         createSession: () => Promise.reject(new GitFailure(`git failed: ${STDERR}`)),
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -730,6 +759,7 @@ describe("sessions", () => {
       id: 1 as RequestID,
       failure: { summary: "Couldn't create the session." },
     });
+
     expect(everythingSaid(peer, daemon.records)).not.toContain(STDERR);
     expect(daemon.with("request failed")[0]?.fields).toEqual({
       client: "c1",
@@ -744,7 +774,8 @@ describe("sessions", () => {
         createSession: () => Promise.reject(new Error(STDERR)),
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -762,6 +793,7 @@ describe("sessions", () => {
         recoverySuggestion: "If this keeps happening, please file an issue with the log.",
       },
     });
+
     expect(everythingSaid(peer, daemon.records)).not.toContain(STDERR);
   });
 
@@ -779,6 +811,7 @@ describe("sessions", () => {
         { directory: "/Users/x/code/.worktrees/spike" as Session["directory"], isMain: false },
       ],
     };
+
     const daemon = fixture({
       sessionOverrides: {
         branchOverview: (id) => {
@@ -788,7 +821,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const projectID = "p1" as Project["id"];
 
     await peer.send(request({ type: "projectBranches", id: 1 as RequestID, projectID }));
@@ -808,7 +842,8 @@ describe("sessions", () => {
     const daemon = fixture({
       sessionOverrides: { branchOverview: () => Promise.reject(new NoGit("not a repository")) },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -835,7 +870,8 @@ describe("sessions", () => {
         return Promise.resolve(listing);
       }),
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "listDirectory", id: 1 as RequestID }));
     const home = await peer.reply(1 as RequestID);
@@ -843,6 +879,7 @@ describe("sessions", () => {
     await peer.send(
       request({ type: "listDirectory", id: 2 as RequestID, directory: absolutePath("/tmp") }),
     );
+
     const named = await peer.reply(2 as RequestID);
 
     if (home.type !== "text") throw new Error(`expected text, got ${home.type}`);
@@ -861,7 +898,8 @@ describe("sessions", () => {
         return Promise.resolve(fakeListing());
       }),
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(wireControl({ type: "listDirectory", id: 1, directory: "code/../../etc" }));
 
@@ -883,7 +921,8 @@ describe("sessions", () => {
     const daemon = fixture({
       directories: fakeDirectories(() => Promise.reject(new Sealed())),
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -901,6 +940,7 @@ describe("sessions", () => {
         reason: "You don't have permission to read it.",
       },
     });
+
     expect(daemon.with("request failed").map((record) => record.fields)).toEqual([
       { client: expect.any(String), type: "listDirectory", error: "Sealed" },
     ]);
@@ -917,7 +957,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const sessionID = "s1" as SessionID;
 
     await peer.send(request({ type: "moveTab", id: 1 as RequestID, sessionID, from: 2, to: 0 }));
@@ -937,7 +978,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const impossible: readonly { readonly from: WireValue; readonly to: WireValue }[] = [
       { from: "0", to: 1 },
       { from: 0, to: null },
@@ -950,6 +992,7 @@ describe("sessions", () => {
       const id = (index + 1) as RequestID;
       // oxlint-disable-next-line no-await-in-loop
       await peer.send(wireControl({ type: "moveTab", id, sessionID: "s1", ...indices }));
+
       // oxlint-disable-next-line no-await-in-loop
       expect((await peer.reply(id)).type).toBe("failed");
     }
@@ -968,7 +1011,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const sessionID = "s1" as SessionID;
     const moved = terminalID();
     const destination: PaneDestination = { kind: "beside", terminal: terminalID(), edge: "left" };
@@ -998,7 +1042,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const impossible: readonly WireValue[] = [
       { kind: "beside", terminal: "t1", edge: "left" },
       { kind: "beside", terminal: terminalID(), edge: "middle" },
@@ -1020,6 +1065,7 @@ describe("sessions", () => {
           destination,
         }),
       );
+
       // oxlint-disable-next-line no-await-in-loop
       expect((await peer.reply(id)).type).toBe("failed");
     }
@@ -1038,7 +1084,8 @@ describe("sessions", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
     const projectID = "p1" as Project["id"];
 
     await peer.send(
@@ -1048,6 +1095,7 @@ describe("sessions", () => {
         intent: { kind: "inProject", projectID, branch: "feat/pty" },
       }),
     );
+
     await peer.reply(1 as RequestID);
     await peer.send(
       request({
@@ -1056,12 +1104,14 @@ describe("sessions", () => {
         intent: { kind: "inProject", projectID },
       }),
     );
+
     await peer.reply(2 as RequestID);
 
     expect(intents).toEqual([
       { kind: "inProject", projectID, branch: "feat/pty" },
       { kind: "inProject", projectID },
     ]);
+
     expect(Object.hasOwn(intents[1] ?? {}, "branch")).toBe(false);
   });
 });
@@ -1081,7 +1131,8 @@ describe("terminal lifecycle", () => {
         startTerminal: () => Promise.reject(new Error("nothing may start here")),
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -1097,6 +1148,7 @@ describe("terminal lifecycle", () => {
       id: 1 as RequestID,
       text: created,
     });
+
     expect(asked).toEqual([{ session: "s1" as SessionID, title: "Notes" }]);
   });
 
@@ -1113,7 +1165,8 @@ describe("terminal lifecycle", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -1140,7 +1193,8 @@ describe("terminal lifecycle", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       wireControl({
@@ -1170,7 +1224,8 @@ describe("terminal lifecycle", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "restartTerminal", id: 1 as RequestID, terminalID: going }));
 
@@ -1191,7 +1246,8 @@ describe("terminal lifecycle", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "removeTerminal", id: 1 as RequestID, terminalID: going }));
 
@@ -1213,7 +1269,7 @@ describe("integrations", () => {
 
   test("the overview round-trips as text", async () => {
     const daemon = fixture({ integrations: fakeIntegrations({ integrations: [CLAUDE] }) });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(request({ type: "integrations", id: 1 as RequestID }));
     const reply = await peer.reply(1 as RequestID);
@@ -1226,7 +1282,7 @@ describe("integrations", () => {
   test("installing and removing name the integration the client asked for", async () => {
     const integrations = fakeIntegrations();
     const daemon = fixture({ integrations });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({ type: "installIntegration", id: 1 as RequestID, integrationID: "codex" }),
@@ -1246,11 +1302,12 @@ describe("integrations", () => {
   test("an integration nobody ships is refused, and nothing is installed", async () => {
     const integrations = fakeIntegrations();
     const daemon = fixture({ integrations });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       wireControl({ type: "installIntegration", id: 1, integrationID: "emacs-doctor" }),
     );
+
     const reply = await peer.reply(1 as RequestID);
 
     expect(reply.type).toBe("failed");
@@ -1276,7 +1333,8 @@ describe("correlation", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -1285,6 +1343,7 @@ describe("correlation", () => {
         intent: { kind: "standalone", directory: "/tmp/x" as Session["directory"] },
       }),
     );
+
     await peer.send(
       request({
         type: "renameSession",
@@ -1320,7 +1379,8 @@ describe("correlation", () => {
         },
       },
     });
-    const peer = await daemon.connect();
+
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       request({
@@ -1329,6 +1389,7 @@ describe("correlation", () => {
         intent: { kind: "standalone", directory: "/tmp/x" as Session["directory"] },
       }),
     );
+
     await peer.send(
       request({
         type: "renameSession",
@@ -1337,6 +1398,7 @@ describe("correlation", () => {
         name: "collision",
       }),
     );
+
     await until(() => daemon.with("duplicate request id").length === 1, "the duplicate to be seen");
 
     expect(renamed).toEqual([]);
@@ -1351,7 +1413,7 @@ describe("correlation", () => {
   test("a request whose id is unusable gets no reply, and the connection lives", async () => {
     const terminal = fakeTerminal(terminalID());
     const daemon = fixture({ terminals: [terminal] });
-    const peer = await daemon.connect();
+    const peer = await daemon.connect(undefined);
 
     await peer.send(
       wireControl({
@@ -1360,6 +1422,7 @@ describe("correlation", () => {
         intent: { kind: "standalone", directory: "/tmp/x" },
       }),
     );
+
     await until(() => daemon.with("request malformed").length === 1, "the malformed request");
 
     expect(peer.controls).toHaveLength(1);
@@ -1381,6 +1444,7 @@ describe("correlation", () => {
         recoverySuggestion: "If this keeps happening, please file an issue with the log.",
       },
     });
+
     expect(terminal.attachCalls).toEqual([]);
   });
 });

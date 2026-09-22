@@ -27,6 +27,7 @@ export function tauriAppearance(deps: AppearanceDeps = {}): AppearanceControl {
   const setTheme = deps.setTheme ?? ((theme) => getCurrentWindow().setTheme(theme));
   const setDockIcon =
     deps.setDockIcon ?? ((appearance) => invoke<void>("set_dock_icon", { appearance }));
+
   const darkScheme = deps.darkScheme ?? window.matchMedia(DARK_SCHEME);
 
   const syncDock = (): Promise<void> => setDockIcon(darkScheme.matches ? "dark" : "light");

@@ -199,6 +199,7 @@ describe("resolveTerminalLaunch", () => {
       shell,
       processes: scriptedProcesses().processes,
     });
+
     const fromArgv = await resolveTerminalLaunch({
       session,
       terminal: descriptor(),

@@ -95,6 +95,7 @@ describe("tauriAppUpdater", () => {
       [40, 100],
       [100, 100],
     ]);
+
     expect(fake.closed).toBe(1);
   });
 

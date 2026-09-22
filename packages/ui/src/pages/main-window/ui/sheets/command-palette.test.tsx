@@ -79,6 +79,7 @@ describe("rankedSessionRows", () => {
     expect(rankedSessionRows("fpty", [janela], [pty, scratch], NO_STATES)[0]?.label).toBe(
       "fix/pty",
     );
+
     expect(rankedSessionRows("janela", [janela], [pty, scratch], NO_STATES)[0]?.label).toBe(
       "fix/pty",
     );
@@ -118,20 +119,20 @@ describe("rankedSessionRows", () => {
   });
 });
 
-describe("CommandPalette markup", () => {
-  const drawn = (): string =>
-    renderToStaticMarkup(
-      <CommandPalette
-        projects={PROJECTS}
-        sessions={SESSIONS}
-        terminalStates={NO_STATES}
-        commands={COMMANDS}
-        onPick={noop}
-        onPickSession={noop}
-        onCancel={noop}
-      />,
-    );
+const drawn = (): string =>
+  renderToStaticMarkup(
+    <CommandPalette
+      projects={PROJECTS}
+      sessions={SESSIONS}
+      terminalStates={NO_STATES}
+      commands={COMMANDS}
+      onPick={noop}
+      onPickSession={noop}
+      onCancel={noop}
+    />,
+  );
 
+describe("CommandPalette markup", () => {
   test("a command's accelerator is drawn as one keycap per glyph", () => {
     const markup = drawn();
 

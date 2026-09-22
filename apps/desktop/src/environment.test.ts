@@ -468,6 +468,7 @@ describe("liveEnvironment", () => {
     environment.focus.install((id) => {
       view.focusTerminal(id);
     });
+
     const focusedSurface: string[] = [];
 
     const surface: TerminalSurfaceHandle = {

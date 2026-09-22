@@ -1,5 +1,6 @@
 import {
   isIntegrationID,
+  type AbsolutePath,
   type GridSize,
   type Project,
   type Session,
@@ -42,7 +43,7 @@ export interface ClientConnection {
   readonly rendering: ReadonlySet<TerminalID>;
   readonly inFlight: Set<RequestID>;
   subscribe(scope: SubscriptionScope): void;
-  attach(terminal: LiveTerminal, viewport?: GridSize): GridSize | undefined;
+  attach(terminal: LiveTerminal, viewport: GridSize | undefined): GridSize | undefined;
   detach(terminalID: TerminalID): GridSize | undefined;
   send(message: DaemonMessage): void;
 }
@@ -185,10 +186,15 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
         },
 
         addProject: async (request) => {
-          await projects.addProject({
+          const details: { directory: AbsolutePath; name?: string } = {
             directory: request.directory,
-            ...(request.name !== undefined && { name: request.name }),
-          });
+          };
+
+          if (request.name !== undefined) {
+            details.name = request.name;
+          }
+
+          await projects.addProject(details);
 
           return acknowledged(id);
         },
@@ -438,6 +444,7 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
                 type: message.type,
                 error: errorName(cause),
               });
+
               connection.send({ type: "failed", id, failure: wireFailure(cause) });
             },
           }),
@@ -498,11 +505,17 @@ function wireFailure(cause: unknown): UserFacingFailure {
     ? cause
     : new UnexpectedFailure("Couldn't complete the request.", cause);
 
-  return {
+  const failure: { -readonly [Key in keyof UserFacingFailure]: UserFacingFailure[Key] } = {
     summary: shown.summary,
-    ...(shown.reason !== undefined && { reason: shown.reason }),
-    ...(shown.recoverySuggestion !== undefined && {
-      recoverySuggestion: shown.recoverySuggestion,
-    }),
   };
+
+  if (shown.reason !== undefined) {
+    failure.reason = shown.reason;
+  }
+
+  if (shown.recoverySuggestion !== undefined) {
+    failure.recoverySuggestion = shown.recoverySuggestion;
+  }
+
+  return failure;
 }

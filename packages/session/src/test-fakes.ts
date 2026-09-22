@@ -396,6 +396,7 @@ export function fakeAutomation(options: FakeAutomationOptions = {}): FakeAutomat
             role: { kind: "automation", event: request.event },
             createdAt: now(),
           };
+
           attached.push(descriptor);
           await request.attach(descriptor);
         }

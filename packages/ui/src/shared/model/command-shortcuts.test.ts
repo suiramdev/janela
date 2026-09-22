@@ -82,6 +82,7 @@ describe("shortcutViolation", () => {
     expect(shortcutViolation(settings, "splitDown", "CmdOrCtrl+E")).toBe(
       "⌘E already means Split Vertically.",
     );
+
     expect(shortcutViolation(settings, "splitDown", "CmdOrCtrl+D")).toBeUndefined();
   });
 

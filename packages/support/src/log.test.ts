@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe("log", () => {
   test("records are dropped before a sink is installed", () => {
-    expect(() => log("protocol").info("nobody is listening")).not.toThrow();
+    expect(() => log("protocol").info("nobody is listening", undefined)).not.toThrow();
   });
 
   test("a record reaches the installed sink with its level, category and message", () => {
@@ -22,7 +22,7 @@ describe("log", () => {
 
     setLogSink(sink);
 
-    log("session").notice("session created");
+    log("session").notice("session created", undefined);
 
     expect(records).toEqual([{ level: "notice", category: "session", message: "session created" }]);
   });
@@ -35,7 +35,7 @@ describe("log", () => {
     const logger = log("git");
 
     logger.debug("git finished", { subcommand: "worktree", exitCode: 0 });
-    logger.debug("git finished");
+    logger.debug("git finished", undefined);
 
     expect(records[0]?.fields).toEqual({ subcommand: "worktree", exitCode: 0 });
     expect(records[1]).not.toHaveProperty("fields");
@@ -48,11 +48,11 @@ describe("log", () => {
 
     const logger = log("pty");
 
-    logger.debug("d");
-    logger.info("i");
-    logger.notice("n");
-    logger.warning("w");
-    logger.error("e");
+    logger.debug("d", undefined);
+    logger.info("i", undefined);
+    logger.notice("n", undefined);
+    logger.warning("w", undefined);
+    logger.error("e", undefined);
 
     expect(records.map((record) => record.level)).toEqual([
       "debug",
@@ -69,7 +69,7 @@ describe("log", () => {
 
     setLogSink(sink);
 
-    logger.info("late");
+    logger.info("late", undefined);
 
     expect(records).toHaveLength(1);
   });
@@ -77,6 +77,6 @@ describe("log", () => {
   test("nullLogSink discards", () => {
     setLogSink(nullLogSink);
 
-    expect(() => log("db").error("nowhere")).not.toThrow();
+    expect(() => log("db").error("nowhere", undefined)).not.toThrow();
   });
 });

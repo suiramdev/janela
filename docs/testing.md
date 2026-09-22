@@ -303,7 +303,7 @@ paths.
   "verify `createWorktree` was called once".
 - **A test for a bug reproduces the bug first.** Watch it fail, then fix it.
   Otherwise you have not proven the test covers the fix.
-- **The test name carries what a comment used to.** `begone-slop/no-comments`
+- **The test name carries what a comment used to.** `oxslop/no-comments`
   applies to `*.test.ts` as well, so a fact about why a case exists belongs in
   the `test("…")` string, not above it.
 - **Blank lines between runs of `expect()` are required.** `expect-padding` is
@@ -312,4 +312,4 @@ paths.
 - **Tests may assert what production code may not.** `!` and `console` are
   allowed there, and so is `as T` without a `SAFETY:` justification: a fixture
   branding a literal is stating the test's premise, not claiming an invariant.
-  Every other begone-slop rule applies to tests exactly as it does to source.
+  Every other oxslop rule applies to tests exactly as it does to source.

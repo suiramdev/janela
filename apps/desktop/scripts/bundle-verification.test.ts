@@ -164,6 +164,7 @@ describe("verifyBundle", () => {
         "com.apple.security.app-sandbox",
       ]),
     );
+
     signInsideOut(app);
     sign(join(app, SIDECAR_BUNDLE_PROGRAM), { entitlements: sandboxed });
     sign(app, { entitlements: ENTITLEMENTS });
@@ -216,6 +217,7 @@ describe("verifyBundle", () => {
     expect(problems).toContain(
       "Contents/Library/LaunchAgents/sh.janela.janelad.plist: not sealed by the code signature",
     );
+
     expect(problems.some((problem) => problem.startsWith("the bundle:"))).toBe(true);
   });
 

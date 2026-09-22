@@ -12,6 +12,7 @@ export interface LoadedCell extends IBufferCell {
 }
 
 export type MouseTracking = "none" | "x10" | "vt200" | "drag" | "any";
+
 export type MouseEncoding = "default" | "sgr" | "sgrPixels";
 
 export interface ModeState {
@@ -110,6 +111,7 @@ export class RepaintEncoder {
   reserve(size: GridSize): void {
     this.bound =
       size.rows * (size.columns * MAX_CELL_BYTES + ROW_OVERHEAD_BYTES) + FRAME_OVERHEAD_BYTES;
+
     this.bytes = new Uint8Array(Math.min(this.bound, INITIAL_CAPACITY));
     this.length = 0;
     this.overflowed = false;

@@ -8,6 +8,7 @@ describe("janelad's command line", () => {
       kind: "usage",
       problem: 'unknown argument "--socket"',
     });
+
     expect(parseDaemonArguments(["--foreground", "-v"])).toEqual({
       kind: "usage",
       problem: 'unknown argument "-v"',

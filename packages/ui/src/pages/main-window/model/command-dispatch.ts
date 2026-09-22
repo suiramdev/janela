@@ -256,7 +256,7 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     },
 
     openSettings: () => {
-      view.showSettings();
+      view.showSettings(undefined);
     },
 
     stopDaemon: async () => {

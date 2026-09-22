@@ -204,6 +204,7 @@ describe("the sidebar", () => {
       "janela",
       "api",
     ]);
+
     expect(markup.indexOf("Janela")).toBeLessThan(markup.indexOf("Projects"));
     expect(markup.indexOf("Projects")).toBeLessThan(markup.indexOf(`tab-project-${JANELA.id}`));
   });
@@ -239,6 +240,7 @@ describe("the sidebar", () => {
     expect(markup).toMatch(
       /role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!<\/button>).)*Integrations/,
     );
+
     expect([...markup.matchAll(/aria-selected="true"/g)]).toHaveLength(1);
     expect(markup).toContain('data-sidebar="footer"');
     expect(markup.indexOf("Back")).toBeGreaterThan(markup.indexOf(`tab-project-${API.id}`));
@@ -310,6 +312,7 @@ describe("the pane", () => {
     expect(
       renderToStaticMarkup(<SettingsPane {...props(tabRoute("appearance"), PROJECTS, draft)} />),
     ).toContain('value="21"');
+
     expect(
       renderToStaticMarkup(<SettingsPane {...props(projectRoute(JANELA), PROJECTS, draft)} />),
     ).toContain('value="/tmp/trees"');
@@ -372,6 +375,7 @@ describe("the Permissions pane", () => {
     expect(/role="switch"[^>]*aria-checked="(?<state>[a-z]+)"/u.exec(asks)?.groups?.["state"]).toBe(
       "true",
     );
+
     expect(
       /role="switch"[^>]*aria-checked="(?<state>[a-z]+)"/u.exec(silenced)?.groups?.["state"],
     ).toBe("false");
@@ -418,6 +422,7 @@ describe("the Notifications pane", () => {
     const bellSelect = /<select[^>]*aria-label="Sound — A terminal rings the bell"[^>]*/.exec(
       markup,
     );
+
     const waitingSelect = /<select[^>]*aria-label="Sound — An agent is waiting for you"[^>]*/.exec(
       markup,
     );

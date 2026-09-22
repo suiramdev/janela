@@ -99,6 +99,7 @@ describe("acting on one integration", () => {
       { type: "removeIntegration", integrationID: "claude" },
       { type: "integrations" },
     ]);
+
     expect(after.integrations).toHaveLength(1);
   });
 });

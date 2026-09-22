@@ -166,8 +166,12 @@ This is what makes `SessionStore` testable with an in-memory database and a fake
 
 ## Documentation comments
 
-There are none. `begone-slop/no-comments` rejects every comment in a `.ts` or
+There are none. `oxslop/no-comments` rejects every comment in a `.ts` or
 `.tsx` file except the five kinds below, and a doc comment is not among them.
+Its `allowJsdoc` option defaults to true; `.oxlintrc.json` sets it to false, so
+that the exempt set stays the closed one below. The one exception is `*.d.ts`,
+where an ambient `declare module` has no name or type to carry why the specifier
+is declared at all.
 
 What a doc comment used to carry now lives somewhere a reader can find it and a
 refactor cannot silently invalidate:

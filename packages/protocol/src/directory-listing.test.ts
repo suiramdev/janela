@@ -76,9 +76,11 @@ describe("the directory listing on the wire", () => {
     expect(() =>
       parseDirectoryListing(corrupted("entries", [{ name: "x", kind: "symlink" }])),
     ).toThrow(TypeError);
+
     expect(() =>
       parseDirectoryListing(corrupted("entries", [{ name: "", kind: "directory" }])),
     ).toThrow(TypeError);
+
     expect(() => parseDirectoryListing(corrupted("entries", [null]))).toThrow(TypeError);
   });
 

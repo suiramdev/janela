@@ -46,11 +46,13 @@ export function placeRows(rows: readonly MenuRow[]): readonly PlacedRow[] {
     if (row.kind === "item") {
       index += 1;
       placed.push({ row, key: `item:${row.label}`, index });
+
       continue;
     }
 
     if (row.kind === "label") {
       placed.push({ row, key: `label:${row.label}`, index: -1 });
+
       continue;
     }
 

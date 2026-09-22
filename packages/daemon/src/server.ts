@@ -148,6 +148,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       log,
       settled: (terminal) => terminalEvents.reconcile(terminal),
     });
+
   const handshakeDeadlineMs = options.handshakeDeadlineMs ?? HANDSHAKE_DEADLINE_MS;
 
   const connections = new Map<string, Connection>();
@@ -427,6 +428,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       clientName: connection.clientName,
       uid: connection.credential.uid,
     };
+
     log.info("client connected", pid === undefined ? fields : { ...fields, pid });
 
     return true;
@@ -502,6 +504,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
         ? { ...base, terminalID: cause.reason.terminalID }
         : base,
     );
+
     await closeConnection(connection, "connection failed");
   }
 
@@ -577,6 +580,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
               await Promise.all(
                 [...open].map((connection) => closeConnection(connection, "daemon stopping")),
               );
+
               await Promise.allSettled(tasks);
             }),
           ),

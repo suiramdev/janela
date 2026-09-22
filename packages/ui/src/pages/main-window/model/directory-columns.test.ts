@@ -61,6 +61,7 @@ describe("opening", () => {
       at("/Users/ada/code"),
       at("/Users/ada/code/janela"),
     ]);
+
     expect(chosenDirectory(deep)).toBe(at("/Users/ada/code/janela"));
     expect(deep.focused).toBe(1);
 

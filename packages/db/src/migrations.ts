@@ -123,6 +123,7 @@ function apply(
                 ),
               ),
       );
+
       const id = crypto.randomUUID();
 
       yield* Effect.tryPromise({
@@ -130,6 +131,7 @@ function apply(
           transaction.executeRaw(textQuery(START_MIGRATION, [id, checksum, migration.name])),
         catch: failed,
       });
+
       yield* Effect.tryPromise({
         try: () => connection.executeScript(migration.sql),
         catch: failed,
@@ -152,6 +154,7 @@ function apply(
         try: () => transaction.executeRaw(textQuery(FINISH_MIGRATION, [id])),
         catch: failed,
       });
+
       yield* Effect.tryPromise({ try: () => transaction.commit(), catch: failed });
 
       log.info("migration applied", { migration: migration.name });

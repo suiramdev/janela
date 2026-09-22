@@ -148,6 +148,7 @@ describe("the daemon's sink", () => {
         fields: { session: "s1" },
       }),
     );
+
     expect(Date.now() - Date.parse(record.time)).toBeLessThan(RECENT_MS);
     expect(sink.captured).toEqual([]);
   });
@@ -157,7 +158,7 @@ describe("the daemon's sink", () => {
     const path = join(directory.path, "logs", "janelad.log");
     using sink = install(path, true);
 
-    log("protocol").info("listening");
+    log("protocol").info("listening", undefined);
 
     expect(sink.captured).toHaveLength(1);
     expect(sink.captured[0]).toBe(`${sink.lines()[0] ?? ""}\n`);
@@ -176,7 +177,7 @@ describe("the daemon's sink", () => {
     expect(first.message).toBe("log file unavailable");
     expect(first.fields).toEqual({ error: "EEXIST" });
 
-    log("app").info("still logging");
+    log("app").info("still logging", undefined);
 
     expect(sink.captured).toHaveLength(2);
     expect(sink.captured[1]).toContain('"message":"still logging"');
@@ -227,6 +228,7 @@ describe("the daemon's sink", () => {
       atLimit,
       pastLimit: `<${FIELD_VALUE_LIMIT + 1} characters elided>`,
     });
+
     expect(readFileSync(path, "utf8")).not.toContain("bbbb");
   });
 
@@ -235,7 +237,7 @@ describe("the daemon's sink", () => {
     const path = join(directory.path, "logs", "janelad.log");
     using sink = install(path, false);
 
-    log("pty").debug("SECRET-9f3c\nsecond line");
+    log("pty").debug("SECRET-9f3c\nsecond line", undefined);
 
     expect(sink.lines()[0]).toContain('"message":"<23 characters elided>"');
   });

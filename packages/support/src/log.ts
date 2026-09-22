@@ -23,11 +23,11 @@ export interface LogSink {
 }
 
 export interface Logger {
-  debug(message: string, fields?: LogRecord["fields"]): void;
-  info(message: string, fields?: LogRecord["fields"]): void;
-  notice(message: string, fields?: LogRecord["fields"]): void;
-  warning(message: string, fields?: LogRecord["fields"]): void;
-  error(message: string, fields?: LogRecord["fields"]): void;
+  debug(message: string, fields: LogRecord["fields"]): void;
+  info(message: string, fields: LogRecord["fields"]): void;
+  notice(message: string, fields: LogRecord["fields"]): void;
+  warning(message: string, fields: LogRecord["fields"]): void;
+  error(message: string, fields: LogRecord["fields"]): void;
 }
 
 export const nullLogSink: LogSink = {

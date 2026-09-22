@@ -139,6 +139,7 @@ describe("webSocketURL", () => {
     expect(webSocketURL({ protocol: "http:", host: "localhost:1421" })).toBe(
       `ws://localhost:1421${WEB_SOCKET_PATH}`,
     );
+
     expect(webSocketURL({ protocol: "https:", host: "mac.tail.ts.net" })).toBe(
       `wss://mac.tail.ts.net${WEB_SOCKET_PATH}`,
     );

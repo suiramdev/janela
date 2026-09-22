@@ -65,6 +65,7 @@ function main(): void {
     process.stderr.write(
       `updater-manifest: ${signaturePath} not found — was the bundle built with createUpdaterArtifacts?\n`,
     );
+
     process.exit(1);
   }
 

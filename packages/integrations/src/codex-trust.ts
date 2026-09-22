@@ -30,10 +30,12 @@ export function codexTrustHash(subject: CodexTrustSubject): string {
       type: "command",
     },
   ];
+
   const payload =
     subject.matcher === undefined
       ? { event_name: subject.label, hooks }
       : { event_name: subject.label, hooks, matcher: subject.matcher };
+
   const digest = createHash(TRUST_HASH_ALGORITHM)
     .update(JSON.stringify(sortKeys(payload)))
     .digest("hex");

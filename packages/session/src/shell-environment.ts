@@ -114,6 +114,7 @@ export async function resolveShellEnvironment(
     timeoutMs,
     options.account ?? accountInformation,
   );
+
   const inherited = withoutUndefined(processEnvironment);
   const resolved = await capture({ loginShell, inherited, processes, timeoutMs, log });
 

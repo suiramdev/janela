@@ -302,6 +302,7 @@ describe("creation", () => {
         intent: { kind: "inProject", projectID: project.id, branch: "main" },
       },
     ]);
+
     expect(context.sessions.selection).toBe(appeared.id);
     expect(handle.calls).toEqual(["focus"]);
   });
@@ -375,6 +376,7 @@ describe("splits", () => {
       terminal: other.id,
       edge: "bottom",
     });
+
     await moveTerminal(context.target.connection, session.id, terminal.id, { kind: "newTab" });
 
     expect(context.sent).toEqual([
@@ -702,6 +704,7 @@ describe("no target", () => {
       "pickDirectory:Add Project",
       "pickDirectory:Open Folder",
     ]);
+
     expect(context.sent.map((message) => message.type)).toEqual(["addProject", "createSession"]);
   });
 

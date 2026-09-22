@@ -55,9 +55,11 @@ export function createDirectoryBrowser(deps: DirectoryBrowserDependencies): Dire
           catch: (cause) => new DirectoryUnreadable(directory, errnoOf(cause)),
         }),
       );
+
       const visible = names
         .filter((entry) => !entry.name.startsWith(HIDDEN_PREFIX))
         .toSorted((left, right) => byName.compare(left.name, right.name));
+
       const kept = visible.slice(0, limit);
       const classified = await Promise.all(kept.map((entry) => classify(directory, entry)));
       const listing: DirectoryListing = {

@@ -114,9 +114,11 @@ describe("startChoices", () => {
       checkout: `Checked out in the worktree at ${WORKTREE}.`,
       worktree: undefined,
     });
+
     expect(detail("fix/pty", "worktree")).toBe(
       "The worktree this branch already has, or a new one you name.",
     );
+
     expect(defaultStart(startChoices("fix/pty", OVERVIEW, []))).toBe("worktree");
   });
 
@@ -125,6 +127,7 @@ describe("startChoices", () => {
       checkout: "This branch does not exist yet.",
       worktree: undefined,
     });
+
     expect(defaultStart(startChoices("spike/parser", OVERVIEW, []))).toBe("worktree");
   });
 });
@@ -134,6 +137,7 @@ describe("worktreesFor", () => {
     expect(worktreesFor("fix/pty", OVERVIEW, [])).toEqual([
       { directory: WORKTREE, name: "fix-pty" },
     ]);
+
     expect(worktreesFor("main", OVERVIEW, [])).toEqual([]);
     expect(worktreesFor("idea", OVERVIEW, [])).toEqual([]);
   });
@@ -176,6 +180,7 @@ describe("newSessionIntent", () => {
         [],
       ),
     ).toEqual({ kind: "adoptWorktree", projectID: project.id, directory: WORKTREE });
+
     expect(newSessionIntent(project.id, draft("idea", "worktree"), OVERVIEW, [])).toEqual({
       kind: "newWorktree",
       projectID: project.id,
@@ -207,6 +212,7 @@ describe("newSessionIntent", () => {
         open,
       ]),
     ).toBeUndefined();
+
     expect(newSessionIntent(project.id, draft("  ", "worktree"), OVERVIEW, [])).toBeUndefined();
   });
 
@@ -218,6 +224,7 @@ describe("newSessionIntent", () => {
       name: "spike/parser",
       startPoint: "main",
     });
+
     expect(
       Object.keys(newSessionIntent(project.id, draft("idea", "worktree"), OVERVIEW, []) ?? {}),
     ).not.toContain("startPoint");
@@ -233,6 +240,7 @@ describe("newSessionIntent", () => {
       name: "review",
       shareBranch: true,
     });
+
     expect(
       newSessionIntent(
         project.id,
@@ -253,6 +261,7 @@ describe("newSessionIntent", () => {
     expect(
       newSessionIntent(project.id, draft("fix/pty", "checkout"), OVERVIEW, []),
     ).toBeUndefined();
+
     expect(
       newSessionIntent(project.id, draft("spike/parser", "checkout"), OVERVIEW, []),
     ).toBeUndefined();
@@ -282,6 +291,7 @@ describe("preselectedBranch", () => {
         worktrees: [{ directory: REPO, branch: "fix/pty", isMain: true }],
       }),
     ).toBe("fix/pty");
+
     expect(preselectedBranch(fakeFolderProject(), { branches: ["z", "a"], worktrees: [] })).toBe(
       "z",
     );
@@ -294,6 +304,7 @@ describe("standaloneIntent", () => {
       kind: "standalone",
       directory: absolutePath("/tmp/notes"),
     });
+
     expect(standaloneIntent("")).toBeUndefined();
     expect(standaloneIntent("notes")).toBeUndefined();
   });

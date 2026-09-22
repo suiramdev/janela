@@ -100,18 +100,18 @@ async function canonicalPath(path: string): Promise<string> {
   return resolved;
 }
 
+function find(id: IntegrationID): Integration {
+  const integration = INTEGRATIONS.find((candidate) => candidate.id === id);
+
+  if (integration === undefined) throw new UnknownIntegration({ integration: id });
+
+  return integration;
+}
+
 export function createIntegrationService(options: IntegrationServiceOptions): IntegrationService {
   const log = options.log ?? silentLogger;
   const files = integrationFiles();
   const { home, processes } = options;
-
-  const find = (id: IntegrationID): Integration => {
-    const integration = INTEGRATIONS.find((candidate) => candidate.id === id);
-
-    if (integration === undefined) throw new UnknownIntegration({ integration: id });
-
-    return integration;
-  };
 
   return {
     async overview(): Promise<IntegrationOverview> {

@@ -136,6 +136,7 @@ describe("AppSidebar markup", () => {
     const closed = renderSidebar(
       fakeEnvironment({ projects: [project("p", false)], sessions: [inside] }),
     );
+
     const open = renderSidebar(
       fakeEnvironment({ projects: [project("p", true)], sessions: [inside] }),
     );
@@ -145,6 +146,7 @@ describe("AppSidebar markup", () => {
       expect(markup.indexOf('data-sidebar="menu-button"')).toBeLessThan(
         markup.indexOf('data-sidebar="menu-sub"'),
       );
+
       expect(markup).toMatch(
         /<button[^>]*aria-label="member — idle"[^>]*data-sidebar="menu-sub-button"/u,
       );
@@ -193,6 +195,7 @@ describe("AppSidebar markup", () => {
     expect(markup.indexOf('data-sidebar="header"')).toBeLessThan(
       markup.indexOf('data-sidebar="content"'),
     );
+
     expect(markup).toContain('data-slot="scroll-area-viewport"');
   });
 
@@ -204,6 +207,7 @@ describe("AppSidebar markup", () => {
     expect(overlaid.indexOf(WINDOW_CONTROLS_ROOM)).toBeLessThan(
       overlaid.indexOf('aria-label="Search"'),
     );
+
     expect(fullscreen).not.toContain(WINDOW_CONTROLS_ROOM);
   });
 

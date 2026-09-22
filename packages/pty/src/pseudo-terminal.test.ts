@@ -369,6 +369,7 @@ describe("the window size", () => {
       pixelWidth: Number.NaN,
       pixelHeight: Number.POSITIVE_INFINITY,
     });
+
     await drainUntil(terminal, /0 65535/);
   });
 });
@@ -434,6 +435,7 @@ describe("marshalling", () => {
       "a\tb",
       "héllo→",
     ]);
+
     const seen = await drainUntil(terminal, /JANELA_ARGV_DONE/);
 
     terminal.write(NEWLINE);
@@ -452,12 +454,14 @@ describe("marshalling", () => {
       `JANELA_VAR_${index}`,
       index === 7 ? large : `value-${index}`,
     ]);
+
     const environment = { ...HERMETIC_ENVIRONMENT, ...Object.fromEntries(many) };
     const terminal = spawn(
       "/bin/sh",
       ["sh", "-c", 'stty raw -echo; env; printf "JANELA_ENV_DONE\\n"; read _'],
       environment,
     );
+
     const seen = await drainUntil(terminal, /JANELA_ENV_DONE/);
 
     terminal.write(NEWLINE);
@@ -540,12 +544,15 @@ describe("failures", () => {
     expect(new PseudoTerminalFailure(new NotRunning()).summary).toBe(
       "This terminal isn't running.",
     );
+
     expect(
       new PseudoTerminalFailure(new CouldNotStart({ path: "/bin/sh", errno: 2 })).summary,
     ).toBe("Couldn't start /bin/sh.");
+
     expect(new PseudoTerminalFailure(new CouldNotAllocateTerminal({ errno: 24 })).summary).toBe(
       "Couldn't open a terminal.",
     );
+
     expect(pseudoTerminalFailureLabel(failure.detail)).toBe("readFailed");
   });
 });
@@ -703,6 +710,7 @@ describe("back-pressure", () => {
     for (let index = 0; index < expected.length; index += 1) {
       if (collected[index] !== expected[index]) {
         mismatch = index;
+
         break;
       }
     }
