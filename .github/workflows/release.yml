@@ -155,8 +155,10 @@ jobs:
 
       # `verify-bundle` reads the APPLE_* variables: present, it demands a
       # Developer ID signature and a stapled ticket; absent, it demands ad-hoc.
-      # Secrets that do not exist arrive as empty strings, which count as absent,
-      # so nothing here branches on the mode.
+      # A secret that does not exist arrives as an empty string, which
+      # `verify-bundle` counts as absent — but the Tauri bundler counts as a
+      # certificate and feeds to `security import`, which fails. So the empty
+      # ones are unset before the build, and nothing else branches on the mode.
       - name: Bundle, sign, verify
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -167,7 +169,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: bun run --cwd apps/desktop bundle:release
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          bun run --cwd apps/desktop bundle:release
 
       # Tauri notarizes the .app; the disk image around it is signed but not
       # notarized, and Gatekeeper checks the image the user double-clicks first.
