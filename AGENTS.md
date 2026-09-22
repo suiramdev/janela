@@ -351,6 +351,8 @@ Run `bun run check`. It must pass. Then confirm:
 - [ ] Did you add a third-party import? Declare it in that package's
       `package.json` at the version already in `bun.lock`. `bun run check:layers`
       fails on an undeclared one — Bun's hoisting would otherwise resolve it.
+      Renovate keeps it current from there; if it must not move, say why in
+      [`docs/dependencies.md`](docs/dependencies.md) and in `.github/renovate.json5`.
 - [ ] Did you add a file to `@janela/ui`? It goes in a slice or a shared segment,
       reached through that boundary's `index.ts`, and `bun run check:fsd` must pass.
 - [ ] Did you write a comment? Only `SAFETY:`, `@ts-expect-error`, tooling

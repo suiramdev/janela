@@ -30,6 +30,9 @@ Then, as needed:
 - **[`packages/`](packages/)** — one page per package: the decisions behind its
   modules, the constraints they were measured against, and what was deliberately
   left out. Read the page for a package before changing it.
+- **[`dependencies.md`](dependencies.md)** — how third-party versions stay
+  current: what Renovate watches, what merges itself, and what it is forbidden to
+  touch.
 - **[`scripts.md`](scripts.md)** — the workspace tooling: `bun run desktop`, the daemon
   helpers, the survival probe, and the gates that keep the build honest.
 - **[`research/`](research/)** — primary-source research behind the architecture and
@@ -50,6 +53,7 @@ Then, as needed:
 | Record a performance budget | `performance.md` |
 | Prove the daemon really owns the terminals, or record that it does not | `survival-proof.md` |
 | Explain a build or workflow step | `development.md` + a `make` target |
+| Change how a dependency gets updated, or exempt one | `dependencies.md` + `.github/renovate.json5` |
 
 ## If you have read an older version of these documents
 
