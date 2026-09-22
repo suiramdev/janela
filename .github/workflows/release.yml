@@ -1,0 +1,219 @@
+name: Release
+
+# Cut a release from main: build the bundle, verify it, and leave a DRAFT GitHub
+# Release with the dmg, the updater archive, its signature, latest.json and
+# SHA256SUMS.txt. Publishing the draft is the maintainer's click; GitHub creates
+# the immutable v<version> tag at that moment, so a build that fails here, or a
+# draft that is discarded, burns no version number. The version comes from the
+# files (`bun run version`), never from an input, so what ships is what main says.
+#
+# The procedure, the secrets and the reasons are in docs/releasing.md.
+on:
+  workflow_dispatch:
+    inputs:
+      unsigned:
+        description: "Publish an ad-hoc signed build because no Developer ID secrets exist yet"
+        type: boolean
+        default: false
+
+# One release at a time, and never cancel one that is uploading.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# Least privilege by default. The one job that writes requests it below.
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with ci.yml, and with `packageManager` in package.json.
+  BUN_VERSION: "1.4.2"
+  # Keep in sync with ci.yml, and with .node-version.
+  NODE_VERSION: "24.14.0"
+
+jobs:
+  # Everything that can refuse cheaply refuses here, before a cargo build is paid
+  # for: the wrong branch, a version the files disagree on, a version that has
+  # already shipped, and a signing mode the secrets cannot honour.
+  verify:
+    name: Refuse early
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Only main is released
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run this workflow on main; ${{ github.ref }} is not the released state"
+          exit 1
+
+      # Actions are pinned to commit SHAs, not tags — same pins as ci.yml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # scripts/version.ts imports nothing, so it runs before `bun install`.
+      - id: version
+        name: Every version site agrees
+        run: echo "version=$(bun scripts/version.ts)" >> "$GITHUB_OUTPUT"
+
+      - name: The version is unreleased
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::tag v${VERSION} already exists — bump the version first"
+            exit 1
+          fi
+          if gh release view "v${VERSION}" -R "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::a release (or draft) named v${VERSION} already exists"
+            exit 1
+          fi
+
+      # The updater archive is signed with the Tauri key whatever Apple says, so
+      # that secret is never optional. Apple signing is either fully present
+      # (Developer ID + notarization) or explicitly waived with `unsigned=true`;
+      # a half-configured set of secrets is a refusal, not a guess.
+      - id: mode
+        name: Signing mode
+        env:
+          HAS_APPLE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          UNSIGNED: ${{ inputs.unsigned }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_UPDATER_KEY" != "true" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set; the updater archive cannot be signed (docs/releasing.md)"
+            exit 1
+          fi
+          if [ "$HAS_APPLE" = "true" ] && [ "$UNSIGNED" = "true" ]; then
+            echo "::error::Developer ID secrets exist; do not ask for an unsigned build"
+            exit 1
+          fi
+          if [ "$HAS_APPLE" != "true" ] && [ "$UNSIGNED" != "true" ]; then
+            echo "::error::No Developer ID secrets. Re-run with unsigned=true to publish an ad-hoc build, or add the APPLE_* secrets (docs/releasing.md)"
+            exit 1
+          fi
+          if [ "$HAS_APPLE" = "true" ]; then
+            echo "mode=developer-id" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=adhoc" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The same recipe as ci.yml's `shell` job up to the bundle, then the release
+  # overlay (dmg + updater artifacts), notarization when there is an identity to
+  # notarize with, the updater manifest, and the draft.
+  release:
+    name: Bundle, verify and draft the release
+    runs-on: macos-15
+    needs: verify
+    # The one job in the repository that writes: it uploads the draft release.
+    # The token reaches only the final step, through GH_TOKEN.
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      MODE: ${{ needs.verify.outputs.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: cargo-shell-${{ runner.os }}-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-shell-${{ runner.os }}-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Generate the database client
+        run: bun run generate
+
+      - name: Build the PTY library
+        run: bun run build:native
+
+      # `verify-bundle` reads the APPLE_* variables: present, it demands a
+      # Developer ID signature and a stapled ticket; absent, it demands ad-hoc.
+      # Secrets that do not exist arrive as empty strings, which count as absent,
+      # so nothing here branches on the mode.
+      - name: Bundle, sign, verify
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: bun run --cwd apps/desktop bundle:release
+
+      # Tauri notarizes the .app; the disk image around it is signed but not
+      # notarized, and Gatekeeper checks the image the user double-clicks first.
+      - name: Notarize and staple the disk image
+        if: env.MODE == 'developer-id'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          DMG="apps/desktop/src-tauri/target/release/bundle/dmg/Janela_${VERSION}_aarch64.dmg"
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+
+      - name: Updater manifest
+        run: bun apps/desktop/scripts/updater-manifest.ts --version "$VERSION"
+
+      - name: Assemble the assets
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/release"
+          mkdir -p "$OUT"
+          B=apps/desktop/src-tauri/target/release/bundle
+          cp "$B/dmg/Janela_${VERSION}_aarch64.dmg" "$B/macos/Janela.app.tar.gz" "$B/macos/Janela.app.tar.gz.sig" "$B/latest.json" "$OUT/"
+          (cd "$OUT" && shasum -a 256 -- * > SHA256SUMS.txt)
+          if [ "$MODE" = "adhoc" ]; then
+            printf '%s\n\n' "**This build is not signed with a Developer ID.** macOS will refuse to open it by double-click. Either right-click Janela.app → Open, or run \`xattr -d com.apple.quarantine /Applications/Janela.app\` once after copying it from the disk image." > "$RUNNER_TEMP/notes.md"
+          else
+            : > "$RUNNER_TEMP/notes.md"
+          fi
+
+      # --draft with --target: the tag does not exist yet, and GitHub mints it at
+      # the commit named here when the draft is published. Not --prerelease, even
+      # at 0.x: `releases/latest/download/latest.json` — the updater's endpoint —
+      # skips pre-releases, so a pre-release would be one nobody is offered.
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v${VERSION}" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Janela ${VERSION}" \
+            --generate-notes \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            -R "$GITHUB_REPOSITORY" \
+            "$RUNNER_TEMP"/release/*

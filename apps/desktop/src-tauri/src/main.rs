@@ -16,6 +16,9 @@
 //!     capability is `dialog:allow-open` rather than `dialog:default`.
 //!   * the daemon sidecar's lifecycle and launch-agent registration
 //!   * **the Unix-socket bridge**, because a WebView cannot open a socket
+//!   * the app's own updates — the check, the download and the bundle swap — and
+//!     the relaunch that follows, because the WebView cannot replace the process
+//!     it runs in
 //!
 //! What does not belong here: anything about projects, sessions, terminals or the
 //! protocol's meaning. This shell relays frames; it does not read them. If Rust code
@@ -356,6 +359,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_page_load(move |_webview, payload| {
             if matches!(payload.event(), PageLoadEvent::Finished) {
                 log::info!(

@@ -150,6 +150,29 @@ bun run scripts/survival-probe.ts --attach <id> --protocol-version 14
 - The first repaint is copied at the point of decode: the payload is a view valid
   only until the next push.
 
+## `version.ts` — `bun run version [X.Y.Z]`
+
+One command stamps the version everywhere it lives, and reading it back is how the
+`Release` workflow learns what it is building ([`releasing.md`](releasing.md)).
+There are four sites — `tauri.conf.json`, the shell crate's `Cargo.toml` and its
+`Cargo.lock` entry, and `JANELAD_VERSION` in `apps/daemon/src/main.ts` — because
+each is read by a tool that cannot import the others: the bundler, cargo, and a
+compiled binary that must not depend on a manifest beside it
+([`packages/janelad.md`](packages/janelad.md)). Every `package.json` stays at
+`0.0.0`: private, never published, invisible to users.
+
+- **Regex over parsers, and no imports.** A JSON parser would reformat
+  `tauri.conf.json`, a TOML parser would reorder `Cargo.toml`, and any third-party
+  import would stop the script running before `bun install` — which is exactly when
+  the workflow's `verify` job runs it. Each site is one anchored pattern replacing
+  only the version between its capture groups.
+- With no argument it prints the version **only when every site agrees**, and exits
+  1 naming each site otherwise — the workflow's first refusal. `version.test.ts`
+  reads the real repository, so a half-bump fails `bun test` before it fails a
+  release.
+- The argument must be `MAJOR.MINOR.PATCH` with an optional pre-release, and never
+  a leading `v`: the `v` belongs to the tag, which GitHub mints at publish time.
+
 ## `scaffold.ts`
 
 One-shot scaffolder for the workspace's `package.json` and `tsconfig.json` files,

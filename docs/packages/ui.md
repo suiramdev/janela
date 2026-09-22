@@ -486,6 +486,26 @@ restart would be worse than no banner.
   `AlertAction` reserves — hence `static` on the action and both `has-[action]` rules
   overridden here rather than fought with specificity.
 
+### `ui/update-banner.tsx`
+
+The app-update flow's face: the same inset strip and overlaid alert as the
+connection banner, in the same slot. `updateBannerModel` returns `none` whenever
+`bannerModel(connection.status)` shows anything — a daemon that is reconnecting or
+version-skewed is the more urgent fact, and two stacked banners would fight for the
+same pixels. A second overlay component rather than a case inside
+`connection-banner.tsx` because the two have different owners: one renders the
+connection's state machine, the other `ViewState.appUpdate`.
+
+- No confirmation dialog on **Update** or **Restart Now**: installing swaps
+  `Janela.app` and never touches `janelad` or its terminals, and the restart button
+  is itself the explicit choice, labelled with what survives it. The daemon
+  version-skew case after the relaunch already belongs to the connection banner.
+- A quiet check renders nothing in any state on the way to `idle`, so the scheduled
+  daily check can fail forever without the user learning the word "updater"
+  (§ Non-negotiables 10).
+- Renders `null` without `local`: the browser client cannot swap the app bundle, so
+  it never mentions updates.
+
 ### `ui/welcome.tsx`
 
 The first screen of a fresh install and the screen after removing a last session,
@@ -1114,6 +1134,24 @@ markup and this is testable without rendering one.
 ---
 
 ## `shared/model`
+
+### `app-update.ts`
+
+The update flow: `AppUpdating` is the port the desktop adapter implements (check,
+relaunch), `AppUpdateFlow` is what the command and the banner call, and
+`AppUpdateState` on `ViewState` is the single place the banner reads. The flow lives
+here rather than in the adapter because everything interesting — announced versus
+quiet checks, what a failure shows versus logs, when a check is ignored — is a
+decision, testable with a fake updater, while the adapter is plumbing.
+
+- `check({ announced })` is one method with one flag, not two methods: the states
+  differ only in whether "nothing happened" is worth a sentence (`upToDate` versus
+  `idle`, `failed` versus a log line).
+- A check while `checking`, `downloading` or `ready` returns without calling the
+  updater: the daily timer must never cancel a download the user is watching.
+- The held `AvailableUpdate` is closure state, not view state: it owns a Rust-side
+  resource on desktop and could never cross a socket, so it has no business in a
+  store of plain values.
 
 ### `background-service.ts`
 

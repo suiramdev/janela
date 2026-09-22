@@ -4,6 +4,7 @@ import type { TerminalSurfaceHandle } from "@janela/terminal-ui";
 
 import {
   type AppearanceControl,
+  type AppUpdateFlow,
   type Clipboard,
   type CommandSource,
   type ConfirmationKey,
@@ -54,6 +55,10 @@ export interface RecordingSettingsStore extends SettingsStoring {
 
 export interface RecordingAppearance extends AppearanceControl {
   readonly applied: ThemePreference[];
+}
+
+export interface RecordingAppUpdates extends AppUpdateFlow {
+  readonly calls: string[];
 }
 
 export interface RecordingSurfaceHandle extends TerminalSurfaceHandle {
@@ -222,6 +227,32 @@ export function recordingAppearance(): RecordingAppearance {
       applied.push(theme);
 
       return Promise.resolve();
+    },
+  };
+}
+
+export function recordingAppUpdates(): RecordingAppUpdates {
+  const calls: string[] = [];
+
+  return {
+    calls,
+    check({ announced }) {
+      calls.push(announced ? "check:announced" : "check:quiet");
+
+      return Promise.resolve();
+    },
+    install() {
+      calls.push("install");
+
+      return Promise.resolve();
+    },
+    relaunch() {
+      calls.push("relaunch");
+
+      return Promise.resolve();
+    },
+    dismiss() {
+      calls.push("dismiss");
     },
   };
 }

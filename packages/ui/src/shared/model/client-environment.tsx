@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import type { CommandID } from "../config/index.ts";
+import type { AppUpdateFlow } from "./app-update.ts";
 import type { ConfirmationQueue } from "./confirmation.ts";
 import type { DirectoryPicking } from "./directory-picker.ts";
 import type { SettingsStoring, ThemePreference } from "./global-settings.ts";
@@ -57,6 +58,7 @@ export interface LocalShell {
   readonly appearance: AppearanceControl;
   readonly restartDaemon: () => void;
   readonly sound: NotificationSoundControlling;
+  readonly updates: AppUpdateFlow;
 }
 
 export interface ClientEnvironment {

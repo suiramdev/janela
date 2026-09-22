@@ -1,9 +1,10 @@
-import { setLogSink, type LogRecord } from "@janela/support";
+import { log, setLogSink, type LogRecord } from "@janela/support";
 import {
   ClientEnvironmentProvider,
   MainWindow,
   SettingsScreen,
   browserClipboard,
+  createAppUpdateFlow,
   createConfirmationQueue,
   createViewState,
   localStorageSettings,
@@ -16,6 +17,7 @@ import { Match } from "effect";
 import { StrictMode, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
+import { scheduleUpdateChecks, tauriAppUpdater } from "./adapters/app-update.ts";
 import { tauriAppearance } from "./adapters/appearance.ts";
 import {
   installNativeMenu,
@@ -39,6 +41,8 @@ const environment = liveEnvironment({
 });
 
 const view = createViewState(environment.sessions);
+
+const appUpdates = createAppUpdateFlow({ updater: tauriAppUpdater(), view, logger: log("app") });
 
 const settingsStore = localStorageSettings();
 
@@ -70,6 +74,7 @@ const clientEnvironment: ClientEnvironment = {
     restartDaemon: () =>
       void environment.stopBackgroundService().then(() => environment.connection.connect()),
     sound: notificationSound,
+    updates: appUpdates,
   },
 };
 
@@ -114,6 +119,8 @@ environment.focus.install((terminalID) => {
 });
 
 syncNativeShortcuts(nativeMenuAccelerators(invoke), view);
+
+if (!import.meta.env.DEV) scheduleUpdateChecks(appUpdates);
 
 if (container === null) throw new Error(`index.html has no #${ROOT_ELEMENT_ID}`);
 

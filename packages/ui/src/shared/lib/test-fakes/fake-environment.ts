@@ -13,6 +13,7 @@ import {
   recordingConfirmations,
   recordingDirectoryPicker,
   recordingNotificationSound,
+  recordingAppUpdates,
   recordingService,
 } from "./recording-ports.ts";
 
@@ -46,6 +47,7 @@ export function fakeClientEnvironment(): ClientEnvironment {
       appearance: recordingAppearance(),
       restartDaemon: () => {},
       sound: recordingNotificationSound(),
+      updates: recordingAppUpdates(),
     },
   };
 }
@@ -83,6 +85,7 @@ export function environmentOver(state: {
       appearance: recordingAppearance(),
       restartDaemon: () => {},
       sound: recordingNotificationSound(),
+      updates: recordingAppUpdates(),
     },
   };
 }

@@ -11,6 +11,7 @@ export interface Command {
 export type CommandMenu = "app" | "file" | "view" | "session" | "terminal";
 
 export type CommandID =
+  | "checkForUpdates"
   | "openSettings"
   | "stopDaemon"
   | "newSession"
@@ -36,6 +37,7 @@ export type CommandID =
   | "clearScrollback";
 
 export const COMMANDS: readonly Command[] = [
+  { id: "checkForUpdates", title: "Check for Updates…", menu: "app", localOnly: true },
   { id: "openSettings", title: "Settings…", accelerator: "CmdOrCtrl+,", menu: "app" },
   {
     id: "stopDaemon",

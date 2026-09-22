@@ -7,7 +7,7 @@ import { daemonEnvironment, type DaemonEnvironment } from "./environment.ts";
 import { createIdleMonitor, isDaemonIdle, shutdown } from "./lifecycle.ts";
 import { defaultLogPath, installDaemonLogSink } from "./log-file.ts";
 
-const JANELAD_VERSION = "0.0.0";
+const JANELAD_VERSION = "0.1.0";
 
 const EXIT_REFUSED_ARGUMENT = 2;
 
