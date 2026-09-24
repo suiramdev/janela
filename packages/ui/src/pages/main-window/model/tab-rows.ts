@@ -47,7 +47,7 @@ export function terminalStateText(state: TerminalState | undefined): string {
   );
 }
 
-export function terminalBadgeText(state: TerminalState | undefined): string | undefined {
+export function paneStateText(state: TerminalState | undefined): string | undefined {
   if (state?.kind === "running") return undefined;
 
   if (state?.kind === "needsAttention") {

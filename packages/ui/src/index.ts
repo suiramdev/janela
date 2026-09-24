@@ -24,6 +24,7 @@ export {
   type ClientEnvironment,
   type Clipboard,
   type CommandSource,
+  type ExternalLinks,
   type ConfirmationKey,
   type DirectoryPickerQueue,
   type DirectoryPicking,
@@ -41,6 +42,7 @@ export { COMMANDS, isCommandID, type Command, type CommandID } from "./shared/co
 
 export {
   browserClipboard,
+  browserLinks,
   keyboardCommandSource,
   localStorageSettings,
   type ChordTarget,

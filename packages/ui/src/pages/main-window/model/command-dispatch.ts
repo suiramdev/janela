@@ -58,8 +58,13 @@ export function sessionOrder(
   return [...standalone, ...grouped];
 }
 
-export function selectSession(store: SessionStore, id: SessionID): void {
-  store.selection = id;
+export function selectSession(
+  target: { readonly sessions: SessionStore; readonly view: ViewState },
+  id: SessionID,
+): void {
+  target.sessions.selection = id;
+
+  if (target.view.screen.kind === "inbox") target.view.showWorkspace();
 }
 
 export function focusedTerminalOf(view: ViewState, session: Session): TerminalID | undefined {
@@ -86,7 +91,7 @@ export async function createSessionAndSelect(
 
   const terminal = focusedTerminalOf(view, appeared);
 
-  if (terminal === undefined) selectSession(sessions, appeared.id);
+  if (terminal === undefined) selectSession(target, appeared.id);
   else view.focusTerminal(terminal);
 }
 
@@ -199,7 +204,7 @@ export function createCommandDispatch(target: CommandTarget): (id: CommandID) =>
     const at = order.findIndex((session) => session.id === sessions.selection);
     const next = at === -1 ? order[0] : order[(at + delta + order.length) % order.length];
 
-    if (next !== undefined) sessions.selection = next.id;
+    if (next !== undefined) selectSession(target, next.id);
   };
 
   const stepTab = (delta: -1 | 1): void => {

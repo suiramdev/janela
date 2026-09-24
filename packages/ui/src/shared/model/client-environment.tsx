@@ -39,6 +39,10 @@ export interface Clipboard {
   paste(): Promise<string | undefined>;
 }
 
+export interface ExternalLinks {
+  open(url: string): Promise<void>;
+}
+
 export interface BackgroundServiceControlling {
   stop(): void;
   stopAndUnregister(): void;
@@ -77,6 +81,8 @@ export interface ClientEnvironment {
   readonly directories: DirectoryPicking;
 
   readonly clipboard: Clipboard;
+
+  readonly links: ExternalLinks;
 
   readonly settings: SettingsStoring;
 

@@ -33,7 +33,10 @@ failure }` plus an `exitCode` when the CLI gave one — a shape, never a payload
 
 ## index.ts
 
-The interfaces are the contract, and every field of `ForgeState` is optional
+The value types — `ForgeState`, `PullRequestSummary`, `CheckRollup`, `ForgeItem`,
+`ForgeItems` — live in `@janela/core` (`forge.ts`), because they cross the socket
+and `@janela/protocol` cannot see this package. `ForgeServing` is the contract
+here, and every field of `ForgeState` is optional
 because the CLI may be missing, logged out, rate-limited or pointed somewhere
 unreachable. `ForgeState` is not a domain entity: a pull request is not
 something Janela owns, and modelling one would make us look like we did. It
@@ -42,6 +45,15 @@ truth.
 
 `isAvailable` is called before anything is offered. A `false` hides a feature;
 it never shows a broken one.
+
+`items` answers the Inbox for one project: its pull or merge requests, its issues,
+and the signed-in login, read concurrently. Each of the three is absence on its
+own — a rate-limited issue list still leaves the pull requests — and only both
+lists failing makes the whole answer `undefined`, which the Inbox reads as "this
+CLI could not be used for this repository", never as an empty inbox. It lists by
+last update across every state, so the Inbox can offer merged and closed as well as
+open. Only identifying metadata is asked for; no body, comment or diff is ever
+fetched, because the Inbox never shows one.
 
 `pullRequestBranch` hands back a branch *name* so a worktree can be created from
 it. Never `gh pr checkout`, which would move the user's own checkout — that is
@@ -60,6 +72,9 @@ a fake somebody ships.
 | Session state, GitLab | `glab mr view [branch] --output json` | the session's directory |
 | Head branch of a PR | `gh pr view <n> --json headRefName,isCrossRepository` | the project's directory |
 | Head branch of an MR | `glab mr view <n> --output json` | the project's directory |
+| Inbox, GitHub | `gh pr list` / `gh issue list --state all --search sort:updated-desc --limit 50 --json <fields>` | the project's directory |
+| Inbox, GitLab | `glab mr list` / `glab issue list --all --order updated_at --sort desc --per-page 50 --output json` | the project's directory |
+| Signed-in login | `gh api user` / `glab api user` | the project's directory |
 | Availability | `gh auth status` / `glab auth status` | `HOME` |
 
 A worktree-backed session names its branch; a session in the project's own
@@ -94,6 +109,11 @@ is on the other end. The check runs *before* the success check on purpose: a
 megabyte of valid JSON is still something we refuse to hold (AGENTS.md
 non-negotiable 9).
 
+`FORGE_LIST_LIMIT` is 50 per list per project: the 50 most recently updated pull
+requests and the 50 most recently updated issues. An open item nobody has touched
+while fifty others moved falls out of the Inbox; that is the price of a bounded
+read, and the forge's own page is one click away.
+
 The 15 s bound (`DEFAULT_FORGE_TIMEOUT_MS`) is enforced by the subprocess runner
 through `ProcessRequest.timeoutMs`, which kills the child and reports
 `timedOut`. There is deliberately no second `Effect.timeout` around it: an
@@ -105,7 +125,8 @@ two concurrent reads one process: a second caller arriving before the first
 resolves joins it instead of spawning its own. Failures are cached exactly like
 successes, so a logged-out user does not trigger `gh` on every render. Both
 caches are swept on every read, so they stay bounded by what is live rather than
-by what has ever been asked. `pullRequestBranch` is **not** cached: it is a user
+by what has ever been asked. The Inbox lists are cached per project the same way.
+`pullRequestBranch` is **not** cached: it is a user
 action, and answering it from a minute-old read would create a worktree from a
 branch that has since moved.
 
@@ -166,6 +187,11 @@ The rollup is in precedence order: a failure outranks anything unfinished, which
 outranks a pass. No elements at all is `none` rather than `passing`, because a
 pull request with no CI configured has not passed anything. An unrecognised
 `conclusion` string is not a failure; the failed set is a closed literal list.
+
+Every URL is checked to be `http(s)` at decode time, so the only thing a client is
+ever handed to open is a web page; a list with one odd element is `unknownShape`
+as a whole, logged loudly, rather than half-believed. `reviewRequests` entries
+without a `login` are teams, and are dropped rather than refused.
 
 GitLab's `locked` state is still `open` to a reader — locked to further
 discussion, but open work. An unrecognised pipeline status decodes to `none`

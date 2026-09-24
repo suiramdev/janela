@@ -47,6 +47,7 @@ have: the stores, one `createConnection` named `janela-web`, and `start()`. No
 attention routing — a browser page delivers no OS notification in this step, and
 the sidebar's attention state still arrives with the mirror. `main.tsx` fills the
 `ClientEnvironment` from `@janela/ui`'s web-platform ports (`browserClipboard`,
+`browserLinks` — a `window.open` with `noopener`, `http(s)` only — ,
 `localStorageSettings`, `keyboardCommandSource` over
 `commandsWithShortcuts(view.settings, false)` so a saved override is what the keys
 answer to, held while a folder picker is on screen and standing aside while the

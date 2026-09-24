@@ -583,6 +583,18 @@ describe("navigation", () => {
     expect(context.sessions.selection).toBe(second.id);
   });
 
+  test("stepping to another session from the inbox shows that session", async () => {
+    const first = fakeSession({ name: "first" });
+    const second = fakeSession({ name: "second" });
+    const context = harness({ sessions: [first, second], selection: second.id });
+    const dispatch = createCommandDispatch(context.target);
+
+    context.target.view.showInbox();
+    await dispatch("nextSession");
+
+    expect(context.target.view.screen).toEqual({ kind: "workspace" });
+  });
+
   test("next and previous tab move the local focus, wrapping", async () => {
     const [a, b] = [fakeTerminal(), fakeTerminal()];
 

@@ -12,6 +12,7 @@ import {
   type ConfirmationRequest,
   DEFAULT_GLOBAL_SETTINGS,
   type DirectoryPicking,
+  type ExternalLinks,
   type GlobalSettings,
   type NativeShell,
   type NotificationSoundControlling,
@@ -47,6 +48,10 @@ export interface RecordingNotificationSound extends NotificationSoundControlling
 export interface RecordingClipboard extends Clipboard {
   readonly calls: string[];
   readonly text: string | undefined;
+}
+
+export interface RecordingLinks extends ExternalLinks {
+  readonly opened: readonly string[];
 }
 
 export interface RecordingSettingsStore extends SettingsStoring {
@@ -195,6 +200,19 @@ export function inertClipboard(): Clipboard {
   return {
     copy: () => Promise.resolve(),
     paste: () => Promise.resolve(undefined),
+  };
+}
+
+export function recordingLinks(): RecordingLinks {
+  const opened: string[] = [];
+
+  return {
+    opened,
+    open: (url) => {
+      opened.push(url);
+
+      return Promise.resolve();
+    },
   };
 }
 

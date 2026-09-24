@@ -135,7 +135,7 @@ function SheetBody(props: {
       const session = sessionStore.sessions.find((candidate) => candidate.id === sessionID);
       const terminal = session === undefined ? undefined : focusedTerminalOf(view, session);
 
-      if (terminal === undefined) selectSession(sessionStore, sessionID);
+      if (terminal === undefined) selectSession({ sessions: sessionStore, view }, sessionID);
       else view.focusTerminal(terminal);
     },
     [onClose, sessionStore, view],

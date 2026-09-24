@@ -2,6 +2,7 @@ import {
   absolutePath,
   identifier,
   instant,
+  type ForgeOverview,
   type GridSize,
   type Identifier,
   type IntegrationID,
@@ -29,6 +30,7 @@ import {
 import type {
   DirectoryBrowsing,
   DirectoryListing,
+  ForgeOverviewing,
   ProjectService,
   SessionCreationRequest,
   SessionService,
@@ -499,6 +501,12 @@ export function fakeDirectories(
   list: DirectoryBrowsing["list"] = () => Promise.reject(new Error(NOT_CALLED)),
 ): DirectoryBrowsing {
   return { list };
+}
+
+export function fakeForgeOverview(
+  overview: ForgeOverview = { repositories: [], sessions: [] },
+): ForgeOverviewing {
+  return { overview: () => Promise.resolve(overview) };
 }
 
 export function fakeIntegrations(

@@ -4,6 +4,7 @@ import {
   FilterIcon,
   FolderAddIcon,
   InboxIcon,
+  LinkSquare02Icon,
   Moon02Icon,
   PlusSignIcon,
   Search01Icon,
@@ -11,13 +12,10 @@ import {
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Project, ProjectID, SessionID } from "@janela/core";
+import type { Project, ProjectID, SessionForgeLink, SessionID } from "@janela/core";
 import {
-  Badge,
   Button,
   cn,
-  Dotm3x3_15,
-  Dotm3x3_20,
   DropdownContent,
   DropdownLabel,
   DropdownMenu,
@@ -47,11 +45,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  type Dotm3x3_20Props,
   type IconComponent,
   type IconComponentProps,
 } from "@janela/design";
-import type { ComponentType, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { CommandID } from "../../../shared/config/index.ts";
@@ -71,10 +68,11 @@ import {
   SidebarTitleRow,
 } from "../../../shared/ui/index.ts";
 import { selectSession } from "../model/command-dispatch.ts";
+import { sessionsNeedingAttention } from "../model/inbox.ts";
 import { projectMenuRows, sessionMenuRows } from "../model/menu-rows.ts";
+import { sessionRowDetails, type SessionRowDetails } from "../model/session-forge.ts";
 import {
   type SessionRow,
-  type SessionStatus,
   type SidebarRow,
   sidebarRows,
   statusText,
@@ -87,15 +85,11 @@ import {
   filterSidebar,
   mergedExpansions,
 } from "../model/sidebar-filter.ts";
+import { BranchMark, ChecksMark, PullRequestMark } from "./forge-marks.tsx";
+import { useForgeOverview } from "./forge-overview-context.tsx";
+import { SESSION_STATUS_ICON, SessionStatusGlyph } from "./session-status-glyph.tsx";
 
 const NO_OVERRIDES: ReadonlyMap<ProjectID, boolean> = new Map<ProjectID, boolean>();
-
-const STATUS_ICON = {
-  error: statusGlyph(Dotm3x3_15, "text-failure", false),
-  running: statusGlyph(Dotm3x3_20, "text-muted-foreground", true),
-  unread: statusGlyph(Dotm3x3_15, "text-attention", true),
-  idle: statusGlyph(Dotm3x3_20, "invisible", false),
-} satisfies Record<SessionStatus, IconComponent>;
 
 const PLUS_ICON = hugeicon(PlusSignIcon);
 
@@ -153,6 +147,16 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
   const sessions = useStoreValue(environment.sessions, () => environment.sessions.sessions);
   const selection = useStoreValue(environment.sessions, () => environment.sessions.selection);
   const states = useStoreValue(environment.sessions, () => environment.sessions.terminalStates);
+  const view = environment.view;
+  const isInboxOpen = useStoreValue(view, () => view.screen.kind === "inbox");
+  const forge = useForgeOverview();
+
+  const needsYou = useMemo(
+    () => sessionsNeedingAttention(sessions, states, forge.link),
+    [sessions, states, forge.link],
+  );
+
+  const inboxGlyph = needsYou.some((row) => row.reasons.includes("unread")) ? "unread" : "error";
 
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [overrides, setOverrides] = useState(NO_OVERRIDES);
@@ -189,9 +193,22 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
 
   const select = useCallback(
     (id: SessionID) => {
-      selectSession(sessionStore, id);
+      selectSession({ sessions: sessionStore, view }, id);
     },
-    [sessionStore],
+    [sessionStore, view],
+  );
+
+  const openInbox = useCallback(() => {
+    view.showInbox();
+  }, [view]);
+
+  const links = environment.links;
+
+  const openLink = useCallback(
+    (url: string) => {
+      void links.open(url).catch(() => undefined);
+    },
+    [links],
   );
 
   const toggle = useCallback((id: ProjectID, wasExpanded: boolean) => {
@@ -238,19 +255,23 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
         project={row.project}
         isExpanded={row.isExpanded}
         sessions={row.sessions}
-        selection={selection}
+        selection={isInboxOpen ? undefined : selection}
         actions={actions}
+        link={forge.link}
         onToggle={toggle}
         onSelect={select}
+        onOpenLink={openLink}
       />
     ) : (
       <SessionRow
         key={row.session.id}
         row={row}
         nested={false}
-        isSelected={row.session.id === selection}
+        isSelected={!isInboxOpen && row.session.id === selection}
         actions={actions}
+        details={sessionRowDetails(forge.link(row.session.id))}
         onSelect={select}
+        onOpenLink={openLink}
       />
     );
 
@@ -280,17 +301,18 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
           <SidebarMenuItem>
             <SidebarMenuButton
               icon={INBOX_ICON}
-              disabled
-              aria-disabled="true"
-              title="Inbox is not available yet"
+              isActive={isInboxOpen}
+              onClick={openInbox}
+              title="Sessions that want you, and issues and pull requests from your projects"
             >
               Inbox
             </SidebarMenuButton>
-            <SidebarMenuBadge className="px-0">
-              <Badge variant="secondary" className="text-[0.625rem] tracking-wide uppercase">
-                Planned
-              </Badge>
-            </SidebarMenuBadge>
+            {needsYou.length > 0 ? (
+              <SidebarMenuBadge>
+                <SessionStatusGlyph status={inboxGlyph} size={12} />
+                <span className="sr-only">{inboxLabel(needsYou.length)}</span>
+              </SidebarMenuBadge>
+            ) : undefined}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarChromeHeader>
@@ -330,18 +352,8 @@ export function AppSidebar(props: { readonly dispatch: (id: CommandID) => void }
   );
 }
 
-function statusGlyph(
-  Loader: ComponentType<Dotm3x3_20Props>,
-  tint: string,
-  animated: boolean,
-): IconComponent {
-  return function StatusGlyph({ size = 14, className }: IconComponentProps) {
-    return (
-      <span aria-hidden="true" className={cn("inline-flex shrink-0", className, tint)}>
-        <Loader size={size} boxSize={size} minSize={size} animated={animated} />
-      </span>
-    );
-  };
+function inboxLabel(count: number): string {
+  return count === 1 ? "A session needs you" : `${count} sessions need you`;
 }
 
 function SessionFilterMenu(props: {
@@ -460,10 +472,13 @@ function ProjectRow(props: {
   readonly sessions: readonly SessionRow[];
   readonly selection: SessionID | undefined;
   readonly actions: SidebarActions;
+  readonly link: (id: SessionID) => SessionForgeLink | undefined;
   readonly onToggle: (id: ProjectID, wasExpanded: boolean) => void;
   readonly onSelect: (id: SessionID) => void;
+  readonly onOpenLink: (url: string) => void;
 }): ReactElement {
   const { project, isExpanded, sessions, selection, actions, onToggle, onSelect } = props;
+  const { link, onOpenLink } = props;
   const { name, directory } = project;
 
   const handleToggle = useCallback(() => {
@@ -516,7 +531,9 @@ function ProjectRow(props: {
             nested
             isSelected={row.session.id === selection}
             actions={actions}
+            details={sessionRowDetails(link(row.session.id))}
             onSelect={onSelect}
+            onOpenLink={onOpenLink}
           />
         ))}
       </SidebarMenuSub>
@@ -529,14 +546,22 @@ function SessionRow(props: {
   readonly nested: boolean;
   readonly isSelected: boolean;
   readonly actions: SidebarActions;
+  readonly details: SessionRowDetails | undefined;
   readonly onSelect: (id: SessionID) => void;
+  readonly onOpenLink: (url: string) => void;
 }): ReactElement {
-  const { row, nested, isSelected, actions, onSelect } = props;
+  const { row, nested, isSelected, actions, details, onSelect, onOpenLink } = props;
   const { session, status, mark } = row;
 
   const handleSelect = useCallback(() => {
     onSelect(session.id);
   }, [onSelect, session.id]);
+
+  const url = details?.kind === "pullRequest" ? details.link.url : undefined;
+
+  const openLink = useCallback(() => {
+    if (url !== undefined) onOpenLink(url);
+  }, [onOpenLink, url]);
 
   const rows = useMemo(() => sessionMenuRows(session, mark, actions), [session, mark, actions]);
 
@@ -545,29 +570,43 @@ function SessionRow(props: {
 
   const template = useMemo(() => <button type="button" aria-label={label} />, [label]);
 
+  const meta = details === undefined ? undefined : <SessionRowMeta details={details} />;
+
   const region = (
     <ContextMenuRegion label={`Session: ${session.name}`} rows={rows} className="block">
       {nested ? (
         <SidebarMenuSubButton
           render={template}
-          icon={STATUS_ICON[status]}
+          icon={SESSION_STATUS_ICON[status]}
           aria-current={current}
           isActive={isSelected}
           onClick={handleSelect}
         >
           {session.name}
+          {meta}
         </SidebarMenuSubButton>
       ) : (
         <SidebarMenuButton
-          icon={STATUS_ICON[status]}
+          icon={SESSION_STATUS_ICON[status]}
           aria-label={label}
           aria-current={current}
           isActive={isSelected}
           onClick={handleSelect}
         >
           {session.name}
+          {meta}
         </SidebarMenuButton>
       )}
+      {details?.kind === "pullRequest" ? (
+        <SidebarMenuAction
+          showOnHover
+          aria-label={details.link.label}
+          title={details.link.label}
+          onClick={openLink}
+        >
+          <HugeiconsIcon icon={LinkSquare02Icon} strokeWidth={2} />
+        </SidebarMenuAction>
+      ) : undefined}
     </ContextMenuRegion>
   );
 
@@ -575,6 +614,31 @@ function SessionRow(props: {
     <SidebarMenuSubItem>{region}</SidebarMenuSubItem>
   ) : (
     <SidebarMenuItem>{region}</SidebarMenuItem>
+  );
+}
+
+function SessionRowMeta(props: { readonly details: SessionRowDetails }): ReactElement {
+  const { details } = props;
+
+  return (
+    <span
+      data-slot="session-meta"
+      className="text-muted-foreground ml-auto flex max-w-[55%] min-w-0 shrink-0 items-center justify-end gap-1.5 overflow-hidden text-[11px] leading-none"
+    >
+      {details.kind === "branch" ? (
+        <BranchMark branch={details.branch} className="max-w-24 min-w-10 shrink overflow-hidden" />
+      ) : (
+        <>
+          <PullRequestMark
+            status={details.status}
+            reference={details.reference}
+            title={undefined}
+            className="shrink-0"
+          />
+          {details.checks === undefined ? undefined : <ChecksMark checks={details.checks} />}
+        </>
+      )}
+    </span>
   );
 }
 

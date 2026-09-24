@@ -76,7 +76,7 @@ describe("SessionDetail markup", () => {
     expect(markup).toContain('aria-label="New Terminal"');
   });
 
-  test("attention is not badged on the pane, only carried by its label", () => {
+  test("a bare attention state draws nothing on the pane, only its label carries it", () => {
     const withTerminal = session("s", {
       terminals: [terminal("t1", "zsh")],
       layout: singleTerminalLayout(terminalID("t1")),
@@ -92,7 +92,7 @@ describe("SessionDetail markup", () => {
     );
 
     expect(attention).toContain('aria-label="Terminal: zsh — needs attention"');
-    expect(attention).not.toContain('data-slot="badge"');
+    expect(attention).not.toContain('data-slot="pane-state"');
 
     const exited = renderDetail(
       fakeEnvironment({
@@ -103,11 +103,11 @@ describe("SessionDetail markup", () => {
       "s",
     );
 
-    expect(exited).toContain('data-slot="badge"');
+    expect(exited).toContain('data-tone="failure"');
     expect(exited).toContain("exited (1)");
   });
 
-  test("a pane badges what the agent said, and badges a bad ending as destructive", () => {
+  test("an agent waiting or finished is a spinner, and a bad ending is red text", () => {
     const withTerminal = session("s", {
       terminals: [terminal("t1", "zsh")],
       layout: singleTerminalLayout(terminalID("t1")),
@@ -129,16 +129,17 @@ describe("SessionDetail markup", () => {
     });
 
     expect(waiting).toContain('aria-label="Terminal: zsh — waiting for permission"');
-    expect(waiting).toContain('data-slot="badge"');
-    expect(waiting).toContain('data-variant="secondary"');
+    expect(waiting).toContain('data-tone="attention"');
+    expect(waiting).toContain("dmx-matrix");
     expect(waiting).toContain("waiting for permission");
+    expect(waiting).not.toContain('data-slot="badge"');
 
     const finished = paneFor({
       kind: "needsAttention",
       activity: { kind: "finished", outcome: "completed" },
     });
 
-    expect(finished).toContain('data-variant="secondary"');
+    expect(finished).toContain('data-tone="attention"');
     expect(finished).toContain("finished");
 
     const stopped = paneFor({
@@ -146,13 +147,13 @@ describe("SessionDetail markup", () => {
       activity: { kind: "finished", outcome: "failed" },
     });
 
-    expect(stopped).toContain('data-variant="destructive"');
+    expect(stopped).toContain('data-tone="failure"');
     expect(stopped).toContain("stopped with an error");
 
     const working = paneFor({ kind: "running", activity: { kind: "working" } });
 
     expect(working).toContain('aria-label="Terminal: zsh — working"');
-    expect(working).not.toContain('data-slot="badge"');
+    expect(working).not.toContain('data-slot="pane-state"');
   });
 
   test("each tab and each terminal carries its own close control", () => {

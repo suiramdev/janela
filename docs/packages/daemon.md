@@ -336,6 +336,13 @@ event will announce. Terminals with no process take the call and show nothing
 for it: `state` answers `idle` before it reads the flag, so "Mark as Unread" on a
 session whose terminals have all exited is a no-op the client already greys out.
 
+`forgeOverview` answers with a **text** reply carrying `serializeForgeOverview`
+of what `ForgeOverviewing` (`@janela/session`) returns — for the same reason the
+integrations overview is not in the snapshot: it is a network-bound answer to a
+question a client asks, and a state frame must never wait on `gh`. The option is
+required on `createDaemonServer`, like `integrations`; tests pass
+`fakeForgeOverview()`.
+
 `integrations` answers with a **text** reply carrying
 `serializeIntegrationOverview`, the same shape as `removalPlan` and
 `projectBranches`: a report per harness, read from the user's own configuration

@@ -239,6 +239,7 @@ Committed scope. Each has a design section in
 | **Splits and tabs** | Terminals arranged in a per-session layout tree, persisted |
 | **Notifications** | Terminal-signalled attention, badged in the sidebar and delivered to Notification Centre when you are elsewhere |
 | **GitHub / GitLab** | Branch and PR/MR state on a session, "new session from PR", via the user's `gh`/`glab` |
+| **Inbox** | One page for the sessions that want you and the issues and pull/merge requests of your projects, filterable, each opening in the browser |
 | **`.worktreeinclude`** | Repo-declared list of ignored files to carry into a new worktree — `.env`, `node_modules`, build caches |
 | **Project automation** | Commands on session start, session teardown, and worktree creation |
 | **Durable sessions** | A daemon owns the processes, so quitting the app does not stop them |
@@ -268,8 +269,11 @@ Listed so they can be pointed at, not re-litigated.
 - **Not a code editor.** No editing surface, ever. Your editor is better.
 - **Not a git client.** Worktree plumbing and read-only status. No staging UI, no
   commit UI, no rebase assistant, no history browser.
-- **Not a forge client.** We show the state of the branch a session is on and can
-  start a session from a PR. No review UI, no comment threads, no merge button.
+- **Not a forge client.** We show the state of the branch a session is on, list
+  a project's issues and pull requests in the Inbox by number, title and status,
+  and can start a session from a PR. Each one opens in the browser; Janela never
+  shows a pull request's content. No review UI, no comment threads, no merge
+  button.
 - **Not an agent runtime.** Janela does not schedule agents, retry them, chain
   them, or read their output for meaning. It does listen to what an agent says
   about itself, through a hook the agent runs — a report it volunteers, never an

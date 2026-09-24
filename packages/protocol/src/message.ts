@@ -60,6 +60,7 @@ export type ClientMessage =
     }
   | { readonly type: "removalPlan"; readonly id: RequestID; readonly sessionID: SessionID }
   | { readonly type: "projectBranches"; readonly id: RequestID; readonly projectID: ProjectID }
+  | { readonly type: "forgeOverview"; readonly id: RequestID }
   | { readonly type: "listDirectory"; readonly id: RequestID; readonly directory?: AbsolutePath }
   | {
       readonly type: "moveTab";

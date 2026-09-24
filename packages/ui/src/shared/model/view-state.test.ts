@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { SessionStore } from "@janela/client";
+import { createStores, type SessionStore } from "@janela/client";
 import type { ProjectID, Session, SessionID, TerminalID } from "@janela/core";
 
 import { fakeSession, fakeSurfaceHandle, fakeTerminal } from "../lib/test-fakes/index.ts";
@@ -304,6 +304,38 @@ describe("the settings draft", () => {
     view.revertSettingsDraft();
 
     expect(notifications).toBe(2);
+  });
+});
+
+describe("the inbox", () => {
+  test("a terminal focused from a notification leaves the inbox for its session", () => {
+    const a = fakeTerminal({ title: "a" });
+    const session = fakeSession({ terminals: [a] });
+    const view = createViewState(fakeStore([session]));
+
+    view.showInbox();
+
+    expect(view.screen).toEqual({ kind: "inbox" });
+
+    view.focusTerminal(a.id);
+
+    expect(view.screen).toEqual({ kind: "workspace" });
+  });
+
+  test("the mirror changing under the inbox does not close it", () => {
+    const session = fakeSession();
+    const stores = createStores();
+    const view = createViewState(stores.sessions);
+
+    view.showInbox();
+    stores.mirror.apply({
+      projects: [],
+      sessions: [session],
+      terminalStates: {},
+      isFullSnapshot: true,
+    });
+
+    expect(view.screen).toEqual({ kind: "inbox" });
   });
 });
 

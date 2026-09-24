@@ -18,6 +18,7 @@
     "@janela/core": "workspace:*",
     "@janela/daemon": "workspace:*",
     "@janela/db": "workspace:*",
+    "@janela/forge": "workspace:*",
     "@janela/git": "workspace:*",
     "@janela/integrations": "workspace:*",
     "@janela/protocol": "workspace:*",

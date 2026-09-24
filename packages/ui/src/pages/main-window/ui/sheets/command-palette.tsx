@@ -12,6 +12,7 @@ import {
 import { rankBy } from "../../../../shared/lib/fuzzy-match/index.ts";
 import { type FindRow, FindSurface } from "../../../../shared/ui/index.ts";
 import { sessionStatus, statusText } from "../../model/session-rows.ts";
+import { SessionStatusGlyph } from "../session-status-glyph.tsx";
 
 export interface CommandPaletteProps {
   readonly projects: readonly Project[];
@@ -81,6 +82,7 @@ export function rankedSessionRows(
       description: project === "" ? STANDALONE : project,
       group: SESSIONS_GROUP,
       status: statusText(sessionStatus(session, terminalStates)),
+      statusGlyph: <SessionStatusGlyph status={sessionStatus(session, terminalStates)} />,
     };
   });
 }

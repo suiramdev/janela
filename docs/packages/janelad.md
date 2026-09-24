@@ -110,6 +110,13 @@ spawns a process — a configured terminal that has not been started costs nothi
 
 A migration failure is left to propagate, so `main` can log it and exit non-zero.
 
+**Forge is composed here and asked only on demand.** `forgeService` gets the
+captured login-shell environment, so `gh` and `glab` resolve on the user's `PATH`
+and read their own configuration. The session service receives it — which is what
+makes "new session from pull request" work — and `createForgeOverview` wraps it
+for the `forgeOverview` request. Nothing asks it at startup; the first read is a
+client's question.
+
 **The bind path is identical under launchd and in `--foreground`**, deliberately,
 so a mode cannot drift between a developer's machine and a user's.
 

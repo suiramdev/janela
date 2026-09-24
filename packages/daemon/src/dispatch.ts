@@ -13,6 +13,7 @@ import {
   frameErrorLabel,
   serializeBranchOverview,
   serializeDirectoryListing,
+  serializeForgeOverview,
   serializeIntegrationOverview,
   serializeRemovalPlan,
   type ClientMessage,
@@ -24,6 +25,7 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
+  ForgeOverviewing,
   NewTerminalOptions,
   ProjectService,
   SessionService,
@@ -59,6 +61,7 @@ export interface RequestDispatchOptions {
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
+  readonly forge: ForgeOverviewing;
   readonly log: Logger;
   readonly settled: (terminal: LiveTerminal) => void;
 }
@@ -145,7 +148,7 @@ export function fullStateSnapshot(world: StateWorld): StateUpdate {
 }
 
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const { sessions, projects, directories, terminals, integrations, log, settled } = options;
+  const { sessions, projects, directories, terminals, integrations, forge, log, settled } = options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
     const terminal = terminals.get(terminalID);
@@ -228,6 +231,8 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
 
           return textReply(id, serializeBranchOverview(overview));
         },
+
+        forgeOverview: async () => textReply(id, serializeForgeOverview(await forge.overview())),
 
         listDirectory: async (request) => {
           const { directory } = request;

@@ -305,6 +305,11 @@ row should have its leading space back. Only the shell can answer that.
   headlessly; the assembled window — real `WKWebView`, real menu bar, real IPC —
   is a human with `bun run desktop`, and the launchd half is
   [`survival-proof.md`](../survival-proof.md).
+- **`tauriLinks`** in `native.ts` opens a pull request, merge request or issue with
+  the opener plugin's `openUrl`, which `opener:default` in the capability already
+  scopes to `http(s)`, `mailto:` and `tel:`. It refuses anything but `http(s)` itself
+  too, so the guard does not rest on a capability file someone may widen. A
+  `window.open` from the WebView would not reach the user's browser.
 - **Clipboard and settings storage** are not Tauri's: they are web-platform ports,
   implemented once in `@janela/ui`'s `shared/lib/web-platform/` and shared with the
   browser client ([`ui.md`](ui.md) § web-platform). The stylesheet and its token

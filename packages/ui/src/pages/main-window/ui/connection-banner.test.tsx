@@ -20,6 +20,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   inertClipboard,
+  recordingLinks,
   inertNativeShell,
   memorySettingsStore,
   neverCommands,
@@ -124,6 +125,7 @@ function fakeEnvironment(options: {
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
+    links: recordingLinks(),
     settings: memorySettingsStore(),
     local:
       options.local === false

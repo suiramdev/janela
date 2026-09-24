@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { instant, type ForgeOverview, type ForgeState } from "@janela/core";
 import { SidebarProvider } from "@janela/design";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -13,16 +14,48 @@ import {
   WINDOW_DRAG_REGION,
   WINDOW_GUTTER_REGION,
 } from "../../../shared/ui/index.ts";
+import type { ForgeOverviewStore } from "../model/forge-overview.ts";
 import { project, session, sessionID, terminal, terminalID } from "../model/session-fixture.ts";
 import { AppSidebar } from "./app-sidebar.tsx";
+import { ForgeOverviewProvider } from "./forge-overview-context.tsx";
 import { fakeEnvironment, ignoreCommand } from "./window-fixture.ts";
 
-function renderSidebar(environment: ClientEnvironment): string {
+const OPEN_PULL_REQUEST = {
+  host: "gitHub",
+  pullRequest: {
+    number: 42,
+    title: "the inbox, at last",
+    state: "open",
+    isDraft: false,
+    url: "https://github.com/suiramdev/janela/pull/42",
+  },
+  checks: "passing",
+  refreshedAt: instant("2026-09-22T15:00:00Z"),
+} as const satisfies ForgeState;
+
+function loadedStore(overview: ForgeOverview): ForgeOverviewStore {
+  return {
+    state: { kind: "loaded", overview, receivedAt: 0 },
+    refresh: () => Promise.resolve(),
+    subscribe: () => () => {},
+  };
+}
+
+function sessionsOnly(markup: string): string {
+  return markup.slice(markup.indexOf(">Sessions<"));
+}
+
+function renderSidebar(
+  environment: ClientEnvironment,
+  store: ForgeOverviewStore = loadedStore({ repositories: [], sessions: [] }),
+): string {
   return renderToStaticMarkup(
     <ClientEnvironmentProvider environment={environment}>
-      <SidebarProvider>
-        <AppSidebar dispatch={ignoreCommand} />
-      </SidebarProvider>
+      <ForgeOverviewProvider store={store}>
+        <SidebarProvider>
+          <AppSidebar dispatch={ignoreCommand} />
+        </SidebarProvider>
+      </ForgeOverviewProvider>
     </ClientEnvironmentProvider>,
   );
 }
@@ -97,7 +130,9 @@ describe("AppSidebar markup", () => {
     });
 
     const boxes = [
-      ...renderSidebar(environment).matchAll(/<div role="status"[^>]*style="([^"]*)"/gu),
+      ...sessionsOnly(renderSidebar(environment)).matchAll(
+        /<div role="status"[^>]*style="([^"]*)"/gu,
+      ),
     ].map((match) => match[1]);
 
     expect(boxes).toHaveLength(4);
@@ -225,12 +260,59 @@ describe("AppSidebar markup", () => {
     }
   });
 
-  test("the Inbox row promises nothing: disabled, and badged as planned", () => {
-    const markup = renderSidebar(fakeEnvironment({}));
+  test("the Inbox row is live and carries a spinner, not a count, while a session needs you", () => {
+    const waiting = session("feat/hooks", { terminals: [terminal("t1")] });
+    const markup = renderSidebar(
+      fakeEnvironment({
+        sessions: [waiting],
+        states: { [terminalID("t1")]: { kind: "needsAttention" } },
+      }),
+    );
 
-    expect(markup).toContain("Inbox");
-    expect(markup).toContain("disabled");
-    expect(markup).toContain("Planned");
+    expect(markup).not.toContain("Planned");
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>[^<]*<[^>]*>[^<]*Inbox/u);
+    expect(markup).toContain(">A session needs you<");
+    expect(markup).not.toMatch(/data-sidebar="menu-badge"[^>]*>1</u);
+
+    const quiet = renderSidebar(fakeEnvironment({ sessions: [waiting] }));
+
+    expect(quiet).not.toContain("needs you");
+  });
+
+  test("a session with a pull request shows its number, state and link, not its branch or title", () => {
+    const member = session("member", { project: "p" });
+    const environment = fakeEnvironment({ projects: [project("p", true)], sessions: [member] });
+    const merged = {
+      ...OPEN_PULL_REQUEST,
+      pullRequest: { ...OPEN_PULL_REQUEST.pullRequest, state: "merged" as const },
+    };
+
+    const store = loadedStore({
+      repositories: [],
+      sessions: [{ sessionID: member.id, branch: "feat/inbox", forge: merged }],
+    });
+
+    const markup = renderSidebar(environment, store);
+
+    expect(markup).toContain("#42");
+    expect(markup).toContain("Merged");
+    expect(markup).toContain('aria-label="Open pull request #42 on GitHub"');
+    expect(markup).not.toContain(">feat/inbox<");
+    expect(markup).not.toContain("the inbox, at last");
+  });
+
+  test("a session with only a branch shows the branch, and no link", () => {
+    const member = session("member", { project: "p" });
+    const environment = fakeEnvironment({ projects: [project("p", true)], sessions: [member] });
+    const store = loadedStore({
+      repositories: [],
+      sessions: [{ sessionID: member.id, branch: "feat/inbox" }],
+    });
+
+    const markup = renderSidebar(environment, store);
+
+    expect(markup).toContain(">feat/inbox<");
+    expect(markup).not.toContain("Open pull request");
   });
 
   test("each project offers a new session on hover, named after the project", () => {

@@ -430,7 +430,8 @@ These live in Janela's database rather than in a committed repo file.
 
 ### `ForgeState`
 
-Read-only, cached, per-session, and derived from the session's branch:
+Read-only, cached, per-session, and derived from the session's branch. It lives in
+`@janela/core` (`forge.ts`) because it crosses the socket:
 
 ```swift
 public struct ForgeState: Hashable, Sendable, Codable {
@@ -445,6 +446,20 @@ It is a cache with a timestamp, never a source of truth, and every field is
 optional because `gh` may be missing, logged out, rate-limited, or pointed at an
 enterprise host we cannot reach. Absence renders as absence, never as an error
 banner.
+
+### `ForgeItem` and `ForgeOverview`
+
+What the Inbox lists: one issue or pull/merge request, reduced to what identifies
+it — kind, number, title, state (`open` · `merged` · `closed`, drafts flagged
+apart), URL, author, assignees, requested reviewers, labels, head branch and when
+it last moved. A `ForgeRepository` is a project's list plus the forge, the
+`owner/repo` path read from the remote, whether the CLI answered at all, and the
+signed-in login (`viewer`) so "assigned to me" can be asked. `ForgeOverview` is
+every repository plus a `SessionForgeLink` per session: the branch git says it is
+on, and its `ForgeState`.
+
+None of these is an entity. They are answers to a question the client asks, with
+no id of their own, no storage and no history; the next answer replaces them.
 
 ### `AttentionSignal`
 
@@ -521,7 +536,7 @@ and belongs here before it belongs in code.
 | **Agent** | An agent is a program the user starts in a terminal. What one says about itself is `AgentActivity`, a value on a terminal's state, not an entity with a lifecycle. |
 | **Per-session settings** | Settings are global or per-project. Sessions carry state, not configuration. |
 | **Saved layouts** | The layout is wherever you left it, stored on the session. Not a named object with its own management UI. |
-| **Pull request / issue as an entity** | `ForgeState` is a cache on a session. We do not own forge objects and must never look like we do. |
+| **Pull request / issue as an entity** | `ForgeState` is a cache on a session, and a `ForgeItem` is a row in an answer. We do not own forge objects and must never look like we do: the Inbox lists them and hands each to the browser. |
 | **Scrollback** | Lives in the daemon emulator's ring buffer and dies with the terminal. Persisting it is unbounded growth plus a privacy problem — and it now survives the *app* closing, which is what people actually wanted. |
 | **Client / device** | A connection is not a domain object. The daemon tracks which connections are attached to what, and that state dies with the socket. Naming and persisting devices is a sync feature, and we do not have one. |
 | **Terminal grid** | Not in `JanelaCore`. The authoritative grid is `JanelaTerminal`'s private business and reaches clients as escape sequences, never as a modelled type. A cell grid in the domain layer would invite a second renderer format. |
