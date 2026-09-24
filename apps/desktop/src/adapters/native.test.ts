@@ -5,6 +5,7 @@ import { absolutePath } from "@janela/core";
 import {
   TERMINAL_APP,
   tauriDirectoryPicker,
+  tauriLinks,
   tauriNativeShell,
   type DirectoryDialogOptions,
 } from "./native.ts";
@@ -58,5 +59,21 @@ describe("tauriNativeShell", () => {
     await shell.revealInFinder(absolutePath("/tmp/s1"));
 
     expect(revealed).toEqual(["/tmp/s1"]);
+  });
+});
+
+describe("tauriLinks", () => {
+  test("a web link reaches the browser, and nothing else is handed to the opener", async () => {
+    const opened: string[] = [];
+    const links = tauriLinks({
+      openUrl: async (url) => {
+        opened.push(url);
+      },
+    });
+
+    await links.open("https://github.com/suiramdev/janela/pull/42");
+    await links.open("file:///Applications/Calculator.app");
+
+    expect(opened).toEqual(["https://github.com/suiramdev/janela/pull/42"]);
   });
 });

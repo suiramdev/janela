@@ -1,6 +1,7 @@
 export * from "./automation-runner.ts";
 export * from "./directory-browser.ts";
 export * from "./errors.ts";
+export * from "./forge-overview.ts";
 export * from "./project-service.ts";
 export * from "./session-service.ts";
 export * from "./shell-environment.ts";

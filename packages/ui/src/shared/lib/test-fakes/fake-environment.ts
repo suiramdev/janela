@@ -12,6 +12,7 @@ import {
   recordingAppearance,
   recordingConfirmations,
   recordingDirectoryPicker,
+  recordingLinks,
   recordingNotificationSound,
   recordingAppUpdates,
   recordingService,
@@ -40,6 +41,7 @@ export function fakeClientEnvironment(): ClientEnvironment {
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
+    links: recordingLinks(),
     settings: memorySettingsStore(),
     local: {
       native: inertNativeShell(),
@@ -78,6 +80,7 @@ export function environmentOver(state: {
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
+    links: recordingLinks(),
     settings: memorySettingsStore(),
     local: {
       native: inertNativeShell(),

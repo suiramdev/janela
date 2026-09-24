@@ -477,7 +477,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       expect(children.length).toBeGreaterThan(0);
 
       probe.send({ type: "attach", id: requestID(), terminalID, viewport: VIEWPORT });
-      probe.type(terminalID, "printf 'PTY-ALIVE-%s\\n' \"$$\"\n");
+      probe.type(terminalID, "printf 'PTY-%s-%s\\n' ALIVE \"$$\"\n");
 
       const text = await waitForText(probe, terminalID, "PTY-ALIVE-");
 
@@ -556,7 +556,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       const { terminalID } = await sessionWithShell(first, work);
 
       first.send({ type: "attach", id: requestID(), terminalID, viewport: VIEWPORT });
-      first.type(terminalID, "printf 'QUIET-MARKER\\n'\n");
+      first.type(terminalID, "printf '%s-MARKER\\n' QUIET\n");
       await waitForText(first, terminalID, "QUIET-MARKER");
       first.close();
 
@@ -741,7 +741,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
 
       expect(after).toBeGreaterThan(before);
 
-      probe.type(terminalID, "\u0003printf 'ALIVE-AFTER-SKEW\\n'\n");
+      probe.type(terminalID, "\u0003printf '%s-AFTER-SKEW\\n' ALIVE\n");
       await waitForText(probe, terminalID, "ALIVE-AFTER-SKEW");
 
       probe.close();
@@ -798,7 +798,7 @@ describe("the compiled sidecar, as a daemon that outlives its clients", () => {
       ).toBe("acknowledged");
 
       rejoined.send({ type: "attach", id: requestID(), terminalID, viewport: VIEWPORT });
-      rejoined.type(terminalID, "printf 'RECOVERED-%s\\n' \"$$\"\n");
+      rejoined.type(terminalID, "printf '%s-%s\\n' RECOVERED \"$$\"\n");
       await waitForText(rejoined, terminalID, "RECOVERED-");
 
       rejoined.close();

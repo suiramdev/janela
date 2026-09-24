@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { AbsolutePath, Project } from "@janela/core";
+import type { AbsolutePath, ForgeItems, ForgeState, Project } from "@janela/core";
 import { absolutePath, newProjectID, now } from "@janela/core";
 import type { TemporaryDatabase } from "@janela/db";
 import { temporaryDatabase } from "@janela/db";
-import type { ForgeServing, ForgeState } from "@janela/forge";
+import type { ForgeServing } from "@janela/forge";
 import { PullRequestUnavailable } from "@janela/forge";
 import { createTerminalRegistry } from "@janela/terminal";
 import { Effect } from "effect";
@@ -93,6 +93,9 @@ function recordingForge(branch: string | undefined): RecordedForge {
       },
       async state(): Promise<ForgeState | undefined> {
         throw new Error("state must not be read while creating a session");
+      },
+      async items(): Promise<ForgeItems | undefined> {
+        throw new Error("items must not be read while creating a session");
       },
       async pullRequestBranch(request): Promise<string | undefined> {
         asked.push({ project: request.project, number: request.number });

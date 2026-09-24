@@ -8,6 +8,7 @@ import type { Project, Session, SessionID, TerminalID, TerminalState } from "@ja
 
 import {
   inertClipboard,
+  recordingLinks,
   inertNativeShell,
   memorySettingsStore,
   neverCommands,
@@ -83,6 +84,7 @@ export function fakeEnvironment(options: {
     confirmations: recordingConfirmations({ agrees: false, silenced: undefined }),
     directories: recordingDirectoryPicker(),
     clipboard: inertClipboard(),
+    links: recordingLinks(),
     settings: memorySettingsStore(),
     local: {
       native: inertNativeShell(),

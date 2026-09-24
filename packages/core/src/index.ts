@@ -1,5 +1,6 @@
 export * from "./accent.ts";
 export * from "./agent-activity.ts";
+export * from "./forge.ts";
 export * from "./identifiers.ts";
 export * from "./integration.ts";
 export * from "./project.ts";

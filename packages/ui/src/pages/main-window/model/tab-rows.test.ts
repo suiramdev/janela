@@ -7,7 +7,7 @@ import {
   closeQuestionScope,
   isFailureState,
   tabTerminals,
-  terminalBadgeText,
+  paneStateText,
   terminalStateText,
 } from "./tab-rows.ts";
 
@@ -62,29 +62,27 @@ describe("terminalStateText", () => {
   });
 });
 
-describe("terminalBadgeText", () => {
+describe("paneStateText", () => {
   test("a terminal simply running is not badged, whatever the agent is doing in it", () => {
-    expect(terminalBadgeText({ kind: "running" })).toBeUndefined();
-    expect(terminalBadgeText({ kind: "running", activity: { kind: "working" } })).toBeUndefined();
-    expect(
-      terminalBadgeText({ kind: "running", progress: { kind: "indeterminate" } }),
-    ).toBeUndefined();
+    expect(paneStateText({ kind: "running" })).toBeUndefined();
+    expect(paneStateText({ kind: "running", activity: { kind: "working" } })).toBeUndefined();
+    expect(paneStateText({ kind: "running", progress: { kind: "indeterminate" } })).toBeUndefined();
   });
 
   test("an agent waiting or finished is badged with what it said", () => {
-    expect(terminalBadgeText(WAITING)).toBe("waiting for permission");
-    expect(terminalBadgeText(FINISHED)).toBe("finished");
-    expect(terminalBadgeText(STOPPED)).toBe("stopped with an error");
+    expect(paneStateText(WAITING)).toBe("waiting for permission");
+    expect(paneStateText(FINISHED)).toBe("finished");
+    expect(paneStateText(STOPPED)).toBe("stopped with an error");
   });
 
   test("attention nobody explained is left to the bell, not spelled out in a badge", () => {
-    expect(terminalBadgeText({ kind: "needsAttention" })).toBeUndefined();
+    expect(paneStateText({ kind: "needsAttention" })).toBeUndefined();
   });
 
   test("a terminal that is not running says so", () => {
-    expect(terminalBadgeText(undefined)).toBe("idle");
-    expect(terminalBadgeText({ kind: "idle" })).toBe("idle");
-    expect(terminalBadgeText({ kind: "exited", code: 0 })).toBe("exited (0)");
+    expect(paneStateText(undefined)).toBe("idle");
+    expect(paneStateText({ kind: "idle" })).toBe("idle");
+    expect(paneStateText({ kind: "exited", code: 0 })).toBe("exited (0)");
   });
 });
 

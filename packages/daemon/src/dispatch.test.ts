@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type {
+  ForgeOverview,
   GridSize,
   IntegrationReport,
   PaneDestination,
@@ -18,6 +19,7 @@ import {
   encodeInput,
   parseBranchOverview,
   parseDirectoryListing,
+  parseForgeOverview,
   parseIntegrationOverview,
   parseRemovalPlan,
   type ClientMessage,
@@ -28,6 +30,7 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
+  ForgeOverviewing,
   NewTerminalOptions,
   ProjectBranchOverview,
   ProjectService,
@@ -41,6 +44,7 @@ import { createDaemonServer, type DaemonServer } from "./server.ts";
 import {
   clientHello,
   fakeDirectories,
+  fakeForgeOverview,
   fakeIntegrations,
   fakeListing,
   fakeProjects,
@@ -147,6 +151,7 @@ function fixture(
     readonly projectOverrides?: Partial<ProjectService>;
     readonly directories?: DirectoryBrowsing;
     readonly integrations?: FakeIntegrations;
+    readonly forge?: ForgeOverviewing;
   } = {},
 ): Fixture {
   const registry = fakeRegistry(options.terminals ?? []);
@@ -160,6 +165,7 @@ function fixture(
     directories: options.directories ?? fakeDirectories(),
     terminals: registry,
     integrations: options.integrations ?? fakeIntegrations(),
+    forge: options.forge ?? fakeForgeOverview(),
     log: logger,
     handshakeDeadlineMs: 250,
   });
@@ -1253,6 +1259,25 @@ describe("terminal lifecycle", () => {
 
     expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
     expect(removed).toEqual([going]);
+  });
+});
+
+describe("forgeOverview", () => {
+  test("the daemon's overview reaches the client as parseable text", async () => {
+    const overview: ForgeOverview = {
+      repositories: [],
+      sessions: [{ sessionID: fakeSession("s1").id, branch: "feat/inbox" }],
+    };
+
+    const daemon = fixture({ forge: fakeForgeOverview(overview) });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(request({ type: "forgeOverview", id: 1 as RequestID }));
+    const reply = await peer.reply(1 as RequestID);
+
+    if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+
+    expect(parseForgeOverview(reply.text)).toEqual(overview);
   });
 });
 

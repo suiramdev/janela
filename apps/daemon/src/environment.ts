@@ -10,11 +10,13 @@ import {
   type RawPeerCredential,
 } from "@janela/daemon";
 import { openDatabase, type JanelaDatabase } from "@janela/db";
+import { forgeService } from "@janela/forge";
 import { gitRunner, worktreeService } from "@janela/git";
 import { createIntegrationService } from "@janela/integrations";
 import { readPeerCredential } from "@janela/pty";
 import {
   createDirectoryBrowser,
+  createForgeOverview,
   createProjectService,
   createSessionService,
   resolveShellEnvironment,
@@ -78,6 +80,7 @@ export async function daemonEnvironment(
   const git = gitRunner({ environment: shell.resolved });
   const worktrees = worktreeService(git);
   const terminals = createTerminalRegistry();
+  const forge = forgeService({ environment: shell.resolved, log: log("forge") });
   const deferred: DeferredServer = {};
   const observer: StateObserving = {
     sessionsChanged: (updated) => deferred.server?.sessionsChanged(updated) ?? Promise.resolve(),
@@ -103,6 +106,7 @@ export async function daemonEnvironment(
     shell,
     observer,
     log: logger,
+    forge,
   });
 
   deferredRemoval.service = sessions;
@@ -120,6 +124,7 @@ export async function daemonEnvironment(
       processes: processRunner(),
       log: logger,
     }),
+    forge: createForgeOverview({ projects, sessions, worktrees, forge }),
     log: log("protocol"),
   });
 

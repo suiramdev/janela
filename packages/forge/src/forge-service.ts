@@ -1,11 +1,22 @@
-import type { Forge, Project, Session, SessionID } from "@janela/core";
-import { forgeExecutable, instant, worktreeOf } from "@janela/core";
+import type {
+  CheckRollup,
+  Forge,
+  ForgeItem,
+  ForgeItems,
+  ForgeState,
+  Project,
+  ProjectID,
+  PullRequestSummary,
+  Session,
+  SessionID,
+} from "@janela/core";
+import { forgeExecutable, instant, isWebURL, worktreeOf } from "@janela/core";
 import type { Logger } from "@janela/support";
 import { UserFacingError } from "@janela/support";
 import { processRunner, type ProcessRunning } from "@janela/support/process";
 import { Data, Effect, Match, Option, Result, Schema } from "effect";
 
-import type { CheckRollup, ForgeServing, ForgeState, PullRequestSummary } from "./index.ts";
+import type { ForgeServing } from "./index.ts";
 
 export interface ForgeServiceOptions {
   readonly environment?: Readonly<Record<string, string>>;
@@ -95,6 +106,8 @@ export const DEFAULT_FORGE_TIMEOUT_MS = 15_000;
 
 export const FORGE_REFRESH_INTERVAL_MS = 60_000;
 
+export const FORGE_LIST_LIMIT = 50;
+
 export const MAXIMUM_FORGE_OUTPUT_CHARACTERS = 1_048_576;
 
 const FALLBACK_PATH = "/usr/bin:/bin";
@@ -159,14 +172,51 @@ const GitHubStatusContext = Schema.Struct({
 
 const GitHubRollupEntry = Schema.Union([GitHubCheckRun, GitHubStatusContext]);
 
+const WebURL = Schema.String.check(Schema.makeFilter<string>(isWebURL));
+
+const IsoInstant = Schema.String.check(
+  Schema.makeFilter<string>((raw) => !Number.isNaN(Date.parse(raw))),
+);
+
 const GitHubPullRequest = Schema.Struct({
   number: Schema.Number,
   title: Schema.String,
   state: Schema.Literals(["OPEN", "MERGED", "CLOSED"]),
   isDraft: Schema.Boolean,
-  url: Schema.String,
+  url: WebURL,
   statusCheckRollup: Schema.Array(GitHubRollupEntry),
 });
+
+const GitHubActor = Schema.Struct({ login: Schema.String });
+
+const GitHubLabel = Schema.Struct({ name: Schema.String });
+
+const GitHubIssueListing = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  state: Schema.Literals(["OPEN", "CLOSED"]),
+  url: WebURL,
+  author: Schema.NullOr(GitHubActor),
+  assignees: Schema.Array(GitHubActor),
+  labels: Schema.Array(GitHubLabel),
+  updatedAt: IsoInstant,
+});
+
+const GitHubPullRequestListing = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  state: Schema.Literals(["OPEN", "MERGED", "CLOSED"]),
+  isDraft: Schema.Boolean,
+  url: WebURL,
+  author: Schema.NullOr(GitHubActor),
+  assignees: Schema.Array(GitHubActor),
+  reviewRequests: Schema.Array(Schema.Struct({ login: Schema.optionalKey(Schema.String) })),
+  labels: Schema.Array(GitHubLabel),
+  headRefName: Schema.String,
+  updatedAt: IsoInstant,
+});
+
+const GitHubViewer = Schema.Struct({ login: Schema.String.check(Schema.isNonEmpty()) });
 
 const GitHubHead = Schema.Struct({
   headRefName: Schema.String.check(Schema.isNonEmpty()),
@@ -180,9 +230,38 @@ const GitLabMergeRequest = Schema.Struct({
   title: Schema.String,
   state: Schema.Literals(["opened", "locked", "merged", "closed"]),
   draft: Schema.Boolean,
-  web_url: Schema.String,
+  web_url: WebURL,
   head_pipeline: Schema.optionalKey(Schema.NullOr(GitLabPipeline)),
 });
+
+const GitLabUser = Schema.Struct({ username: Schema.String });
+
+const GitLabIssueListing = Schema.Struct({
+  iid: Schema.Number,
+  title: Schema.String,
+  state: Schema.Literals(["opened", "locked", "closed"]),
+  web_url: WebURL,
+  author: Schema.NullOr(GitLabUser),
+  assignees: Schema.optionalKey(Schema.NullOr(Schema.Array(GitLabUser))),
+  labels: Schema.Array(Schema.String),
+  updated_at: IsoInstant,
+});
+
+const GitLabMergeRequestListing = Schema.Struct({
+  iid: Schema.Number,
+  title: Schema.String,
+  state: Schema.Literals(["opened", "locked", "merged", "closed"]),
+  draft: Schema.Boolean,
+  web_url: WebURL,
+  author: Schema.NullOr(GitLabUser),
+  assignees: Schema.optionalKey(Schema.NullOr(Schema.Array(GitLabUser))),
+  reviewers: Schema.optionalKey(Schema.NullOr(Schema.Array(GitLabUser))),
+  labels: Schema.Array(Schema.String),
+  source_branch: Schema.String,
+  updated_at: IsoInstant,
+});
+
+const GitLabViewer = Schema.Struct({ username: Schema.String.check(Schema.isNonEmpty()) });
 
 const GitLabHead = Schema.Struct({
   source_branch: Schema.String.check(Schema.isNonEmpty()),
@@ -208,6 +287,14 @@ const GITHUB_STATE_FIELDS = Object.keys(GitHubPullRequest.fields).join(",");
 
 const GITHUB_HEAD_FIELDS = Object.keys(GitHubHead.fields).join(",");
 
+const GITHUB_ISSUE_FIELDS = Object.keys(GitHubIssueListing.fields).join(",");
+
+const GITHUB_PULL_REQUEST_LIST_FIELDS = Object.keys(GitHubPullRequestListing.fields).join(",");
+
+const GITHUB_LIST_FLAGS = ["--state", "all", "--search", "sort:updated-desc", "--limit"];
+
+const GITLAB_LIST_FLAGS = ["--all", "--order", "updated_at", "--sort", "desc", "--per-page"];
+
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
 const decodeGitHubPullRequest = Schema.decodeUnknownOption(GitHubPullRequest);
@@ -226,6 +313,8 @@ type GitHubRollupEntry = typeof GitHubRollupEntry.Type;
 
 type GitLabPipeline = typeof GitLabPipeline.Type;
 
+type GitLabUser = typeof GitLabUser.Type;
+
 export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
   const processes = options.processes ?? processRunner();
   const timeoutMs = options.timeoutMs ?? DEFAULT_FORGE_TIMEOUT_MS;
@@ -240,6 +329,7 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
     );
 
   const states = new Map<SessionID, CacheEntry<ForgeState | undefined>>();
+  const listings = new Map<ProjectID, CacheEntry<ForgeItems | undefined>>();
   const availability = new Map<Forge, CacheEntry<boolean>>();
 
   const cached = <K, T>(
@@ -326,6 +416,75 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
         }),
       ),
     );
+
+  const decodedRead = <A>(
+    host: Forge,
+    subcommand: string,
+    args: readonly string[],
+    workingDirectory: string,
+    decode: (standardOutput: string) => Result.Result<A, ForgeFailure>,
+  ): Promise<A | undefined> =>
+    absentOnFailure(
+      host,
+      subcommand,
+      Effect.gen(function* () {
+        const standardOutput = yield* invoke(host, args, workingDirectory);
+        const read = yield* Effect.fromResult(
+          Result.mapError(decode(standardOutput), (reason) => new ForgeReadFailed({ reason })),
+        );
+
+        log.debug("forge read", { forge: host, cli: forgeExecutable(host), subcommand });
+
+        return read;
+      }),
+    );
+
+  const readItems = async (host: Forge, project: Project): Promise<ForgeItems | undefined> => {
+    const limit = String(FORGE_LIST_LIMIT);
+    const directory = project.directory;
+
+    const [pullRequests, issues, viewer] = await (host === "gitHub"
+      ? Promise.all([
+          decodedRead(
+            host,
+            "pr list",
+            ["pr", "list", ...GITHUB_LIST_FLAGS, limit, "--json", GITHUB_PULL_REQUEST_LIST_FIELDS],
+            directory,
+            gitHubPullRequestsOf,
+          ),
+          decodedRead(
+            host,
+            "issue list",
+            ["issue", "list", ...GITHUB_LIST_FLAGS, limit, "--json", GITHUB_ISSUE_FIELDS],
+            directory,
+            gitHubIssuesOf,
+          ),
+          decodedRead(host, "api user", ["api", "user"], directory, gitHubViewerOf),
+        ])
+      : Promise.all([
+          decodedRead(
+            host,
+            "mr list",
+            ["mr", "list", ...GITLAB_LIST_FLAGS, limit, "--output", "json"],
+            directory,
+            gitLabMergeRequestsOf,
+          ),
+          decodedRead(
+            host,
+            "issue list",
+            ["issue", "list", ...GITLAB_LIST_FLAGS, limit, "--output", "json"],
+            directory,
+            gitLabIssuesOf,
+          ),
+          decodedRead(host, "api user", ["api", "user"], directory, gitLabViewerOf),
+        ]));
+
+    if (pullRequests === undefined && issues === undefined) return undefined;
+
+    const items = [...(pullRequests ?? []), ...(issues ?? [])];
+
+    return viewer === undefined ? { items } : { viewer, items };
+  };
 
   const readState = (
     host: Forge,
@@ -421,6 +580,14 @@ export function forgeService(options: ForgeServiceOptions = {}): ForgeServing {
       const at = clock();
 
       return cached(states, request.session.id, at, () => readState(host, request.session, at));
+    },
+
+    items(project: Project): Promise<ForgeItems | undefined> {
+      const host = project.git?.forge;
+
+      if (host === undefined) return Promise.resolve(undefined);
+
+      return cached(listings, project.id, clock(), () => readItems(host, project));
     },
 
     pullRequestBranch(request: {
@@ -615,4 +782,143 @@ function gitLabHeadOf(standardOutput: string): Result.Result<DecodedHead, ForgeF
     branch: decoded.source_branch,
     isCrossRepository: decoded.source_project_id !== decoded.target_project_id,
   });
+}
+
+function decodedOutput<A>(
+  standardOutput: string,
+  schema: Schema.Codec<A, unknown>,
+): Result.Result<A, ForgeFailure> {
+  const json = decodeJson(standardOutput);
+
+  if (Option.isNone(json)) return Result.fail(new MalformedOutput());
+
+  const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(json.value));
+
+  return decoded === undefined ? Result.fail(new UnknownShape()) : Result.succeed(decoded);
+}
+
+function forgeItem(
+  fields: Omit<ForgeItem, "author" | "branch" | "updatedAt"> & {
+    readonly author: string | undefined;
+    readonly branch: string | undefined;
+    readonly updatedAt: string;
+  },
+): ForgeItem {
+  const { author, branch, updatedAt, ...rest } = fields;
+  const item: ForgeItem = { ...rest, updatedAt: instant(updatedAt) };
+  const withAuthor = author === undefined ? item : { ...item, author };
+
+  return branch === undefined || branch.length === 0 ? withAuthor : { ...withAuthor, branch };
+}
+
+function usernames(users: readonly GitLabUser[] | null | undefined): readonly string[] {
+  return (users ?? []).map((user) => user.username);
+}
+
+function gitHubPullRequestsOf(standardOutput: string): Result.Result<ForgeItem[], ForgeFailure> {
+  return Result.map(
+    decodedOutput(standardOutput, Schema.Array(GitHubPullRequestListing)),
+    (listed) =>
+      listed.map((entry) =>
+        forgeItem({
+          kind: "pullRequest",
+          number: entry.number,
+          title: entry.title,
+          state: Match.value(entry.state).pipe(
+            Match.when("OPEN", () => "open" as const),
+            Match.when("MERGED", () => "merged" as const),
+            Match.when("CLOSED", () => "closed" as const),
+            Match.exhaustive,
+          ),
+          isDraft: entry.isDraft,
+          url: entry.url,
+          author: entry.author?.login,
+          assignees: entry.assignees.map((assignee) => assignee.login),
+          reviewers: entry.reviewRequests.flatMap((request) =>
+            request.login === undefined ? [] : [request.login],
+          ),
+          labels: entry.labels.map((label) => label.name),
+          branch: entry.headRefName,
+          updatedAt: entry.updatedAt,
+        }),
+      ),
+  );
+}
+
+function gitHubIssuesOf(standardOutput: string): Result.Result<ForgeItem[], ForgeFailure> {
+  return Result.map(decodedOutput(standardOutput, Schema.Array(GitHubIssueListing)), (listed) =>
+    listed.map((entry) =>
+      forgeItem({
+        kind: "issue",
+        number: entry.number,
+        title: entry.title,
+        state: entry.state === "OPEN" ? "open" : "closed",
+        isDraft: false,
+        url: entry.url,
+        author: entry.author?.login,
+        assignees: entry.assignees.map((assignee) => assignee.login),
+        reviewers: [],
+        labels: entry.labels.map((label) => label.name),
+        branch: undefined,
+        updatedAt: entry.updatedAt,
+      }),
+    ),
+  );
+}
+
+function gitHubViewerOf(standardOutput: string): Result.Result<string, ForgeFailure> {
+  return Result.map(decodedOutput(standardOutput, GitHubViewer), (viewer) => viewer.login);
+}
+
+function gitLabMergeRequestsOf(standardOutput: string): Result.Result<ForgeItem[], ForgeFailure> {
+  return Result.map(
+    decodedOutput(standardOutput, Schema.Array(GitLabMergeRequestListing)),
+    (listed) =>
+      listed.map((entry) =>
+        forgeItem({
+          kind: "pullRequest",
+          number: entry.iid,
+          title: entry.title,
+          state: Match.value(entry.state).pipe(
+            Match.whenOr("opened", "locked", () => "open" as const),
+            Match.when("merged", () => "merged" as const),
+            Match.when("closed", () => "closed" as const),
+            Match.exhaustive,
+          ),
+          isDraft: entry.draft,
+          url: entry.web_url,
+          author: entry.author?.username,
+          assignees: usernames(entry.assignees),
+          reviewers: usernames(entry.reviewers),
+          labels: entry.labels,
+          branch: entry.source_branch,
+          updatedAt: entry.updated_at,
+        }),
+      ),
+  );
+}
+
+function gitLabIssuesOf(standardOutput: string): Result.Result<ForgeItem[], ForgeFailure> {
+  return Result.map(decodedOutput(standardOutput, Schema.Array(GitLabIssueListing)), (listed) =>
+    listed.map((entry) =>
+      forgeItem({
+        kind: "issue",
+        number: entry.iid,
+        title: entry.title,
+        state: entry.state === "closed" ? "closed" : "open",
+        isDraft: false,
+        url: entry.web_url,
+        author: entry.author?.username,
+        assignees: usernames(entry.assignees),
+        reviewers: [],
+        labels: entry.labels,
+        branch: undefined,
+        updatedAt: entry.updated_at,
+      }),
+    ),
+  );
+}
+
+function gitLabViewerOf(standardOutput: string): Result.Result<string, ForgeFailure> {
+  return Result.map(decodedOutput(standardOutput, GitLabViewer), (viewer) => viewer.username);
 }

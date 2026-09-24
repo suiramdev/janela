@@ -1,5 +1,4 @@
 import {
-  Badge,
   CommandMenu,
   CommandMenuEmpty,
   CommandMenuFooter,
@@ -9,11 +8,12 @@ import {
   CommandMenuShell,
   type CommandMenuItemData,
 } from "@janela/design";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 export interface FindRow extends CommandMenuItemData {
   readonly status?: string;
+  readonly statusGlyph?: ReactNode;
 }
 
 export interface FindSurfaceProps {
@@ -34,9 +34,9 @@ export function FindSurface(props: FindSurfaceProps): ReactElement {
   const rows = useMemo(() => rank(query), [rank, query]);
 
   const statuses = useMemo(() => {
-    const table = new Map<string, string>();
+    const table = new Map<string, FindRow>();
 
-    for (const row of rows) if (row.status !== undefined) table.set(row.value, row.status);
+    for (const row of rows) if (row.status !== undefined) table.set(row.value, row);
 
     return table;
   }, [rows]);
@@ -60,9 +60,10 @@ export function FindSurface(props: FindSurfaceProps): ReactElement {
             <span className="truncate">{item.label}</span>
             <span className="text-muted-foreground/60 min-w-0 truncate">{item.description}</span>
           </span>
-          <Badge variant="secondary" className="ml-auto shrink-0">
-            {status}
-          </Badge>
+          <span className="ml-auto flex shrink-0 items-center" title={status.status}>
+            {status.statusGlyph}
+            <span className="sr-only">{status.status}</span>
+          </span>
         </CommandMenuItem>
       );
     },

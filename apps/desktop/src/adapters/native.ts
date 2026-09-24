@@ -1,7 +1,7 @@
-import { absolutePath, type AbsolutePath } from "@janela/core";
-import type { DirectoryPicking, NativeShell } from "@janela/ui";
+import { absolutePath, isWebURL, type AbsolutePath } from "@janela/core";
+import type { DirectoryPicking, ExternalLinks, NativeShell } from "@janela/ui";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export interface DirectoryDialogOptions {
   readonly directory: true;
@@ -15,8 +15,14 @@ export type PathOpener = (path: string, openWith: string) => Promise<void>;
 
 export type ItemRevealer = (path: string) => Promise<void>;
 
+export type URLOpener = (url: string) => Promise<void>;
+
 interface DirectoryPickerDeps {
   readonly open?: DirectoryDialog | undefined;
+}
+
+interface ExternalLinksDeps {
+  readonly openUrl?: URLOpener | undefined;
 }
 
 interface NativeShellDeps {
@@ -49,6 +55,16 @@ export function tauriNativeShell(deps: NativeShellDeps = {}): NativeShell {
 
     async openInTerminal(path): Promise<void> {
       await openWith(path, TERMINAL_APP);
+    },
+  };
+}
+
+export function tauriLinks(deps: ExternalLinksDeps = {}): ExternalLinks {
+  const openInBrowser: URLOpener = deps.openUrl ?? openUrl;
+
+  return {
+    async open(url): Promise<void> {
+      if (isWebURL(url)) await openInBrowser(url);
     },
   };
 }

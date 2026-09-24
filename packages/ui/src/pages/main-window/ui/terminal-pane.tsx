@@ -10,7 +10,7 @@ import {
   type TerminalID,
   type TerminalState,
 } from "@janela/core";
-import { Badge, Button, useSize, cn } from "@janela/design";
+import { Button, useSize, cn } from "@janela/design";
 import { TerminalSurface, type TerminalSurfaceHandle } from "@janela/terminal-ui";
 import {
   useCallback,
@@ -26,8 +26,9 @@ import { useClientEnvironment, useStoreValue } from "../../../shared/model/index
 import { ContextMenuRegion, type MenuRow } from "../../../shared/ui/index.ts";
 import { terminalMenuRows } from "../model/menu-rows.ts";
 import { TERMINAL_DRAG_TYPE, dockEdge } from "../model/pane-drag.ts";
-import { isFailureState, terminalBadgeText, terminalStateText } from "../model/tab-rows.ts";
+import { isFailureState, paneStateText, terminalStateText } from "../model/tab-rows.ts";
 import { attachPane, shouldStartOnAttach } from "../model/terminal-attach.ts";
+import { SessionStatusGlyph } from "./session-status-glyph.tsx";
 
 const NO_MENU_ROWS: readonly MenuRow[] = [];
 
@@ -247,7 +248,7 @@ export function TerminalPane(props: {
 
   const title = descriptor?.title ?? "Terminal";
   const stateText = terminalStateText(state);
-  const badgeText = terminalBadgeText(state);
+  const paneState = paneStateText(state);
   const size = useSize();
 
   return (
@@ -275,8 +276,17 @@ export function TerminalPane(props: {
         <span className="text-foreground/70 min-w-0 flex-1 truncate text-xs font-medium">
           {title}
         </span>
-        {badgeText === undefined ? null : (
-          <Badge variant={isFailureState(state) ? "destructive" : "secondary"}>{badgeText}</Badge>
+        {paneState === undefined ? null : (
+          <PaneState
+            text={paneState}
+            tone={
+              isFailureState(state)
+                ? "failure"
+                : state?.kind === "needsAttention"
+                  ? "attention"
+                  : "quiet"
+            }
+          />
         )}
         <Button
           variant="ghost"
@@ -318,4 +328,39 @@ export function TerminalPane(props: {
 
 function swallowRequestFailure(): undefined {
   return undefined;
+}
+
+function PaneState(props: {
+  readonly text: string;
+  readonly tone: "attention" | "failure" | "quiet";
+}): ReactElement {
+  const { text, tone } = props;
+
+  if (tone === "attention") {
+    return (
+      <span
+        data-slot="pane-state"
+        data-tone={tone}
+        className="flex shrink-0 items-center"
+        title={text}
+      >
+        <SessionStatusGlyph status="unread" size={12} />
+        <span className="sr-only">{text}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      data-slot="pane-state"
+      data-tone={tone}
+      className={cn(
+        "max-w-48 shrink-0 truncate text-[11px]",
+        tone === "failure" ? "text-failure" : "text-muted-foreground",
+      )}
+      title={text}
+    >
+      {text}
+    </span>
+  );
 }

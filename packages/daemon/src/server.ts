@@ -22,6 +22,7 @@ import {
 } from "@janela/protocol";
 import type {
   DirectoryBrowsing,
+  ForgeOverviewing,
   ProjectService,
   SessionService,
   StateObserving,
@@ -65,6 +66,7 @@ export interface DaemonServerOptions {
   readonly directories: DirectoryBrowsing;
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
+  readonly forge: ForgeOverviewing;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
   readonly handshakeDeadlineMs?: number;
@@ -136,7 +138,7 @@ const DELIVERED = (): boolean => true;
 const SEND_FAILED = (): boolean => false;
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, directories, integrations, log } = options;
+  const { terminals, sessions, projects, directories, integrations, forge, log } = options;
   const dispatch =
     options.dispatch ??
     createRequestDispatch({
@@ -145,6 +147,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       directories,
       terminals,
       integrations,
+      forge,
       log,
       settled: (terminal) => terminalEvents.reconcile(terminal),
     });

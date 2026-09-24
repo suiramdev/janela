@@ -2310,8 +2310,8 @@ is unused over the local socket, where the operating system vouches for the
 peer, and is carried from v1 because adding a field to a shipped protocol is a
 breaking change and this one costs nothing.
 
-Code versus spec: the shipped constants are `PROTOCOL_VERSION = 14` and
-`MINIMUM_SUPPORTED_VERSION = 14`. They moved together up to 6, for the reason
+Code versus spec: the shipped constants are `PROTOCOL_VERSION = 15` and
+`MINIMUM_SUPPORTED_VERSION = 15`. They moved together up to 6, for the reason
 the paragraph above gives; v7 only added optional fields to a message a v6 peer
 already decodes, so that peer degraded to git's own refusal instead of closing
 the connection; v8 adds a new request (`listDirectory`, the browser client's
@@ -2319,7 +2319,8 @@ folder picker) and v9 another (`moveTerminal`, a pane dropped elsewhere in its
 layout), each of which an older daemon would answer by dropping the socket, so
 the minimum moved with them again, and it has kept moving since — 13 adds
 `markSession`, and 14 takes the two launch-profile requests off `ClientMessage`
-along with the `StateUpdate` fields that carried them.
+along with the `StateUpdate` fields that carried them; 15 adds `forgeOverview`,
+the Inbox's one question.
 `docs/packages/protocol.md` § Version history carries the numbered history of
 what each version added, plus what an older peer does when it meets a newer
 one. The code wins.

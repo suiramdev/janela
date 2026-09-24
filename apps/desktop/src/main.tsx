@@ -25,7 +25,7 @@ import {
   syncNativeShortcuts,
   tauriCommandSource,
 } from "./adapters/menu.ts";
-import { tauriDirectoryPicker, tauriNativeShell } from "./adapters/native.ts";
+import { tauriDirectoryPicker, tauriLinks, tauriNativeShell } from "./adapters/native.ts";
 import { tauriNotificationSound } from "./adapters/notification-sound.ts";
 import { tauriWindowControls } from "./adapters/window-controls.ts";
 import { liveEnvironment } from "./environment.ts";
@@ -59,6 +59,7 @@ const clientEnvironment: ClientEnvironment = {
   confirmations,
   directories: tauriDirectoryPicker(),
   clipboard: browserClipboard(),
+  links: tauriLinks(),
   settings: settingsStore,
   local: {
     native: tauriNativeShell(),

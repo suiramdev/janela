@@ -31,6 +31,7 @@ export type SettingsRoute =
 
 export type Screen =
   | { readonly kind: "workspace" }
+  | { readonly kind: "inbox" }
   | { readonly kind: "settings"; readonly route: SettingsRoute };
 
 export interface ViewState {
@@ -65,6 +66,7 @@ export interface ViewState {
   revertSettingsDraft(): void;
 
   showSettings(route: SettingsRoute | undefined): void;
+  showInbox(): void;
   showWorkspace(): void;
 
   registerSurface(terminalID: TerminalID, handle: TerminalSurfaceHandle): () => void;
@@ -76,6 +78,8 @@ export interface ViewState {
 const NO_LAYOUTS: ReadonlyMap<SessionID, LocalLayoutEntry> = new Map<SessionID, LocalLayoutEntry>();
 
 const WORKSPACE: Screen = { kind: "workspace" };
+
+const INBOX: Screen = { kind: "inbox" };
 
 const FIRST_TAB: SettingsRoute = { kind: "tab", tab: "appearance" };
 
@@ -159,6 +163,12 @@ export function createViewState(sessions: SessionStore): ViewState {
       if (owner === undefined) return;
 
       sessions.selection = owner.id;
+
+      if (screen.kind === "inbox") {
+        screen = WORKSPACE;
+        notify();
+      }
+
       applyLayout(owner.id, (layout) => withFocusedTerminal(layout, terminalID));
       surfaces.get(terminalID)?.focus();
     },
@@ -221,6 +231,13 @@ export function createViewState(sessions: SessionStore): ViewState {
       if (screen.kind === "settings" && sameRoute(screen.route, next)) return;
 
       screen = { kind: "settings", route: next };
+      notify();
+    },
+
+    showInbox(): void {
+      if (screen.kind === "inbox") return;
+
+      screen = INBOX;
       notify();
     },
 

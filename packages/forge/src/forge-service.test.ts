@@ -832,6 +832,251 @@ describe("pullRequestBranch", () => {
   });
 });
 
+describe("items", () => {
+  const gitLab = { git: { forge: "gitLab" as const, defaultBranch: "main" } };
+
+  const ghPullRequests = JSON.stringify([
+    {
+      number: 42,
+      title: unloggableTitle,
+      state: "OPEN",
+      isDraft: true,
+      url: unloggableUrl,
+      author: { login: "octo", is_bot: false },
+      assignees: [{ login: "suiramdev" }],
+      reviewRequests: [{ __typename: "User", login: "suiramdev" }, { __typename: "Team" }],
+      labels: [{ name: "bug", color: "d93f0b" }],
+      headRefName: "feat/x",
+      updatedAt: "2026-09-22T15:02:00Z",
+    },
+  ]);
+
+  const ghIssues = JSON.stringify([
+    {
+      number: 7,
+      title: "the issue",
+      state: "CLOSED",
+      url: "https://github.com/suiramdev/janela/issues/7",
+      author: null,
+      assignees: [],
+      labels: [],
+      updatedAt: "2026-09-20T10:00:00Z",
+    },
+  ]);
+
+  test("gh is asked for both lists and the viewer, from the project's directory", async () => {
+    const h = harness({
+      outcomes: [
+        { standardOutput: ghPullRequests },
+        { standardOutput: ghIssues },
+        { standardOutput: JSON.stringify({ login: "suiramdev", id: 1 }) },
+      ],
+    });
+
+    const project = fakeProject();
+
+    const listed = await h.forge.items(project);
+
+    expect(h.invocations.map((invocation) => invocation.arguments)).toEqual([
+      [
+        "pr",
+        "list",
+        "--state",
+        "all",
+        "--search",
+        "sort:updated-desc",
+        "--limit",
+        "50",
+        "--json",
+        "number,title,state,isDraft,url,author,assignees,reviewRequests,labels,headRefName,updatedAt",
+      ],
+      [
+        "issue",
+        "list",
+        "--state",
+        "all",
+        "--search",
+        "sort:updated-desc",
+        "--limit",
+        "50",
+        "--json",
+        "number,title,state,url,author,assignees,labels,updatedAt",
+      ],
+      ["api", "user"],
+    ]);
+
+    expect(h.invocations.every((call) => call.workingDirectory === project.directory)).toBe(true);
+    expect(listed).toEqual({
+      viewer: "suiramdev",
+      items: [
+        {
+          kind: "pullRequest",
+          number: 42,
+          title: unloggableTitle,
+          state: "open",
+          isDraft: true,
+          url: unloggableUrl,
+          author: "octo",
+          assignees: ["suiramdev"],
+          reviewers: ["suiramdev"],
+          labels: ["bug"],
+          branch: "feat/x",
+          updatedAt: instant("2026-09-22T15:02:00Z"),
+        },
+        {
+          kind: "issue",
+          number: 7,
+          title: "the issue",
+          state: "closed",
+          isDraft: false,
+          url: "https://github.com/suiramdev/janela/issues/7",
+          assignees: [],
+          reviewers: [],
+          labels: [],
+          updatedAt: instant("2026-09-20T10:00:00Z"),
+        },
+      ],
+    });
+  });
+
+  test("glab's lists map locked to open, and a null assignee list to none", async () => {
+    const h = harness({
+      outcomes: [
+        {
+          standardOutput: JSON.stringify([
+            {
+              iid: 3,
+              title: unloggableTitle,
+              state: "merged",
+              draft: false,
+              web_url: unloggableUrl,
+              author: { username: "ada" },
+              assignees: null,
+              reviewers: [{ username: "grace" }],
+              labels: ["ci"],
+              source_branch: "feat/y",
+              updated_at: "2026-09-21T08:00:00.000Z",
+            },
+          ]),
+        },
+        {
+          standardOutput: JSON.stringify([
+            {
+              iid: 9,
+              title: "locked issue",
+              state: "locked",
+              web_url: "https://gitlab.com/a/b/-/issues/9",
+              author: { username: "ada" },
+              labels: [],
+              updated_at: "2026-09-21T09:00:00.000Z",
+            },
+          ]),
+        },
+        { standardOutput: JSON.stringify({ username: "ada" }) },
+      ],
+    });
+
+    const listed = await h.forge.items(fakeProject(gitLab));
+
+    expect(h.invocations[0]?.arguments).toEqual([
+      "mr",
+      "list",
+      "--all",
+      "--order",
+      "updated_at",
+      "--sort",
+      "desc",
+      "--per-page",
+      "50",
+      "--output",
+      "json",
+    ]);
+
+    expect(listed?.viewer).toBe("ada");
+    expect(
+      listed?.items.map((item) => [item.kind, item.state, item.assignees, item.reviewers]),
+    ).toEqual([
+      ["pullRequest", "merged", [], ["grace"]],
+      ["issue", "open", [], []],
+    ]);
+  });
+
+  test("one list failing still yields the other, and the failure logs a shape", async () => {
+    const h = harness({
+      outcomes: [
+        { standardOutput: ghPullRequests },
+        { succeeded: false, exitCode: 1, standardError: "HTTP 429: rate limit exceeded" },
+        { succeeded: false, exitCode: 1, standardError: "HTTP 429: rate limit exceeded" },
+      ],
+    });
+
+    const listed = await h.forge.items(fakeProject());
+
+    expect(listed?.viewer).toBeUndefined();
+    expect(listed?.items.map((item) => item.number)).toEqual([42]);
+    expect(failures(h.records)).toEqual(["rateLimited", "rateLimited"]);
+    expect(JSON.stringify(h.records)).not.toContain(unloggableTitle);
+  });
+
+  test("both lists failing is absence, not an empty inbox", async () => {
+    const loggedOut = { succeeded: false, exitCode: 4, standardError: "please run: gh auth login" };
+    const h = harness({ outcomes: [loggedOut, loggedOut, loggedOut] });
+
+    expect(await h.forge.items(fakeProject())).toBeUndefined();
+    expect(failures(h.records)).toEqual(["notLoggedIn", "notLoggedIn", "notLoggedIn"]);
+  });
+
+  test("an element that is not a web link refuses its whole list as unknownShape", async () => {
+    const h = harness({
+      outcomes: [
+        { standardOutput: ghPullRequests.replace(unloggableUrl, "file:///etc/passwd") },
+        { standardOutput: ghIssues },
+        { standardOutput: JSON.stringify({ login: "suiramdev" }) },
+      ],
+    });
+
+    const listed = await h.forge.items(fakeProject());
+
+    expect(listed?.items.map((item) => item.kind)).toEqual(["issue"]);
+    expect(failures(h.records)).toEqual(["unknownShape"]);
+  });
+
+  test("a project is listed once per refresh interval", async () => {
+    const h = harness({
+      outcomes: [
+        { standardOutput: ghPullRequests },
+        { standardOutput: ghIssues },
+        { standardOutput: JSON.stringify({ login: "suiramdev" }) },
+        { standardOutput: "[]" },
+        { standardOutput: "[]" },
+        { standardOutput: JSON.stringify({ login: "suiramdev" }) },
+      ],
+    });
+
+    const project = fakeProject();
+
+    await h.forge.items(project);
+    await h.forge.items(project);
+
+    expect(h.invocations).toHaveLength(3);
+
+    h.clock.advance(FORGE_REFRESH_INTERVAL_MS);
+
+    expect((await h.forge.items(project))?.items).toEqual([]);
+    expect(h.invocations).toHaveLength(6);
+  });
+
+  test("a project with no forge asks nothing", async () => {
+    const h = harness();
+    const folder = fakeProject();
+
+    delete folder.git;
+
+    expect(await h.forge.items(folder)).toBeUndefined();
+    expect(h.invocations).toEqual([]);
+  });
+});
+
 describe("defaults", () => {
   test("with no injected environment the CLI is still resolved from a PATH", async () => {
     const processes = scriptedProcesses({ which: {} });

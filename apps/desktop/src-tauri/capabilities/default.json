@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core APIs, dragging the window by its own chrome, holding the window to a theme, logging, notifications, the directory picker, opening a session's directory in Finder or Terminal, checking for and installing the app's own updates and relaunching afterwards.",
+  "description": "The main window: core APIs, dragging the window by its own chrome, holding the window to a theme, logging, notifications, the directory picker, opening a session's directory in Finder or Terminal, opening a pull request, merge request or issue in the browser, checking for and installing the app's own updates and relaunching afterwards.",
   "windows": ["main"],
   "permissions": [
     "core:default",

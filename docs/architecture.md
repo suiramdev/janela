@@ -497,6 +497,17 @@ reached by three messages (`integrations`, `installIntegration`,
 privileged path, so the browser client already installs hooks today and the
 future CLI gets it with no new code. Settings is only the surface that asks.
 
+**The Inbox is a question, not state.** What `gh` and `glab` report — a
+project's issues and pull requests, each session's branch and the pull request on
+it — reaches clients through one request, `forgeOverview`, answered by
+`createForgeOverview` in `@janela/session` (the layer that may compose git and the
+forge) and composed with a real `forgeService` in `janelad`, whose dependency edge
+on `@janela/forge` exists for that reason and for "new session from pull request".
+It is not in `StateUpdate`: a state frame must never wait on the network, and the
+answer is re-asked by the client on a timer rather than pushed. The client only
+lists and links: no pull request's content crosses the socket, and each item opens
+in the user's browser.
+
 **Codex needs trust entries as well as hooks.** Codex will not run a hook it has
 not been told to trust, so `config.toml` gets one `[hooks.state."…"]` block per
 handler, keyed by `<hooks.json path>:<label>:<groupIndex>:<handlerIndex>` and

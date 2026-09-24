@@ -6,6 +6,7 @@ import {
   NO_WINDOW_CONTROLS,
   SettingsScreen,
   browserClipboard,
+  browserLinks,
   createConfirmationQueue,
   createDirectoryPickerQueue,
   commandsWithShortcuts,
@@ -50,6 +51,7 @@ const clientEnvironment: ClientEnvironment = {
   confirmations,
   directories,
   clipboard: browserClipboard(),
+  links: browserLinks(),
   settings: settingsStore,
   local: undefined,
 };

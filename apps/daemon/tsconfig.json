@@ -22,6 +22,9 @@
       "path": "../../packages/git"
     },
     {
+      "path": "../../packages/forge"
+    },
+    {
       "path": "../../packages/pty"
     },
     {

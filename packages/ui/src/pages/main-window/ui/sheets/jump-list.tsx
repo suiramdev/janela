@@ -12,6 +12,7 @@ import { useCallback, useMemo } from "react";
 import { rankBy } from "../../../../shared/lib/fuzzy-match/index.ts";
 import { type FindRow, FindSurface } from "../../../../shared/ui/index.ts";
 import { sessionStatus, statusText } from "../../model/session-rows.ts";
+import { SessionStatusGlyph } from "../session-status-glyph.tsx";
 
 export interface JumpListProps {
   readonly projects: readonly Project[];
@@ -62,6 +63,7 @@ export function JumpList(props: JumpListProps): ReactElement {
         description:
           projects.find((project) => project.id === session.projectID)?.name ?? STANDALONE,
         status: statusText(sessionStatus(session, terminalStates)),
+        statusGlyph: <SessionStatusGlyph status={sessionStatus(session, terminalStates)} />,
       })),
     [projects, sessions, terminalStates, currentSelection],
   );

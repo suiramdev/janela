@@ -301,6 +301,34 @@ out by default — hence the scp-like pattern before the URL parse.
 Removing a project deletes its sessions and never a directory. A per-session
 removal plan is the only path that deletes files, and it asks first.
 
+## forge-overview.ts
+
+`createForgeOverview` answers the Inbox's one question — what do `gh` and `glab`
+say about every project and every session — by composing the project list, the
+session list, `git worktree list` and the forge. It sits here rather than in
+`@janela/daemon` because it needs git and the forge, which only this layer may
+compose; it sits beside the session service rather than inside it because it
+changes nothing and needs none of its lifecycle.
+
+- **The branch is git's, not the database's.** A worktree session's stored branch
+  is what it was created on; the user may have switched since. The branch shown is
+  the one `git worktree list` reports for the session's checkout, falling back to
+  the stored name only when git cannot say, and to the main worktree's branch for a
+  session in the project's own directory. A standalone session has none.
+- **One CLI failure costs one repository.** A repository whose lists could not be
+  read is still returned, marked unavailable, so the client can say why it is
+  empty — and none of its sessions is asked about separately, because a CLI that
+  cannot list will not answer `pr view` either.
+- **Reads are bounded in parallel.** Projects, and then sessions, run
+  `FORGE_READ_CONCURRENCY` (4) at a time, so a user with forty sessions does not
+  fork forty `gh` processes at once. The forge's own 60 s cache makes a repeat
+  question cheap.
+- It is asked only by a client. Nothing here runs on a timer.
+
+`repositoryPath` (in `project-service.ts`, beside `forgeForRemote`) reduces a remote
+to the `owner/repo` path the Inbox names a repository by, for scp-like and URL
+remotes alike, nested GitLab groups included.
+
 ## automation-runner.ts
 
 **Automation is visible.** The event's script runs in a real terminal the user can

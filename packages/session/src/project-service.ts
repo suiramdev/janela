@@ -52,6 +52,10 @@ const SCP_LIKE_REMOTE = /^[^@/]+@([^:/]+):/;
 
 const GITLAB_LABEL = "gitlab";
 
+const REPOSITORY_PATH_EDGES = /^\/+|\/+$/g;
+
+const GIT_SUFFIX = /\.git$/;
+
 const DETACHED_HEAD_START_POINT = "HEAD";
 
 const FALLBACK_DEFAULT_BRANCHES = ["main", "master"];
@@ -72,6 +76,18 @@ export function forgeForRemote(remoteURL: string): Forge | undefined {
   if (host.split(".").some((label) => label.startsWith(GITLAB_LABEL))) return "gitLab";
 
   return undefined;
+}
+
+export function repositoryPath(remoteURL: string): string | undefined {
+  const scpLike = SCP_LIKE_REMOTE.exec(remoteURL);
+  const path =
+    scpLike === null
+      ? Option.getOrUndefined(Option.map(parseURL(remoteURL), (url) => url.pathname))
+      : remoteURL.slice(scpLike[0].length);
+
+  const trimmed = path?.replace(REPOSITORY_PATH_EDGES, "").replace(GIT_SUFFIX, "");
+
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
 }
 
 function hostOf(remoteURL: string): string | undefined {

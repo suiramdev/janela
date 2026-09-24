@@ -63,6 +63,22 @@ lives beside the grammar rather than in the views because a terminal's state
 text and its tab badge (`model/tab-rows.ts` in `@janela/ui`) would otherwise
 word the same fact twice. It is the only user-facing copy in the file.
 
+## forge.ts
+
+The shapes the forge's answers take on the wire: `ForgeState` on a session,
+`ForgeItem` for one issue or pull/merge request, `ForgeRepository` for a project's
+list, `SessionForgeLink` and `ForgeOverview` for the whole answer. They are here,
+not in `@janela/forge`, because `@janela/protocol` has to encode them and cannot see
+a daemon package; they are values, not entities — no id, no storage, no concept a
+user learns ([`domain-model.md`](../domain-model.md) § ForgeItem). `ForgeItemState`
+is one union for issues and pull requests (`open` · `merged` · `closed`), with a
+draft kept apart as `isDraft` because a draft is open.
+
+`isWebURL` is the one test for "may a client hand this to a browser": the forge's
+decoders, the protocol codec and both link adapters use it, so the rule cannot drift
+between the layer that reads a URL and the layer that opens it. `FORGE_TITLE` names
+the two forges the way the UI writes them.
+
 ## identifiers.ts
 
 A branded string gives what a phantom type gave before: a `TerminalID` can never

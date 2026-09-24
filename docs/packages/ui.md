@@ -109,8 +109,23 @@ opening over them.
   say the same thing where macOS puts them, and the rest of the row is the drag
   band. Its spacer is `self-stretch` because an empty box in a centred row is 0px
   tall — and that box is most of the band the window is dragged by.
-- The Inbox row is reserved and disabled with a badge: an item that is merely grey
-  reads as broken.
+- The Inbox row switches the content column to the Inbox and back. While a session
+  needs you it carries the session status glyph at its end — the animated attention
+  one if any session is waiting, the red one if only errors or failed checks are —
+  and no count: attention is a state, never a number in a pill. The count is screen-reader
+  text beside the glyph. While the Inbox is open no session row is shown as current, so one place
+  is lit, not two.
+- A session row's forge details are fixed, not a setting: they sit at the row's end
+  (`ml-auto`, capped at 55% of the row) on the same line as the name. A session on a
+  branch with a pull request shows the pull request's state icon, its number and its
+  checks, and a hover-revealed `SidebarMenuAction` — a sibling of the row's button
+  rather than a button inside it — opens it in the browser; a session with only a
+  branch shows the branch. `sessionRowDetails` returns one or the other, never both,
+  and never the title: one line of about a hundred pixels cannot hold two identifiers
+  and a title without cutting each to a letter — seen in the browser as "⎇ f #53" —
+  and the number already identifies the branch. The Inbox shows the branch, the pull
+  request and its title together. Letting the user choose what a row shows was built
+  and taken out before release: it is a decision deferred, not a missing setting.
 - A session's state is the row's leading glyph, not part of the label: a dot passed
   as a child would sit inside the text box and stop the row's name being the
   weight-animated label. One component per state, built at module scope, because an
@@ -163,6 +178,75 @@ opening over them.
 - `EmptyState` says *which* nothing it is: "this filter found nothing" and "you have
   not added anything" call for different next actions, and neither repeats the
   buttons above.
+
+### `ui/inbox-view.tsx`
+
+The Inbox: sessions that need you, then a project's pull or merge requests and
+issues, laid out like a forge's own list page. It is a screen of the main window
+(`Screen.kind === "inbox"`), not a page of its own, so the sidebar stays beside it
+and choosing a session goes straight to it. The layout choices were put to
+TypeSafe Jev with the cost of each option stated, and it chose each of them at
+p ≥ 0.73 except where noted.
+
+- **Needs you** is a section above everything else, drawn only when
+  `sessionsNeedingAttention` returns a row, so the section's presence is the
+  signal. A row carries the sidebar's status glyph and its reason as tinted plain
+  text ("waiting for you", "stopped with an error", "checks failed") — no badge —
+  then its branch, its pull request and a link out. The branch and the pull request
+  are always shown here, whatever the sidebar is set to hide. Jev split between a
+  section and a first tab (0.40 / 0.33 / 0.27 over three options, 0.62 for a tab in
+  a two-way ask, 0.73 for the section once the cost that a counted tab is the badge
+  the user asked to remove was named); the section is what shipped.
+- **Kind** is the top row of underline tabs: pull requests and issues are separate
+  lists, as a forge keeps them. The first tab speaks each forge's word —
+  `inboxKindTitle` says "Pull requests", "Merge requests", or "Pull & merge requests"
+  when both forges are present.
+- **Search** is a full-width field over title, `#number`/`!number`, branch, author,
+  assignees, labels and repository; every word must match (`matchesQuery`). The
+  sort select sits at its right: recently or least recently updated, newest or
+  oldest by number. Number order across repositories is not creation order, which
+  is the stated cost of offering it; there is no creation time to sort by.
+- **State** is a segmented Open · Merged · Closed · All with the count of each under
+  every other filter (`inboxStatusCounts`); Merged is not offered for issues, and a
+  kind switch that would land on it falls back to Open. Drafts are open, marked in
+  the row by the draft icon and the word "Draft".
+- **Filters** follow on the same row: involvement against each repository's own
+  signed-in login (shown only when one is known), author, assignee, label,
+  repository and platform (the last two only when there is more than one). Clear
+  resets the search and these, and keeps the kind, state and sort. The filter is
+  local state and resets with the screen; it is a view of the answer, not a
+  setting.
+- **A row** carries only what identifies an item: number, title, state, author,
+  when it moved, branch, labels. Its one action opens it in the browser: the title
+  is a button labelled with the title and "Open pull request #42 on GitHub",
+  stretched over the row with an `::after`, and a link-out icon is revealed on hover
+  and focus (always shown on a coarse pointer) so the row says it leaves the app
+  before it is clicked; the row says nothing more about leaving, because the icon
+  already has. Relative times are a `<time>` with the absolute date as its title; the
+  metadata parts are separated by `·`.
+- A pull request whose head branch a session is on shows that session as a chip,
+  which opens it — raised above the stretched row button, so it is its own target.
+  That is the one place a session, its branch, its repository and its pull request
+  are read together.
+- A repository whose CLI did not answer is named under the list in muted text, with
+  the three reasons it may be. That is the one place absence is explained, because
+  it is the page the user opened to see that data; the sidebar stays silent.
+- The first answer is waited on with skeleton rows shaped like an item, so the list
+  does not jump when it lands; the refresh button spins its own icon
+  (`motion-safe`) rather than swapping it for a spinner.
+- Relative times are measured from when the overview arrived, not from `Date.now()`
+  during render, so a render is pure and the list does not drift between polls.
+
+### `ui/forge-overview-context.tsx`, `model/forge-overview.ts`
+
+`usePolledForgeOverview` (called once, in `MainWindow`) owns the one
+`ForgeOverviewStore` and asks the daemon on connect, every
+`FORGE_OVERVIEW_POLL_MS` (60 s, the forge's own cache interval), and whenever the
+set of projects or sessions changes — never on a sidebar setting, because hiding a
+detail must not stop the reading. Two refreshes in flight are one request; a failed
+refresh keeps the last answer on screen (AGENTS.md § Non-negotiables 8), and only a
+first answer that never comes reads as unreachable. `sessionLinkLookup` turns the
+answer into the per-session lookup the sidebar and the Inbox share.
 
 ### `ui/tab-strip.tsx`
 
@@ -670,6 +754,15 @@ it everywhere would make the gesture worthless.
   is derived here beside `sessionStatus` so the two can never disagree about
   what a click would do.
 
+### `model/session-forge.ts` and `model/inbox.ts`
+
+Pure derivations, tested without a DOM. `sessionRowDetails` is the one place a
+session's forge link becomes what its sidebar row shows: a pull request (number,
+state, checks, link) stands in for the branch, a bare branch is the branch, and a
+rollup of `none` is not drawn as a result. `itemReference` writes GitLab merge requests as `!7` and
+everything else as `#7`. `inbox.ts` holds the filter, its defaults, the options it
+offers, its search and sort, the per-state counts and the attention rule.
+
 ### `model/sidebar-filter.ts`
 
 - **No text query.** Finding by name is the Command Menu's job; a status filter
@@ -697,11 +790,12 @@ it everywhere would make the gesture worthless.
 - `terminalStateText` defers to `agentActivityText` from `@janela/core` whenever
   an activity is present, so a pane bar never words the same fact differently
   from anywhere else that renders it.
-- `terminalBadgeText` is that text filtered to what is worth a badge: nothing
-  for a plain `running` terminal, and nothing for an attention that is bare or
-  merely `working`, because those are what the glyph already says. A badge
-  earns its pixels by carrying something the colour cannot — "waiting for
-  permission", "stopped with an error", an exit code.
+- `paneStateText` is that text filtered to what the pane bar shows: nothing for
+  a plain `running` terminal, and nothing for an attention that is bare or merely
+  `working`, because those are what the sidebar glyph already says. The pane draws
+  it without a badge: an agent waiting or finished is the animated attention glyph
+  with the words in its tooltip and accessible label, a failure is the words in
+  the failure tint, and anything else — an exit code — is muted text.
 - `isFailureState` counts a `finished/failed` report as a failure beside a
   non-zero exit, so a tab reads the same whether the shell or the agent in it
   was the one that failed.
@@ -866,9 +960,9 @@ positional shape is deliberate — a sidebar test reads better as
 
 ### `ui/appearance-settings.tsx`
 
-Two sections: the theme and the font. Size comes from the window and behaviour
-belongs to the program, so those are the two things a developer has an opinion
-about that we cannot infer. The close-terminal question that used to sit beside
+Three sections: the theme, the font, and what a session in the sidebar shows. Size
+comes from the window and behaviour belongs to the program, so those are the
+things a developer has an opinion about that we cannot infer. The close-terminal question that used to sit beside
 them moved to Permissions with the other questions.
 
 - **The theme is a window appearance, not a stylesheet.** `GlobalSettings.theme` is
@@ -1204,6 +1298,10 @@ thing that can be wrong.
 - `Clipboard` is the one place a platform can refuse — reading is a permission on some —
   and a refusal is not an error to show anyone: `paste` answers `undefined` and the
   terminal receives nothing.
+- `ExternalLinks` opens a pull request, merge request or issue in the browser. It sits
+  beside `clipboard` rather than under `local` because every client can do it — the
+  Mac through the opener plugin, a browser with `window.open` — and both adapters
+  refuse anything that is not `http(s)`, whatever reached them.
 - `restartDaemon` is the version-skew banner's button and the only thing that may cause
   it, because restarting kills live terminals (§ Non-negotiables 7).
 - `NotificationSoundControlling` is under `local` because both of its methods are
@@ -1340,6 +1438,13 @@ session **selection** stays on `SessionStore`, where the sidebar already reads i
   away what the user typed.
 - `settingsDraftSaved` leaves the values on screen: clearing them would show the mirror's
   older answer until the broadcast arrives, which reads as the save being undone.
+- `Screen` has three kinds: the workspace, the Inbox and settings. The Inbox keeps the
+  sidebar; settings replaces it. `selectSession` in `command-dispatch.ts` is the one
+  way a view chooses a session, and it leaves the Inbox for that session — so the
+  sidebar, the Inbox, the jump list, next/previous session and a new session all
+  land on the session they chose. `focusTerminal`, which a notification click
+  reaches, does the same. A session changing under the mirror does not close the
+  Inbox; only a choice does.
 - `showSettings` without a route stays where settings last was, so ⌘, twice does not send
   someone back to the first tab.
 - Registered surfaces are how Clear Scrollback reaches a viewport and how focus returns
@@ -1621,8 +1726,9 @@ the registry's `CommandMenu` and what lives here is three decisions.
   word-substring test that would drop `jan pt` → `fix/pty` on the way to the list, so the
   query is controlled here, rows are re-ranked per keystroke, and the menu's filter accepts
   everything.
-- **A session row carries its state.** `status` becomes a badge where a command's keycaps
-  go — the one thing a row shows that the menu has no slot for, and "running" beside a name
+- **A session row carries its state.** `statusGlyph` — the sidebar's status glyph — sits
+  where a command's keycaps go, with `status` as its tooltip and accessible text; no
+  badge, so attention reads the same here as in the sidebar. It is the one thing a row shows that the menu has no slot for, and "running" beside a name
   is why the palette can replace looking at the sidebar. Statuses are kept by row rather
   than read off the item the menu hands back, because `renderItem` is typed in the menu's
   own row data and a cast would promise the compiler something this file cannot see.

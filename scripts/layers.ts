@@ -118,6 +118,7 @@ export const PACKAGES: readonly PackageSpec[] = [
       "@janela/core",
       "@janela/protocol",
       "@janela/git",
+      "@janela/forge",
       "@janela/pty",
       "@janela/db",
       "@janela/terminal",
