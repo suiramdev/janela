@@ -45,7 +45,7 @@
     "oxfmt": "^0.64.0",
     "oxlint": "1.85.0",
     "oxslop": "^0.1.1",
-    "turbo": "^2.5.0",
+    "turbo": "^2.11.2",
     "typescript": "^5.9.0"
   },
   "engines": {
