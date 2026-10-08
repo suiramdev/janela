@@ -22,7 +22,7 @@
     "@janela/protocol": "workspace:*",
     "@janela/support": "workspace:*",
     "@janela/terminal-ui": "workspace:*",
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.1"
   },
   "devDependencies": {
     "@feature-sliced/steiger-plugin": "0.7.0",
