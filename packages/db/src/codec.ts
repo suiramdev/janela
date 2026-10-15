@@ -132,7 +132,7 @@ const IdentifierColumn = Schema.String.check(Schema.isGUID());
 const decodeIdentifierColumn = Schema.decodeUnknownOption(IdentifierColumn);
 
 const decodeAbsolutePathColumn = Schema.decodeUnknownOption(
-  Schema.String.check(Schema.isStartsWith("/")),
+  Schema.String.check(Schema.isStartingWith("/")),
 );
 
 const decodeStringArrayColumn = Schema.decodeUnknownOption(

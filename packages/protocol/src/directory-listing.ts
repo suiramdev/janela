@@ -32,7 +32,7 @@ interface DecodedListing {
   truncated: boolean;
 }
 
-const WirePath = Schema.String.check(Schema.isStartsWith("/"));
+const WirePath = Schema.String.check(Schema.isStartingWith("/"));
 
 const WireEntry = Schema.Struct({
   name: Schema.String.check(Schema.isNonEmpty()),
