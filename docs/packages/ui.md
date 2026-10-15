@@ -201,21 +201,45 @@ p ≥ 0.73 except where noted.
   lists, as a forge keeps them. The first tab speaks each forge's word —
   `inboxKindTitle` says "Pull requests", "Merge requests", or "Pull & merge requests"
   when both forges are present.
-- **Search** is a full-width field over title, `#number`/`!number`, branch, author,
-  assignees, labels and repository; every word must match (`matchesQuery`). The
-  sort select sits at its right: recently or least recently updated, newest or
-  oldest by number. Number order across repositories is not creation order, which
-  is the stated cost of offering it; there is no creation time to sort by.
-- **State** is a segmented Open · Merged · Closed · All with the count of each under
-  every other filter (`inboxStatusCounts`); Merged is not offered for issues, and a
-  kind switch that would land on it falls back to Open. Drafts are open, marked in
-  the row by the draft icon and the word "Draft".
-- **Filters** follow on the same row: involvement against each repository's own
-  signed-in login (shown only when one is known), author, assignee, label,
-  repository and platform (the last two only when there is more than one). Clear
-  resets the search and these, and keeps the kind, state and sort. The filter is
-  local state and resets with the screen; it is a view of the answer, not a
-  setting.
+- **State** is a segmented Open · Merged · Closed · All, above the search, with the
+  count of each under the search and every filter (`inboxStatusCounts`); Merged is not offered for issues, and a kind
+  switch that would land on it falls back to Open. Drafts are open, marked in the
+  row by the draft icon and the word "Draft". It stays a segmented control rather
+  than a token because a forge's own list keeps it there, and the counts are only
+  readable side by side.
+- **Search and filters are one field** (`ui/filtered-search.tsx`), after GitLab's
+  filtered search; the sort select sits at its right: recently or least recently
+  updated, newest or oldest by number. Number order across repositories is not
+  creation order, which is the stated cost of offering it; there is no creation time
+  to sort by. The field replaced a search box and six selects, so filtering is
+  found by typing rather than by scanning a row of controls:
+  - Typed text searches title, `#number`/`!number`, branch, author, assignees, labels
+    and repository as it is typed; every word must match (`matchesQuery`).
+  - The menu under the caret offers the filters whose name matches what is typed,
+    then up to six matching values of any filter ("Author = ada"), then "Search for
+    this text", which keeps the text as a chip of its own.
+  - Choosing a filter lists its values, narrowed as you type; choosing a value turns
+    the filter into a chip, `Author = ada`. Typing `author:` chooses the filter
+    without the menu, and `-author:` chooses its negation.
+  - The filters are author, assignee, label, involvement against each repository's
+    own signed-in login (offered only when one is known), repository and platform
+    (the last two only when there is more than one). Every chip applies at once.
+    Author, involvement, repository and platform take one value, so a second one
+    replaces the first; assignee and label take many, and all must hold.
+  - A chip's operator toggles between `=` and `!=`, its value reopens the menu to
+    choose again in place, and its × removes it. ↑↓ move through the menu, Enter
+    chooses, Escape abandons a half-made filter and then closes the menu, and
+    Backspace at the start of the field abandons the half-made filter or removes the
+    last chip. The field keeps focus throughout; the menu is a listbox it points into
+    through `aria-activedescendant`.
+  - The field is one line, always: chips and text scroll sideways inside it rather
+    than wrapping, so adding a filter never pushes the list down. Each change
+    scrolls to the caret, a chip being edited is scrolled into view and the menu
+    opens under it, and a vertical wheel scrolls the row sideways while it
+    overflows. A long value is cut at 15rem.
+  - The field's state is local and resets with the screen; it is a view of the
+    answer, not a setting. Its × clears the text and every chip, and keeps the kind,
+    state and sort.
 - **A row** carries only what identifies an item: number, title, state, author,
   when it moved, branch, labels. Its one action opens it in the browser: the title
   is a button labelled with the title and "Open pull request #42 on GitHub",
@@ -754,14 +778,19 @@ it everywhere would make the gesture worthless.
   is derived here beside `sessionStatus` so the two can never disagree about
   what a click would do.
 
-### `model/session-forge.ts` and `model/inbox.ts`
+### `model/session-forge.ts`, `model/inbox.ts` and `model/filtered-search.ts`
 
 Pure derivations, tested without a DOM. `sessionRowDetails` is the one place a
 session's forge link becomes what its sidebar row shows: a pull request (number,
 state, checks, link) stands in for the branch, a bare branch is the branch, and a
 rollup of `none` is not drawn as a result. `itemReference` writes GitLab merge requests as `!7` and
-everything else as `#7`. `inbox.ts` holds the filter, its defaults, the options it
-offers, its search and sort, the per-state counts and the attention rule.
+everything else as `#7`. `inbox.ts` holds the filter, its defaults, the search
+fields it offers and how each one matches, its search and sort, the per-state counts
+and the attention rule. `filtered-search.ts` is the field's own grammar, and knows
+nothing of forges: the chips, the half-made filter, what the menu suggests, what each
+key and click does to the state, and the free text the chips and the field add up
+to — each a pure function from one state to the next, so the interaction is tested
+without a DOM.
 
 ### `model/sidebar-filter.ts`
 

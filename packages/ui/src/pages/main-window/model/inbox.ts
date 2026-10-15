@@ -1,17 +1,26 @@
-import type {
-  Forge,
-  ForgeItem,
-  ForgeItemKind,
-  ForgeOverview,
-  ForgeRepository,
-  ProjectID,
-  Session,
-  SessionForgeLink,
-  SessionID,
-  TerminalID,
-  TerminalState,
+import {
+  FORGE_TITLE,
+  type Forge,
+  type ForgeItem,
+  type ForgeItemKind,
+  type ForgeOverview,
+  type ForgeRepository,
+  type Session,
+  type SessionForgeLink,
+  type SessionID,
+  type TerminalID,
+  type TerminalState,
 } from "@janela/core";
 
+import {
+  EMPTY_SEARCH,
+  searchFilters,
+  searchQuery,
+  type SearchField,
+  type SearchFilterToken,
+  type SearchState,
+  type SearchValue,
+} from "./filtered-search.ts";
 import { sessionStatus } from "./session-rows.ts";
 
 export type InboxKind = ForgeItemKind;
@@ -20,21 +29,23 @@ export type InboxStatus = "open" | "merged" | "closed" | "all";
 
 export type InboxSort = "updatedNewest" | "updatedOldest" | "numberHighest" | "numberLowest";
 
-export type InboxInvolvement = "any" | "assigned" | "authored" | "reviewRequested";
+export type InboxInvolvement = "assigned" | "authored" | "reviewRequested";
+
+export type InboxSearchField =
+  | "author"
+  | "assignee"
+  | "label"
+  | "involvement"
+  | "repository"
+  | "platform";
 
 export type AttentionReason = "unread" | "error" | "checksFailing";
 
 export interface InboxFilter {
   readonly kind: InboxKind;
   readonly status: InboxStatus;
-  readonly query: string;
   readonly sort: InboxSort;
-  readonly platform: Forge | undefined;
-  readonly repository: ProjectID | undefined;
-  readonly involvement: InboxInvolvement;
-  readonly author: string | undefined;
-  readonly assignee: string | undefined;
-  readonly label: string | undefined;
+  readonly search: SearchState;
 }
 
 export interface InboxItemRow {
@@ -66,14 +77,8 @@ interface RelativeStep {
 export const DEFAULT_INBOX_FILTER: InboxFilter = {
   kind: "pullRequest",
   status: "open",
-  query: "",
   sort: "updatedNewest",
-  platform: undefined,
-  repository: undefined,
-  involvement: "any",
-  author: undefined,
-  assignee: undefined,
-  label: undefined,
+  search: EMPTY_SEARCH,
 };
 
 export const INBOX_STATUS_TITLE = {
@@ -91,11 +96,19 @@ export const INBOX_SORT_TITLE = {
 } as const satisfies Record<InboxSort, string>;
 
 export const INBOX_INVOLVEMENT_TITLE = {
-  any: "Anyone's",
   assigned: "Assigned to me",
   authored: "Opened by me",
   reviewRequested: "Review requested",
 } as const satisfies Record<InboxInvolvement, string>;
+
+export const INBOX_SEARCH_FIELD_TITLE = {
+  author: "Author",
+  assignee: "Assignee",
+  label: "Label",
+  involvement: "Involvement",
+  repository: "Repository",
+  platform: "Platform",
+} as const satisfies Record<InboxSearchField, string>;
 
 export const ATTENTION_REASON_TITLE = {
   unread: "waiting for you",
@@ -115,10 +128,18 @@ export const INBOX_SORTS: readonly InboxSort[] = [
 ];
 
 export const INBOX_INVOLVEMENTS: readonly InboxInvolvement[] = [
-  "any",
   "assigned",
   "authored",
   "reviewRequested",
+];
+
+const INBOX_SEARCH_FIELDS: readonly InboxSearchField[] = [
+  "author",
+  "assignee",
+  "label",
+  "involvement",
+  "repository",
+  "platform",
 ];
 
 const SECONDS: RelativeStep = { unit: "second", seconds: 1 };
@@ -139,6 +160,21 @@ const SORT_ORDER = {
   numberLowest: (left, right) => left.item.number - right.item.number,
 } as const satisfies Record<InboxSort, (left: InboxItemRow, right: InboxItemRow) => number>;
 
+const FIELD_MATCHES = {
+  author: (item, _repository, value) => item.author === value,
+  assignee: (item, _repository, value) => item.assignees.includes(value),
+  label: (item, _repository, value) => item.labels.includes(value),
+  involvement: (item, repository, value) =>
+    INBOX_INVOLVEMENTS.some(
+      (involvement) => involvement === value && isInvolved(item, repository.viewer, involvement),
+    ),
+  repository: (_item, repository, value) => repository.projectID === value,
+  platform: (_item, repository, value) => repository.host === value,
+} as const satisfies Record<
+  InboxSearchField,
+  (item: ForgeItem, repository: ForgeRepository, value: string) => boolean
+>;
+
 const RELATIVE_TIME = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
 const ABSOLUTE_TIME = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
@@ -148,8 +184,6 @@ export function isInvolved(
   viewer: string | undefined,
   involvement: InboxInvolvement,
 ): boolean {
-  if (involvement === "any") return true;
-
   if (viewer === undefined) return false;
 
   if (involvement === "assigned") return item.assignees.includes(viewer);
@@ -157,6 +191,18 @@ export function isInvolved(
   if (involvement === "authored") return item.author === viewer;
 
   return item.reviewers.includes(viewer);
+}
+
+export function matchesSearchFilter(
+  item: ForgeItem,
+  repository: ForgeRepository,
+  token: SearchFilterToken,
+): boolean {
+  const field = INBOX_SEARCH_FIELDS.find((candidate) => candidate === token.field);
+
+  if (field === undefined) return true;
+
+  return FIELD_MATCHES[field](item, repository, token.value) === (token.operator === "is");
 }
 
 export function inboxKindTitle(kind: InboxKind, platforms: readonly Forge[]): string {
@@ -221,24 +267,16 @@ export function inboxStatusCounts(
 
 function matchingItems(overview: ForgeOverview, filter: InboxFilter): readonly InboxItemRow[] {
   const rows: InboxItemRow[] = [];
+  const query = searchQuery(filter.search);
+  const filters = searchFilters(filter.search);
 
   for (const repository of overview.repositories) {
-    if (filter.platform !== undefined && repository.host !== filter.platform) continue;
-
-    if (filter.repository !== undefined && repository.projectID !== filter.repository) continue;
-
     for (const item of repository.items) {
       if (item.kind !== filter.kind) continue;
 
-      if (!matchesQuery(item, repository, filter.query)) continue;
+      if (!matchesQuery(item, repository, query)) continue;
 
-      if (!isInvolved(item, repository.viewer, filter.involvement)) continue;
-
-      if (filter.author !== undefined && item.author !== filter.author) continue;
-
-      if (filter.assignee !== undefined && !item.assignees.includes(filter.assignee)) continue;
-
-      if (filter.label !== undefined && !item.labels.includes(filter.label)) continue;
+      if (!filters.every((token) => matchesSearchFilter(item, repository, token))) continue;
 
       rows.push({ key: `${repository.projectID}:${item.kind}:${item.number}`, item, repository });
     }
@@ -277,18 +315,41 @@ export function inboxFilterOptions(overview: ForgeOverview): InboxFilterOptions 
   };
 }
 
-export function isFiltered(filter: InboxFilter): boolean {
-  const defaults = DEFAULT_INBOX_FILTER;
+export function inboxSearchFields(options: InboxFilterOptions): readonly SearchField[] {
+  const values = {
+    author: namedValues(options.authors),
+    assignee: namedValues(options.assignees),
+    label: namedValues(options.labels),
+    involvement: options.knowsViewer
+      ? INBOX_INVOLVEMENTS.map((involvement) => ({
+          value: involvement,
+          title: INBOX_INVOLVEMENT_TITLE[involvement],
+        }))
+      : [],
+    repository:
+      options.repositories.length > 1
+        ? options.repositories.map((repository) => ({
+            value: repository.projectID,
+            title: repository.name,
+          }))
+        : [],
+    platform:
+      options.platforms.length > 1
+        ? options.platforms.map((platform) => ({ value: platform, title: FORGE_TITLE[platform] }))
+        : [],
+  } as const satisfies Record<InboxSearchField, readonly SearchValue[]>;
 
-  return (
-    filter.query.trim() !== "" ||
-    filter.platform !== defaults.platform ||
-    filter.repository !== defaults.repository ||
-    filter.involvement !== defaults.involvement ||
-    filter.author !== defaults.author ||
-    filter.assignee !== defaults.assignee ||
-    filter.label !== defaults.label
-  );
+  return INBOX_SEARCH_FIELDS.map((field) => ({
+    key: field,
+    title: INBOX_SEARCH_FIELD_TITLE[field],
+    values: values[field],
+    isPerson: field === "author" || field === "assignee",
+    takesMany: field === "assignee" || field === "label",
+  }));
+}
+
+function namedValues(names: readonly string[]): readonly SearchValue[] {
+  return names.map((name) => ({ value: name, title: name }));
 }
 
 export function sessionsNeedingAttention(
