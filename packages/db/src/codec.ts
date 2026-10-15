@@ -16,6 +16,8 @@ import type {
   ProjectSettings,
   Session,
   SessionLayout,
+  SessionNameOrigin,
+  SessionNaming,
   TerminalDescriptor,
   TerminalID,
   TerminalRole,
@@ -27,10 +29,14 @@ import {
   ACCENTS,
   AUTOMATION_EVENTS,
   MAXIMUM_PANE_DEPTH,
+  MAX_SESSION_NAMER_MODEL_LENGTH,
+  SESSION_NAMER_IDS,
+  SESSION_NAMING_OFF,
   absolutePath,
   backingViolations,
   identifier,
   instant,
+  isSessionNameOrigin,
   layoutViolations,
   repairLayout,
   toDate,
@@ -68,6 +74,7 @@ export interface AutomationColumns {
 export interface SessionColumns {
   readonly projectId: string | null;
   readonly name: string;
+  readonly nameOrigin: string;
   readonly directory: string;
   readonly backingKind: string;
   readonly worktreeBranch: string | null;
@@ -217,6 +224,45 @@ function readAccent(raw: string, table: "Project" | "Session", id: string, log: 
   return "none";
 }
 
+function readNameOrigin(raw: string, id: string, log: Logger): SessionNameOrigin {
+  if (isSessionNameOrigin(raw)) return raw;
+
+  log.warning("name origin unknown, kept as the user's", { table: "Session", id });
+
+  return "user";
+}
+
+const SessionNamingSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("off") }),
+  Schema.Struct({
+    kind: Schema.Literal("agent"),
+    agent: Schema.Literals(SESSION_NAMER_IDS),
+    model: Schema.optionalKey(
+      Schema.String.check(Schema.isMaxLength(MAX_SESSION_NAMER_MODEL_LENGTH)),
+    ),
+  }),
+]);
+
+const decodeSessionNamingText = Schema.decodeUnknownOption(
+  Schema.fromJsonString(SessionNamingSchema),
+);
+
+export function encodeSessionNaming(naming: SessionNaming): string {
+  return JSON.stringify(naming);
+}
+
+export function decodeSessionNaming(raw: string | undefined, log: Logger): SessionNaming {
+  if (raw === undefined) return SESSION_NAMING_OFF;
+
+  const decoded = Option.getOrUndefined(decodeSessionNamingText(raw));
+
+  if (decoded !== undefined) return decoded;
+
+  log.warning("session naming setting unreadable, turned off", { table: "Setting" });
+
+  return SESSION_NAMING_OFF;
+}
+
 export function encodeProject(project: Project): ProjectColumns {
   const root = project.settings.worktreeRoot;
 
@@ -364,6 +410,7 @@ export function encodeSession(session: Session): SessionColumns {
   return {
     projectId: session.projectID ?? null,
     name: session.name,
+    nameOrigin: session.nameOrigin,
     directory: session.directory,
     backingKind: session.backing.kind,
     worktreeBranch: binding?.branch ?? null,
@@ -635,6 +682,7 @@ export function decodeSession(row: SessionRow, log: Logger): Session {
   const session: Session = {
     id,
     name: row.name,
+    nameOrigin: readNameOrigin(row.nameOrigin, row.id, log),
     directory,
     backing,
     terminals,

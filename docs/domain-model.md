@@ -116,6 +116,7 @@ public struct Session: Identifiable, Hashable, Sendable, Codable {
     public let id: SessionID
     public var projectID: ProjectID?       // nil ⇒ standalone
     public var name: String
+    public var nameOrigin: NameOrigin      // derived · automatic · user
     public var directory: URL              // the working directory. Centre of gravity.
     public var backing: Backing            // how that directory came to exist
     public var terminals: [TerminalDescriptor]
@@ -129,6 +130,13 @@ public struct Session: Identifiable, Hashable, Sendable, Codable {
 
 **Names need not be unique.** People are bad at unique names and we do not need
 them to be — identity is the `SessionID`.
+
+**A name remembers who gave it.** `nameOrigin` is `derived` when Janela took it
+from a branch, a folder or a project at creation, `automatic` when Session
+naming wrote it, and `user` once a person renamed the session. Only the last is
+final: Session naming may replace the first two and never touches the third.
+It is not a concept the user learns — it is why a session they renamed keeps
+its name ([`architecture.md`](architecture.md) § Session naming).
 
 **The directory is the centre of gravity.** It is where terminals open. It may be a
 plain folder, a project's own checkout, or a worktree; the `Session` type does not

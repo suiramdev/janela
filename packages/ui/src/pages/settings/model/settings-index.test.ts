@@ -35,10 +35,13 @@ describe("the index", () => {
     expect(projectSections(JANELA).map((section) => section.id)).toContain("projectWorktrees");
   });
 
-  test("the Integrations tab lists the hooks and nothing else", () => {
+  test("the Integrations tab lists the hooks, then what Janela does with a forwarded prompt", () => {
     const integrations = SETTINGS_TAB_INFO.find((info) => info.id === "integrations");
 
-    expect(integrations?.sections.map((section) => section.id)).toEqual(["integrationsHooks"]);
+    expect(integrations?.sections.map((section) => section.id)).toEqual([
+      "integrationsHooks",
+      "integrationsNaming",
+    ]);
   });
 });
 

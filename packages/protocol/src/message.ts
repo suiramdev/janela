@@ -11,6 +11,7 @@ import type {
   ProjectSettings,
   Session,
   SessionID,
+  SessionNaming,
   TerminalID,
   TerminalState,
 } from "@janela/core";
@@ -119,6 +120,12 @@ export type ClientMessage =
       readonly type: "removeIntegration";
       readonly id: RequestID;
       readonly integrationID: IntegrationID;
+    }
+  | { readonly type: "sessionNaming"; readonly id: RequestID }
+  | {
+      readonly type: "configureSessionNaming";
+      readonly id: RequestID;
+      readonly naming: SessionNaming;
     };
 
 export interface TerminalInput {

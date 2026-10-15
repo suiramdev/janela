@@ -13,7 +13,7 @@ import {
   type HookPlan,
 } from "./hook-document.ts";
 import type { Integration, IntegrationFiles, IntegrationHome } from "./integration.ts";
-import { ACTIVITIES, hookCommand } from "./report-command.ts";
+import { ACTIVITIES, hookCommand, promptForwardCommand } from "./report-command.ts";
 
 interface ClaudeEvent {
   readonly event: string;
@@ -36,8 +36,12 @@ const CLAUDE_EVENTS: readonly ClaudeEvent[] = [
   { event: "StopFailure", activity: ACTIVITIES.finishedFailed },
 ];
 
+const PROMPT_FORWARDING_EVENT = "UserPromptSubmit";
+
 const CLAUDE_PLANS: readonly HookPlan[] = CLAUDE_EVENTS.map((spec) => {
-  const hooks = [{ type: "command", command: hookCommand(spec.activity) }] as const;
+  const reported = { type: "command", command: hookCommand(spec.activity) } as const;
+  const forwarded = { type: "command", command: promptForwardCommand() } as const;
+  const hooks = spec.event === PROMPT_FORWARDING_EVENT ? [reported, forwarded] : [reported];
 
   return {
     event: spec.event,
@@ -53,6 +57,7 @@ export const claudeIntegration: Integration = {
     "Working when you submit a prompt or a tool finishes",
     "Waiting when it asks permission or a question",
     "Finished when the turn ends",
+    "What you asked, so Session naming can name the session",
   ],
 
   configPath(home: IntegrationHome): string {

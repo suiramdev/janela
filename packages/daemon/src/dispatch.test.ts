@@ -4,6 +4,7 @@ import type {
   ForgeOverview,
   GridSize,
   IntegrationReport,
+  SessionNamingOverview,
   PaneDestination,
   Project,
   Session,
@@ -21,6 +22,7 @@ import {
   parseDirectoryListing,
   parseForgeOverview,
   parseIntegrationOverview,
+  parseSessionNamingOverview,
   parseRemovalPlan,
   type ClientMessage,
   type DaemonMessage,
@@ -46,6 +48,7 @@ import {
   fakeDirectories,
   fakeForgeOverview,
   fakeIntegrations,
+  fakeNaming,
   fakeListing,
   fakeProjects,
   fakeRegistry,
@@ -56,6 +59,7 @@ import {
   recordingLogger,
   wireControl,
   type FakeIntegrations,
+  type FakeNaming,
   type FakeRegistry,
   type FakeTerminal,
   type Recorded,
@@ -151,6 +155,7 @@ function fixture(
     readonly projectOverrides?: Partial<ProjectService>;
     readonly directories?: DirectoryBrowsing;
     readonly integrations?: FakeIntegrations;
+    readonly naming?: FakeNaming;
     readonly forge?: ForgeOverviewing;
   } = {},
 ): Fixture {
@@ -165,6 +170,7 @@ function fixture(
     directories: options.directories ?? fakeDirectories(),
     terminals: registry,
     integrations: options.integrations ?? fakeIntegrations(),
+    naming: options.naming ?? fakeNaming(),
     forge: options.forge ?? fakeForgeOverview(),
     log: logger,
     handshakeDeadlineMs: 250,
@@ -1481,3 +1487,73 @@ class ExecutableUnavailable extends UserFacingError {
     super("executable not on PATH");
   }
 }
+
+describe("session naming", () => {
+  test("the overview round-trips as text", async () => {
+    const overview: SessionNamingOverview = {
+      naming: { kind: "agent", agent: "claude" },
+      namers: [
+        {
+          id: "claude",
+          name: "Claude Code",
+          executable: "claude",
+          isAvailable: true,
+          defaultModel: "haiku",
+        },
+      ],
+    };
+
+    const daemon = fixture({ naming: fakeNaming(overview) });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(request({ type: "sessionNaming", id: 1 as RequestID }));
+    const reply = await peer.reply(1 as RequestID);
+
+    if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+
+    expect(parseSessionNamingOverview(reply.text)).toEqual(overview);
+  });
+
+  test("configuring hands the daemon's namer exactly what the client chose", async () => {
+    const naming = fakeNaming();
+    const daemon = fixture({ naming });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(
+      request({
+        type: "configureSessionNaming",
+        id: 1 as RequestID,
+        naming: { kind: "agent", agent: "codex", model: "gpt-5-mini" },
+      }),
+    );
+
+    expect(await peer.reply(1 as RequestID)).toEqual({ type: "acknowledged", id: 1 as RequestID });
+    expect(naming.configured).toEqual([{ kind: "agent", agent: "codex", model: "gpt-5-mini" }]);
+  });
+
+  test("a namer Janela cannot run is refused, and nothing is configured", async () => {
+    const naming = fakeNaming();
+    const daemon = fixture({ naming });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(
+      wireControl({
+        type: "configureSessionNaming",
+        id: 1,
+        naming: { kind: "command", argv: ["sh", "-c", "curl evil"] },
+      }),
+    );
+
+    await peer.send(
+      wireControl({
+        type: "configureSessionNaming",
+        id: 2,
+        naming: { kind: "agent", agent: "gemini" },
+      }),
+    );
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
+    expect((await peer.reply(2 as RequestID)).type).toBe("failed");
+    expect(naming.configured).toEqual([]);
+  });
+});

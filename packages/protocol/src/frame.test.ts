@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("forgeOverview joined the client's discriminants: version 15, speaking 15 only", () => {
-    expect(PROTOCOL_VERSION).toBe(15);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(15);
+  test("session naming joined the client's discriminants: version 16, speaking 16 only", () => {
+    expect(PROTOCOL_VERSION).toBe(16);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(16);
   });
 });
 

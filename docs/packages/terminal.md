@@ -151,6 +151,12 @@ doing must never print a stray character into the user's screen.
 `headless-emulator.test.ts` feeds a real escape and a bogus one and asserts both
 the single report and an unchanged snapshot.
 
+A payload that is not an activity is offered to `parseAgentPrompt`, and a
+forwarded prompt leaves as `onAgentPrompt(text)` — never as an activity, never
+onto the grid, and never stored by `LiveTerminal`, which only relays it. What
+happens to it is the daemon's business ([`session.md`](session.md) § Session
+naming).
+
 This is the same shape as `OSC 9;4`: the program *says* what it is doing. Janela
 never reads a harness's output for meaning (non-negotiable 3), so an agent's
 state comes from a hook the user chose to install, not from pattern-matching

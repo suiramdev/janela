@@ -28,6 +28,7 @@ const session: Session = {
   id: "0f6e1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" as SessionID,
   projectID,
   name: "feature",
+  nameOrigin: "derived",
   directory: "/Users/x/code/.worktrees/feature" as AbsolutePath,
   backing: { kind: "projectDirectory" },
   terminals: [],

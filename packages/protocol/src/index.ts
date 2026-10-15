@@ -7,4 +7,5 @@ export * from "./integration-overview.ts";
 export * from "./message-coder.ts";
 export * from "./message.ts";
 export * from "./removal-plan.ts";
+export * from "./session-naming.ts";
 export * from "./transport.ts";

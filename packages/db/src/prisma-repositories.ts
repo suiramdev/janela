@@ -1,4 +1,4 @@
-import type { Project, ProjectID, Session, SessionID } from "@janela/core";
+import type { Project, ProjectID, Session, SessionID, SessionNaming } from "@janela/core";
 import { now, toDate } from "@janela/core";
 import type { Logger } from "@janela/support";
 
@@ -6,15 +6,19 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import {
   decodeProject,
   decodeSession,
+  decodeSessionNaming,
   encodeAutomation,
   encodeProject,
   encodeSession,
+  encodeSessionNaming,
   encodeTerminal,
   requireWritableSession,
 } from "./codec.ts";
-import type { ProjectRepository, SessionRepository } from "./repositories.ts";
+import type { ProjectRepository, SessionRepository, SettingsRepository } from "./repositories.ts";
 
 const BY_POSITION = { orderBy: { position: "asc" } } as const;
+
+const SESSION_NAMING_KEY = "sessionNaming";
 
 export function projectRepository(client: PrismaClient, log: Logger): ProjectRepository {
   return {
@@ -153,6 +157,26 @@ export function sessionRepository(client: PrismaClient, log: Logger): SessionRep
 
     async touch(id: SessionID): Promise<void> {
       await client.session.updateMany({ where: { id }, data: { lastActiveAt: toDate(now()) } });
+    },
+  };
+}
+
+export function settingsRepository(client: PrismaClient, log: Logger): SettingsRepository {
+  return {
+    async sessionNaming(): Promise<SessionNaming> {
+      const row = await client.setting.findUnique({ where: { key: SESSION_NAMING_KEY } });
+
+      return decodeSessionNaming(row?.value, log);
+    },
+
+    async saveSessionNaming(naming: SessionNaming): Promise<void> {
+      const value = encodeSessionNaming(naming);
+
+      await client.setting.upsert({
+        where: { key: SESSION_NAMING_KEY },
+        create: { key: SESSION_NAMING_KEY, value },
+        update: { value },
+      });
     },
   };
 }

@@ -19,6 +19,7 @@ import {
   fakeDispatch,
   fakeForgeOverview,
   fakeIntegrations,
+  fakeNaming,
   fakeProjects,
   fakeRegistry,
   fakeSession,
@@ -26,6 +27,7 @@ import {
   fakeTerminal,
   memoryListener,
   recordingLogger,
+  type FakeNaming,
   type FakeTerminal,
   type MemoryListener,
   type Recorded,
@@ -83,7 +85,11 @@ function reader(transport: MessageTransport): Watcher {
   };
 }
 
-function fixture(terminals: readonly FakeTerminal[], sessions: readonly Session[]): Fixture {
+function fixture(
+  terminals: readonly FakeTerminal[],
+  sessions: readonly Session[],
+  naming: FakeNaming = fakeNaming(),
+): Fixture {
   const registry = fakeRegistry(terminals);
   const { logger, records } = recordingLogger();
   const listener = memoryListener();
@@ -95,6 +101,7 @@ function fixture(terminals: readonly FakeTerminal[], sessions: readonly Session[
     directories: fakeDirectories(),
     terminals: registry,
     integrations: fakeIntegrations(),
+    naming,
     forge: fakeForgeOverview(),
     log: logger,
     dispatch: fakeDispatch(registry),
@@ -346,6 +353,23 @@ describe("the state frames a progress keepalive produces", () => {
 
 describe("the frames an agent's activity produces", () => {
   const WAITING: AgentActivity = { kind: "waiting", need: "permission" };
+
+  test("a forwarded prompt reaches the namer under its session, and nothing else", async () => {
+    const terminal = fakeTerminal(crypto.randomUUID() as TerminalID);
+    const session = sessionWith(terminal);
+    const naming = fakeNaming();
+    const daemon = fixture([terminal], [session], naming);
+    const client = await daemon.watch();
+    const before = client.controls().length;
+
+    events(terminal).onAgentPrompt("fix the sidebar flicker");
+
+    await until(() => naming.prompts.length === 1, "the prompt to reach the namer");
+
+    expect(naming.prompts).toEqual([{ sessionID: session.id, prompt: "fix the sidebar flicker" }]);
+    expect(client.controls()).toHaveLength(before);
+    expect(JSON.stringify(daemon.records)).not.toContain("sidebar");
+  });
 
   test("working rides on the state and raises nothing", async () => {
     const terminal = fakeTerminal(crypto.randomUUID() as TerminalID);

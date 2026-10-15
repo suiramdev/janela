@@ -18,6 +18,7 @@ const session = (backing: Backing, projectID: ProjectID | undefined = undefined)
   const base: Session = {
     id: "0f6e1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" as SessionID,
     name: "feature",
+    nameOrigin: "derived",
     directory,
     backing,
     terminals: [],

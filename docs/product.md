@@ -124,6 +124,21 @@ models no task. Being *told* and reading *into* are different acts, and only the
 first one happens here: an agent that says nothing is an agent Janela has
 nothing to say about, which is the normal case and not a degraded one.
 
+One thing a harness may now tell Janela besides its state is **what you asked
+it**, and only for one purpose: naming the session. Session naming, off until
+you pick an agent in Settings › Integrations › Session naming, renames a
+session after your first real prompt and revisits the name only when the work
+has clearly moved on. The prompt arrives through the same hook, labelled by the
+harness, and is the same text your terminal already showed as you typed it.
+The name is written by an agent you already use, run on your Mac with its tools
+switched off — the relationship Janela has with `gh`: your tool, asked a
+question, changing nothing. It is not automation and runs in no terminal,
+because it has nothing to show and nothing to interrupt. A name is a label, not
+a model of the task: Janela still infers no state from a prompt, keeps no
+transcript, and the moment you rename a session yourself, that session is never
+renamed for you again. The reasoning, and the triggers it was weighed against,
+are in [`architecture.md`](architecture.md) § Session naming.
+
 The same principle decides how Janela reaches the user's other tools. Forge
 support shells out to the user's own `gh` and `glab`, already authenticated,
 rather than asking for a token. Automation scripts run in a real terminal you

@@ -33,6 +33,7 @@ export function fakeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: newSessionID(),
     name: "main",
+    nameOrigin: "derived",
     directory: absolutePath("/tmp/janela-fake"),
     backing: { kind: "folder" },
     layout: singleTerminalLayout(first),

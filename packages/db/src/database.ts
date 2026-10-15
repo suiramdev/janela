@@ -10,8 +10,8 @@ import { Effect } from "effect";
 import { PrismaClient } from "../generated/prisma/client.ts";
 import { janelaSqliteAdapter } from "./adapter.ts";
 import { MIGRATIONS, applyMigrations } from "./migrations.ts";
-import { projectRepository, sessionRepository } from "./prisma-repositories.ts";
-import type { ProjectRepository, SessionRepository } from "./repositories.ts";
+import { projectRepository, sessionRepository, settingsRepository } from "./prisma-repositories.ts";
+import type { ProjectRepository, SessionRepository, SettingsRepository } from "./repositories.ts";
 
 export interface JanelaDatabase {
   migrate(): Promise<void>;
@@ -19,6 +19,7 @@ export interface JanelaDatabase {
 
   readonly projects: ProjectRepository;
   readonly sessions: SessionRepository;
+  readonly settings: SettingsRepository;
 }
 
 export interface OpenOptions {
@@ -97,6 +98,7 @@ export async function openDatabase(options: OpenOptions): Promise<JanelaDatabase
 
     projects: projectRepository(client, log),
     sessions: sessionRepository(client, log),
+    settings: settingsRepository(client, log),
   };
 }
 

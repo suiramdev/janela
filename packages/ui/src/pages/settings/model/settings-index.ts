@@ -12,6 +12,7 @@ export type SettingsSectionID =
   | "notificationsEvents"
   | "shortcuts"
   | "integrationsHooks"
+  | "integrationsNaming"
   | "closingConfirmation"
   | "notificationPermission"
   | "daemon"
@@ -144,7 +145,7 @@ export const NOTIFICATIONS_EVENTS_SECTION: SettingsSection = {
 export const INTEGRATIONS_HOOKS_SECTION: SettingsSection = {
   id: "integrationsHooks",
   title: "Activity reporting",
-  hint: "Each agent has its own hook or extension mechanism. Installing one adds a short entry to that agent's configuration which tells the terminal when the agent is working, waiting or finished. Janela reads nothing else — not the transcript, not the output.",
+  hint: "Each agent has its own hook or extension mechanism. Installing one adds a short entry to that agent's configuration which tells the terminal when the agent is working, waiting or finished. Where a hook can, it also passes on each prompt you submit, which Session naming uses and Janela otherwise drops. Janela reads nothing else — not the transcript, not the output.",
   fields: [],
   keywords: [
     "hook",
@@ -163,6 +164,32 @@ export const INTEGRATIONS_HOOKS_SECTION: SettingsSection = {
     "settings.json",
     "hooks.json",
     "config.toml",
+  ],
+};
+
+export const INTEGRATIONS_NAMING_SECTION: SettingsSection = {
+  id: "integrationsNaming",
+  title: "Session naming",
+  hint: "Renames a session after what you asked its agent: once at your first real prompt, and again only when the work has clearly moved on. The prompts come from the activity hooks above — today, Claude Code's; the name comes from the agent you pick here, run on your Mac with no tools. A session you have renamed by hand keeps its name.",
+  fields: [],
+  keywords: [
+    "name",
+    "rename",
+    "title",
+    "automatic",
+    "auto",
+    "summary",
+    "summarise",
+    "summarize",
+    "prompt",
+    "ai",
+    "llm",
+    "model",
+    "haiku",
+    "claude",
+    "codex",
+    "omp",
+    "oh my pi",
   ],
 };
 
@@ -280,7 +307,7 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
     title: "Integrations",
     description:
       "The hooks the agents you run can use to tell Janela what they are doing. Janela listens; it does not wrap, parse or manage what they do.",
-    sections: [INTEGRATIONS_HOOKS_SECTION],
+    sections: [INTEGRATIONS_HOOKS_SECTION, INTEGRATIONS_NAMING_SECTION],
   },
   {
     id: "permissions",

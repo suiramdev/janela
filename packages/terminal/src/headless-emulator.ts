@@ -2,7 +2,12 @@
 
 import { hostname } from "node:os";
 
-import { AGENT_ACTIVITY_OSC, parseAgentActivity, type GridSize } from "@janela/core";
+import {
+  AGENT_ACTIVITY_OSC,
+  parseAgentActivity,
+  parseAgentPrompt,
+  type GridSize,
+} from "@janela/core";
 import type { TerminalBytes } from "@janela/pty";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/headless";
@@ -289,6 +294,14 @@ export class HeadlessEmulator implements TerminalEmulating {
 
       if (activity !== undefined) {
         this.events?.onActivity(activity);
+
+        return true;
+      }
+
+      const prompt = parseAgentPrompt(payload);
+
+      if (prompt !== undefined) {
+        this.events?.onAgentPrompt(prompt);
       }
 
       return true;

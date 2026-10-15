@@ -143,6 +143,7 @@ describe("migrate", () => {
         "AutomationScript",
         "Project",
         "Session",
+        "Setting",
         "Terminal",
         "_prisma_migrations",
       ]);
@@ -432,6 +433,59 @@ describe("migrate", () => {
       expect(terminals).toEqual([{ id: "t", sessionId: "s", title: "claude" }]);
       expect(indexes).toContain("Terminal_sessionId_position_idx");
       expect(foreignKeys.rows).toEqual([[1]]);
+
+      await connection.dispose();
+    });
+  });
+
+  test("a session at the fifth schema keeps a typed name and frees a derived one", async () => {
+    await withTemporaryDirectory(async (directory) => {
+      const path = join(directory, "janela.sqlite");
+      const { logger } = recordingLogger();
+      const priors = MIGRATIONS.slice(0, 5);
+
+      const connection: SqlDriverAdapter = await janelaSqliteAdapter({ path }).connect();
+
+      expect(await applyMigrations(connection, priors, logger)).toBe(5);
+
+      const seed = new Database(path);
+      seed.run(
+        `INSERT INTO "Project" (id, name, directory, addedAt) VALUES ('p', 'janela', '/code/janela', 0)`,
+      );
+
+      for (const [id, name, sessionDirectory, projectId, branch] of [
+        ["typed", "Login rework", "/code/janela/.worktrees/auth", "p", "auth"],
+        ["branch", "auth", "/code/janela/.worktrees/auth-2", "p", "auth"],
+        ["folder", "notes", "/Users/x/notes", null, null],
+        ["project", "janela", "/code/janela", "p", null],
+      ] as const) {
+        seed.run(
+          `INSERT INTO "Session" (id, projectId, name, directory, backingKind, worktreeBranch, layout, position, createdAt, lastActiveAt)
+             VALUES (?, ?, ?, ?, ?, ?, '{}', 0, 0, 0)`,
+          [id, projectId, name, sessionDirectory, branch === null ? "folder" : "worktree", branch],
+        );
+      }
+
+      seed.close();
+
+      expect(await applyMigrations(connection, MIGRATIONS, logger)).toBe(MIGRATIONS.length - 5);
+
+      const origins = readOnly(path, (database) =>
+        database
+          .query<{ id: string; nameOrigin: string }, []>(
+            `SELECT id, nameOrigin FROM "Session" ORDER BY id`,
+          )
+          .all(),
+      );
+
+      expect(origins).toEqual([
+        { id: "branch", nameOrigin: "derived" },
+        { id: "folder", nameOrigin: "derived" },
+        { id: "project", nameOrigin: "derived" },
+        { id: "typed", nameOrigin: "user" },
+      ]);
+
+      expect(tableNames(path)).toContain("Setting");
 
       await connection.dispose();
     });

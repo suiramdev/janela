@@ -17,6 +17,7 @@ import type {
 } from "@janela/core";
 import {
   absolutePath,
+  acceptsAutomaticName,
   automationScriptOf,
   closeTerminal,
   emptyLayout,
@@ -88,6 +89,8 @@ export interface SessionService {
   removeSession(id: SessionID, plan: SessionRemovalPlan): Promise<void>;
 
   rename(id: SessionID, name: string): Promise<void>;
+
+  nameAutomatically(id: SessionID, name: string): Promise<boolean>;
 
   createTerminal(
     id: SessionID,
@@ -319,6 +322,7 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     const session: Session = {
       id: newSessionID(),
       name: resolved.name,
+      nameOrigin: "derived",
       directory: resolved.directory,
       backing: resolved.backing,
       terminals: [],
@@ -493,8 +497,24 @@ class BrainSessionService implements SessionService, ProjectRemovalObserving {
     if (session === undefined) throw new UnknownSession(id);
 
     session.name = name;
+    session.nameOrigin = "user";
     await this.deps.repository.save(session);
     await this.publish();
+  }
+
+  async nameAutomatically(id: SessionID, name: string): Promise<boolean> {
+    const session = this.find(id);
+
+    if (session === undefined || !acceptsAutomaticName(session)) return false;
+
+    if (session.name === name) return false;
+
+    session.name = name;
+    session.nameOrigin = "automatic";
+    await this.deps.repository.save(session);
+    await this.publish();
+
+    return true;
   }
 
   async createTerminal(

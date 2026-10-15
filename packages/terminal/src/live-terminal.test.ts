@@ -182,6 +182,7 @@ function recordingSink(): RecordingSink {
     onPromptMark: (mark) => marks.push(mark),
     onProgress: (reported) => progress.push(reported),
     onActivity: (activity) => activities.push(activity),
+    onAgentPrompt: () => undefined,
     onPromptFinished: (completion) => completions.push(completion),
     onFailure: (message) => failures.push(message),
     onExit: (code) => exits.push(code),

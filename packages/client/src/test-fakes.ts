@@ -306,6 +306,7 @@ export function fakeSession(
   const session: Session = {
     id: fixtureID<"Session">(id),
     name: id,
+    nameOrigin: "derived",
     directory: absolutePath(`/tmp/${id}`),
     backing: { kind: "folder" },
     terminals: terminals.map(fakeTerminalDescriptor),
