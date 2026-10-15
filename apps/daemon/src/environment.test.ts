@@ -102,6 +102,7 @@ function persistedSession(name: string): Session {
   return {
     id: newSessionID(),
     name,
+    nameOrigin: "derived",
     directory: absolutePath(`/tmp/janela-session-${crypto.randomUUID()}`),
     backing: { kind: "folder" },
     terminals: [first],

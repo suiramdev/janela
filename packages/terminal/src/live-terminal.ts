@@ -215,6 +215,9 @@ class PtyLiveTerminal implements LiveTerminal {
       this.attention = activity.kind !== "working";
       this.events?.onActivity(activity);
     },
+    onAgentPrompt: (prompt) => {
+      this.events?.onAgentPrompt(prompt);
+    },
     onExit: () => {
       throw new Error("the emulator knows nothing about processes; drain() emits onExit");
     },

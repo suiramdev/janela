@@ -1,4 +1,4 @@
-import type { Project, ProjectID, Session, SessionID } from "@janela/core";
+import type { Project, ProjectID, Session, SessionID, SessionNaming } from "@janela/core";
 
 export interface ProjectRepository {
   all(): Promise<readonly Project[]>;
@@ -15,4 +15,9 @@ export interface SessionRepository {
   save(session: Session): Promise<void>;
   remove(id: SessionID): Promise<void>;
   touch(id: SessionID): Promise<void>;
+}
+
+export interface SettingsRepository {
+  sessionNaming(): Promise<SessionNaming>;
+  saveSessionNaming(naming: SessionNaming): Promise<void>;
 }

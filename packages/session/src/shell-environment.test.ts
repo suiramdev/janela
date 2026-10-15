@@ -27,6 +27,7 @@ const ALLOWED_LOG_FIELDS = ["exitCode", "reason", "shell", "timedOut", "variable
 const session = (overrides: Partial<Session> = {}): Session => ({
   id: "0f6e1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b" as SessionID,
   name: "feature",
+  nameOrigin: "derived",
   directory: "/Users/x/code/janela" as AbsolutePath,
   backing: { kind: "folder" },
   terminals: [],

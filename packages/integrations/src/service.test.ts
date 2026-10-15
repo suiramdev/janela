@@ -75,7 +75,7 @@ describe("overview", () => {
       false,
     ]);
 
-    expect(overview.integrations.every((report) => report.reports.length === 3)).toBe(true);
+    expect(overview.integrations.map((report) => report.reports.length)).toEqual([4, 3, 3, 3]);
     expect(overview.integrations.every((report) => report.status.kind === "absent")).toBe(true);
   });
 });
@@ -105,6 +105,42 @@ describe("claude", () => {
     expect(matcherOf(hooks, "PreToolUse")).toBe("AskUserQuestion");
     expect(matcherOf(hooks, "Stop")).toBeUndefined();
     expect(await home.status("claude")).toEqual({ kind: "installed" });
+  });
+
+  test("the prompt is forwarded beside the working report, in the same entry", async () => {
+    await using home = await fixture();
+
+    await home.service.install("claude");
+
+    const [entry, ...others] =
+      groupsOf(await readSettings(home.configPath("claude")))["UserPromptSubmit"] ?? [];
+
+    expect(others).toEqual([]);
+    expect(entry?.hooks.map((handler) => handler.command)).toEqual([
+      `[ -n "$JANELA_TTY" ] && printf '\\033]7770;working\\a' > "$JANELA_TTY" 2>/dev/null; printf '{}'`,
+      `[ -n "$JANELA_TTY" ] && printf '\\033]7770;prompt;%s\\a' "$(head -c 6144 | base64 | tr -d '\\n')" > "$JANELA_TTY" 2>/dev/null; printf '{}'`,
+    ]);
+  });
+
+  test("an install from before prompt forwarding reports outdated", async () => {
+    await using home = await fixture();
+    const path = home.configPath("claude");
+
+    await home.service.install("claude");
+
+    const settings = await readSettings(path);
+    const hooks = groupsOf(settings);
+    const submitted = (hooks["UserPromptSubmit"] ?? []).map((entry) => ({
+      ...entry,
+      hooks: entry.hooks.slice(0, 1),
+    }));
+
+    await writeFile(
+      path,
+      `${JSON.stringify({ ...settings, hooks: { ...hooks, UserPromptSubmit: submitted } }, undefined, 2)}\n`,
+    );
+
+    expect(await home.status("claude")).toEqual({ kind: "outdated" });
   });
 
   test("install keeps another tool's settings and hooks", async () => {

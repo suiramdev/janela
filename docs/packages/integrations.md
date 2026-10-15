@@ -28,6 +28,15 @@ one-liner and the two JavaScript templates build their strings from it or from
 `agentActivityEscape`. The number `7770` lives in `AGENT_ACTIVITY_OSC`. Nothing
 in this package writes an escape by hand.
 
+One more payload rides the same number: `prompt;<base64>`, the first
+`MAX_FORWARDED_PROMPT_BYTES` (6144) bytes of the JSON a harness hands its
+prompt hook, base64-encoded so the prompt's own bytes can never end the escape.
+`AGENT_PROMPT_REPORT` and `parseAgentPrompt` in `@janela/core` own that
+spelling; the parser takes the `prompt` field and nothing else, and reads it out
+of a payload the hook cut short as far as it got. It exists for Session naming
+([`session.md`](session.md) § Session naming); the daemon drops it when naming
+is off.
+
 `@janela/terminal` parses the same sequence out of the terminal's byte stream.
 The grammar is the contract between the two packages; this one only has to
 produce it.
@@ -69,6 +78,22 @@ never reads a large stdin, across nineteen `PostToolUse` calls over a 400 KB
 file, produced no hook error. Not reading stdin is safe on both and necessary on
 one.
 
+**The prompt forwarder is the one hook that reads standard input**, and it is
+installed only where reading it was measured to return. Claude Code closes its
+hook's stdin after writing the JSON (measured against 2.1.300 through a real
+PTY: the payload arrived whole, UTF-8 and quotes intact, with `prompt` as its
+last key), so
+
+```sh
+[ -n "$JANELA_TTY" ] && printf '\033]7770;prompt;%s\a' "$(head -c 6144 | base64 | tr -d '\n')" > "$JANELA_TTY" 2>/dev/null; printf '{}'
+```
+
+never blocks, and is bounded by `head` whatever the prompt's size. The escape is
+built whole before it is written, so it reaches the PTY as one write rather than
+three a busy TUI could interleave with. Codex does not get it: its `Stop` stdin
+is known never to close, its `UserPromptSubmit` stdin has not been measured, and
+a hook that blocks the prompt it reports on is worse than no name.
+
 **It always prints `{}`.** Permission-style hooks fail closed on empty stdout —
 an empty reply is read as a refusal, not as silence. Printing an empty object is
 how a hook says "no opinion". The `;` before it, rather than `&&`, is deliberate:
@@ -90,7 +115,8 @@ sync with the command itself.
 
 The event maps:
 
-**Claude Code** — `UserPromptSubmit` → working; `PreToolUse` with matcher
+**Claude Code** — `UserPromptSubmit` → working, and the prompt forwarded, as two
+handlers in one entry; `PreToolUse` with matcher
 `AskUserQuestion` → waiting for input; `PermissionRequest` → waiting for
 permission; `PostToolUse` → working; `Stop` → finished, completed;
 `StopFailure` → finished, failed.
@@ -172,7 +198,9 @@ what the interactive TUI checks, not the hook system as a whole.
 
 ## What this package does not do
 
-- It does not read transcripts, session files or any other harness state.
+- It does not read transcripts, session files or any other harness state. The
+  one field it forwards is the prompt the user submitted, from the payload the
+  harness hands its own hook.
 - It does not parse a harness's output. The report is what the harness
   volunteers through its own hook API, nothing more.
 - It does not run anything while an agent works. Every line it writes is a line
@@ -196,8 +224,12 @@ Three edits, in this order:
 3. One entry in `INTEGRATIONS` in `service.ts`. Order is the order Settings
    lists them.
 
-The three `reports` strings are the only user-facing copy in the package, and
-they say what the harness will make Janela show — not what was installed where.
+The `reports` strings are the only user-facing copy in the package — three for
+every harness, and a fourth for Claude Code saying its prompts are forwarded —
+and they say what the harness will make Janela show, not what was installed
+where. Adding a line to a harness's plans is a consent question as much as a
+code change: an install made before it reports `outdated`, and the user's
+**Update** is what turns the new report on.
 
 ## A note on OpenCode
 

@@ -16,6 +16,8 @@ import {
   serializeForgeOverview,
   serializeIntegrationOverview,
   serializeRemovalPlan,
+  serializeSessionNamingOverview,
+  decodeSessionNaming,
   type ClientMessage,
   type DaemonMessage,
   type RequestID,
@@ -28,6 +30,7 @@ import type {
   ForgeOverviewing,
   NewTerminalOptions,
   ProjectService,
+  SessionNamer,
   SessionService,
 } from "@janela/session";
 import { UnknownSession, UnknownTerminal } from "@janela/session";
@@ -62,6 +65,7 @@ export interface RequestDispatchOptions {
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
   readonly forge: ForgeOverviewing;
+  readonly naming: SessionNamer;
   readonly log: Logger;
   readonly settled: (terminal: LiveTerminal) => void;
 }
@@ -148,7 +152,8 @@ export function fullStateSnapshot(world: StateWorld): StateUpdate {
 }
 
 export function createRequestDispatch(options: RequestDispatchOptions): RequestDispatching {
-  const { sessions, projects, directories, terminals, integrations, forge, log, settled } = options;
+  const { sessions, projects, directories, terminals, integrations, forge, naming, log, settled } =
+    options;
 
   const requireTerminal = (terminalID: TerminalID): LiveTerminal => {
     const terminal = terminals.get(terminalID);
@@ -388,6 +393,21 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           }
 
           await integrations.remove(request.integrationID);
+
+          return acknowledged(id);
+        },
+
+        sessionNaming: async () =>
+          textReply(id, serializeSessionNamingOverview(await naming.overview())),
+
+        configureSessionNaming: async (request) => {
+          const decoded = decodeSessionNaming(request.naming);
+
+          if (decoded === undefined) {
+            throw new TypeError("configureSessionNaming with a namer Janela cannot run");
+          }
+
+          await naming.configure(decoded);
 
           return acknowledged(id);
         },

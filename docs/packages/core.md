@@ -63,6 +63,28 @@ lives beside the grammar rather than in the views because a terminal's state
 text and its tab badge (`model/tab-rows.ts` in `@janela/ui`) would otherwise
 word the same fact twice. It is the only user-facing copy in the file.
 
+## agent-prompt.ts
+
+The second payload `OSC 7770` carries: `prompt;<base64>`, where the base64 is
+the first `MAX_FORWARDED_PROMPT_BYTES` of the JSON a harness hands its prompt
+hook. `AGENT_PROMPT_REPORT` is the one spelling of the word, shared by the hook
+`@janela/integrations` writes and the emulator that reads it back, for the same
+reason `agentActivityEscape` is. `parseAgentPrompt` refuses anything that is not
+exactly that shape, refuses an encoded payload longer than any hook would send,
+decodes with a schema that takes `prompt` and nothing else, and — when the hook
+cut the JSON short — reads the string out of the truncated text as far as it
+got, stopping at a broken escape rather than guessing past it. The other fields
+the harness sends (session id, transcript path, working directory) are never
+read.
+
+## session-naming.ts
+
+`SessionNameOrigin` (`derived`, `automatic`, `user`), `SessionNaming` (`off`, or
+an agent from the closed set `SESSION_NAMER_IDS` with an optional model) and the
+overview Settings shows. `acceptsAutomaticName` is the rule in one place: every
+origin but `user`. The policy and the namer are daemon-side, in
+[`@janela/session`](session.md) § Session naming.
+
 ## forge.ts
 
 The shapes the forge's answers take on the wire: `ForgeState` on a session,

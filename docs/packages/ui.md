@@ -1004,7 +1004,9 @@ its stop controls are the largest permission of all.
 
 ### The Integrations tab
 
-One section, and no pane file of its own: it renders `SettingsIntegrations`. It once
+Two sections: *Activity reporting* (`SettingsIntegrations`) and *Session naming*
+(`SettingsSessionNaming`), in that order because the second only has prompts to
+work with once the first is installed. It once
 began with a GitHub/GitLab row per hosted project, editing `isForgeEnabled` through
 the draft. That switch is gone — reading pull request state is what a hosted project
 does, and a missing or logged-out CLI was already silence — so what remains is the
@@ -1042,6 +1044,17 @@ verb is the status — Install, Update or Remove.
   already has the connection — it is what a save writes through — and taking the
   narrowest shape as a prop is what lets `IntegrationsList` be rendered from a
   state value in a test with no connection at all.
+
+### `ui/session-naming-settings.tsx`
+
+*Session naming*: which agent names sessions — Off, or one of the agents the
+daemon knows how to run, each saying whether it is on the daemon's `PATH` — and,
+once one is chosen, the model it uses, with the agent's default as the
+placeholder. Like Activity reporting it acts at once rather than joining the
+draft: the choice is the daemon's setting, it changes what `janelad` does while
+no window is open, and `configureSessionNaming` re-reads the overview after
+every change. The model field commits on blur or Return, not per keystroke, so
+typing `sonnet` stores one setting rather than six.
 
 ### `ui/shortcuts-settings.tsx`
 

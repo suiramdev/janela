@@ -21,6 +21,7 @@ export interface TerminalEventSink {
   onPromptMark(mark: PromptMark): void;
   onProgress(progress: TerminalProgress | undefined): void;
   onActivity(activity: AgentActivity): void;
+  onAgentPrompt(prompt: string): void;
   onExit(code: number): void;
 }
 

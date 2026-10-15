@@ -521,6 +521,77 @@ because that is exactly the state in which Codex stops and asks the user
 
 ---
 
+## Session naming — the decision of 2026-10-15
+
+A sidebar of sessions named after branches (`married-cinema-10b5eb26`,
+`feat/x`, `janela`) answers the question "where is that work?" badly, and the
+user who starts a fourth `claude` before lunch does not stop to rename three
+sessions. Superset, Conductor, Orca and cmux all answer it the same way at
+heart — an agent names the work after what was asked — and differ on *when*
+and *from what*. Janela's answer is shaped by the line § Agent activity drew:
+Janela may be *told*, never read *into*.
+
+**What the name is made from: the prompt, volunteered.** Three sources were on
+the table.
+
+| Source | Relevance | Accuracy | Cost to Janela's principles |
+| --- | --- | --- | --- |
+| The first prompt (Conductor's default, Superset's first pass) | High at the start, drifts as the work moves | Poor when the first prompt is "hi" or "look at this repo" | One hook field the harness already hands its `UserPromptSubmit` hook |
+| Every prompt (Conductor's experimental "rename on send") | Tracks the work | Follow-ups ("yes", "now the tests") carry nothing to name | Same field; a namer run per message, and a button label that moves under the user's cursor |
+| The agent's own summary at turn end (cmux's `Stop` pass, Superset's retry) | Best — it has seen the answer too | Best | The transcript or the assistant's last message: reading the one thing § 2 refuses to read, from a `Stop` hook whose stdin Codex never closes (measured, [`packages/integrations.md`](packages/integrations.md) § The shell one-liner) |
+
+The harness's own terminal title — Claude Code titles its terminal after the
+topic — was a fourth, and was refused for the reason `product.md` gives: a title
+is presentation, its format is the harness's to change, and stripping a spinner
+glyph off it is guessing.
+
+So the chosen design is **the first substantive prompt, then a throttled,
+sticky refresh from the prompts that follow**. The first prompt that is more
+than an acknowledgement or a slash command names the session within a couple of
+seconds. A vague or failed answer is retried on the next prompt, at most three
+times — Superset's retry, without the transcript. After that, the name is
+revisited only once three more substantive prompts *and* ten minutes have
+passed, and the namer is shown the current name and told to return it unchanged
+if it still fits, so a session converges on a stable label instead of drifting
+on every message. Switching is the feature (`product.md` § 3); a label that
+jumps is a tax on it, and the throttle is what keeps the button where the
+user's eye left it.
+
+**Who asks the model: the daemon, with the user's own agent.** The prompt
+reaches `janelad` through the activity hook — Claude Code's `UserPromptSubmit`
+entry carries a second handler that writes
+`ESC ] 7770 ; prompt ; <base64 of the hook's JSON> BEL` to `$JANELA_TTY` — so
+the channel, the guard and the consent point are the ones § Agent activity
+already argued for. Those bytes were already in the terminal: the TUI echoed
+the prompt as the user typed it, and the daemon holds it in scrollback. What is
+new is only that the harness labels it. The daemon then runs the agent the user
+picked in Settings › Integrations › Session naming — `claude --print` with no
+tools, no settings, no MCP and no saved session; `codex exec --ephemeral` in a
+read-only sandbox; `omp --print --no-tools --no-session` — in a temporary
+directory, without `JANELA_TTY`, so the namer's own hooks report into nothing.
+It is the same relationship Janela has with `gh`: the user's tool, already
+authenticated, run to answer a question and never to change anything. Running
+the namer in the hook instead was the alternative; it would have put the
+setting in every harness's configuration, a model call on the agent's prompt
+path, and the manual-rename rule in shell.
+
+**The user's name always wins.** `Session.nameOrigin` records whether a name
+was derived (from a branch, a directory, a project), automatic, or the user's.
+`renameSession` makes it the user's, permanently; the daemon checks the origin
+again at the moment it applies a name, so a rename that lands while the namer
+is running still wins. The migration that introduced the column counts a stored
+name as derived only when it equals what Janela would have derived itself;
+anything else might have been typed, and is left alone.
+
+**Off means off.** With naming off, a forwarded prompt is dropped at the door —
+not remembered, not counted. With it on, the daemon keeps at most three prompts
+of 600 characters per session, in memory, for sessions that still accept an
+automatic name, and logs a naming pass by its outcome and duration only — never
+the prompt, never the name. At most two namers run at once, one per session.
+Mechanics: [`packages/session.md`](packages/session.md) § Session naming.
+
+---
+
 ## Key flows
 
 ### Creating a session

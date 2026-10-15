@@ -210,8 +210,9 @@ no number, or it is not.
 | 13 | `markSession` joins `ClientMessage`: a client asks the daemon to raise or lower attention on every live terminal of one session — "Mark as Unread" and "Mark as Read" in the sidebar. The flag it moves is the same one a bell or a `finished` report raises and a full repaint lowers, so the daemon stays the only writer of it and every client mirrors the result. |
 | 14 | `saveLaunchProfile` and `removeLaunchProfile` leave `ClientMessage`, `createTerminal` loses its optional `profileID`, and `StateUpdate` loses `launchProfiles` and `launchProfileAvailability`: the protocol no longer knows a stored command a terminal could be started from, and every terminal starts the user's login shell. A v13 client breaks three ways at once — its first save or delete from the Profiles pane carries a discriminant the daemon's table no longer holds, and the read loop closes the connection rather than answering `failed`; its `createTerminal.profileID` passes the discriminant check and is then dropped by the dispatcher, so the two disagree about what the terminal runs; and the daemon's smaller snapshot still decodes, because only `type` is validated, so the two fields it expects arrive as `undefined` where its mirror merges them. A v13 *daemon* is the reverse: it keeps starting each terminal from the command it stored for it and keeps announcing a list a v14 client discards, so the window would name a login shell while the daemon started something else. |
 | 15 | `forgeOverview` joins `ClientMessage`: a client asks the daemon what `gh` and `glab` report for every project — each repository's issues and pull or merge requests, and each session's branch and the pull request on it — and gets a `text` reply the client parses with `parseForgeOverview`. A v14 daemon has no `forgeOverview` in its discriminant table and would close the connection on the Inbox's first question, so the minimum moves with the version. |
+| 16 | `sessionNaming` and `configureSessionNaming` join `ClientMessage`: a client asks which agent the daemon names sessions with and which agents are on its `PATH`, and sets the choice — a `SessionNaming`, `off` or one of a closed set of agents with an optional model, checked against a schema before the daemon stores it. `Session` gains `nameOrigin` (`derived`, `automatic`, `user`), which every state snapshot carries. A v15 daemon has neither discriminant and would close the connection the first time Settings opened its Integrations tab, so the minimum moves with the version. |
 
-`MINIMUM_SUPPORTED_VERSION` is 15: it moved with the version, as it did up to 6 and again at 8 through 15 — a v10 daemon's discriminant table does not know `integrations`, and the first client that opened the Integrations tab would close its connection; a v10 *client* would not know the `activity` attention kind either. New discriminants are exactly the change the tables refuse, so the handshake refuses instead. Version 12 is the rule of 10 again: a message both sides decode, carrying a shape they would read differently. Version 13 is the rule of 11: a v12 daemon has no `markSession` in its table, and the first context-menu click would close the connection. Version 14 is both rules together, one in each direction: a v13 client sends two discriminants a v14 daemon refuses, and a v13 daemon answers with a snapshot shape a v14 client no longer reads.
+`MINIMUM_SUPPORTED_VERSION` is 16: it moved with the version, as it did up to 6 and again at 8 through 16 — a v10 daemon's discriminant table does not know `integrations`, and the first client that opened the Integrations tab would close its connection; a v10 *client* would not know the `activity` attention kind either. New discriminants are exactly the change the tables refuse, so the handshake refuses instead. Version 12 is the rule of 10 again: a message both sides decode, carrying a shape they would read differently. Version 13 is the rule of 11: a v12 daemon has no `markSession` in its table, and the first context-menu click would close the connection. Version 14 is both rules together, one in each direction: a v13 client sends two discriminants a v14 daemon refuses, and a v13 daemon answers with a snapshot shape a v14 client no longer reads.
 
 A v5 peer does not degrade, it *disconnects*: its `decodeClientMessage` matches
 the discriminant against an exhaustive table and refuses anything absent from it,
@@ -270,6 +271,17 @@ body of a `text` reply, the same shape `branch-overview.ts` set. The parse is a
 instant must parse, and every `url` must be `http(s)` — a client is only ever handed
 a web page to open, whatever the daemon's own decoding let through. Optional
 fields stay absent rather than arriving as `undefined`.
+
+## session-naming.ts
+
+`serializeSessionNamingOverview` and `parseSessionNamingOverview` carry the
+answer to `sessionNaming` the same way. `decodeSessionNaming` is the daemon's
+check on `configureSessionNaming`: the agent must be one of `SESSION_NAMER_IDS`
+and a model, when present, a non-empty string of at most
+`MAX_SESSION_NAMER_MODEL_LENGTH` characters. There is no "custom command" case,
+on purpose — the daemon runs the namer unattended, so the argv for each agent is
+Janela's, and the only free text a client contributes is one argument to
+`--model`.
 
 ## removal-plan.ts, branch-overview.ts, directory-listing.ts
 

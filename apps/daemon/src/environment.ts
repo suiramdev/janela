@@ -1,5 +1,5 @@
 import { createServer, type Socket } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 import { absolutePath } from "@janela/core";
 import {
@@ -18,10 +18,12 @@ import {
   createDirectoryBrowser,
   createForgeOverview,
   createProjectService,
+  createSessionNamer,
   createSessionService,
   resolveShellEnvironment,
   type ProjectRemovalObserving,
   type ProjectService,
+  type SessionNamer,
   type SessionService,
   type ShellEnvironment,
   type StateObserving,
@@ -46,6 +48,7 @@ export interface DaemonEnvironment {
   readonly server: DaemonServer;
   readonly sessions: SessionService;
   readonly projects: ProjectService;
+  readonly naming: SessionNamer;
   readonly terminals: TerminalRegistry;
   readonly database: JanelaDatabase;
 }
@@ -111,8 +114,18 @@ export async function daemonEnvironment(
 
   deferredRemoval.service = sessions;
 
+  const naming = createSessionNamer({
+    sessions,
+    settings: database.settings,
+    processes: processRunner(),
+    environment: shell.resolved,
+    workingDirectory: tmpdir(),
+    log: logger,
+  });
+
   await projects.load();
   await sessions.load();
+  await naming.load();
 
   const daemonServer = createDaemonServer({
     sessions,
@@ -125,6 +138,7 @@ export async function daemonEnvironment(
       log: logger,
     }),
     forge: createForgeOverview({ projects, sessions, worktrees, forge }),
+    naming,
     log: log("protocol"),
   });
 
@@ -134,6 +148,7 @@ export async function daemonEnvironment(
     server: daemonServer,
     sessions,
     projects,
+    naming,
     terminals,
     database,
 

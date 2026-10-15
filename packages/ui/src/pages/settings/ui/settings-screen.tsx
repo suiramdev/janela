@@ -84,6 +84,7 @@ import { SettingsNotifications } from "./notification-settings.tsx";
 import { Pane, PaneHeader } from "./pane.tsx";
 import { SettingsPermissions } from "./permissions-settings.tsx";
 import { ProjectSettingsPane } from "./project-settings.tsx";
+import { SettingsSessionNaming } from "./session-naming-settings.tsx";
 import { SettingsShortcuts } from "./shortcuts-settings.tsx";
 
 export interface SettingsTab {
@@ -479,7 +480,12 @@ function PaneBody(
         onRecording={props.onRecordingShortcut}
       />
     )),
-    Match.when("integrations", () => <SettingsIntegrations connection={props.connection} />),
+    Match.when("integrations", () => (
+      <>
+        <SettingsIntegrations connection={props.connection} />
+        <SettingsSessionNaming connection={props.connection} />
+      </>
+    )),
     Match.when("permissions", () => (
       <SettingsPermissions
         settings={settings}

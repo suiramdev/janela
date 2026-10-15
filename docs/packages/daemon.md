@@ -343,6 +343,16 @@ question a client asks, and a state frame must never wait on `gh`. The option is
 required on `createDaemonServer`, like `integrations`; tests pass
 `fakeForgeOverview()`.
 
+`sessionNaming` answers with a **text** reply carrying
+`serializeSessionNamingOverview` of the `SessionNamer`'s overview — the setting
+and which agents are on the daemon's `PATH`, asked rather than mirrored for the
+same reason as the integrations overview. `configureSessionNaming` checks the
+setting with `decodeSessionNaming` before the namer stores it, so a client
+cannot name an agent Janela has no argv for. `terminal-events.ts` relays each
+forwarded prompt to `SessionNamer.promptSubmitted` under the terminal's
+session; it broadcasts nothing for it and logs nothing of it, and a failure is
+logged as a dropped report by terminal id alone.
+
 `integrations` answers with a **text** reply carrying
 `serializeIntegrationOverview`, the same shape as `removalPlan` and
 `projectBranches`: a report per harness, read from the user's own configuration

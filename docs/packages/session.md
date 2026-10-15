@@ -254,6 +254,105 @@ failed split.
 a `repository.remove` per session: the rows cascade with the project, and
 deleting them twice would be two round trips to say the same thing.
 
+## Session naming
+
+`session-naming-policy.ts` decides; `session-namer.ts` acts. The reasoning, and
+the triggers weighed against each other, is in
+[`architecture.md`](../architecture.md) § Session naming; this section is the
+mechanics.
+
+### Where a name comes from
+
+`Session.nameOrigin` is one of three:
+
+| Origin | Set by | May Session naming replace it? |
+| --- | --- | --- |
+| `derived` | `createSession` — every creation path names a session after its branch, worktree folder, directory or project | Yes, once, at the first substantive prompt |
+| `automatic` | `nameAutomatically`, when the namer's answer differs from the current name | Yes, on the refresh cadence |
+| `user` | `rename` — the only path a person takes | Never |
+
+`nameAutomatically(id, name)` re-reads the origin at the moment it writes, so a
+rename that arrives while a namer is running is the one that stays. It returns
+whether it changed anything; an answer equal to the current name is not a
+rename and publishes nothing.
+
+### The policy
+
+Pure functions over a `NamingHistory` — the last `MAX_REMEMBERED_PROMPTS` (3)
+substantive prompts, each normalised to one line and cut to
+`MAX_NAMING_PROMPT_CHARACTERS` (600), a count of substantive prompts, a count of
+consecutive failures, and the last attempt.
+
+- **Substantive** is three words, twenty characters, or six ideographs (for
+  scripts that do not separate words with spaces), and not a slash command.
+  "yes", "continue" and `/clear` change nothing.
+- **Due** is, in order: never for `user`; never twice for the same prompt count;
+  at once for a `derived` name never attempted, and again after each failure up
+  to `MAX_FIRST_NAME_ATTEMPTS` (3); otherwise only after `REFRESH_AFTER_PROMPTS`
+  (3) more substantive prompts *and* `REFRESH_AFTER_MILLISECONDS` (ten minutes).
+  An `automatic` name the daemon finds after a restart has no history, so it
+  waits for three prompts before its first refresh.
+- **The instruction** names the task rather than the tool, offers an
+  already-automatic name back to be kept, lists the requests, and *ends* with
+  the format and the language: two to five words, in the language of the
+  requests, not translated. The order is measured. With the language rule
+  above the requests, `haiku` answered an English request in French or German
+  in four runs of eight under one shell environment, apparently reading the
+  machine's locale or time zone rather than the words; with the rule last, eight
+  of eight came back in English, and French and Japanese requests still came
+  back in French and Japanese. Offered "Sidebar flicker fix" for three requests
+  about one flicker, it refined the name ("Sidebar and tab flicker fix"); for
+  requests that had moved to a database migration, it replaced it.
+- **The reply** is read as its first non-empty line, with ANSI sequences,
+  control characters, a `Name:` or `Title:` label, wrapping quotes, emphasis and
+  a trailing full stop removed; a line with no letter or digit left is no name;
+  one longer than `MAX_SESSION_NAME_LENGTH` (48) is cut at a word boundary.
+
+### The namer
+
+`createSessionNamer` holds the setting (loaded from `SettingsRepository` at
+start, written back by `configure`) and one `NamingHistory` per session that
+still accepts an automatic name. `promptSubmitted` drops the prompt at once when
+naming is off, forgets sessions that are gone or now named by the user, and
+starts at most one namer per session and `MAX_CONCURRENT_NAMERS` (2) in all; a
+prompt that finds its session busy or the limit reached is remembered and
+simply waits for the next one.
+
+`namerInvocation` is the whole argv, per agent, with the instruction as the
+last argument — never through a shell, and the instruction always starts with
+Janela's own words, so a prompt beginning with `-` cannot become a flag:
+
+| Agent | argv | Default model |
+| --- | --- | --- |
+| Claude Code | `claude --print --model <m> --system-prompt <namer> --tools "" --no-session-persistence --setting-sources "" --strict-mcp-config --disable-slash-commands <instruction>` | `haiku` |
+| Codex | `codex exec --skip-git-repo-check --ephemeral --sandbox read-only --color never [--model <m>] <instruction>` | Codex's |
+| Oh My Pi | `omp --print --no-tools --no-session [--model <m>] <instruction>` | Oh My Pi's |
+
+Claude Code gets a one-line system prompt of its own (`NAMER_SYSTEM_PROMPT`)
+instead of its coding-agent default, for a measured reason: under the default,
+`haiku` answered an English request in French twice and German once out of
+three runs. The namer's own system prompt cut that drift without ending it; the
+instruction's order (above) is what ended it. `--bare` would also drop the default, and was refused because it
+authenticates only with `ANTHROPIC_API_KEY`, which a subscription user does not
+have.
+
+Each was run by hand against the real binary on the authoring machine (Claude
+Code 2.1.300, codex-cli 0.155.1, omp): each printed the name alone on standard
+output, in about one, eight and four seconds. OpenCode is absent because it was
+not installed there to measure.
+
+The namer runs in `tmpdir()`, so no project's `CLAUDE.md` or `AGENTS.md` steers
+it, with the daemon's resolved shell environment minus `JANELA_TTY`, so the
+namer's own hooks — Janela's included — find no terminal and report nothing. It
+is bounded by `NAMER_TIMEOUT_MILLISECONDS` (30 s). A missing binary, a non-zero
+exit, a timeout or an empty answer is a failure counted toward the retry limit
+and logged as an outcome, never shown: a session that keeps its branch name is
+the normal case, not an error.
+
+Nothing about a pass reaches the log but the session id, the outcome
+(`renamed`, `kept`, `failed`), whether it timed out and how long it took. The
+prompt and the name are the user's text, and non-negotiable 11 covers them.
+
 ## project-service.ts
 
 Separate from `SessionService` because the two answer different questions: this

@@ -56,6 +56,7 @@ const sessionRecord = (overrides: Partial<Session> = {}): Session => ({
   id: newSessionID(),
   projectID,
   name: "feature",
+  nameOrigin: "derived",
   directory: absolutePath("/Users/x/code/.worktrees/feature"),
   backing: { kind: "projectDirectory" },
   terminals: [],

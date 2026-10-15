@@ -446,7 +446,26 @@ v4 and asserts the terminal keeps its session and title, the column and the tabl
 are gone, the index is back, and `PRAGMA foreign_keys` reads 1; commenting out any
 one of the drop, the copy or the index fails exactly one assertion.
 
+**v6 — `20261015120000_session_naming`.** `Session` gains `nameOrigin`, and a
+`Setting` table appears. The column is added with a default of `'user'` — the
+safe answer for a name nobody can vouch for — and then the rows whose name is
+exactly what Janela would have derived (the worktree's branch, the last
+component of the directory, the project's own name) are marked `'derived'`, so
+Session naming may replace those and only those. `ADD COLUMN` with a constant
+default needs no rebuild. `Setting` is a key and a JSON value: daemon-wide
+settings the daemon acts on while no client is connected, today only
+`sessionNaming`; a client's own preferences never come here. The forward test
+seeds four sessions at v5 — a typed name, a branch name, a folder name, a
+project name — and asserts exactly the typed one stays the user's.
+
 ## repositories.ts, prisma-repositories.ts
+
+`SettingsRepository` reads and writes one typed setting per method rather than
+exposing the key-value table: `sessionNaming()` decodes the stored JSON with a
+schema and answers `{ kind: "off" }` — with a warning — for a row nothing can
+read, because a setting that would start a process must never be guessed at.
+A session row with an unknown `nameOrigin` decodes as `user`, for the same
+reason in the other direction.
 
 `repositories.ts` is the interface half and names only `@janela/core` types;
 `prisma-repositories.ts` is the implementation and takes a `PrismaClient`. They are

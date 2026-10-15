@@ -10,6 +10,8 @@ import {
   type Project,
   type Session,
   type SessionID,
+  type SessionNaming,
+  type SessionNamingOverview,
   type TerminalDescriptor,
   type TerminalID,
   type TerminalState,
@@ -33,6 +35,7 @@ import type {
   ForgeOverviewing,
   ProjectService,
   SessionCreationRequest,
+  SessionNamer,
   SessionService,
 } from "@janela/session";
 import type { LogRecord, Logger } from "@janela/support";
@@ -475,6 +478,7 @@ export function fakeSessions(
     moveTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     removeSession: () => Promise.reject(new Error(NOT_CALLED)),
     rename: () => Promise.reject(new Error(NOT_CALLED)),
+    nameAutomatically: () => Promise.reject(new Error(NOT_CALLED)),
     startTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     stopTerminal: () => Promise.reject(new Error(NOT_CALLED)),
     restartTerminal: () => Promise.reject(new Error(NOT_CALLED)),
@@ -507,6 +511,35 @@ export function fakeForgeOverview(
   overview: ForgeOverview = { repositories: [], sessions: [] },
 ): ForgeOverviewing {
   return { overview: () => Promise.resolve(overview) };
+}
+
+export interface FakeNaming extends SessionNamer {
+  readonly configured: SessionNaming[];
+  readonly prompts: { readonly sessionID: SessionID; readonly prompt: string }[];
+}
+
+export function fakeNaming(
+  overview: SessionNamingOverview = { naming: { kind: "off" }, namers: [] },
+): FakeNaming {
+  const configured: SessionNaming[] = [];
+  const prompts: { readonly sessionID: SessionID; readonly prompt: string }[] = [];
+
+  return {
+    configured,
+    prompts,
+    load: () => Promise.resolve(),
+    overview: () => Promise.resolve(overview),
+    configure: (naming) => {
+      configured.push(naming);
+
+      return Promise.resolve();
+    },
+    promptSubmitted: (sessionID, prompt) => {
+      prompts.push({ sessionID, prompt });
+
+      return Promise.resolve();
+    },
+  };
 }
 
 export function fakeIntegrations(
@@ -549,6 +582,7 @@ export function fakeSession(id: string): Session {
   return {
     id: fixtureIdentifier<"Session">(id),
     name: id,
+    nameOrigin: "derived",
     directory: absolutePath(`/tmp/${id}`),
     backing: { kind: "folder" },
     terminals: [],

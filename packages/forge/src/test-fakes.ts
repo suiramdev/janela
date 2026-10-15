@@ -134,6 +134,7 @@ export function fakeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: newSessionID(),
     name: "feat/x",
+    nameOrigin: "derived",
     directory,
     backing: {
       kind: "worktree",

@@ -77,6 +77,7 @@ function session(owner: Project | undefined, backing: Backing, directory = repos
   const base: Session = {
     id: newSessionID(),
     name: "s",
+    nameOrigin: "derived",
     directory,
     backing,
     terminals: [],

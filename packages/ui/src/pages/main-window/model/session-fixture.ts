@@ -56,6 +56,7 @@ export function session(
   const created: Session = {
     id: sessionID(id),
     name: id,
+    nameOrigin: "derived",
     directory: absolutePath(`/tmp/${id}`),
     backing: { kind: "folder" },
     terminals: extra.terminals ?? [],

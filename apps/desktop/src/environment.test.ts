@@ -53,6 +53,7 @@ const DAEMON_HELLO = encodeFrame(
 const SESSION: Session = {
   id: SESSION_ID,
   name: "api server",
+  nameOrigin: "derived",
   directory: absolutePath("/tmp/s1"),
   backing: { kind: "folder" },
   terminals: [

@@ -3,12 +3,14 @@ import { Match } from "effect";
 import type { Accent } from "./accent.ts";
 import type { AbsolutePath, Instant, ProjectID, SessionID } from "./identifiers.ts";
 import type { SessionLayout } from "./session-layout.ts";
+import type { SessionNameOrigin } from "./session-naming.ts";
 import type { TerminalDescriptor } from "./terminal.ts";
 
 export interface Session {
   readonly id: SessionID;
   projectID?: ProjectID;
   name: string;
+  nameOrigin: SessionNameOrigin;
   directory: AbsolutePath;
   backing: Backing;
   terminals: readonly TerminalDescriptor[];

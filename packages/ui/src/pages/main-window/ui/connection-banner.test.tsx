@@ -66,6 +66,7 @@ function session(id: string, terminals: readonly TerminalDescriptor[] = []): Ses
   return {
     id: sessionID(id),
     name: id,
+    nameOrigin: "derived",
     directory: absolutePath(`/tmp/${id}`),
     backing: { kind: "folder" },
     terminals,

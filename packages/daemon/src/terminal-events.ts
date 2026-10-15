@@ -2,6 +2,7 @@ import {
   formatAgentActivity,
   now,
   type AgentActivity,
+  type SessionID,
   type TerminalID,
   type TerminalProgress,
   type TerminalState,
@@ -18,6 +19,7 @@ import { Match } from "effect";
 export interface TerminalEventOptions {
   readonly broadcast: (message: DaemonMessage) => void;
   readonly log: Logger;
+  readonly promptSubmitted?: (sessionID: SessionID, prompt: string) => Promise<void>;
 }
 
 export interface TerminalEventRelay extends TerminalRegistryObserving {
@@ -34,7 +36,7 @@ export function partialTerminalState(id: TerminalID, state: TerminalState): Stat
 }
 
 export function createTerminalEvents(options: TerminalEventOptions): TerminalEventRelay {
-  const { broadcast, log } = options;
+  const { broadcast, log, promptSubmitted } = options;
   const published = new Map<TerminalID, string>();
 
   const reconcile = (terminal: LiveTerminal): void => {
@@ -97,6 +99,11 @@ export function createTerminalEvents(options: TerminalEventOptions): TerminalEve
           }
 
           raise(terminal, { kind: "activity", activity });
+        },
+        onAgentPrompt: (prompt: string) => {
+          void promptSubmitted?.(terminal.sessionID, prompt).catch(() => {
+            log.warning("prompt report dropped", { terminalID: terminal.id });
+          });
         },
         onFailure: () => {
           reconcile(terminal);

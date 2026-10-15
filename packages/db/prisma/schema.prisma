@@ -71,7 +71,11 @@ model Session {
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   name      String
-  directory String
+  /// "derived" (Janela picked it from a branch or a directory), "automatic"
+  /// (Session naming picked it) or "user" (renamed by hand). Only "user" is
+  /// never overwritten; see docs/packages/session.md § Session naming.
+  nameOrigin String @default("user")
+  directory  String
 
   /// Backing is stored as a discriminator plus optional payload rather than as an
   /// opaque JSON blob, so it stays queryable ("show me every worktree session on
@@ -129,4 +133,12 @@ model AutomationScript {
   timeoutSeconds Int    @default(30)
 
   @@id([projectId, event])
+}
+
+/// Daemon-wide settings, one JSON value per key, decoded with a schema on read.
+/// Settings a client keeps for itself (theme, fonts, sounds) never come here;
+/// only the ones the daemon acts on while no client is connected.
+model Setting {
+  key   String @id
+  value String
 }

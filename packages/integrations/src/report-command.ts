@@ -1,5 +1,7 @@
 import {
   AGENT_ACTIVITY_OSC,
+  AGENT_PROMPT_REPORT,
+  MAX_FORWARDED_PROMPT_BYTES,
   agentActivityEscape,
   formatAgentActivity,
   type AgentActivity,
@@ -23,6 +25,16 @@ export function hookCommand(activity: AgentActivity): string {
   return [
     `[ -n "${TTY_REFERENCE}" ] &&`,
     `printf '\\033${OSC_MARKER}${formatAgentActivity(activity)}\\a' > "${TTY_REFERENCE}" 2>/dev/null;`,
+    "printf '{}'",
+  ].join(" ");
+}
+
+export function promptForwardCommand(): string {
+  const encoded = `$(head -c ${MAX_FORWARDED_PROMPT_BYTES} | base64 | tr -d '\\n')`;
+
+  return [
+    `[ -n "${TTY_REFERENCE}" ] &&`,
+    `printf '\\033${OSC_MARKER}${AGENT_PROMPT_REPORT};%s\\a' "${encoded}" > "${TTY_REFERENCE}" 2>/dev/null;`,
     "printf '{}'",
   ].join(" ");
 }

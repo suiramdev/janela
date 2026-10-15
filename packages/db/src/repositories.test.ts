@@ -156,6 +156,7 @@ function session(overrides: Partial<Session> = {}): Session {
   return {
     id: newSessionID(),
     name: "feature",
+    nameOrigin: "derived",
     directory,
     backing: { kind: "folder" },
     terminals: [first],
@@ -659,6 +660,65 @@ describe("a backing that is representable in SQL and meaningless in the domain",
         level: "warning",
         message: "accent unknown, defaulted",
         fields: { table: "Session", id: value.id },
+      });
+    });
+  });
+
+  test("each name origin round-trips, and an unknown one is kept as the user's", async () => {
+    await withDatabase(async ({ database, records, corrupt }) => {
+      const values = (["derived", "automatic", "user"] as const).map((nameOrigin) =>
+        session({ nameOrigin }),
+      );
+
+      await Promise.all(values.map((value) => database.sessions.save(value)));
+
+      const read = await Promise.all(values.map((value) => database.sessions.find(value.id)));
+
+      expect(read.map((found) => found?.nameOrigin)).toEqual(["derived", "automatic", "user"]);
+
+      const value = session({ nameOrigin: "automatic" });
+      await database.sessions.save(value);
+      corrupt(`UPDATE Session SET nameOrigin = 'guessed' WHERE id = ?`, [value.id]);
+
+      expect((await database.sessions.find(value.id))?.nameOrigin).toBe("user");
+      expect(records).toContainEqual({
+        level: "warning",
+        message: "name origin unknown, kept as the user's",
+        fields: { table: "Session", id: value.id },
+      });
+    });
+  });
+});
+
+describe("settings", () => {
+  test("session naming is off until it is saved, and round-trips once it is", async () => {
+    await withDatabase(async ({ database }) => {
+      expect(await database.settings.sessionNaming()).toEqual({ kind: "off" });
+
+      await database.settings.saveSessionNaming({ kind: "agent", agent: "claude", model: "haiku" });
+
+      expect(await database.settings.sessionNaming()).toEqual({
+        kind: "agent",
+        agent: "claude",
+        model: "haiku",
+      });
+
+      await database.settings.saveSessionNaming({ kind: "agent", agent: "codex" });
+
+      expect(await database.settings.sessionNaming()).toEqual({ kind: "agent", agent: "codex" });
+    });
+  });
+
+  test("a stored naming setting nothing can read turns naming off, with a warning", async () => {
+    await withDatabase(async ({ database, records, corrupt }) => {
+      await database.settings.saveSessionNaming({ kind: "agent", agent: "claude" });
+      corrupt(`UPDATE Setting SET value = '{"kind":"agent","agent":"gemini"}'`, undefined);
+
+      expect(await database.settings.sessionNaming()).toEqual({ kind: "off" });
+      expect(records).toContainEqual({
+        level: "warning",
+        message: "session naming setting unreadable, turned off",
+        fields: { table: "Setting" },
       });
     });
   });

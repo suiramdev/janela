@@ -30,6 +30,7 @@ interface RecordingSink extends TerminalEventSink {
   readonly marks: PromptMark[];
   readonly progress: (TerminalProgress | undefined)[];
   readonly activities: AgentActivity[];
+  readonly prompts: string[];
 }
 
 const encoder = new TextEncoder();
@@ -147,6 +148,7 @@ function recordingSink(): RecordingSink {
   const marks: PromptMark[] = [];
   const progress: (TerminalProgress | undefined)[] = [];
   const activities: AgentActivity[] = [];
+  const prompts: string[] = [];
 
   return {
     titles,
@@ -155,12 +157,14 @@ function recordingSink(): RecordingSink {
     marks,
     progress,
     activities,
+    prompts,
     onTitle: (title) => titles.push(title),
     onWorkingDirectory: (path) => directories.push(path),
     onAttention: (notification) => notifications.push(notification),
     onPromptMark: (mark) => marks.push(mark),
     onProgress: (reported) => progress.push(reported),
     onActivity: (activity) => activities.push(activity),
+    onAgentPrompt: (prompt) => prompts.push(prompt),
     onExit: () => {
       throw new Error("the emulator knows nothing about processes and must never emit onExit");
     },
@@ -301,6 +305,25 @@ describe("events", () => {
     feed(target, "\x1b]7770;bogus\x07");
 
     expect(sink.activities).toEqual([{ kind: "waiting", need: "permission" }]);
+    expect(target.snapshotText({ includeScrollback: true })).toBe("screen");
+    expect(target.repaintSince(revision)).toHaveLength(0);
+  });
+
+  test("OSC 7770 relays a forwarded prompt as text, never as activity, and paints nothing", () => {
+    const target = emulator(20, 3);
+    const sink = recordingSink();
+    target.events = sink;
+    feed(target, "screen");
+    const revision = target.revision;
+    const payload = Buffer.from(JSON.stringify({ prompt: "rename the sessions" })).toString(
+      "base64",
+    );
+
+    feed(target, `\x1b]7770;prompt;${payload}\x07`);
+    feed(target, "\x1b]7770;prompt;%%%\x07");
+
+    expect(sink.prompts).toEqual(["rename the sessions"]);
+    expect(sink.activities).toEqual([]);
     expect(target.snapshotText({ includeScrollback: true })).toBe("screen");
     expect(target.repaintSince(revision)).toHaveLength(0);
   });

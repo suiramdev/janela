@@ -24,6 +24,7 @@ import type {
   DirectoryBrowsing,
   ForgeOverviewing,
   ProjectService,
+  SessionNamer,
   SessionService,
   StateObserving,
 } from "@janela/session";
@@ -67,6 +68,7 @@ export interface DaemonServerOptions {
   readonly terminals: TerminalRegistry;
   readonly integrations: IntegrationService;
   readonly forge: ForgeOverviewing;
+  readonly naming: SessionNamer;
   readonly log: Logger;
   readonly dispatch?: RequestDispatching;
   readonly handshakeDeadlineMs?: number;
@@ -138,7 +140,7 @@ const DELIVERED = (): boolean => true;
 const SEND_FAILED = (): boolean => false;
 
 export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
-  const { terminals, sessions, projects, directories, integrations, forge, log } = options;
+  const { terminals, sessions, projects, directories, integrations, forge, naming, log } = options;
   const dispatch =
     options.dispatch ??
     createRequestDispatch({
@@ -148,6 +150,7 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
       terminals,
       integrations,
       forge,
+      naming,
       log,
       settled: (terminal) => terminalEvents.reconcile(terminal),
     });
@@ -185,7 +188,11 @@ export function createDaemonServer(options: DaemonServerOptions): DaemonServer {
     }
   };
 
-  const terminalEvents = createTerminalEvents({ broadcast, log });
+  const terminalEvents = createTerminalEvents({
+    broadcast,
+    log,
+    promptSubmitted: (sessionID, prompt) => naming.promptSubmitted(sessionID, prompt),
+  });
 
   terminals.watch(terminalEvents);
 
