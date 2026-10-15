@@ -191,7 +191,7 @@ Vendored files are edited on the way in, and only in ways worth the drift.
    and `Ctrl-p`. Item 11 replaces it without either.
 6. Fluid Hover (`hooks/use-fluid-hover.ts`, `fluid-hover-highlight.tsx`,
    `lib/springs.ts`) is the only thing here that uses `framer-motion`.
-7. The sidebar is Fluid Functionalism's. Three of its seams are this application's:
+7. The sidebar is Fluid Functionalism's. Five of its seams are this application's:
    - **`Button` and `Tooltip` stay ours.** The registry's button has no `outline` or
      `destructive` variant — `--overwrite` would have silently unstyled thirty call
      sites — and its tooltip is a single `content` prop where this client composes
@@ -201,6 +201,17 @@ Vendored files are edited on the way in, and only in ways worth the drift.
      glyphs.
    - **Widths are `SIDEBAR_WIDTH`**, so the rail cannot drag the sidebar to a size the
      rest of the window was not designed for.
+   - **A sub-row is a full row.** Upstream steps a nested row down to 24px on the
+     compact ladder; here a nested row is a session, the thing the sidebar exists to
+     reach, and it takes the parent rows' 28px. Row actions follow the ladder too: a
+     24px action in a 28px row is a second row, so on the compact step an action is
+     20px, sits 4px inside the row's edges, and shares the badge's `right-2` axis.
+   - **A row finds its button through a wrapper.** Every row here sits inside a
+     `ContextMenuRegion`, so the button is not a direct child of its `<li>`, and
+     upstream's `:scope >` lookup misses it. The button reports itself before the
+     `<li>`'s ref lands, so the row replays it on attach, as it already replayed the
+     active flag. Without that the highlight fell back to 48px and a project row's
+     hover covered the first session under it.
 8. The scroll area is a *system* rather than a component, and the reason to take the
    whole thing is its CSS payload: it restyles the **native** scrollbar under
    `@media (pointer: fine)`, reaching scrollers no component of ours owns — including

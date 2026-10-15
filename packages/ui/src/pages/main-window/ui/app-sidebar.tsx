@@ -503,7 +503,7 @@ function ProjectRow(props: {
           className="group/parent-row"
         >
           {project.name}
-          <span className="-mr-0.5 ml-auto flex size-6 shrink-0 items-center justify-center">
+          <span className="ml-auto flex size-5 shrink-0 items-center justify-center">
             <ChevronIcon
               className={cn(
                 "text-muted-foreground transition-[opacity,rotate] duration-(--spring-fast)",
