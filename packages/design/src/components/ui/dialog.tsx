@@ -1,6 +1,6 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { cn } from "cn";
-import { motion, type MotionStyle } from "framer-motion";
+import { motion, type MotionStyle } from "motion/react";
 import {
   forwardRef,
   isValidElement,

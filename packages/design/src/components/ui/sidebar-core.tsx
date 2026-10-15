@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { motion, AnimatePresence, useReducedMotion, type HTMLMotionProps } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import {
   createContext,
   useContext,
