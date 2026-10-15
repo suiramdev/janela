@@ -71,7 +71,7 @@ interface MenuItemContextValue {
   attachRow: (node: HTMLLIElement | null) => void;
   isHovered: boolean;
   isActiveRow: boolean;
-  /** True inside SidebarMenuSubItem — actions center on the shorter row. */
+  /** True inside SidebarMenuSubItem — reveal and badge selectors scope to it. */
   isSubRow: boolean;
   setActive: (active: boolean) => void;
   setButtonEl: (el: HTMLElement | null) => void;
@@ -588,6 +588,11 @@ function useMenuRow(rowRef: RefObject<HTMLLIElement | null>, isSubRow = false) {
   // phase). The flag holds the truth through that window, and attachRow
   // re-syncs the scope whenever the <li> lands.
   const activeFlagRef = useRef(false);
+  // Same window for the button: it reports itself from a layout effect that
+  // runs before the <li> ref lands. Upstream recovers through the scope's
+  // `:scope >` lookup, which misses a button wrapped in another element (a
+  // context-menu region), and the overlay then falls back to 48px tall.
+  const buttonElRef = useRef<HTMLElement | null>(null);
 
   useIsoLayoutEffect(() => {
     const el = rowRef.current;
@@ -596,13 +601,14 @@ function useMenuRow(rowRef: RefObject<HTMLLIElement | null>, isSubRow = false) {
   }, [registerRow, rowRef]);
 
   /** The <li>'s ref callback: tracks the element and replays the active flag
-   *  the scope may have missed while the ref was detached. */
+   *  and button the scope may have missed while the ref was detached. */
   const attachRow = useCallback(
     (node: HTMLLIElement | null) => {
       rowRef.current = node;
       if (node && setRowActive) setRowActive(node, activeFlagRef.current);
+      if (node && setRowButton && buttonElRef.current) setRowButton(node, buttonElRef.current);
     },
-    [setRowActive, rowRef],
+    [setRowActive, setRowButton, rowRef],
   );
 
   const setActive = useCallback(
@@ -615,6 +621,7 @@ function useMenuRow(rowRef: RefObject<HTMLLIElement | null>, isSubRow = false) {
 
   const setButtonEl = useCallback(
     (el: HTMLElement | null) => {
+      buttonElRef.current = el;
       if (rowRef.current && setRowButton) setRowButton(rowRef.current, el);
     },
     [setRowButton, rowRef],
@@ -677,23 +684,27 @@ function useMenuRow(rowRef: RefObject<HTMLLIElement | null>, isSubRow = false) {
 // The label reserves exactly the trailing run it has to clear, plus one gap
 // — the same rule the section header's label follows, so a row's chevron and
 // a section header's chevron each sit one 4px gap from their action run.
-// A run is: the badge's 24px slot (rightmost when present), the action
-// cluster (24px apiece, 4px between), and a gap where both appear.
+// A run is: the badge's slot (rightmost when present), the action cluster
+// (one slot apiece, 4px between), and a gap where both appear. A slot is
+// 24px, or 20px on the compact ladder, where the row is 28px tall and a 24px
+// action would fill it.
 const ROW_BASE_PAD = 8;
 const ROW_SLOT = 24;
+const ROW_SLOT_COMPACT = 20;
 const ROW_GAP = 4;
 /** Where the run's rightmost element sits, measured from the row's right
  *  edge: a badge at right-2, an action cluster at right-1.5 (its wider box
- *  puts both on the same centre line). */
+ *  puts both on the same centre line). A compact action is the badge's
+ *  width and shares its right-2. */
 const ROW_BADGE_INSET = 8;
 const ROW_ACTION_INSET = 6;
 
-function rowGutter(actionCount: number, hasBadge: boolean) {
+function rowGutter(actionCount: number, hasBadge: boolean, compact: boolean) {
   if (!actionCount && !hasBadge) return ROW_BASE_PAD;
-  const actionsWidth = actionCount ? actionCount * ROW_SLOT + (actionCount - 1) * ROW_GAP : 0;
-  const runWidth =
-    (hasBadge ? ROW_SLOT : 0) + actionsWidth + (hasBadge && actionCount ? ROW_GAP : 0);
-  const inset = hasBadge ? ROW_BADGE_INSET : ROW_ACTION_INSET;
+  const slot = compact ? ROW_SLOT_COMPACT : ROW_SLOT;
+  const actionsWidth = actionCount ? actionCount * slot + (actionCount - 1) * ROW_GAP : 0;
+  const runWidth = (hasBadge ? slot : 0) + actionsWidth + (hasBadge && actionCount ? ROW_GAP : 0);
+  const inset = hasBadge || compact ? ROW_BADGE_INSET : ROW_ACTION_INSET;
   return inset + runWidth + ROW_GAP;
 }
 
@@ -940,9 +951,10 @@ const SidebarMenuButton = forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
     // Exact trailing reservation: at rest, hover-revealed actions claim no
     // width (the label owns the row); once revealed the row widens to
     // --row-gutter-hover.
-    const gutterHover = rowGutter(item?.actionCount ?? 0, item?.hasBadge ?? false);
+    const compact = sizeClasses.variant === "compact";
+    const gutterHover = rowGutter(item?.actionCount ?? 0, item?.hasBadge ?? false, compact);
     const gutterRest = item?.actionsShowOnHover
-      ? rowGutter(0, item?.hasBadge ?? false)
+      ? rowGutter(0, item?.hasBadge ?? false, compact)
       : gutterHover;
     const gutterVars = {
       "--row-gutter": `${gutterRest}px`,
@@ -1051,19 +1063,26 @@ const SidebarMenuAction = forwardRef<HTMLButtonElement, SidebarMenuActionProps>(
         "data-sidebar": "menu-action",
         "data-show-on-hover": showOnHover ? "" : undefined,
         className: cn(
-          // right-1.5 centers the 24px hit-box on the same axis as the badge
-          // (right-2 + min-w-5): both land 18px from the row's right edge.
-          // With a badge on the same row the badge keeps that rightmost spot
-          // and the action slides left of it. Inside a cluster the wrapper
-          // owns the positioning and actions simply flow.
+          // The hit-box centres on the badge's axis (right-2 + min-w-5): both
+          // land 18px from the row's right edge — a 24px box at right-1.5, a
+          // compact 20px box at right-2. With a badge on the same row the
+          // badge keeps that rightmost spot and the action slides left of it.
+          // Inside a cluster the wrapper owns the positioning and actions
+          // simply flow. Either way the box sits 4px inside the row's top and
+          // bottom edges.
           inCluster
-            ? "relative flex size-6 shrink-0 items-center justify-center text-muted-foreground outline-none"
-            : "absolute right-1.5 z-10 flex size-6 items-center justify-center text-muted-foreground outline-none",
+            ? "relative flex shrink-0 items-center justify-center text-muted-foreground outline-none"
+            : "absolute top-1 z-10 flex items-center justify-center text-muted-foreground outline-none",
+          sizeClasses.variant === "compact" ? "size-5" : "size-6",
+          !inCluster && (sizeClasses.variant === "compact" ? "right-2" : "right-1.5"),
           !inCluster &&
             (item?.isSubRow
-              ? "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8.5"
-              : "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8.5"),
-          !inCluster && (item?.isSubRow || sizeClasses.variant === "compact" ? "top-0.5" : "top-1"),
+              ? sizeClasses.variant === "compact"
+                ? "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8"
+                : "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8.5"
+              : sizeClasses.variant === "compact"
+                ? "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8"
+                : "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8.5"),
           "hover:bg-hover hover:text-foreground transition-[color,background-color,opacity] duration-80",
           "focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
           // One icon size across the sidebar: row actions match the leading
@@ -1130,12 +1149,16 @@ const SidebarMenuActions = forwardRef<HTMLDivElement, SidebarMenuActionsProps>(
         ref={ref}
         data-sidebar="menu-actions"
         className={cn(
-          "absolute right-1.5 z-10 flex items-center gap-1",
+          "absolute top-1 z-10 flex items-center gap-1",
+          sizeClasses.variant === "compact" ? "right-2" : "right-1.5",
           // The badge keeps the rightmost slot; the cluster sits left of it.
           item?.isSubRow
-            ? "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8.5"
-            : "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8.5",
-          item?.isSubRow || sizeClasses.variant === "compact" ? "top-0.5" : "top-1",
+            ? sizeClasses.variant === "compact"
+              ? "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8"
+              : "group-has-[>[data-sidebar=menu-badge]]/menu-sub-item:right-8.5"
+            : sizeClasses.variant === "compact"
+              ? "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8"
+              : "group-has-[>[data-sidebar=menu-badge]]/menu-item:right-8.5",
           showOnHover &&
             (item?.isSubRow
               ? "opacity-0 transition-opacity duration-80 group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:opacity-100 has-[[data-state=open]]:opacity-100 has-[[data-popup-open]]:opacity-100"
@@ -1370,9 +1393,10 @@ const SidebarMenuSubButton = forwardRef<HTMLAnchorElement, SidebarMenuSubButtonP
     const lit = isActive || (item?.isHovered ?? false);
     const tabIdx = isActive ? 0 : -1;
 
-    const gutterHover = rowGutter(item?.actionCount ?? 0, item?.hasBadge ?? false);
+    const compact = sizeClasses.variant === "compact";
+    const gutterHover = rowGutter(item?.actionCount ?? 0, item?.hasBadge ?? false, compact);
     const gutterRest = item?.actionsShowOnHover
-      ? rowGutter(0, item?.hasBadge ?? false)
+      ? rowGutter(0, item?.hasBadge ?? false, compact)
       : gutterHover;
     const gutterVars = {
       "--row-gutter": `${gutterRest}px`,
@@ -1398,7 +1422,7 @@ const SidebarMenuSubButton = forwardRef<HTMLAnchorElement, SidebarMenuSubButtonP
         className: cn(
           "relative z-10 flex w-full cursor-pointer select-none items-center gap-2 pl-2 text-left outline-none",
           "transition-[padding] duration-80 pr-[var(--row-gutter)] group-hover/menu-sub-item:pr-[var(--row-gutter-hover)] group-focus-within/menu-sub-item:pr-[var(--row-gutter-hover)] group-has-[[data-sidebar=menu-action]:is([data-state=open],[data-popup-open],[aria-expanded=true])]/menu-sub-item:pr-[var(--row-gutter-hover)]",
-          size === "sm" ? "h-6" : sizeClasses.variant === "compact" ? "h-6" : "h-7",
+          size === "sm" ? "h-6" : sizeClasses.variant === "compact" ? "h-7" : "h-8",
           shape.item,
           className,
         ),
@@ -1416,8 +1440,8 @@ const SidebarMenuSubButton = forwardRef<HTMLAnchorElement, SidebarMenuSubButtonP
             )}
           />
         )}
-        {/* Sub-rows keep the parent rows' type size — only the row height
-            steps down. */}
+        {/* Sub-rows are full rows: the same height and type size as the
+            parent rows, so a nested session is as easy to hit as a loose one. */}
         <MenuRowLabel
           content={content}
           lit={lit}
