@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { motion, AnimatePresence, useReducedMotion, type Transition } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion, type Transition } from "motion/react";
 
 import type { ItemRect, UseFluidHoverReturn } from "../../hooks/use-fluid-hover.ts";
 import { spring } from "../../lib/springs.ts";

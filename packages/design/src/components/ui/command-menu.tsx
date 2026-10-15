@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { animate, motion, useReducedMotion } from "framer-motion";
+import { animate, motion, useReducedMotion } from "motion/react";
 import {
   createContext,
   forwardRef,

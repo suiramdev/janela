@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import {
   createContext,
   useContext,
