@@ -1,10 +1,4 @@
-import {
-  Cancel01Icon,
-  ComputerTerminal01Icon,
-  LinkSquare02Icon,
-  RefreshIcon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons";
+import { ComputerTerminal01Icon, LinkSquare02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   FORGE_TITLE,
@@ -22,10 +16,6 @@ import {
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
   NativeSelect,
   NativeSelectOption,
   Skeleton,
@@ -39,11 +29,10 @@ import { useCallback, useId, useMemo, useState } from "react";
 import { useClientEnvironment, useStoreValue } from "../../../shared/model/index.ts";
 import { ShowSidebarBar, ContentCard } from "../../../shared/ui/index.ts";
 import { selectSession } from "../model/command-dispatch.ts";
+import { isSearching, type SearchState } from "../model/filtered-search.ts";
 import {
   ATTENTION_REASON_TITLE,
   DEFAULT_INBOX_FILTER,
-  INBOX_INVOLVEMENTS,
-  INBOX_INVOLVEMENT_TITLE,
   INBOX_KINDS,
   INBOX_SORTS,
   INBOX_SORT_TITLE,
@@ -56,9 +45,9 @@ import {
   inboxFilterOptions,
   inboxItems,
   inboxKindTitle,
+  inboxSearchFields,
   inboxStatusCounts,
   inboxStatuses,
-  isFiltered,
   sessionsNeedingAttention,
   updatedAgo,
   updatedOn,
@@ -69,6 +58,7 @@ import {
   openLinkLabel,
   pullRequestStatus,
 } from "../model/session-forge.ts";
+import { FilteredSearch } from "./filtered-search.tsx";
 import { BranchMark, ChecksMark, ItemKindIcon, PullRequestMark } from "./forge-marks.tsx";
 import { useForgeOverview } from "./forge-overview-context.tsx";
 import { SessionStatusGlyph } from "./session-status-glyph.tsx";
@@ -79,13 +69,6 @@ interface SelectChoice {
   readonly value: string;
   readonly title: string;
 }
-
-const ANY = "";
-
-const INVOLVEMENT_CHOICES: readonly SelectChoice[] = INBOX_INVOLVEMENTS.map((involvement) => ({
-  value: involvement,
-  title: INBOX_INVOLVEMENT_TITLE[involvement],
-}));
 
 const SORT_CHOICES: readonly SelectChoice[] = INBOX_SORTS.map((sort) => ({
   value: sort,
@@ -110,7 +93,7 @@ const ROW_TARGET_CLASS =
 const REVEAL_CLASS =
   "opacity-0 transition-opacity duration-150 ease-out group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100";
 
-const SEARCH_PLACEHOLDER = "Search by title, #number, branch, author or label";
+const SEARCH_PLACEHOLDER = "Search or filter by author, assignee, label…";
 
 export function InboxView(): ReactElement {
   const environment = useClientEnvironment();
@@ -556,7 +539,7 @@ function EmptyList(props: {
 }): ReactElement {
   const { filter } = props;
   const noun = inboxKindTitle(filter.kind, props.platforms).toLowerCase();
-  const narrowed = isFiltered(filter);
+  const narrowed = isSearching(filter.search);
 
   return (
     <p className="text-muted-foreground py-6 text-center text-xs">
@@ -596,6 +579,8 @@ function InboxControls(props: {
 }): ReactElement {
   const { filter, options, counts, onChange } = props;
 
+  const fields = useMemo(() => inboxSearchFields(options), [options]);
+
   const change = useCallback(
     (next: Partial<InboxFilter>) => {
       onChange({ ...filter, ...next });
@@ -603,25 +588,12 @@ function InboxControls(props: {
     [filter, onChange],
   );
 
-  const clear = useCallback(() => {
-    onChange({
-      ...DEFAULT_INBOX_FILTER,
-      kind: filter.kind,
-      status: filter.status,
-      sort: filter.sort,
-    });
-  }, [filter.kind, filter.status, filter.sort, onChange]);
-
-  const typeQuery = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      change({ query: event.target.value });
+  const search = useCallback(
+    (next: SearchState) => {
+      change({ search: next });
     },
     [change],
   );
-
-  const clearQuery = useCallback(() => {
-    change({ query: "" });
-  }, [change]);
 
   const selectStatus = useCallback<TabChangeHandler>(
     (value) => {
@@ -633,223 +605,49 @@ function InboxControls(props: {
   );
 
   const selectSort = useCallback(
-    (value: string) => {
-      const sort = INBOX_SORTS.find((candidate) => candidate === value);
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const sort = INBOX_SORTS.find((candidate) => candidate === event.target.value);
 
       if (sort !== undefined) change({ sort });
     },
     [change],
   );
 
-  const selectInvolvement = useCallback(
-    (value: string) => {
-      const involvement = INBOX_INVOLVEMENTS.find((candidate) => candidate === value);
-
-      if (involvement !== undefined) change({ involvement });
-    },
-    [change],
-  );
-
-  const selectPlatform = useCallback(
-    (value: string) => {
-      change({ platform: options.platforms.find((platform) => platform === value) });
-    },
-    [change, options.platforms],
-  );
-
-  const selectRepository = useCallback(
-    (value: string) => {
-      const chosen = options.repositories.find((repository) => repository.projectID === value);
-
-      change({ repository: chosen?.projectID });
-    },
-    [change, options.repositories],
-  );
-
-  const selectAuthor = useCallback(
-    (value: string) => {
-      change({ author: value === ANY ? undefined : value });
-    },
-    [change],
-  );
-
-  const selectAssignee = useCallback(
-    (value: string) => {
-      change({ assignee: value === ANY ? undefined : value });
-    },
-    [change],
-  );
-
-  const selectLabel = useCallback(
-    (value: string) => {
-      change({ label: value === ANY ? undefined : value });
-    },
-    [change],
-  );
-
-  const platformChoices = useMemo(
-    () => options.platforms.map((platform) => ({ value: platform, title: FORGE_TITLE[platform] })),
-    [options.platforms],
-  );
-
-  const repositoryChoices = useMemo(
-    () =>
-      options.repositories.map((repository) => ({
-        value: repository.projectID,
-        title: repository.name,
-      })),
-    [options.repositories],
-  );
-
-  const authorChoices = useMemo(() => namedChoices(options.authors), [options.authors]);
-
-  const assigneeChoices = useMemo(() => namedChoices(options.assignees), [options.assignees]);
-
-  const labelChoices = useMemo(() => namedChoices(options.labels), [options.labels]);
-
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <InputGroup className="h-9 flex-1">
-          <InputGroupAddon>
-            <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
-          </InputGroupAddon>
-          <InputGroupInput
-            enterKeyHint="search"
-            value={filter.query}
-            onChange={typeQuery}
-            placeholder={SEARCH_PLACEHOLDER}
-            aria-label="Search pull requests and issues"
-            autoComplete="off"
-            spellCheck={false}
-            className="text-sm"
-          />
-          {filter.query === "" ? undefined : (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={clearQuery}>
-                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-        <FilterSelect
-          label="Sort"
-          value={filter.sort}
-          choices={SORT_CHOICES}
-          anyTitle={undefined}
-          onChange={selectSort}
-          size="default"
-          className="w-48 [&_select]:h-9"
+      <Tabs value={filter.status} onValueChange={selectStatus} className="gap-0">
+        <TabsList aria-label="State">
+          {inboxStatuses(filter.kind).map((status) => (
+            <TabsTrigger key={status} value={status} className="px-2">
+              {INBOX_STATUS_TITLE[status]}
+              <span className="text-muted-foreground tabular-nums">{counts[status]}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      <div className="flex items-start gap-2">
+        <FilteredSearch
+          state={filter.search}
+          fields={fields}
+          label="Search pull requests and issues"
+          placeholder={SEARCH_PLACEHOLDER}
+          onChange={search}
         />
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Tabs value={filter.status} onValueChange={selectStatus} className="gap-0">
-          <TabsList aria-label="State">
-            {inboxStatuses(filter.kind).map((status) => (
-              <TabsTrigger key={status} value={status} className="px-2">
-                {INBOX_STATUS_TITLE[status]}
-                <span className="text-muted-foreground tabular-nums">{counts[status]}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <div className="flex flex-wrap items-center gap-2">
-          {options.knowsViewer ? (
-            <FilterSelect
-              label="Involvement"
-              value={filter.involvement}
-              choices={INVOLVEMENT_CHOICES}
-              anyTitle={undefined}
-              onChange={selectInvolvement}
-            />
-          ) : undefined}
-          <FilterSelect
-            label="Author"
-            value={filter.author ?? ANY}
-            choices={authorChoices}
-            anyTitle="Any author"
-            onChange={selectAuthor}
-          />
-          <FilterSelect
-            label="Assignee"
-            value={filter.assignee ?? ANY}
-            choices={assigneeChoices}
-            anyTitle="Any assignee"
-            onChange={selectAssignee}
-          />
-          {labelChoices.length === 0 ? undefined : (
-            <FilterSelect
-              label="Label"
-              value={filter.label ?? ANY}
-              choices={labelChoices}
-              anyTitle="Any label"
-              onChange={selectLabel}
-            />
-          )}
-          {repositoryChoices.length > 1 ? (
-            <FilterSelect
-              label="Repository"
-              value={filter.repository ?? ANY}
-              choices={repositoryChoices}
-              anyTitle="Any repository"
-              onChange={selectRepository}
-            />
-          ) : undefined}
-          {platformChoices.length > 1 ? (
-            <FilterSelect
-              label="Platform"
-              value={filter.platform ?? ANY}
-              choices={platformChoices}
-              anyTitle="Any platform"
-              onChange={selectPlatform}
-            />
-          ) : undefined}
-          {isFiltered(filter) ? (
-            <Button variant="ghost" size="sm" onClick={clear}>
-              Clear
-            </Button>
-          ) : undefined}
-        </div>
+        <NativeSelect
+          size="default"
+          aria-label="Sort"
+          value={filter.sort}
+          onChange={selectSort}
+          className="w-48 [&_select]:h-9"
+        >
+          {SORT_CHOICES.map((choice) => (
+            <NativeSelectOption key={choice.value} value={choice.value}>
+              {choice.title}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
       </div>
     </div>
-  );
-}
-
-function FilterSelect(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly choices: readonly SelectChoice[];
-  readonly anyTitle: string | undefined;
-  readonly onChange: (value: string) => void;
-  readonly size?: "sm" | "default" | undefined;
-  readonly className?: string | undefined;
-}): ReactElement {
-  const { onChange } = props;
-
-  const handle = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      onChange(event.target.value);
-    },
-    [onChange],
-  );
-
-  return (
-    <NativeSelect
-      size={props.size ?? "sm"}
-      aria-label={props.label}
-      value={props.value}
-      onChange={handle}
-      className={props.className}
-    >
-      {props.anyTitle === undefined ? undefined : (
-        <NativeSelectOption value={ANY}>{props.anyTitle}</NativeSelectOption>
-      )}
-      {props.choices.map((choice) => (
-        <NativeSelectOption key={choice.value} value={choice.value}>
-          {choice.title}
-        </NativeSelectOption>
-      ))}
-    </NativeSelect>
   );
 }
 
@@ -867,8 +665,4 @@ function LoadingRows(): ReactElement {
       ))}
     </ul>
   );
-}
-
-function namedChoices(names: readonly string[]): readonly SelectChoice[] {
-  return names.map((name) => ({ value: name, title: name }));
 }

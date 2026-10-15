@@ -3,13 +3,20 @@ import { describe, expect, test } from "bun:test";
 import { instant, type ForgeItem, type ForgeOverview, type ForgeRepository } from "@janela/core";
 
 import {
+  EMPTY_SEARCH,
+  isSearching,
+  type SearchField,
+  type SearchState,
+  type SearchToken,
+} from "./filtered-search.ts";
+import {
   DEFAULT_INBOX_FILTER,
   inboxFilterOptions,
   inboxItems,
   inboxKindTitle,
+  inboxSearchFields,
   inboxStatusCounts,
   inboxStatuses,
-  isFiltered,
   sessionsNeedingAttention,
   updatedAgo,
 } from "./inbox.ts";
@@ -63,10 +70,31 @@ const overview: ForgeOverview = {
 const numbers = (filter: Partial<typeof DEFAULT_INBOX_FILTER>): readonly number[] =>
   inboxItems(overview, { ...DEFAULT_INBOX_FILTER, ...filter }).map((row) => row.item.number);
 
+const is = (field: string, value: string): SearchToken => ({
+  kind: "filter",
+  field,
+  operator: "is",
+  value,
+});
+
+const isNot = (field: string, value: string): SearchToken => ({
+  kind: "filter",
+  field,
+  operator: "isNot",
+  value,
+});
+
+const searching = (...tokens: readonly SearchToken[]): SearchState => ({
+  ...EMPTY_SEARCH,
+  tokens,
+});
+
+const typing = (draft: string): SearchState => ({ ...EMPTY_SEARCH, draft });
+
 describe("inboxItems", () => {
   test("the default is open pull requests, drafts included, recently updated first", () => {
     expect(numbers({})).toEqual([1, 2, 6]);
-    expect(isFiltered(DEFAULT_INBOX_FILTER)).toBe(false);
+    expect(isSearching(DEFAULT_INBOX_FILTER.search)).toBe(false);
   });
 
   test("state narrows to merged or closed, and all shows every state of the kind", () => {
@@ -77,28 +105,44 @@ describe("inboxItems", () => {
   });
 
   test("involvement is judged against each repository's own viewer", () => {
-    expect(numbers({ involvement: "authored" })).toEqual([1, 6]);
-    expect(numbers({ involvement: "reviewRequested" })).toEqual([2]);
-    expect(numbers({ kind: "issue", involvement: "assigned" })).toEqual([4]);
+    expect(numbers({ search: searching(is("involvement", "authored")) })).toEqual([1, 6]);
+    expect(numbers({ search: searching(is("involvement", "reviewRequested")) })).toEqual([2]);
+    expect(numbers({ kind: "issue", search: searching(is("involvement", "assigned")) })).toEqual([
+      4,
+    ]);
   });
 
   test("kind, platform, repository, author, assignee and label each narrow", () => {
     expect(numbers({ kind: "issue" })).toEqual([4]);
-    expect(numbers({ platform: "gitLab" })).toEqual([6]);
-    expect(numbers({ repository: projectID("app") })).toEqual([1, 2]);
-    expect(numbers({ author: "ada" })).toEqual([6]);
-    expect(numbers({ status: "all", assignee: "ada" })).toEqual([3]);
-    expect(numbers({ kind: "issue", label: "bug" })).toEqual([4]);
+    expect(numbers({ search: searching(is("platform", "gitLab")) })).toEqual([6]);
+    expect(numbers({ search: searching(is("repository", projectID("app"))) })).toEqual([1, 2]);
+    expect(numbers({ search: searching(is("author", "ada")) })).toEqual([6]);
+    expect(numbers({ status: "all", search: searching(is("assignee", "ada")) })).toEqual([3]);
+    expect(numbers({ kind: "issue", search: searching(is("label", "bug")) })).toEqual([4]);
+  });
+
+  test("every filter applies at once, and a negated one excludes its matches", () => {
+    expect(numbers({ search: searching(isNot("author", "me")) })).toEqual([2, 6]);
+    expect(numbers({ search: searching(is("platform", "gitHub"), isNot("label", "ui")) })).toEqual([
+      1,
+    ]);
+
+    expect(numbers({ search: searching(is("author", "me"), is("label", "ui")) })).toEqual([]);
+    expect(isSearching(searching(is("author", "me")))).toBe(true);
   });
 
   test("search needs every word, across title, number, branch, author, labels and repository", () => {
-    expect(numbers({ query: "#6" })).toEqual([6]);
-    expect(numbers({ query: "ITEM 2" })).toEqual([2]);
-    expect(numbers({ query: "ui item" })).toEqual([2]);
-    expect(numbers({ query: "owner/lab" })).toEqual([6]);
-    expect(numbers({ query: "ui ada" })).toEqual([]);
-    expect(isFiltered({ ...DEFAULT_INBOX_FILTER, query: "  " })).toBe(false);
-    expect(isFiltered({ ...DEFAULT_INBOX_FILTER, query: "ui" })).toBe(true);
+    expect(numbers({ search: typing("#6") })).toEqual([6]);
+    expect(numbers({ search: typing("ITEM 2") })).toEqual([2]);
+    expect(numbers({ search: typing("ui item") })).toEqual([2]);
+    expect(numbers({ search: typing("owner/lab") })).toEqual([6]);
+    expect(numbers({ search: typing("ui ada") })).toEqual([]);
+    expect(
+      numbers({ search: { ...typing("2"), tokens: [{ kind: "text", text: "item" }] } }),
+    ).toEqual([2]);
+
+    expect(isSearching(typing("  "))).toBe(false);
+    expect(isSearching(typing("ui"))).toBe(true);
   });
 
   test("sort orders by update time or by number, both ways", () => {
@@ -116,7 +160,10 @@ describe("inboxItems", () => {
     const anonymous: ForgeOverview = { repositories: [unnamed], sessions: [] };
 
     expect(
-      inboxItems(anonymous, { ...DEFAULT_INBOX_FILTER, involvement: "authored" }),
+      inboxItems(anonymous, {
+        ...DEFAULT_INBOX_FILTER,
+        search: searching(is("involvement", "authored")),
+      }),
     ).toHaveLength(0);
   });
 
@@ -124,7 +171,7 @@ describe("inboxItems", () => {
     const filter = {
       ...DEFAULT_INBOX_FILTER,
       status: "merged" as const,
-      platform: "gitHub" as const,
+      search: searching(is("platform", "gitHub")),
     };
 
     expect(inboxStatusCounts(overview, filter)).toEqual({ open: 2, merged: 1, closed: 0, all: 3 });
@@ -147,6 +194,32 @@ describe("inboxFilterOptions", () => {
     expect(options.assignees).toEqual(["ada", "me"]);
     expect(options.labels).toEqual(["bug", "ui"]);
     expect(options.knowsViewer).toBe(true);
+  });
+});
+
+const offered = (fields: readonly SearchField[]): readonly string[] =>
+  fields.filter((field) => field.values.length > 0).map((field) => field.key);
+
+describe("inboxSearchFields", () => {
+  test("offers repository and platform only when there is more than one to tell apart", () => {
+    expect(offered(inboxSearchFields(inboxFilterOptions(overview)))).toEqual([
+      "author",
+      "assignee",
+      "label",
+      "involvement",
+      "repository",
+      "platform",
+    ]);
+
+    const single: ForgeOverview = {
+      repositories: [repository("app", [item({ number: 1, author: "me" })])],
+      sessions: [],
+    };
+
+    expect(offered(inboxSearchFields(inboxFilterOptions(single)))).toEqual([
+      "author",
+      "involvement",
+    ]);
   });
 });
 
