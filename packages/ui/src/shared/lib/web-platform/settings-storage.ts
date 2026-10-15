@@ -27,7 +27,7 @@ const StoredNotificationSound = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("custom"),
-    path: Schema.String.check(Schema.isStartsWith("/")),
+    path: Schema.String.check(Schema.isStartingWith("/")),
   }),
 ]);
 

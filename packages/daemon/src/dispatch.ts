@@ -117,7 +117,7 @@ const decodeTitle = Schema.decodeUnknownOption(Schema.String);
 const decodeVerdict = Schema.decodeUnknownOption(Schema.Boolean);
 
 const decodeDirectory = Schema.decodeUnknownOption(
-  Schema.UndefinedOr(Schema.String.check(Schema.isStartsWith("/"))),
+  Schema.UndefinedOr(Schema.String.check(Schema.isStartingWith("/"))),
 );
 
 const acknowledged = (id: RequestID): DaemonMessage => ({ type: "acknowledged", id });

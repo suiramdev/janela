@@ -25,7 +25,7 @@ interface DecodedWorktree {
 }
 
 const WireWorktree = Schema.Struct({
-  directory: Schema.String.check(Schema.isStartsWith("/")),
+  directory: Schema.String.check(Schema.isStartingWith("/")),
   branch: Schema.optionalKey(Schema.String),
   isMain: Schema.Boolean,
 });
