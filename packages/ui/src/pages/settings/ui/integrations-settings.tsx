@@ -1,20 +1,8 @@
 import type { IntegrationID, IntegrationReport } from "@janela/core";
-import {
-  Alert,
-  AlertDescription,
-  Badge,
-  Button,
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-  Spinner,
-} from "@janela/design";
+import { Alert, AlertDescription, Button, cn, Spinner } from "@janela/design";
 import { Match } from "effect";
 import type { ReactElement } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   type IntegrationAction,
@@ -22,13 +10,14 @@ import {
   type IntegrationsState,
   actOnIntegration,
   integrationAction,
-  integrationBadgeVariant,
+  integrationCapabilitiesText,
   integrationFailureSummary,
   integrationStatusText,
   loadIntegrations,
 } from "../model/integrations.ts";
 import { INTEGRATIONS_HOOKS_SECTION } from "../model/settings-index.ts";
-import { Section } from "./pane.tsx";
+import { IntegrationLogo } from "./integration-logo.tsx";
+import { SettingRow, SettingsGroup } from "./pane.tsx";
 
 export interface SettingsIntegrationsProps {
   readonly connection: IntegrationRequesting;
@@ -47,6 +36,12 @@ const ACTION_LABEL = {
   update: "Update",
   remove: "Remove",
 } satisfies Record<IntegrationAction, string>;
+
+const ACTION_VARIANT = {
+  install: "outline",
+  update: "default",
+  remove: "ghost",
+} as const satisfies Record<IntegrationAction, "outline" | "default" | "ghost">;
 
 export function SettingsIntegrations(props: SettingsIntegrationsProps): ReactElement {
   const { connection } = props;
@@ -99,29 +94,31 @@ export function IntegrationsList(props: IntegrationsListProps): ReactElement {
   const { pending, onAct } = props;
 
   return (
-    <Section section={INTEGRATIONS_HOOKS_SECTION}>
+    <SettingsGroup section={INTEGRATIONS_HOOKS_SECTION}>
       {Match.value(props.state).pipe(
-        Match.when({ kind: "loading" }, () => <Spinner className="text-muted-foreground" />),
+        Match.when({ kind: "loading" }, () => (
+          <div className="py-3">
+            <Spinner className="text-muted-foreground" />
+          </div>
+        )),
         Match.when({ kind: "failed" }, (failed) => (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="my-2.5">
             <AlertDescription>{failed.summary}</AlertDescription>
           </Alert>
         )),
-        Match.when({ kind: "loaded" }, (loaded) => (
-          <ItemGroup>
-            {loaded.overview.integrations.map((report) => (
-              <IntegrationRow
-                key={report.id}
-                report={report}
-                isPending={report.id === pending}
-                onAct={onAct}
-              />
-            ))}
-          </ItemGroup>
-        )),
+        Match.when({ kind: "loaded" }, (loaded) =>
+          loaded.overview.integrations.map((report) => (
+            <IntegrationRow
+              key={report.id}
+              report={report}
+              isPending={report.id === pending}
+              onAct={onAct}
+            />
+          )),
+        ),
         Match.exhaustive,
       )}
-    </Section>
+    </SettingsGroup>
   );
 }
 
@@ -131,34 +128,44 @@ function IntegrationRow(props: {
   readonly onAct: (report: IntegrationReport) => void;
 }): ReactElement {
   const { report, onAct } = props;
+  const action = integrationAction(report);
+  const status = integrationStatusText(report);
+  const isUnreadable = report.status.kind === "unreadable";
 
   const act = useCallback(() => {
     onAct(report);
   }, [onAct, report]);
 
+  const logo = useMemo(() => <IntegrationLogo integration={report.id} />, [report.id]);
+
+  const description = useMemo(
+    () => (
+      <span title={report.configPath}>
+        {integrationCapabilitiesText(report)}
+        {status === undefined ? undefined : (
+          <>
+            {" · "}
+            <span className={cn(isUnreadable && "text-destructive")}>{status}</span>
+          </>
+        )}
+      </span>
+    ),
+    [isUnreadable, report, status],
+  );
+
   return (
-    <Item size="sm" variant="outline">
-      <ItemContent>
-        <ItemTitle>{report.name}</ItemTitle>
-        <ItemDescription className="font-mono text-xs">{report.configPath}</ItemDescription>
-        <ul className="text-muted-foreground text-xs leading-relaxed">
-          {report.reports.map((reported) => (
-            <li key={reported}>{reported}</li>
-          ))}
-        </ul>
-      </ItemContent>
-      <ItemActions>
-        <Badge variant={integrationBadgeVariant(report)}>{integrationStatusText(report)}</Badge>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={act}
-          disabled={props.isPending || report.status.kind === "unreadable"}
-        >
-          {ACTION_LABEL[integrationAction(report)]}
-        </Button>
-      </ItemActions>
-    </Item>
+    <SettingRow label={report.name} media={logo} description={description}>
+      <Button
+        type="button"
+        variant={ACTION_VARIANT[action]}
+        size="sm"
+        onClick={act}
+        disabled={props.isPending || isUnreadable}
+        aria-label={`${ACTION_LABEL[action]} ${report.name}`}
+        className="min-w-16"
+      >
+        {props.isPending ? <Spinner /> : ACTION_LABEL[action]}
+      </Button>
+    </SettingRow>
   );
 }

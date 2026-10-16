@@ -4,7 +4,7 @@ import { AUTOMATION_EVENTS, supportsWorktrees } from "@janela/core";
 import { COMMANDS } from "../../../shared/config/index.ts";
 import { fuzzyScore } from "../../../shared/lib/fuzzy-match/index.ts";
 import type { SettingsRoute, SettingsTabID } from "../../../shared/model/index.ts";
-import { AUTOMATION_EVENT_HINT, AUTOMATION_EVENT_TITLE } from "./automation-scripts.ts";
+import { AUTOMATION_EVENT_TITLE } from "./automation-scripts.ts";
 
 export type SettingsSectionID =
   | "appearanceTheme"
@@ -16,8 +16,6 @@ export type SettingsSectionID =
   | "closingConfirmation"
   | "notificationPermission"
   | "daemon"
-  | "daemonState"
-  | "daemonStop"
   | "projectWorktrees"
   | "projectAutomation"
   | "automationWorktreeCreated"
@@ -29,8 +27,6 @@ export interface SettingsSection {
 
   readonly title: string;
 
-  readonly hint?: string;
-
   readonly fields: readonly string[];
 
   readonly keywords: readonly string[];
@@ -39,7 +35,6 @@ export interface SettingsSection {
 export interface SettingsTabInfo {
   readonly id: SettingsTabID;
   readonly title: string;
-  readonly description: string;
   readonly sections: readonly SettingsSection[];
 }
 
@@ -63,46 +58,21 @@ interface ScoredMatch {
 
 export const APPEARANCE_THEME_SECTION: SettingsSection = {
   id: "appearanceTheme",
-  title: "Theme",
-  hint: "System follows macOS, including when it changes at sunset. Light and Dark hold the window to one. Increase Contrast is honoured either way.",
+  title: "Window",
   fields: ["Theme"],
   keywords: ["appearance", "theme", "light", "dark", "system", "mode", "colours", "scheme"],
 };
 
 export const APPEARANCE_FONT_SECTION: SettingsSection = {
   id: "appearanceFont",
-  title: "Terminal font",
+  title: "Terminal",
   fields: ["Font family", "Font size"],
-  keywords: ["appearance", "typeface", "monospace", "size", "zoom", "font"],
-};
-
-export const CLOSING_CONFIRMATION_SECTION: SettingsSection = {
-  id: "closingConfirmation",
-  title: "Closing a terminal",
-  hint: "Closing a pane or a tab ends the programs in it, so the question is asked while there is still something to lose.",
-  fields: ["Ask before closing a running terminal"],
-  keywords: ["confirmation", "confirm", "ask again", "prompt", "warning", "dialog"],
-};
-
-export const NOTIFICATION_PERMISSION_SECTION: SettingsSection = {
-  id: "notificationPermission",
-  title: "Notification Centre",
-  fields: [],
-  keywords: ["permission", "allow", "authorise", "authorize", "declined", "system settings"],
-};
-
-export const SHORTCUTS_SECTION: SettingsSection = {
-  id: "shortcuts",
-  title: "Keyboard shortcuts",
-  hint: "Every shortcut is ⌘ and a key, with ⇧ or ⌥ if you like. Ctrl is never one: it belongs to the program running in the terminal. The menu bar and the command palette follow whatever you set here.",
-  fields: COMMANDS.map((command) => command.title),
-  keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
+  keywords: ["appearance", "typeface", "monospace", "size", "zoom", "font", "nerd font"],
 };
 
 export const NOTIFICATIONS_EVENTS_SECTION: SettingsSection = {
   id: "notificationsEvents",
-  title: "Events",
-  hint: "One row per thing Janela can tell you about: whether it interrupts you, and what it sounds like. The sidebar shows all of them whatever you choose here, and an agent only reports the last two if its integration is installed.",
+  title: "Notify me when",
   fields: [
     "A terminal rings the bell",
     "An agent is waiting for you",
@@ -142,21 +112,30 @@ export const NOTIFICATIONS_EVENTS_SECTION: SettingsSection = {
   ],
 };
 
+export const SHORTCUTS_SECTION: SettingsSection = {
+  id: "shortcuts",
+  title: "Shortcuts",
+  fields: COMMANDS.map((command) => command.title),
+  keywords: ["shortcut", "keyboard", "chord", "key", "binding", "rebind", "hotkey", "menu"],
+};
+
 export const INTEGRATIONS_HOOKS_SECTION: SettingsSection = {
   id: "integrationsHooks",
-  title: "Activity reporting",
-  hint: "Each agent has its own hook or extension mechanism. Installing one adds a short entry to that agent's configuration which tells the terminal when the agent is working, waiting or finished. Where a hook can, it also passes on each prompt you submit, which Session naming uses and Janela otherwise drops. Janela reads nothing else — not the transcript, not the output.",
+  title: "Agents",
   fields: [],
   keywords: [
+    "integration",
     "hook",
     "hooks",
     "extension",
     "plugin",
     "install",
     "activity",
+    "reporting",
     "status",
     "spinner",
     "claude",
+    "claude code",
     "codex",
     "opencode",
     "omp",
@@ -170,7 +149,6 @@ export const INTEGRATIONS_HOOKS_SECTION: SettingsSection = {
 export const INTEGRATIONS_NAMING_SECTION: SettingsSection = {
   id: "integrationsNaming",
   title: "Session naming",
-  hint: "Renames a session after what you asked its agent: once at your first real prompt, and again only when the work has clearly moved on. The prompts come from the activity hooks above — today, Claude Code's; the name comes from the agent you pick here, run on your Mac with no tools. A session you have renamed by hand keeps its name.",
   fields: [],
   keywords: [
     "name",
@@ -185,6 +163,10 @@ export const INTEGRATIONS_NAMING_SECTION: SettingsSection = {
     "ai",
     "llm",
     "model",
+    "provider",
+    "effort",
+    "reasoning",
+    "thinking",
     "haiku",
     "claude",
     "codex",
@@ -193,33 +175,45 @@ export const INTEGRATIONS_NAMING_SECTION: SettingsSection = {
   ],
 };
 
+export const CLOSING_CONFIRMATION_SECTION: SettingsSection = {
+  id: "closingConfirmation",
+  title: "Confirmations",
+  fields: ["Ask before closing a running terminal"],
+  keywords: ["confirmation", "confirm", "ask again", "prompt", "warning", "dialog", "close"],
+};
+
+export const NOTIFICATION_PERMISSION_SECTION: SettingsSection = {
+  id: "notificationPermission",
+  title: "macOS",
+  fields: ["Notifications"],
+  keywords: [
+    "permission",
+    "allow",
+    "authorise",
+    "authorize",
+    "declined",
+    "system settings",
+    "notification centre",
+  ],
+};
+
 export const DAEMON_SECTION: SettingsSection = {
   id: "daemon",
   title: "Daemon",
-  hint: "janelad runs your terminals, which is why they survive closing the window. It exits on its own when nothing is live.",
-  fields: [],
-  keywords: ["janelad", "background", "service"],
-};
-
-export const DAEMON_STATE_SECTION: SettingsSection = {
-  id: "daemonState",
-  title: "Running now",
-  fields: [],
-  keywords: ["janelad", "status", "sessions", "live", "terminals", "background"],
-};
-
-export const DAEMON_STOP_SECTION: SettingsSection = {
-  id: "daemonStop",
-  title: "Stopping it",
-  hint: "Both of these end every live terminal, and neither acts on its first press.",
-  fields: [],
+  fields: ["Running now", "Shut down"],
   keywords: [
+    "janelad",
+    "background",
+    "service",
+    "status",
+    "sessions",
+    "live",
+    "terminals",
     "stop",
     "quit",
     "restart",
     "unregister",
     "login items",
-    "background service",
     "survive",
     "uninstall",
   ],
@@ -228,15 +222,13 @@ export const DAEMON_STOP_SECTION: SettingsSection = {
 export const PROJECT_WORKTREES_SECTION: SettingsSection = {
   id: "projectWorktrees",
   title: "Worktrees",
-  hint: "Where sessions cut from a branch are created.",
-  fields: ["Use a directory I choose"],
+  fields: ["Location"],
   keywords: ["worktree", "branch", "directory", "root", "sibling", "path", "git"],
 };
 
 export const PROJECT_AUTOMATION_SECTION: SettingsSection = {
   id: "projectAutomation",
   title: "Automation",
-  hint: "A shell script for each moment in a session's life, run by your login shell in a real terminal you can watch and interrupt. Scripts are stored here and never read from the repository.",
   fields: [],
   keywords: [
     "automation",
@@ -260,21 +252,18 @@ export const AUTOMATION_SECTION = {
   worktreeCreated: {
     id: "automationWorktreeCreated",
     title: AUTOMATION_EVENT_TITLE.worktreeCreated,
-    hint: AUTOMATION_EVENT_HINT.worktreeCreated,
     fields: [],
     keywords: AUTOMATION_KEYWORDS,
   },
   sessionStart: {
     id: "automationSessionStart",
     title: AUTOMATION_EVENT_TITLE.sessionStart,
-    hint: AUTOMATION_EVENT_HINT.sessionStart,
     fields: [],
     keywords: AUTOMATION_KEYWORDS,
   },
   sessionTeardown: {
     id: "automationSessionTeardown",
     title: AUTOMATION_EVENT_TITLE.sessionTeardown,
-    hint: AUTOMATION_EVENT_HINT.sessionTeardown,
     fields: [],
     keywords: AUTOMATION_KEYWORDS,
   },
@@ -284,48 +273,29 @@ export const SETTINGS_TAB_INFO: readonly SettingsTabInfo[] = [
   {
     id: "appearance",
     title: "Appearance",
-    description:
-      "How the window and its terminals read. The theme is yours to hold; Increase Contrast stays a macOS setting Janela follows.",
     sections: [APPEARANCE_THEME_SECTION, APPEARANCE_FONT_SECTION],
   },
   {
     id: "notifications",
     title: "Notifications",
-    description:
-      "When Janela may interrupt you. It never notifies for the terminal you are looking at, and never while its window is frontmost and that session is selected.",
     sections: [NOTIFICATIONS_EVENTS_SECTION],
   },
   {
     id: "shortcuts",
     title: "Shortcuts",
-    description:
-      "The keys that reach Janela rather than the terminal. Change any of them; a chord another command already answers to is refused by name.",
     sections: [SHORTCUTS_SECTION],
   },
   {
     id: "integrations",
     title: "Integrations",
-    description:
-      "The hooks the agents you run can use to tell Janela what they are doing. Janela listens; it does not wrap, parse or manage what they do.",
     sections: [INTEGRATIONS_HOOKS_SECTION, INTEGRATIONS_NAMING_SECTION],
   },
   {
     id: "permissions",
     title: "Permissions",
-    description:
-      "What Janela asks before it acts, what macOS asks on its behalf, and the daemon that outlives the window.",
-    sections: [
-      CLOSING_CONFIRMATION_SECTION,
-      NOTIFICATION_PERMISSION_SECTION,
-      DAEMON_SECTION,
-      DAEMON_STATE_SECTION,
-      DAEMON_STOP_SECTION,
-    ],
+    sections: [CLOSING_CONFIRMATION_SECTION, NOTIFICATION_PERMISSION_SECTION, DAEMON_SECTION],
   },
 ];
-
-export const PROJECT_PANE_DESCRIPTION =
-  "Settings for one project. Every session it opens starts under these.";
 
 export function projectSections(project: Project): readonly SettingsSection[] {
   return [

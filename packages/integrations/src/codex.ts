@@ -62,11 +62,7 @@ export const codexIntegration: Integration = {
   id: "codex",
   name: "Codex",
   executable: "codex",
-  reports: [
-    "Working when you submit a prompt or a tool finishes",
-    "Waiting when it asks permission to act",
-    "Finished when the turn ends",
-  ],
+  capabilities: ["activity"],
 
   configPath(home: IntegrationHome): string {
     return hooksPath(home);

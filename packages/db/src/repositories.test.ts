@@ -703,6 +703,14 @@ describe("settings", () => {
         model: "haiku",
       });
 
+      await database.settings.saveSessionNaming({ kind: "agent", agent: "omp", effort: "low" });
+
+      expect(await database.settings.sessionNaming()).toEqual({
+        kind: "agent",
+        agent: "omp",
+        effort: "low",
+      });
+
       await database.settings.saveSessionNaming({ kind: "agent", agent: "codex" });
 
       expect(await database.settings.sessionNaming()).toEqual({ kind: "agent", agent: "codex" });

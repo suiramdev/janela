@@ -11,6 +11,7 @@ import type {
   ProjectSettings,
   Session,
   SessionID,
+  SessionNamerID,
   SessionNaming,
   TerminalID,
   TerminalState,
@@ -126,6 +127,11 @@ export type ClientMessage =
       readonly type: "configureSessionNaming";
       readonly id: RequestID;
       readonly naming: SessionNaming;
+    }
+  | {
+      readonly type: "sessionNamerModels";
+      readonly id: RequestID;
+      readonly agent: SessionNamerID;
     };
 
 export interface TerminalInput {

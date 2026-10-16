@@ -68,7 +68,7 @@ describe("searching", () => {
   test("names a section rather than the keyword that matched", () => {
     const [first] = settingsMatches("unregister", PROJECTS);
 
-    expect(first?.detail).toBe("Stopping it");
+    expect(first?.detail).toBe("Daemon");
   });
 
   test("offers one row per pane, so a pane cannot fill the list", () => {
@@ -91,7 +91,7 @@ describe("searching", () => {
   });
 
   test("does not offer a project's worktree setting when it has none", () => {
-    const matches = settingsMatches("worktree directory", [NOTES]);
+    const matches = settingsMatches("worktree location", [NOTES]);
 
     expect(matches).toEqual([]);
   });

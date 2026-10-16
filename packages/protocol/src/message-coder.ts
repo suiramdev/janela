@@ -74,6 +74,7 @@ const CLIENT_MESSAGE_TYPES = exhaustiveLiterals<ClientMessage["type"]>()([
   "removeIntegration",
   "sessionNaming",
   "configureSessionNaming",
+  "sessionNamerModels",
 ]);
 
 const DAEMON_MESSAGE_TYPES = exhaustiveLiterals<DaemonMessage["type"]>()([

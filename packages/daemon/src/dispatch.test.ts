@@ -22,6 +22,7 @@ import {
   parseDirectoryListing,
   parseForgeOverview,
   parseIntegrationOverview,
+  parseSessionNamerCatalog,
   parseSessionNamingOverview,
   parseRemovalPlan,
   type ClientMessage,
@@ -1294,7 +1295,7 @@ describe("integrations", () => {
     executable: "claude",
     isAvailable: true,
     configPath: "/Users/ada/.claude/settings.json",
-    reports: ["starts working", "waits for permission"],
+    capabilities: ["activity", "prompts"],
     status: { kind: "absent" },
   };
 
@@ -1555,5 +1556,29 @@ describe("session naming", () => {
     expect((await peer.reply(1 as RequestID)).type).toBe("failed");
     expect((await peer.reply(2 as RequestID)).type).toBe("failed");
     expect(naming.configured).toEqual([]);
+  });
+
+  test("the models request answers with the namer's own catalog, as text", async () => {
+    const daemon = fixture({ naming: fakeNaming() });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(request({ type: "sessionNamerModels", id: 1 as RequestID, agent: "codex" }));
+    const reply = await peer.reply(1 as RequestID);
+
+    if (reply.type !== "text") throw new Error(`expected text, got ${reply.type}`);
+
+    expect(parseSessionNamerCatalog(reply.text)).toEqual({
+      agent: "codex",
+      models: [{ id: "codex-small", name: "Small", efforts: ["low", "high"] }],
+    });
+  });
+
+  test("a models request for an agent outside the closed set is refused", async () => {
+    const daemon = fixture({ naming: fakeNaming() });
+    const peer = await daemon.connect(undefined);
+
+    await peer.send(wireControl({ type: "sessionNamerModels", id: 1, agent: "bash" }));
+
+    expect((await peer.reply(1 as RequestID)).type).toBe("failed");
   });
 });

@@ -75,7 +75,13 @@ describe("overview", () => {
       false,
     ]);
 
-    expect(overview.integrations.map((report) => report.reports.length)).toEqual([4, 3, 3, 3]);
+    expect(overview.integrations.map((report) => report.capabilities)).toEqual([
+      ["activity", "prompts"],
+      ["activity"],
+      ["activity"],
+      ["activity"],
+    ]);
+
     expect(overview.integrations.every((report) => report.status.kind === "absent")).toBe(true);
   });
 });

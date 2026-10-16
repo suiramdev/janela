@@ -53,12 +53,7 @@ export const claudeIntegration: Integration = {
   id: "claude",
   name: "Claude Code",
   executable: "claude",
-  reports: [
-    "Working when you submit a prompt or a tool finishes",
-    "Waiting when it asks permission or a question",
-    "Finished when the turn ends",
-    "What you asked, so Session naming can name the session",
-  ],
+  capabilities: ["activity", "prompts"],
 
   configPath(home: IntegrationHome): string {
     return settingsPath(home);

@@ -1,11 +1,14 @@
 import { RequestFailed, type DaemonConnection } from "@janela/client";
-import type { IntegrationID, IntegrationOverview, IntegrationReport } from "@janela/core";
+import type {
+  IntegrationCapability,
+  IntegrationID,
+  IntegrationOverview,
+  IntegrationReport,
+} from "@janela/core";
 import { parseIntegrationOverview } from "@janela/protocol";
 import { Match } from "effect";
 
 export type IntegrationAction = "install" | "update" | "remove";
-
-export type IntegrationBadgeVariant = "secondary" | "outline" | "destructive";
 
 export type IntegrationsState =
   | { readonly kind: "loading" }
@@ -20,6 +23,11 @@ class OverviewMissing extends TypeError {
     this.name = "OverviewMissing";
   }
 }
+
+export const CAPABILITY_TITLE = {
+  activity: "Activity reporting",
+  prompts: "session naming",
+} satisfies Record<IntegrationCapability, string>;
 
 const UNREACHABLE_SUMMARY = "Could not reach the background service.";
 
@@ -68,7 +76,11 @@ export function integrationAction(report: IntegrationReport): IntegrationAction 
   );
 }
 
-export function integrationStatusText(report: IntegrationReport): string {
+export function integrationCapabilitiesText(report: IntegrationReport): string {
+  return report.capabilities.map((capability) => CAPABILITY_TITLE[capability]).join(" and ");
+}
+
+export function integrationStatusText(report: IntegrationReport): string | undefined {
   const status = report.status;
 
   if (status.kind === "unreadable") return `Unreadable: ${status.reason}`;
@@ -78,17 +90,9 @@ export function integrationStatusText(report: IntegrationReport): string {
   return Match.value(status).pipe(
     Match.when({ kind: "installed" }, () => "Installed"),
     Match.when({ kind: "outdated" }, () => "Needs updating"),
-    Match.when({ kind: "absent" }, () => "Not installed"),
+    Match.when({ kind: "absent" }, () => undefined),
     Match.exhaustive,
   );
-}
-
-export function integrationBadgeVariant(report: IntegrationReport): IntegrationBadgeVariant {
-  if (report.status.kind === "unreadable") return "destructive";
-
-  if (!report.isAvailable) return "outline";
-
-  return report.status.kind === "installed" ? "secondary" : "outline";
 }
 
 export function integrationFailureSummary(cause: unknown): string {

@@ -10,6 +10,8 @@ export interface ProcessRequest {
   readonly workingDirectory: string;
   readonly environment?: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
+  readonly standardInput?: string;
+  readonly maximumOutputBytes?: number;
 }
 
 export interface ProcessOutcome {
@@ -32,15 +34,39 @@ export function processRunner(): ProcessRunning {
         const child = spawn(request.executable, [...request.arguments], {
           cwd: request.workingDirectory,
           env: request.environment ?? {},
-          stdio: ["ignore", "pipe", "pipe"],
+          stdio: [request.standardInput === undefined ? "ignore" : "pipe", "pipe", "pipe"],
           shell: false,
         });
 
         const standardOutput: Buffer[] = [];
         const standardError: Buffer[] = [];
 
-        child.stdout?.on("data", (chunk: Buffer) => standardOutput.push(chunk));
-        child.stderr?.on("data", (chunk: Buffer) => standardError.push(chunk));
+        const limit = request.maximumOutputBytes ?? Number.POSITIVE_INFINITY;
+        let collected = 0;
+
+        const collect =
+          (into: Buffer[]) =>
+          (chunk: Buffer): void => {
+            if (collected > limit) return;
+
+            collected += chunk.length;
+
+            if (collected > limit) {
+              child.kill("SIGKILL");
+
+              return;
+            }
+
+            into.push(chunk);
+          };
+
+        child.stdout?.on("data", collect(standardOutput));
+        child.stderr?.on("data", collect(standardError));
+
+        if (request.standardInput !== undefined) {
+          child.stdin?.on("error", () => undefined);
+          child.stdin?.end(request.standardInput);
+        }
 
         let timedOut = false;
         const timer =
@@ -62,7 +88,7 @@ export function processRunner(): ProcessRunning {
             standardOutput: Buffer.concat(standardOutput).toString("utf8"),
             standardError: Buffer.concat(standardError).toString("utf8"),
             exitCode: code ?? -1,
-            succeeded: code === 0,
+            succeeded: code === 0 && collected <= limit,
             timedOut,
           });
         });

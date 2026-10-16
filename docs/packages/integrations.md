@@ -218,18 +218,21 @@ Three edits, in this order:
 1. One id in `INTEGRATION_IDS` in `@janela/core`. It is a closed union, and the
    protocol schema derives from it.
 2. One file here implementing `Integration` — `configPath`, `status`, `install`,
-   `remove`, plus the `reports` strings Settings shows. A harness taking a JSON
+   `remove`, plus the `capabilities` it adds to Janela. A harness taking a JSON
    hooks file reuses `hook-document.ts`; one taking a whole file follows
    `opencode.ts`, building its escapes from `agentActivityEscape`.
 3. One entry in `INTEGRATIONS` in `service.ts`. Order is the order Settings
    lists them.
 
-The `reports` strings are the only user-facing copy in the package — three for
-every harness, and a fourth for Claude Code saying its prompts are forwarded —
-and they say what the harness will make Janela show, not what was installed
-where. Adding a line to a harness's plans is a consent question as much as a
-code change: an install made before it reports `outdated`, and the user's
-**Update** is what turns the new report on.
+`capabilities` is a closed list in `@janela/core` — `activity` for every
+harness, and `prompts` for Claude Code, whose hook forwards each prompt to
+Session naming. The package ships no user-facing copy: Settings presents an
+integration as one row, the harness's logo and name, with its capabilities as
+what installing it gives you ("Activity reporting and session naming"), not as
+separate hooks to install. The hook details and the file written stay out of the
+row; the path is its tooltip. Adding a capability to a harness's plans is a
+consent question as much as a code change: an install made before it reports
+`outdated`, and the user's **Update** is what turns the new capability on.
 
 ## A note on OpenCode
 

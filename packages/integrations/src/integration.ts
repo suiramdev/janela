@@ -1,4 +1,9 @@
-import type { IntegrationID, IntegrationOverview, IntegrationStatus } from "@janela/core";
+import type {
+  IntegrationCapability,
+  IntegrationID,
+  IntegrationOverview,
+  IntegrationStatus,
+} from "@janela/core";
 
 export interface IntegrationFiles {
   read(path: string): Promise<string | undefined>;
@@ -16,7 +21,7 @@ export interface Integration {
   readonly id: IntegrationID;
   readonly name: string;
   readonly executable: string;
-  readonly reports: readonly string[];
+  readonly capabilities: readonly IntegrationCapability[];
   configPath(home: IntegrationHome): string;
   status(files: IntegrationFiles, home: IntegrationHome): Promise<IntegrationStatus>;
   install(files: IntegrationFiles, home: IntegrationHome): Promise<void>;

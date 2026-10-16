@@ -5,6 +5,7 @@ import { absolutePath, emptyLayout, newSessionID, now } from "@janela/core";
 import type { SettingsRepository } from "@janela/db";
 import type { ProcessOutcome, ProcessRequest, ProcessRunning } from "@janela/support/process";
 
+import { NamerModelsUnavailable } from "./errors.ts";
 import {
   MAX_CONCURRENT_NAMERS,
   NAMER_SYSTEM_PROMPT,
@@ -184,11 +185,80 @@ describe("namerInvocation", () => {
   });
 });
 
+describe("namerInvocation with a reasoning effort", () => {
+  test("each agent takes the effort through its own flag", () => {
+    expect(
+      namerInvocation({ kind: "agent", agent: "claude", effort: "low" }, "x").arguments,
+    ).toEqual(expect.arrayContaining(["--effort", "low"]));
+
+    expect(
+      namerInvocation({ kind: "agent", agent: "codex", effort: "low" }, "x").arguments,
+    ).toEqual(expect.arrayContaining(["-c", 'model_reasoning_effort="low"']));
+
+    expect(
+      namerInvocation({ kind: "agent", agent: "omp", effort: "minimal" }, "x").arguments,
+    ).toContain("--thinking=minimal");
+  });
+
+  test("no effort adds no flag", () => {
+    expect(namerInvocation(CLAUDE, "x").arguments).not.toContain("--effort");
+  });
+});
+
 describe("namerEnvironment", () => {
   test("never hands the namer a terminal to report into", () => {
     expect(namerEnvironment({ PATH: "/bin", JANELA_TTY: "/dev/ttys001" })).toEqual({
       PATH: "/bin",
     });
+  });
+});
+
+describe("models", () => {
+  test("asks the agent itself, bounded and timed, and returns what it described", async () => {
+    const fixture = await harness();
+
+    fixture.reply(
+      JSON.stringify({
+        models: [
+          {
+            slug: "gpt-small",
+            display_name: "GPT Small",
+            visibility: "list",
+            supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }],
+          },
+          { slug: "internal", visibility: "hide" },
+        ],
+      }),
+      0,
+    );
+
+    const catalog = await fixture.namer.models("codex");
+
+    expect(catalog).toEqual({
+      agent: "codex",
+      models: [{ id: "gpt-small", name: "GPT Small", efforts: ["low", "high"] }],
+    });
+
+    const [run] = fixture.runs;
+
+    expect(run?.arguments).toEqual(["debug", "models"]);
+    expect(run?.maximumOutputBytes).toBeGreaterThan(0);
+    expect(run?.timeoutMs).toBeGreaterThan(0);
+  });
+
+  test("an agent missing from PATH is a stated failure, not an empty list", async () => {
+    const fixture = await harness(CLAUDE, ["claude"]);
+
+    await expect(fixture.namer.models("omp")).rejects.toThrow(NamerModelsUnavailable);
+    expect(fixture.runs).toHaveLength(0);
+  });
+
+  test("output the agent did not shape as a catalog is a stated failure", async () => {
+    const fixture = await harness();
+
+    fixture.reply("not json", 0);
+
+    await expect(fixture.namer.models("codex")).rejects.toThrow(NamerModelsUnavailable);
   });
 });
 

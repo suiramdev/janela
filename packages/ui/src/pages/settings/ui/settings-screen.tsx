@@ -70,7 +70,6 @@ import {
   settingsDraftRequests,
 } from "../model/draft-save.ts";
 import {
-  PROJECT_PANE_DESCRIPTION,
   SETTINGS_TAB_INFO,
   type SettingsSectionID,
   routeKey,
@@ -414,9 +413,6 @@ export function SettingsPane(props: SettingsPaneProps): ReactElement {
           <PaneHeader
             id={PANE_TITLE_ID}
             title={project?.name ?? info?.title ?? "Settings"}
-            description={
-              project === undefined ? (info?.description ?? "") : PROJECT_PANE_DESCRIPTION
-            }
             directory={project?.directory}
           />
           <PaneBody {...props} project={project} />

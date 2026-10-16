@@ -1,32 +1,30 @@
-import type { SessionNaming, SessionNamingOverview } from "@janela/core";
-import {
-  Alert,
-  AlertDescription,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
-  Spinner,
-} from "@janela/design";
+import type { SessionNamerID, SessionNaming, SessionNamingOverview } from "@janela/core";
+import { Alert, AlertDescription, Spinner } from "@janela/design";
 import { Match } from "effect";
-import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { useCallback, useEffect, useId, useState } from "react";
 
 import { integrationFailureSummary } from "../model/integrations.ts";
 import {
+  type NamerCatalogState,
   type NamerChoice,
   type SessionNamingRequesting,
   type SessionNamingState,
   chosenNamer,
   configureSessionNaming,
+  effortItems,
+  loadNamerCatalog,
   loadSessionNaming,
+  modelItems,
   namerOptions,
+  namingEffort,
   namingFor,
   namingModel,
 } from "../model/session-naming.ts";
 import { INTEGRATIONS_NAMING_SECTION } from "../model/settings-index.ts";
-import { ChoiceField } from "./fields.tsx";
-import { Section } from "./pane.tsx";
+import { SelectRow } from "./fields.tsx";
+import { SettingRow, SettingsGroup } from "./pane.tsx";
+import { SuggestionCombobox } from "./suggestion-combobox.tsx";
 
 export interface SettingsSessionNamingProps {
   readonly connection: SessionNamingRequesting;
@@ -34,16 +32,32 @@ export interface SettingsSessionNamingProps {
 
 export interface SessionNamingFormProps {
   readonly state: SessionNamingState;
+  readonly catalog: NamerCatalogState;
   readonly isPending: boolean;
   readonly onConfigure: (naming: SessionNaming) => void;
 }
 
+export const NAMING_HINT = "Renames a session after what you first ask its agent.";
+
+interface AgentCatalog {
+  readonly agent: SessionNamerID;
+  readonly state: NamerCatalogState;
+}
+
 const LOADING: SessionNamingState = { kind: "loading" };
+
+const CATALOG_LOADING: NamerCatalogState = { kind: "loading" };
 
 export function SettingsSessionNaming(props: SettingsSessionNamingProps): ReactElement {
   const { connection } = props;
   const [state, setState] = useState<SessionNamingState>(LOADING);
+  const [catalogs, setCatalog] = useState<AgentCatalog | undefined>(undefined);
   const [isPending, setPending] = useState(false);
+
+  const agent: SessionNamerID | undefined =
+    state.kind === "loaded" && state.overview.naming.kind === "agent"
+      ? state.overview.naming.agent
+      : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +77,32 @@ export function SettingsSessionNaming(props: SettingsSessionNamingProps): ReactE
       cancelled = true;
     };
   }, [connection]);
+
+  useEffect(() => {
+    if (agent === undefined) return undefined;
+
+    let cancelled = false;
+
+    loadNamerCatalog(connection, agent).then(
+      (loaded) => {
+        if (!cancelled) setCatalog({ agent, state: { kind: "loaded", catalog: loaded } });
+
+        return undefined;
+      },
+      (cause: unknown) => {
+        if (!cancelled) {
+          setCatalog({
+            agent,
+            state: { kind: "failed", summary: integrationFailureSummary(cause) },
+          });
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agent, connection]);
 
   const configure = useCallback(
     (naming: SessionNaming) => {
@@ -84,42 +124,71 @@ export function SettingsSessionNaming(props: SettingsSessionNamingProps): ReactE
     [connection],
   );
 
-  return <SessionNamingForm state={state} isPending={isPending} onConfigure={configure} />;
+  const catalog =
+    catalogs !== undefined && catalogs.agent === agent ? catalogs.state : CATALOG_LOADING;
+
+  return (
+    <SessionNamingForm
+      state={state}
+      catalog={catalog}
+      isPending={isPending}
+      onConfigure={configure}
+    />
+  );
 }
 
 export function SessionNamingForm(props: SessionNamingFormProps): ReactElement {
-  const { isPending, onConfigure } = props;
+  const { catalog, isPending, onConfigure } = props;
 
   return (
-    <Section section={INTEGRATIONS_NAMING_SECTION}>
+    <SettingsGroup section={INTEGRATIONS_NAMING_SECTION}>
       {Match.value(props.state).pipe(
-        Match.when({ kind: "loading" }, () => <Spinner className="text-muted-foreground" />),
+        Match.when({ kind: "loading" }, () => (
+          <div className="py-3">
+            <Spinner className="text-muted-foreground" />
+          </div>
+        )),
         Match.when({ kind: "failed" }, (failed) => (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="my-2.5">
             <AlertDescription>{failed.summary}</AlertDescription>
           </Alert>
         )),
         Match.when({ kind: "loaded" }, (loaded) => (
-          <NamingChoices
+          <NamingRows
             overview={loaded.overview}
+            catalog={catalog}
             isPending={isPending}
             onConfigure={onConfigure}
           />
         )),
         Match.exhaustive,
       )}
-    </Section>
+    </SettingsGroup>
   );
 }
 
-function NamingChoices(props: {
+function NamingRows(props: {
   readonly overview: SessionNamingOverview;
+  readonly catalog: NamerCatalogState;
   readonly isPending: boolean;
   readonly onConfigure: (naming: SessionNaming) => void;
 }): ReactElement {
-  const { overview, isPending, onConfigure } = props;
+  const { overview, catalog, isPending, onConfigure } = props;
   const { naming } = overview;
   const chosen = chosenNamer(overview);
+  const model = namingModel(naming);
+  const effort = namingEffort(naming);
+  const modelID = useId();
+  const effortID = useId();
+  const loaded = catalog.kind === "loaded" ? catalog.catalog : undefined;
+  const current = loaded?.agent === chosen?.id ? loaded : undefined;
+
+  const empty = Match.value(catalog).pipe(
+    Match.when({ kind: "loading" }, () => "Asking the provider…"),
+    Match.when({ kind: "failed" }, (failed) => failed.summary),
+    Match.when({ kind: "loaded" }, () => "Nothing matches. Type to use your own."),
+    Match.exhaustive,
+  );
 
   const choose = useCallback(
     (choice: NamerChoice) => {
@@ -129,81 +198,55 @@ function NamingChoices(props: {
   );
 
   const commitModel = useCallback(
-    (model: string) => {
-      if (chosen !== undefined && model.trim() !== namingModel(naming)) {
-        onConfigure(namingFor(chosen.id, model));
-      }
+    (next: string) => {
+      if (chosen !== undefined) onConfigure(namingFor(chosen.id, next, effort));
     },
-    [chosen, naming, onConfigure],
+    [chosen, effort, onConfigure],
+  );
+
+  const commitEffort = useCallback(
+    (next: string) => {
+      if (chosen !== undefined) onConfigure(namingFor(chosen.id, model, next));
+    },
+    [chosen, model, onConfigure],
   );
 
   return (
     <>
-      <ChoiceField
-        label="Name sessions with"
+      <SelectRow
+        label="Provider"
+        description={NAMING_HINT}
         value={naming.kind === "off" ? "off" : naming.agent}
         choices={namerOptions(overview)}
         onChange={choose}
         isDisabled={isPending}
       />
       {chosen === undefined ? undefined : (
-        <ModelField
-          key={chosen.id}
-          initial={namingModel(naming)}
-          placeholder={chosen.defaultModel ?? "the agent's default"}
-          isDisabled={isPending}
-          onCommit={commitModel}
-        />
+        <>
+          <SettingRow label="Model" controlID={modelID}>
+            <SuggestionCombobox
+              id={modelID}
+              value={model}
+              items={modelItems(current)}
+              placeholder={chosen.defaultModel ?? "Default"}
+              empty={empty}
+              isDisabled={isPending}
+              onCommit={commitModel}
+            />
+          </SettingRow>
+          <SettingRow label="Reasoning effort" controlID={effortID}>
+            <SuggestionCombobox
+              id={effortID}
+              value={effort}
+              items={effortItems(current, model === "" ? (chosen.defaultModel ?? "") : model)}
+              placeholder="Default"
+              empty={empty}
+              isDisabled={isPending}
+              onCommit={commitEffort}
+            />
+          </SettingRow>
+        </>
       )}
     </>
-  );
-}
-
-function ModelField(props: {
-  readonly initial: string;
-  readonly placeholder: string;
-  readonly isDisabled: boolean;
-  readonly onCommit: (model: string) => void;
-}): ReactElement {
-  const { onCommit } = props;
-  const id = useId();
-  const [draft, setDraft] = useState(props.initial);
-
-  const change = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setDraft(event.target.value);
-  }, []);
-
-  const commit = useCallback(() => {
-    onCommit(draft);
-  }, [draft, onCommit]);
-
-  const commitOnEnter = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter") onCommit(draft);
-    },
-    [draft, onCommit],
-  );
-
-  return (
-    <Field>
-      <FieldLabel htmlFor={id}>Model</FieldLabel>
-      <Input
-        id={id}
-        type="text"
-        value={draft}
-        placeholder={props.placeholder}
-        disabled={props.isDisabled}
-        onChange={change}
-        onBlur={commit}
-        onKeyDown={commitOnEnter}
-        className="font-mono"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <FieldDescription>
-        Leave it empty for the default. Naming wants the smallest, fastest model the agent offers: a
-        name is a few words, and it should land while you are still reading the first reply.
-      </FieldDescription>
-    </Field>
   );
 }

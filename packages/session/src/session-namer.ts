@@ -1,5 +1,6 @@
 import type {
   SessionID,
+  SessionNamerCatalog,
   SessionNamerID,
   SessionNamerReport,
   SessionNaming,
@@ -8,9 +9,15 @@ import type {
 import { SESSION_NAMER_IDS, SESSION_NAMING_OFF, acceptsAutomaticName } from "@janela/core";
 import type { SettingsRepository } from "@janela/db";
 import type { Logger } from "@janela/support";
-import type { ProcessOutcome, ProcessRunning } from "@janela/support/process";
+import type { ProcessOutcome, ProcessRequest, ProcessRunning } from "@janela/support/process";
 import { Effect } from "effect";
 
+import { NamerModelsUnavailable } from "./errors.ts";
+import {
+  MAX_NAMER_CATALOG_OUTPUT_BYTES,
+  NAMER_CATALOG_TIMEOUT_MILLISECONDS,
+  NAMER_CATALOGS,
+} from "./session-namer-catalog.ts";
 import {
   EMPTY_NAMING_HISTORY,
   namingDue,
@@ -26,6 +33,7 @@ import { silentLogger } from "./silent-logger.ts";
 export interface SessionNamer {
   load(): Promise<void>;
   overview(): Promise<SessionNamingOverview>;
+  models(agent: SessionNamerID): Promise<SessionNamerCatalog>;
   configure(naming: SessionNaming): Promise<void>;
   promptSubmitted(sessionID: SessionID, prompt: string): Promise<void>;
 }
@@ -50,8 +58,14 @@ interface NamerSpec {
   readonly name: string;
   readonly executable: string;
   readonly defaultModel?: string;
-  readonly arguments: (model: string | undefined, instruction: string) => readonly string[];
+  readonly arguments: (
+    model: string | undefined,
+    effort: string | undefined,
+    instruction: string,
+  ) => readonly string[];
 }
+
+type ProcessRequestDraft = { -readonly [Field in keyof ProcessRequest]: ProcessRequest[Field] };
 
 export const MAX_CONCURRENT_NAMERS = 2;
 
@@ -72,9 +86,10 @@ const NAMERS: Readonly<Record<SessionNamerID, NamerSpec>> = {
     name: "Claude Code",
     executable: "claude",
     defaultModel: "haiku",
-    arguments: (model, instruction) => [
+    arguments: (model, effort, instruction) => [
       "--print",
       ...optional("--model", model),
+      ...optional("--effort", effort),
       "--system-prompt",
       NAMER_SYSTEM_PROMPT,
       "--tools",
@@ -90,7 +105,7 @@ const NAMERS: Readonly<Record<SessionNamerID, NamerSpec>> = {
   codex: {
     name: "Codex",
     executable: "codex",
-    arguments: (model, instruction) => [
+    arguments: (model, effort, instruction) => [
       "exec",
       "--skip-git-repo-check",
       "--ephemeral",
@@ -99,17 +114,19 @@ const NAMERS: Readonly<Record<SessionNamerID, NamerSpec>> = {
       "--color",
       "never",
       ...optional("--model", model),
+      ...(effort === undefined ? [] : ["-c", `model_reasoning_effort="${effort}"`]),
       instruction,
     ],
   },
   omp: {
     name: "Oh My Pi",
     executable: "omp",
-    arguments: (model, instruction) => [
+    arguments: (model, effort, instruction) => [
       "--print",
       "--no-tools",
       "--no-session",
       ...optional("--model", model),
+      ...(effort === undefined ? [] : [`--thinking=${effort}`]),
       instruction,
     ],
   },
@@ -121,7 +138,10 @@ export function namerInvocation(naming: SessionNaming, instruction: string): Nam
   const spec = NAMERS[naming.agent];
   const model = naming.model ?? spec.defaultModel;
 
-  return { executable: spec.executable, arguments: spec.arguments(model, instruction) };
+  return {
+    executable: spec.executable,
+    arguments: spec.arguments(model, naming.effort, instruction),
+  };
 }
 
 export function namerEnvironment(
@@ -226,6 +246,49 @@ export function createSessionNamer(deps: SessionNamerDependencies): SessionNamer
       );
 
       return { naming, namers };
+    },
+
+    async models(agent: SessionNamerID): Promise<SessionNamerCatalog> {
+      const spec = NAMERS[agent];
+      const catalog = NAMER_CATALOGS[agent];
+      const executable = await deps.processes.which(spec.executable, searchPath);
+
+      if (executable === undefined) {
+        throw new NamerModelsUnavailable(spec.name, `${spec.executable} isn't on your PATH.`);
+      }
+
+      const request: ProcessRequestDraft = {
+        executable,
+        arguments: catalog.arguments,
+        workingDirectory: deps.workingDirectory,
+        environment,
+        timeoutMs: NAMER_CATALOG_TIMEOUT_MILLISECONDS,
+        maximumOutputBytes: MAX_NAMER_CATALOG_OUTPUT_BYTES,
+      };
+
+      if (catalog.standardInput !== undefined) request.standardInput = catalog.standardInput;
+
+      const outcome = await deps.processes.run(request);
+
+      const models = catalog.parse(outcome.standardOutput);
+
+      log.info("namer models listed", {
+        agent,
+        exitCode: outcome.exitCode,
+        timedOut: outcome.timedOut,
+        models: models?.length ?? 0,
+      });
+
+      if (models === undefined) {
+        throw new NamerModelsUnavailable(
+          spec.name,
+          outcome.timedOut
+            ? `${spec.executable} didn't answer in time.`
+            : `${spec.executable} didn't describe its models.`,
+        );
+      }
+
+      return { agent, models };
     },
 
     async configure(next: SessionNaming): Promise<void> {

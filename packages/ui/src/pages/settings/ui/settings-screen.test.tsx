@@ -61,7 +61,7 @@ const PANE_COPY = {
   appearance: "Font family",
   notifications: "rings the bell",
   shortcuts: "Close Pane",
-  integrations: "Janela reads nothing else",
+  integrations: "Session naming",
   permissions: "Ask before closing a running terminal",
 } satisfies Record<SettingsTabID, string>;
 
@@ -148,10 +148,9 @@ describe("the tab table", () => {
     expect(SETTINGS_TABS.some((tab) => tab.title === "Projects")).toBe(false);
   });
 
-  test("every pane says what it is for and holds at least one setting", () => {
+  test("every pane has a title and holds at least one setting", () => {
     for (const info of SETTINGS_TAB_INFO) {
       expect(info.title.length).toBeGreaterThan(0);
-      expect(info.description.length).toBeGreaterThan(0);
       expect(info.sections.length).toBeGreaterThan(0);
     }
   });
@@ -187,7 +186,7 @@ describe("the section index", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(projectRoute(NOTES), [NOTES])} />);
 
     expect(ids).not.toContain("projectWorktrees");
-    expect(markup).not.toContain("Use a directory I choose");
+    expect(markup).not.toContain("A directory I choose");
   });
 });
 
@@ -269,12 +268,11 @@ describe("the sidebar", () => {
 });
 
 describe("the pane", () => {
-  test("heads every pane with its title and what it is for", () => {
+  test("heads every pane with its title alone", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
 
     expect(markup).toContain('id="janela-settings-pane-title"');
     expect(markup).toContain("Permissions");
-    expect(markup).toContain("What Janela asks before it acts");
     expect(markup).toContain('aria-labelledby="janela-settings-pane-title"');
   });
 
@@ -353,8 +351,8 @@ describe("the Permissions pane", () => {
   test("states how the notification permission is asked, without a control", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("permissions"))} />);
 
-    expect(markup).toContain("Notification Centre");
-    expect(markup).toContain("sidebar keeps working");
+    expect(markup).toContain("macOS asks the first time Janela notifies");
+    expect(markup).toContain("System Settings › Notifications");
   });
 
   test("reads the closing question as off once it has been silenced", () => {
@@ -397,7 +395,7 @@ describe("the Notifications pane", () => {
   test("says what always delivers regardless of the switch", () => {
     const markup = renderToStaticMarkup(<SettingsPane {...props(tabRoute("notifications"))} />);
 
-    expect(markup).toContain("always delivers");
+    expect(markup).toContain("always deliver");
   });
 
   test("each row's sound reads that event's setting, not another's", () => {

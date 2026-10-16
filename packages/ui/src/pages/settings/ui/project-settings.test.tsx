@@ -103,12 +103,12 @@ describe("automation authoring", () => {
 
 describe("the teardown timeout", () => {
   test("is shown for the one blocking event, once it has a script", () => {
-    expect(paneMarkup(WITH_TEARDOWN)).toContain("Deletion waits this long");
-    expect(paneMarkup(NO_SCRIPTS)).not.toContain("Deletion waits this long");
+    expect(paneMarkup(WITH_TEARDOWN)).toContain("Deletion timeout");
+    expect(paneMarkup(NO_SCRIPTS)).not.toContain("Deletion timeout");
   });
 
   test("is not shown for events that block nothing", () => {
-    expect(paneMarkup(WITH_NON_BLOCKING)).not.toContain("Deletion waits this long");
+    expect(paneMarkup(WITH_NON_BLOCKING)).not.toContain("Deletion timeout");
   });
 
   test("a zero timeout on a script that runs something is named as a violation", () => {
@@ -149,11 +149,11 @@ describe("the commit model", () => {
 
 describe("worktree settings", () => {
   test("are offered for a repository", () => {
-    expect(paneMarkup(NO_SCRIPTS)).toContain("Use a directory I choose");
+    expect(paneMarkup(NO_SCRIPTS)).toContain("A directory I choose");
   });
 
   test("are absent for a plain folder, which cannot have worktrees", () => {
-    expect(paneMarkup(FOLDER)).not.toContain("Use a directory I choose");
+    expect(paneMarkup(FOLDER)).not.toContain("A directory I choose");
   });
 
   test("a custom root shows its directory", () => {

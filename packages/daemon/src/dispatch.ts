@@ -16,7 +16,9 @@ import {
   serializeForgeOverview,
   serializeIntegrationOverview,
   serializeRemovalPlan,
+  serializeSessionNamerCatalog,
   serializeSessionNamingOverview,
+  decodeSessionNamerID,
   decodeSessionNaming,
   type ClientMessage,
   type DaemonMessage,
@@ -410,6 +412,16 @@ export function createRequestDispatch(options: RequestDispatchOptions): RequestD
           await naming.configure(decoded);
 
           return acknowledged(id);
+        },
+
+        sessionNamerModels: async (request) => {
+          const agent = decodeSessionNamerID(request.agent);
+
+          if (agent === undefined) {
+            throw new TypeError("sessionNamerModels with a namer Janela cannot run");
+          }
+
+          return textReply(id, serializeSessionNamerCatalog(await naming.models(agent)));
         },
       }),
     );

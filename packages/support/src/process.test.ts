@@ -39,6 +39,38 @@ describe("processRunner().run", () => {
     expect(Date.now() - started).toBeLessThan(4_000);
   });
 
+  test("standard input reaches the child and is closed", async () => {
+    await using directory = await temporaryDirectory("process-stdin");
+
+    const outcome = await processRunner().run({
+      executable: "/bin/cat",
+      arguments: [],
+      workingDirectory: directory.path,
+      environment: {},
+      standardInput: "line one\n",
+    });
+
+    expect(outcome.standardOutput).toBe("line one\n");
+    expect(outcome.succeeded).toBe(true);
+  });
+
+  test("output past the bound kills the child and fails, keeping no more than the bound", async () => {
+    await using directory = await temporaryDirectory("process-bound");
+
+    const outcome = await processRunner().run({
+      executable: "/usr/bin/yes",
+      arguments: [],
+      workingDirectory: directory.path,
+      environment: {},
+      maximumOutputBytes: 4096,
+      timeoutMs: 5_000,
+    });
+
+    expect(outcome.succeeded).toBe(false);
+    expect(outcome.timedOut).toBe(false);
+    expect(outcome.standardOutput.length).toBeLessThanOrEqual(4096);
+  });
+
   test("a failure to start rejects rather than reporting an exit status", async () => {
     await using directory = await temporaryDirectory("process-enoent");
 
