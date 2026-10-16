@@ -324,6 +324,19 @@ working directory or a project's root. Entries carry a name and one of two
 kinds; a symlink already took its target's kind on the daemon, so the wire has
 no third one.
 
+## endpoint.ts
+
+Where the daemon's socket is: `defaultSocketPath()` is `~/.janela/run/janelad.sock`,
+and it throws `SocketPathTooLong` rather than return a path longer than
+`MAXIMUM_SOCKET_PATH_LENGTH` (104 bytes, `sun_path`). The reasons for both numbers
+are in [`daemon.md`](daemon.md) § endpoint.ts.
+
+It is a subpath, `@janela/protocol/endpoint`, not part of the index: it imports
+`node:os` and `node:path`, and the browser client links `@janela/protocol`. It is
+in this package at all because the path is a contract between the daemon and every
+client — the CLI needs it and may not import `@janela/daemon` (#51).
+`@janela/daemon/endpoint` re-exports it.
+
 ## transport.ts
 
 `MessageTransport` is the one abstraction that makes a remote client possible
@@ -331,9 +344,12 @@ without redesigning the protocol, and the only speculative generality in this
 layer. It is a cost rather than a free option — every implementation pays for the
 indirection — and what it buys is a client that is not on this machine.
 
-In v1 there are two implementations and both are local: the daemon's Unix socket
-listener, and the desktop app's bridge through Tauri's IPC, because a WebView
-cannot open a Unix socket so the Rust shell does it and relays frames.
+There are four implementations: the daemon's Unix socket listener; the desktop
+app's bridge through Tauri's IPC, because a WebView cannot open a Unix socket so
+the Rust shell does it and relays frames; the browser client's WebSocket to the
+gateway, which does the same job over a network; and the CLI's own Unix socket
+client (`apps/cli/src/socket-transport.ts`), the one client that is already a
+process and needs no shell.
 
 `incoming()` finishes when the peer disconnects cleanly and throws when it does
 not. Both are ordinary outcomes: a client quitting is not an error, and a client

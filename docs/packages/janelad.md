@@ -192,7 +192,7 @@ unlinking one nobody answers on is the only way a daemon recovers from `SIGKILL`
 `ENOENT` is the normal case, the first ever start.
 
 `sun_path` is 104 bytes — `MAXIMUM_SOCKET_PATH_LENGTH` in
-`packages/daemon/src/endpoint.ts`, which measures rather than truncates. It is
+`packages/protocol/src/endpoint.ts`, which measures rather than truncates. It is
 why a test fixture's `HOME` goes under `/tmp`; see § Tests.
 
 ## lifecycle.ts

@@ -28,8 +28,8 @@ for it (*worktree-backed*). Worktrees are one way a session's directory comes to
 exist — not the point of the app.
 
 Terminals run inside `janelad`, a per-user daemon, so they survive the window
-closing. The app renders; the daemon runs things. A future CLI and a future browser
-client are more clients of the same protocol.
+closing. The app renders; the daemon runs things. The browser client and the
+`janela` CLI are more clients of the same protocol.
 
 If you are about to write code that contradicts that, stop and read
 [`docs/product.md`](docs/product.md) first.
@@ -59,6 +59,7 @@ Everything is a `bun run` script. Do not invent new invocations.
 | `bun run web:isolated` | A `janelad`, the gateway **and** a watching web build under a private `HOME` in `/tmp/janela-iso/<id>` and a private port — never touches your own daemon | In an agent worktree, or whenever another checkout may be running |
 | `bun run web:build` | Build the browser client into `apps/web/dist` | Before `bun run gateway` |
 | `bun run gateway` | The gateway alone, serving `apps/web/dist` and `/ws` on `127.0.0.1:7411` | To reach the window from another device: `tailscale serve --bg 7411` |
+| `bun run cli -- <command>` | `janela`, the CLI, against whichever `janelad` is listening; `bun run cli -- help` lists the commands | When a script, an agent or an ssh session needs a session or a terminal's text |
 | `bun run daemon` | `janelad` alone, from source, in the foreground, against your real `HOME` | When you want the daemon without a client |
 | `bun run daemon:build` | Compile the `janelad` sidecar | Before `desktop:build`, or to run the compiled one by hand |
 | `bun run daemon:restart` | Stop `janelad` so the next connection starts your build | When the app behaves like code you did not write |
@@ -130,6 +131,7 @@ apps/desktop/src/      The FSD `app` layer: entry, the object graph, adapters/ f
 apps/daemon/           janelad. Process plumbing only — nothing testable.
 apps/gateway/          The browser's shell: serves apps/web/dist, relays each WebSocket onto the socket.
 apps/web/              The browser client. Same window, a WebSocket transport, no macOS ports.
+apps/cli/              `janela`: the protocol from a shell, over the Unix socket. No views, no attach.
 packages/              All logic, as layered packages. Your work goes here.
 packages/ui/src/       Feature-Sliced: pages/{main-window,settings}/ + shared/{model,config,ui,lib}/.
 scripts/layers.ts      The module graph, as data. The architecture, enforced.
@@ -171,6 +173,8 @@ import resolves and runs.
     apps/daemon → janelad      apps/desktop  Tauri shell + composition root
     apps/gateway → the         apps/web      the browser client: same views,
       browser's shell                        a WebSocket transport, no macOS ports
+                               apps/cli      `janela`: the protocol from a shell,
+                                             over the Unix socket, no views
 ```
 
 **If you need an upward reference, you need an interface in the lower package
@@ -382,9 +386,10 @@ installed, signed bundle where the app was quit and its terminals kept running. 
 that document before you change the daemon, the transport or the app lifecycle — it
 also lists what could *not* be tested, and why.
 
-What is not built is the **CLI**. Daemon ownership is justified partly on it, and
-`@janela/protocol` was shaped to serve it, but `apps/` holds only `daemon` and
-`desktop`. If you add it, it must go through the protocol like any other client.
+The **CLI** exists (`apps/cli`, issue #51) and needed no new `ClientRequest`
+variant — see [`architecture.md`](docs/architecture.md) § The CLI. It cannot
+attach to a live terminal yet; `snapshotText` is its read path. Anything you add to
+it goes through the protocol like any other client, and it never starts a daemon.
 
 The stack changed from Swift to Tauri and TypeScript. If you know the previous
 codebase, or you are reading a document that mentions Swift, start with

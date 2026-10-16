@@ -30,7 +30,7 @@ The rules it is held to:
 - **It starts nothing else.** No watcher restarts the daemon on a source change:
   that would hang up the terminals it holds every time you save.
 
-- `socketPathUnder(home)` is the same path `@janela/daemon`'s `defaultSocketPath()`
+- `socketPathUnder(home)` is the same path `@janela/protocol/endpoint`'s `defaultSocketPath()`
   computes, spelled out rather than imported: a script is held to the layering
   rule too, and this one is a client's neighbour, not a daemon package.
 - `daemonIsListening` closes the connection immediately without a handshake, which

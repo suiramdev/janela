@@ -5,7 +5,8 @@
   "description": "Frames, messages, handshake, and the transport seam both processes share.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./endpoint": "./src/endpoint.ts"
   },
   "scripts": {
     "clean": "rm -rf dist *.tsbuildinfo",
