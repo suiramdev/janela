@@ -35,6 +35,7 @@ import {
 } from "@janela/design";
 import {
   parseBranchOverview,
+  parseDirectoryListing,
   type BranchOverview,
   type SessionCreationIntent,
 } from "@janela/protocol";
@@ -88,6 +89,7 @@ export interface NewSessionSheetProps {
   readonly overview: BranchOverviewState;
   readonly sessions: readonly Session[];
   readonly onPickDirectory: () => Promise<AbsolutePath | undefined>;
+  readonly homeDirectory?: AbsolutePath | undefined;
   readonly onCreate: (intent: SessionCreationIntent) => void;
   readonly onCancel: () => void;
 }
@@ -296,6 +298,36 @@ export function useBranchOverview(
   return answer !== undefined && answer.projectID === projectID ? answer.state : LOADING;
 }
 
+export function useHomeDirectory(
+  connection: Pick<DaemonConnection, "request">,
+  wanted: boolean,
+): AbsolutePath | undefined {
+  const [home, setHome] = useState<AbsolutePath | undefined>(undefined);
+  const known = home !== undefined;
+
+  useEffect(() => {
+    if (!wanted || known) return undefined;
+
+    let cancelled = false;
+    connection.request({ type: "listDirectory" }).then(
+      (text) => {
+        if (cancelled || text === undefined) return undefined;
+
+        setHome(parseDirectoryListing(text).home);
+
+        return undefined;
+      },
+      () => undefined,
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, wanted, known]);
+
+  return home;
+}
+
 export function standaloneIntent(directory: string): SessionCreationIntent | undefined {
   const trimmed = directory.trim();
 
@@ -306,10 +338,11 @@ export function standaloneIntent(directory: string): SessionCreationIntent | und
 
 export function NewSessionSheet(props: NewSessionSheetProps): ReactElement {
   const { projects, projectID, onProjectChange, overview, sessions, onPickDirectory } = props;
-  const { onCreate, onCancel } = props;
+  const { homeDirectory, onCreate, onCancel } = props;
   const project = projects.find((candidate) => candidate.id === projectID);
 
-  const [directory, setDirectory] = useState("");
+  const [typedDirectory, setDirectory] = useState<string | undefined>(undefined);
+  const directory = typedDirectory ?? homeDirectory ?? "";
   const [branchChoice, setBranchChoice] = useState<BranchChoice>(NO_CHOICE);
 
   const projectFieldID = useId();
