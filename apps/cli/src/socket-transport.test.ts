@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 
 import {
   MINIMUM_SUPPORTED_VERSION,
@@ -57,18 +57,28 @@ describe("openSocketTransport", () => {
   test("a frame sent arrives whole, and a frame received is decoded even when split", async () => {
     await using directory = await temporaryDirectory("cli-transport");
     const path = directory.join("d.sock");
+    const bytes = Buffer.from(encodeFrame(hello));
     const received: Uint8Array[] = [];
+    const arrived = Promise.withResolvers<void>();
 
     const server = await listening(path, (socket) => {
       socket.on("data", (chunk: Buffer) => {
         received.push(new Uint8Array(chunk));
-        const bytes = encodeFrame(hello);
-        socket.write(bytes.subarray(0, 3));
-        setTimeout(() => socket.write(bytes.subarray(3)), 5);
+
+        if (Buffer.concat(received).byteLength >= bytes.byteLength) arrived.resolve();
       });
     });
 
-    const transport = await openSocketTransport(path);
+    let client: Socket | undefined;
+    const transport = await openSocketTransport(path, (target) => {
+      client = connect({ path: target });
+
+      return client;
+    });
+
+    client?.emit("data", bytes.subarray(0, 3));
+    client?.emit("data", bytes.subarray(3));
+
     const iterator = transport.incoming()[Symbol.asyncIterator]();
     await transport.send(hello);
     const echoed = await iterator.next();
@@ -78,7 +88,9 @@ describe("openSocketTransport", () => {
       decodeClientMessage(hello),
     );
 
-    expect(Buffer.concat(received)).toEqual(Buffer.from(encodeFrame(hello)));
+    await arrived.promise;
+
+    expect(Buffer.concat(received)).toEqual(bytes);
 
     await transport.close();
     await closed(server);

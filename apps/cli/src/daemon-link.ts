@@ -9,7 +9,7 @@ export const CLIENT_NAME = "janela-cli";
 
 export const SNAPSHOT_DEADLINE_MS = 5_000;
 
-const NOT_RUNNING_CODES = new Set(["ENOENT", "ECONNREFUSED"]);
+const NOT_RUNNING_CODES: Record<string, true> = { ENOENT: true, ECONNREFUSED: true };
 
 export interface LinkedDaemon {
   readonly connection: DaemonConnection;
@@ -75,7 +75,7 @@ export class DaemonIncompatible extends UserFacingError {
 
 function unreachable(socketPath: string, cause: unknown): UserFacingError {
   if (cause instanceof SocketTransportFailure) {
-    if (cause.code !== undefined && NOT_RUNNING_CODES.has(cause.code)) {
+    if (cause.code !== undefined && NOT_RUNNING_CODES[cause.code] === true) {
       return new DaemonNotRunning(socketPath);
     }
 
