@@ -324,9 +324,14 @@ Janela's own words, so a prompt beginning with `-` cannot become a flag:
 
 | Agent | argv | Default model |
 | --- | --- | --- |
-| Claude Code | `claude --print --model <m> --system-prompt <namer> --tools "" --no-session-persistence --setting-sources "" --strict-mcp-config --disable-slash-commands <instruction>` | `haiku` |
-| Codex | `codex exec --skip-git-repo-check --ephemeral --sandbox read-only --color never [--model <m>] <instruction>` | Codex's |
-| Oh My Pi | `omp --print --no-tools --no-session [--model <m>] <instruction>` | Oh My Pi's |
+| Claude Code | `claude --print --model <m> [--effort <e>] --system-prompt <namer> --tools "" --no-session-persistence --setting-sources "" --strict-mcp-config --disable-slash-commands <instruction>` | `haiku` |
+| Codex | `codex exec --skip-git-repo-check --ephemeral --sandbox read-only --color never [--model <m>] [-c model_reasoning_effort="<e>"] <instruction>` | Codex's |
+| Oh My Pi | `omp --print --no-tools --no-session [--model <m>] [--thinking=<e>] <instruction>` | Oh My Pi's |
+
+The effort is optional and the agent's own default without it. It is checked
+against `SESSION_NAMER_EFFORT_PATTERN` (letters, digits, `_`, `-`) at the
+protocol, the database and the catalog parser, because for Codex it lands
+inside a `-c` TOML override, where a quote would be a second key.
 
 Claude Code gets a one-line system prompt of its own (`NAMER_SYSTEM_PROMPT`)
 instead of its coding-agent default, for a measured reason: under the default,
@@ -348,6 +353,33 @@ is bounded by `NAMER_TIMEOUT_MILLISECONDS` (30 s). A missing binary, a non-zero
 exit, a timeout or an empty answer is a failure counted toward the retry limit
 and logged as an outcome, never shown: a session that keeps its branch name is
 the normal case, not an error.
+
+### The provider's catalog
+
+`models(agent)` asks the agent itself which models and reasoning efforts it
+offers, so Settings never hardcodes either. Each agent answers a different
+question, recorded in `session-namer-catalog.ts`:
+
+| Agent | Asked with | Read from |
+| --- | --- | --- |
+| Claude Code | `claude --print --input-format stream-json --output-format stream-json --verbose --setting-sources "" --strict-mcp-config --no-session-persistence`, standard input one `initialize` control request | the `control_response`'s `models[].value`, `displayName`, `supportedEffortLevels` |
+| Codex | `codex debug models` | `models[]` with `visibility: "list"`: `slug`, `display_name`, `supported_reasoning_levels[].effort` |
+| Oh My Pi | `omp models --json` | `models[]` of kind `chat`: `selector` (what `--model` takes), `name`, `thinking` |
+
+Claude Code's `initialize` returns before any turn runs, and closing standard
+input ends the process, so no prompt is sent and nothing is billed. Measured on
+the authoring machine: about 0.7 s, 0.2–0.5 s and 0.7 s, for 5, 6 and 1,189
+models. The run is bounded by `NAMER_CATALOG_TIMEOUT_MILLISECONDS` (20 s) and
+`MAX_NAMER_CATALOG_OUTPUT_BYTES` (4 MiB — omp's catalog is about 430 KB), past
+which the child is killed and the run fails; the parsed list is cut at
+`MAX_SESSION_NAMER_CATALOG_MODELS` (2,048). Every optional field tolerates
+`null`, which omp sends for a model without thinking levels.
+
+A missing binary, a timeout or output that is not a catalog is
+`NamerModelsUnavailable`, a `UserFacingError` the Settings combobox shows in
+place of its list; the user can still type any model or effort. The catalog is
+asked for only when Settings shows a chosen provider — never at startup — and
+only its shape (agent, exit code, model count) is logged.
 
 Nothing about a pass reaches the log but the session id, the outcome
 (`renamed`, `kept`, `failed`), whether it timed out and how long it took. The

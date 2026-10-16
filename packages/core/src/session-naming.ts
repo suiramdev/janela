@@ -10,7 +10,12 @@ export type SessionNamerID = (typeof SESSION_NAMER_IDS)[number];
 
 export type SessionNaming =
   | { readonly kind: "off" }
-  | { readonly kind: "agent"; readonly agent: SessionNamerID; readonly model?: string };
+  | {
+      readonly kind: "agent";
+      readonly agent: SessionNamerID;
+      readonly model?: string;
+      readonly effort?: string;
+    };
 
 export interface SessionNamerReport {
   readonly id: SessionNamerID;
@@ -25,9 +30,26 @@ export interface SessionNamingOverview {
   readonly namers: readonly SessionNamerReport[];
 }
 
+export interface SessionNamerModel {
+  readonly id: string;
+  readonly name: string;
+  readonly efforts: readonly string[];
+}
+
+export interface SessionNamerCatalog {
+  readonly agent: SessionNamerID;
+  readonly models: readonly SessionNamerModel[];
+}
+
 export const SESSION_NAMING_OFF: SessionNaming = { kind: "off" };
 
 export const MAX_SESSION_NAMER_MODEL_LENGTH = 128;
+
+export const MAX_SESSION_NAMER_EFFORT_LENGTH = 32;
+
+export const SESSION_NAMER_EFFORT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+export const MAX_SESSION_NAMER_CATALOG_MODELS = 2048;
 
 export function isSessionNamerID(value: string): value is SessionNamerID {
   return SESSION_NAMER_IDS.some((id) => id === value);

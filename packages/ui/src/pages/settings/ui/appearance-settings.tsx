@@ -12,8 +12,8 @@ import {
   withTheme,
 } from "../../../shared/model/index.ts";
 import { APPEARANCE_FONT_SECTION, APPEARANCE_THEME_SECTION } from "../model/settings-index.ts";
-import { type Choice, ChoiceField, NumberField, TextField } from "./fields.tsx";
-import { Section } from "./pane.tsx";
+import { type Choice, NumberRow, SelectRow, TextRow } from "./fields.tsx";
+import { SettingsGroup } from "./pane.tsx";
 
 export interface SettingsAppearanceProps {
   readonly settings: GlobalSettings;
@@ -22,13 +22,12 @@ export interface SettingsAppearanceProps {
 }
 
 export const THEME_CHOICES: readonly Choice<ThemePreference>[] = [
-  { value: "system", title: THEME_TITLE.system, detail: "Whatever macOS is showing right now." },
-  { value: "light", title: THEME_TITLE.light, detail: "Light, whatever the time of day." },
-  { value: "dark", title: THEME_TITLE.dark, detail: "Dark, whatever the time of day." },
+  { value: "system", title: THEME_TITLE.system },
+  { value: "light", title: THEME_TITLE.light },
+  { value: "dark", title: THEME_TITLE.dark },
 ];
 
-export const THEME_BROWSER_HINT =
-  "In a browser the theme is the browser's to set; Janela's own window is where this applies.";
+export const THEME_BROWSER_HINT = "Your browser sets the theme here.";
 
 export function SettingsAppearance(props: SettingsAppearanceProps): ReactElement {
   const { settings, canApplyTheme, onChange } = props;
@@ -56,34 +55,34 @@ export function SettingsAppearance(props: SettingsAppearanceProps): ReactElement
 
   return (
     <>
-      <Section section={APPEARANCE_THEME_SECTION}>
-        <ChoiceField
+      <SettingsGroup section={APPEARANCE_THEME_SECTION}>
+        <SelectRow
           label="Theme"
           value={settings.theme}
           choices={THEME_CHOICES}
           onChange={changeTheme}
           isDisabled={!canApplyTheme}
-          hint={canApplyTheme ? undefined : THEME_BROWSER_HINT}
+          description={canApplyTheme ? undefined : THEME_BROWSER_HINT}
         />
-      </Section>
-      <Section section={APPEARANCE_FONT_SECTION}>
-        <TextField
+      </SettingsGroup>
+      <SettingsGroup section={APPEARANCE_FONT_SECTION}>
+        <TextRow
           label="Font family"
+          description="Empty uses the default, with Nerd Font symbols."
           value={settings.terminalFontFamily ?? ""}
           onChange={changeFamily}
           placeholder={TERMINAL_FONT_STACK}
           isMonospaced
-          hint="Leave it empty for the default stack, which draws icons from the Symbols Nerd Font Mono Janela ships. Name a Nerd Font here to draw text in one too. A font Janela cannot find falls back through the stack, so a typo degrades rather than breaks."
         />
-        <NumberField
+        <NumberRow
           label="Font size"
           value={settings.terminalFontSize}
           onChange={changeSize}
           minimum={TERMINAL_FONT_SIZE_BOUNDS.minimum}
           maximum={TERMINAL_FONT_SIZE_BOUNDS.maximum}
-          hint="Changing this re-measures the cell, which resizes every attached terminal's grid."
+          unit="px"
         />
-      </Section>
+      </SettingsGroup>
     </>
   );
 }

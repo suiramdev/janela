@@ -15,7 +15,7 @@ const CLAUDE: IntegrationReport = {
   executable: "claude",
   isAvailable: true,
   configPath: "/Users/me/.claude/settings.json",
-  reports: ["working", "waiting for permission", "finished"],
+  capabilities: ["activity", "prompts"],
   status: { kind: "installed" },
 };
 
@@ -25,7 +25,7 @@ const CODEX: IntegrationReport = {
   executable: "codex",
   isAvailable: true,
   configPath: "/Users/me/.codex/hooks.json",
-  reports: ["working", "finished"],
+  capabilities: ["activity"],
   status: { kind: "absent" },
 };
 
@@ -63,39 +63,40 @@ function markupFor(
   return renderToStaticMarkup(<IntegrationsList state={state} pending={pending} onAct={noop} />);
 }
 
-describe("the activity reporting pane", () => {
+describe("the integrations pane", () => {
   test("is the section the index points search and reveal at", () => {
     expect(markupFor(BOTH)).toContain(sectionElementID("integrationsHooks"));
   });
 
-  test("names every agent it knows how to report for", () => {
+  test("is one row per integration, each with its logo", () => {
     const markup = markupFor(BOTH);
 
     expect(markup).toContain("Claude Code");
     expect(markup).toContain("Codex");
+    expect([...markup.matchAll(/<svg[^>]*aria-hidden/g)]).toHaveLength(2);
   });
 
-  test("says which file it would write, so the change is never invisible", () => {
+  test("presents activity reporting as something the integration does, not a thing to install", () => {
     const markup = markupFor(BOTH);
 
-    expect(markup).toContain("/Users/me/.claude/settings.json");
-    expect(markup).toContain("/Users/me/.codex/hooks.json");
+    expect(markup).toContain("Activity reporting and session naming");
+    expect(markup).not.toContain("Install Activity reporting");
+    expect(markup).toContain('aria-label="Install Codex"');
+    expect(markup).toContain('aria-label="Remove Claude Code"');
   });
 
-  test("lists what each agent reports", () => {
+  test("keeps the file it would write one hover away", () => {
     const markup = markupFor(BOTH);
 
-    expect(markup).toContain("waiting for permission");
-    expect(markup).toContain("finished");
+    expect(markup).toContain('title="/Users/me/.claude/settings.json"');
+    expect(markup).toContain('title="/Users/me/.codex/hooks.json"');
   });
 
-  test("states each status, and offers the action that status allows", () => {
+  test("states an installed integration, and stays quiet about one that is not", () => {
     const markup = markupFor(BOTH);
 
     expect(markup).toContain("Installed");
-    expect(markup).toContain("Not installed");
-    expect(markup).toContain(">Remove</button>");
-    expect(markup).toContain(">Install</button>");
+    expect(markup).not.toContain("Not installed");
   });
 
   test("an outdated hook offers an update rather than a second install", () => {

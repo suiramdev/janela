@@ -29,7 +29,9 @@ import {
   ACCENTS,
   AUTOMATION_EVENTS,
   MAXIMUM_PANE_DEPTH,
+  MAX_SESSION_NAMER_EFFORT_LENGTH,
   MAX_SESSION_NAMER_MODEL_LENGTH,
+  SESSION_NAMER_EFFORT_PATTERN,
   SESSION_NAMER_IDS,
   SESSION_NAMING_OFF,
   absolutePath,
@@ -239,6 +241,12 @@ const SessionNamingSchema = Schema.Union([
     agent: Schema.Literals(SESSION_NAMER_IDS),
     model: Schema.optionalKey(
       Schema.String.check(Schema.isMaxLength(MAX_SESSION_NAMER_MODEL_LENGTH)),
+    ),
+    effort: Schema.optionalKey(
+      Schema.String.check(
+        Schema.isMaxLength(MAX_SESSION_NAMER_EFFORT_LENGTH),
+        Schema.isPattern(SESSION_NAMER_EFFORT_PATTERN),
+      ),
     ),
   }),
 ]);

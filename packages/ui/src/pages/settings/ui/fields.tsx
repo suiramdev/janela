@@ -1,65 +1,52 @@
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-  Input,
-  RadioGroup,
-  RadioGroupItem,
-  Switch,
-} from "@janela/design";
-import type { ChangeEvent, ComponentProps, ReactElement, ReactNode } from "react";
+import { cn, FieldError, Input, NativeSelect, NativeSelectOption, Switch } from "@janela/design";
+import type { ChangeEvent, ReactElement, ReactNode } from "react";
 import { useCallback, useId } from "react";
 
-type ChoiceChangeHandler = NonNullable<ComponentProps<typeof RadioGroup>["onValueChange"]>;
-
-export interface TextFieldProps {
-  readonly label: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly placeholder?: string | undefined;
-  readonly hint?: string | undefined;
-  readonly isReadOnly?: boolean | undefined;
-  readonly isMonospaced?: boolean | undefined;
-  readonly isInitialFocus?: boolean | undefined;
-}
-
-export interface NumberFieldProps {
-  readonly label: string;
-  readonly value: number;
-  readonly onChange: (value: number) => void;
-  readonly minimum: number;
-  readonly maximum: number;
-  readonly hint?: string | undefined;
-}
-
-export interface SwitchFieldProps {
-  readonly label: string;
-  readonly isOn: boolean;
-  readonly onChange: (isOn: boolean) => void;
-  readonly hint?: string | undefined;
-}
+import { CONTROL_WIDTH, SettingRow, labelIDFor } from "./pane.tsx";
 
 export interface Choice<Value extends string> {
   readonly value: Value;
   readonly title: string;
-  readonly detail: string;
+  readonly isDisabled?: boolean | undefined;
 }
 
-export interface ChoiceFieldProps<Value extends string> {
+export interface TextRowProps {
   readonly label: string;
+  readonly description?: ReactNode;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string | undefined;
+  readonly isMonospaced?: boolean | undefined;
+  readonly isWide?: boolean | undefined;
+}
+
+export interface NumberRowProps {
+  readonly label: string;
+  readonly description?: ReactNode;
+  readonly value: number;
+  readonly onChange: (value: number) => void;
+  readonly minimum: number;
+  readonly maximum: number;
+  readonly unit?: string | undefined;
+}
+
+export interface SwitchRowProps {
+  readonly label: string;
+  readonly description?: ReactNode;
+  readonly isOn: boolean;
+  readonly onChange: (isOn: boolean) => void;
+}
+
+export interface SelectRowProps<Value extends string> {
+  readonly label: string;
+  readonly description?: ReactNode;
   readonly value: Value;
   readonly choices: readonly Choice<Value>[];
   readonly onChange: (value: Value) => void;
   readonly isDisabled?: boolean | undefined;
-  readonly hint?: string | undefined;
 }
 
-export function TextField(props: TextFieldProps): ReactElement {
+export function TextRow(props: TextRowProps): ReactElement {
   const { onChange } = props;
   const id = useId();
 
@@ -71,26 +58,25 @@ export function TextField(props: TextFieldProps): ReactElement {
   );
 
   return (
-    <Field>
-      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+    <SettingRow label={props.label} description={props.description} controlID={id}>
       <Input
         id={id}
         type="text"
         value={props.value}
         placeholder={props.placeholder}
-        readOnly={props.isReadOnly ?? false}
         onChange={handle}
-        className={props.isMonospaced === true ? "font-mono" : undefined}
-        data-autofocus={props.isInitialFocus === true ? "" : undefined}
+        className={cn(
+          props.isWide === true ? "w-72" : CONTROL_WIDTH,
+          props.isMonospaced === true && "font-mono",
+        )}
         autoComplete="off"
         spellCheck={false}
       />
-      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
-    </Field>
+    </SettingRow>
   );
 }
 
-export function NumberField(props: NumberFieldProps): ReactElement {
+export function NumberRow(props: NumberRowProps): ReactElement {
   const { onChange } = props;
   const id = useId();
 
@@ -102,8 +88,7 @@ export function NumberField(props: NumberFieldProps): ReactElement {
   );
 
   return (
-    <Field>
-      <FieldLabel htmlFor={id}>{props.label}</FieldLabel>
+    <SettingRow label={props.label} description={props.description} controlID={id}>
       <Input
         id={id}
         type="number"
@@ -111,17 +96,18 @@ export function NumberField(props: NumberFieldProps): ReactElement {
         min={props.minimum}
         max={props.maximum}
         onChange={handle}
-        className="w-24"
+        className="w-20 tabular-nums"
       />
-      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
-    </Field>
+      {props.unit === undefined ? undefined : (
+        <span className="text-muted-foreground text-xs">{props.unit}</span>
+      )}
+    </SettingRow>
   );
 }
 
-export function SwitchField(props: SwitchFieldProps): ReactElement {
+export function SwitchRow(props: SwitchRowProps): ReactElement {
   const { onChange } = props;
   const id = useId();
-  const labelID = `${id}-label`;
 
   const handle = useCallback(
     (checked: boolean) => {
@@ -131,25 +117,52 @@ export function SwitchField(props: SwitchFieldProps): ReactElement {
   );
 
   return (
-    <Field orientation="horizontal">
-      <FieldContent>
-        <FieldLabel id={labelID} htmlFor={id}>
-          {props.label}
-        </FieldLabel>
-        {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
-      </FieldContent>
-      <Switch id={id} aria-labelledby={labelID} checked={props.isOn} onCheckedChange={handle} />
-    </Field>
+    <SettingRow label={props.label} description={props.description} controlID={id}>
+      <Switch
+        id={id}
+        aria-labelledby={labelIDFor(id)}
+        checked={props.isOn}
+        onCheckedChange={handle}
+      />
+    </SettingRow>
   );
 }
 
-export function ChoiceField<Value extends string>(props: ChoiceFieldProps<Value>): ReactElement {
-  const { choices, onChange, isDisabled = false } = props;
+export function SelectRow<Value extends string>(props: SelectRowProps<Value>): ReactElement {
   const id = useId();
 
-  const handle = useCallback<ChoiceChangeHandler>(
-    (next) => {
-      const chosen = choices.find((choice) => choice.value === next);
+  return (
+    <SettingRow
+      label={props.label}
+      description={props.description}
+      controlID={id}
+      isDisabled={props.isDisabled}
+    >
+      <ChoiceSelect
+        id={id}
+        value={props.value}
+        choices={props.choices}
+        onChange={props.onChange}
+        isDisabled={props.isDisabled}
+      />
+    </SettingRow>
+  );
+}
+
+export function ChoiceSelect<Value extends string>(props: {
+  readonly id?: string | undefined;
+  readonly label?: string | undefined;
+  readonly value: Value;
+  readonly choices: readonly Choice<Value>[];
+  readonly onChange: (value: Value) => void;
+  readonly isDisabled?: boolean | undefined;
+  readonly className?: string | undefined;
+}): ReactElement {
+  const { choices, onChange } = props;
+
+  const handle = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const chosen = choices.find((choice) => choice.value === event.target.value);
 
       if (chosen !== undefined) onChange(chosen.value);
     },
@@ -157,40 +170,20 @@ export function ChoiceField<Value extends string>(props: ChoiceFieldProps<Value>
   );
 
   return (
-    <Field data-disabled={isDisabled ? "" : undefined}>
-      <FieldLabel id={id}>{props.label}</FieldLabel>
-      <RadioGroup
-        value={props.value}
-        onValueChange={handle}
-        aria-labelledby={id}
-        disabled={isDisabled}
-      >
-        {choices.map((choice) => (
-          <ChoiceOption key={choice.value} choice={choice} isDisabled={isDisabled} />
-        ))}
-      </RadioGroup>
-      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
-    </Field>
-  );
-}
-
-function ChoiceOption<Value extends string>(props: {
-  readonly choice: Choice<Value>;
-  readonly isDisabled: boolean;
-}): ReactElement {
-  const { choice, isDisabled } = props;
-  const id = useId();
-
-  return (
-    <Field orientation="horizontal">
-      <RadioGroupItem value={choice.value} id={id} disabled={isDisabled} />
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <FieldLabel htmlFor={id} className={isDisabled ? "opacity-50" : undefined}>
+    <NativeSelect
+      id={props.id}
+      aria-label={props.label}
+      value={props.value}
+      onChange={handle}
+      disabled={props.isDisabled ?? false}
+      className={props.className ?? CONTROL_WIDTH}
+    >
+      {choices.map((choice) => (
+        <NativeSelectOption key={choice.value} value={choice.value} disabled={choice.isDisabled}>
           {choice.title}
-        </FieldLabel>
-        <FieldDescription>{choice.detail}</FieldDescription>
-      </div>
-    </Field>
+        </NativeSelectOption>
+      ))}
+    </NativeSelect>
   );
 }
 
@@ -198,26 +191,12 @@ export function Violations(props: { readonly violations: readonly string[] }): R
   if (props.violations.length === 0) return null;
 
   return (
-    <FieldError>
+    <FieldError className="py-2.5">
       <ul className="ml-4 flex list-disc flex-col gap-1">
         {props.violations.map((violation) => (
           <li key={violation}>{violation}</li>
         ))}
       </ul>
     </FieldError>
-  );
-}
-
-export function FieldSection(props: {
-  readonly title: string;
-  readonly hint?: string | undefined;
-  readonly children: ReactNode;
-}): ReactElement {
-  return (
-    <FieldSet>
-      <FieldLegend variant="label">{props.title}</FieldLegend>
-      {props.hint === undefined ? undefined : <FieldDescription>{props.hint}</FieldDescription>}
-      <FieldGroup>{props.children}</FieldGroup>
-    </FieldSet>
   );
 }

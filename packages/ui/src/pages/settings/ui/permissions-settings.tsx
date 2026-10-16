@@ -1,5 +1,4 @@
 import type { Session, TerminalID, TerminalState } from "@janela/core";
-import { FieldDescription } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback } from "react";
 
@@ -11,12 +10,11 @@ import {
 } from "../../../shared/model/index.ts";
 import {
   CLOSING_CONFIRMATION_SECTION,
-  DAEMON_SECTION,
   NOTIFICATION_PERMISSION_SECTION,
 } from "../model/settings-index.ts";
 import { SettingsDaemon } from "./daemon-settings.tsx";
-import { SwitchField } from "./fields.tsx";
-import { PaneGroup, Section } from "./pane.tsx";
+import { SwitchRow } from "./fields.tsx";
+import { SettingRow, SettingsGroup } from "./pane.tsx";
 
 export interface SettingsPermissionsProps {
   readonly settings: GlobalSettings;
@@ -25,6 +23,11 @@ export interface SettingsPermissionsProps {
   readonly terminalStates: Readonly<Record<TerminalID, TerminalState>>;
   readonly service: BackgroundServiceControlling | undefined;
 }
+
+export const CLOSING_HINT = "Idle and finished terminals never ask.";
+
+export const NOTIFICATION_PERMISSION_HINT =
+  "macOS asks the first time Janela notifies. Change it in System Settings › Notifications.";
 
 export function SettingsPermissions(props: SettingsPermissionsProps): ReactElement {
   const { settings, onChange } = props;
@@ -38,30 +41,24 @@ export function SettingsPermissions(props: SettingsPermissionsProps): ReactEleme
 
   return (
     <>
-      <Section section={CLOSING_CONFIRMATION_SECTION}>
-        <SwitchField
+      <SettingsGroup section={CLOSING_CONFIRMATION_SECTION}>
+        <SwitchRow
           label="Ask before closing a running terminal"
+          description={CLOSING_HINT}
           isOn={!isConfirmationSilenced(settings, "closeTerminals")}
           onChange={changeAsksBeforeClosing}
-          hint="Idle and finished terminals never ask. Turning this off is the same as ticking Don't ask again in the dialog."
         />
-      </Section>
+      </SettingsGroup>
 
-      <Section section={NOTIFICATION_PERMISSION_SECTION}>
-        <FieldDescription>
-          macOS asks for permission the first time a notification would actually be sent, not at
-          launch. Declining is fine — the sidebar keeps working, and Janela never asks again on its
-          own. Change your answer under System Settings › Notifications.
-        </FieldDescription>
-      </Section>
+      <SettingsGroup section={NOTIFICATION_PERMISSION_SECTION}>
+        <SettingRow label="Notifications" description={NOTIFICATION_PERMISSION_HINT} />
+      </SettingsGroup>
 
-      <PaneGroup section={DAEMON_SECTION}>
-        <SettingsDaemon
-          sessions={props.sessions}
-          terminalStates={props.terminalStates}
-          service={props.service}
-        />
-      </PaneGroup>
+      <SettingsDaemon
+        sessions={props.sessions}
+        terminalStates={props.terminalStates}
+        service={props.service}
+      />
     </>
   );
 }

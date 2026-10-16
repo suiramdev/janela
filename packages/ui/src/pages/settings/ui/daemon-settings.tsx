@@ -1,14 +1,5 @@
 import type { Session, TerminalID, TerminalState } from "@janela/core";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  FieldDescription,
-  Item,
-  ItemContent,
-  ItemTitle,
-} from "@janela/design";
+import { Alert, AlertDescription, AlertTitle, Button } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useState } from "react";
 
@@ -24,8 +15,8 @@ import {
   serviceRequestCost,
   serviceStopCost,
 } from "../../../shared/model/index.ts";
-import { DAEMON_STATE_SECTION, DAEMON_STOP_SECTION } from "../model/settings-index.ts";
-import { Section } from "./pane.tsx";
+import { DAEMON_SECTION } from "../model/settings-index.ts";
+import { SettingRow, SettingsGroup } from "./pane.tsx";
 
 export interface SettingsDaemonProps {
   readonly sessions: readonly Session[];
@@ -33,26 +24,24 @@ export interface SettingsDaemonProps {
   readonly service: BackgroundServiceControlling | undefined;
 }
 
+export const DAEMON_STOP_HINT = "Ends every live terminal. Quitting Janela never does.";
+
 export function SettingsDaemon(props: SettingsDaemonProps): ReactElement {
   const { service } = props;
   const cost = serviceStopCost(props.sessions, props.terminalStates);
 
   return (
-    <>
-      <Section section={DAEMON_STATE_SECTION}>
-        <Item variant="muted" size="sm">
-          <ItemContent>
-            <ItemTitle>{cost.sentence}</ItemTitle>
-          </ItemContent>
-        </Item>
-      </Section>
+    <SettingsGroup section={DAEMON_SECTION}>
+      <SettingRow label="Running now">
+        <span className="text-muted-foreground text-xs">{cost.sentence}</span>
+      </SettingRow>
 
-      {service === undefined ? undefined : <ServiceStopSection cost={cost} service={service} />}
-    </>
+      {service === undefined ? undefined : <ServiceStopRow cost={cost} service={service} />}
+    </SettingsGroup>
   );
 }
 
-function ServiceStopSection(props: {
+function ServiceStopRow(props: {
   readonly cost: ServiceStopCost;
   readonly service: BackgroundServiceControlling;
 }): ReactElement {
@@ -94,11 +83,11 @@ function ServiceStopSection(props: {
   }, []);
 
   return (
-    <Section section={DAEMON_STOP_SECTION}>
-      <div className="flex gap-2">
+    <div className="flex flex-col pb-2.5">
+      <SettingRow label="Shut down" description={DAEMON_STOP_HINT}>
         <ServiceRequestButton request="stop" onRequest={request} />
         <ServiceRequestButton request="stopAndUnregister" onRequest={request} />
-      </div>
+      </SettingRow>
       {confirmation.pending === undefined ? undefined : (
         <ServiceCostConfirmation
           request={confirmation.pending}
@@ -107,11 +96,7 @@ function ServiceStopSection(props: {
           onCancel={cancel}
         />
       )}
-      <FieldDescription>
-        Quitting Janela does not stop it. That is the point: a terminal you started keeps running
-        until you end it or the daemon has nothing left to run.
-      </FieldDescription>
-    </Section>
+    </div>
   );
 }
 

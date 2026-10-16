@@ -53,11 +53,7 @@ export const ompIntegration: Integration = {
   id: "omp",
   name: "Oh My Pi",
   executable: "omp",
-  reports: [
-    "Working when the agent starts or an approval resolves",
-    "Waiting when it asks permission or a question",
-    "Finished when the agent stops",
-  ],
+  capabilities: ["activity"],
 
   configPath(home: IntegrationHome): string {
     return extensionPath(home);

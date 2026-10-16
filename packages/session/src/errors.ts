@@ -86,6 +86,21 @@ export class ExecutableUnavailable extends UserFacingError {
   }
 }
 
+export class NamerModelsUnavailable extends UserFacingError {
+  override readonly summary: string;
+  readonly agent: string;
+
+  constructor(agent: string, reason: string) {
+    super(`namer catalog unavailable for ${agent}`, {
+      reason,
+      recoverySuggestion: "You can still type a model name yourself.",
+    });
+
+    this.summary = `Couldn't list ${agent}'s models.`;
+    this.agent = agent;
+  }
+}
+
 export class NotAWorktree extends UserFacingError {
   override readonly summary = "That folder isn't a worktree of this project.";
   readonly directory: AbsolutePath;

@@ -7,7 +7,7 @@ import { serializeIntegrationOverview } from "@janela/protocol";
 import {
   actOnIntegration,
   integrationAction,
-  integrationBadgeVariant,
+  integrationCapabilitiesText,
   integrationFailureSummary,
   integrationStatusText,
   loadIntegrations,
@@ -28,7 +28,7 @@ function report(overrides: Partial<IntegrationReport> = {}): IntegrationReport {
     executable: "claude",
     isAvailable: true,
     configPath: "/Users/me/.claude/settings.json",
-    reports: ["working", "waiting for permission"],
+    capabilities: ["activity"],
     status: INSTALLED,
     ...overrides,
   };
@@ -120,7 +120,7 @@ describe("what the row offers", () => {
   test("the status reads as a sentence about that agent", () => {
     expect(integrationStatusText(report())).toBe("Installed");
     expect(integrationStatusText(report({ status: { kind: "outdated" } }))).toBe("Needs updating");
-    expect(integrationStatusText(report({ status: { kind: "absent" } }))).toBe("Not installed");
+    expect(integrationStatusText(report({ status: { kind: "absent" } }))).toBeUndefined();
   });
 
   test("an unreadable configuration says why", () => {
@@ -129,19 +129,19 @@ describe("what the row offers", () => {
     expect(integrationStatusText(unreadable)).toBe("Unreadable: settings.json is empty");
   });
 
-  test("a missing executable is what the badge says, whatever the configuration holds", () => {
-    const missing = report({ isAvailable: false });
-
-    expect(integrationStatusText(missing)).toBe("claude is not on your PATH");
-    expect(integrationBadgeVariant(missing)).toBe("outline");
+  test("a missing executable is what the row says, whatever the configuration holds", () => {
+    expect(integrationStatusText(report({ isAvailable: false }))).toBe(
+      "claude is not on your PATH",
+    );
   });
 
-  test("only an unreadable configuration reads as a problem", () => {
-    expect(integrationBadgeVariant(report())).toBe("secondary");
-    expect(integrationBadgeVariant(report({ status: { kind: "absent" } }))).toBe("outline");
-    expect(integrationBadgeVariant(report({ status: { kind: "outdated" } }))).toBe("outline");
-    expect(integrationBadgeVariant(report({ status: { kind: "unreadable", reason: "no" } }))).toBe(
-      "destructive",
+  test("the integration is described by what it can do, not by its hooks", () => {
+    expect(integrationCapabilitiesText(report({ capabilities: ["activity"] }))).toBe(
+      "Activity reporting",
+    );
+
+    expect(integrationCapabilitiesText(report({ capabilities: ["activity", "prompts"] }))).toBe(
+      "Activity reporting and session naming",
     );
   });
 });

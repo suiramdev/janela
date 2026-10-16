@@ -895,7 +895,7 @@ positional shape is deliberate — a sidebar test reads better as
   a flag. What Janela ships, it ships for everyone; a feature that is not ready
   for that will be switched on here."*
 - **The sections are data, not markup.** `model/settings-index.ts` holds every pane,
-  its description, its sections and their field labels; the panes render from it and
+  its sections and their field labels; the panes render from it and
   the sidebar's search reads it. A table nothing renders drifts, so a test renders
   each pane and asserts every advertised section title, field label and anchor is
   really on it. `keywords` is the half that is deliberately *not* rendered: the words
@@ -907,7 +907,7 @@ positional shape is deliberate — a sidebar test reads better as
   The results are one row per *pane*, not one per match: that keeps the list short,
   keeps the `tablist` exactly as long as the number of panes it can reach, and leaves
   every row a real tab with a unique id. The row says which pane and which section
-  matched, and picking it scrolls that section to the top and rings it for 1.4s —
+  matched, and picking it scrolls that section to the top and tints it for 1.4s —
   a settings search that only opens the right pane has answered half the question.
   Reveal is component state, not a route field: it is a one-shot gesture, and putting
   it in `SettingsRoute` would make `sameRoute` lie and skip the scroll when the pane
@@ -937,18 +937,42 @@ positional shape is deliberate — a sidebar test reads better as
   first pane — derived rather than written back, because a store write during render
   notifies subscribers mid-render.
 - **Every pane is headed the same way**, by `PaneHeader`: title, then the directory
-  when it is a project, then one line saying what the pane is for. The project pane
+  when it is a project. Panes used to open with a paragraph saying what they were for,
+  and every section with another; both went, because the pane's title and the
+  setting's label already say it, and the paragraphs were the clutter between the
+  user and the control. A description survives only on a row whose label cannot
+  carry its consequence ("Idle and finished terminals never ask"). The project pane
   used to build its own heading and the tab panes another, which is how the two
   drifted into different type sizes; and the panel is now labelled by that heading
   rather than by the selected row, so filtering the sidebar cannot leave
   `aria-labelledby` pointing at a row that is no longer rendered.
-- **Sections are cards, groups are headings.** A section is `Elevated offset={1}` with
-  its legend inside, so grouping is carried by surface and shadow rather than by a
-  border whose only job was depth. Automation needed a third level — three event
-  sections that are siblings, not children — so `PaneGroup` is a heading with its own
-  explanation above a run of cards, instead of the card-inside-a-card the old nesting
-  produced. `FieldSection` is the flat fieldset that remains for a form *inside* a
-  card: the shortcut list's one block per menu.
+- **Two columns, no cards.** Every setting is a `SettingRow` (`ui/pane.tsx`): name and,
+  only where needed, one line of description on the left; the single control on the
+  right, at one width (`CONTROL_WIDTH`) so the controls form a column. Rows in a
+  `SettingsGroup` are separated by hairline dividers and the group is a small muted
+  heading — hierarchy by spacing and type, not surface. Sections were `Elevated`
+  cards until the redesign; a card per section made a five-row pane five boxes, and
+  boxes inside a scroll inside a window inside a frame. The one exception to the row is
+  a control too large for a column — a shell script — which is a `SettingBlock`: label
+  above, editor full width.
+- **One control per setting.** A choice is a dropdown, never a radio list with a
+  sentence under every option: Theme is System / Light / Dark and nothing else. A
+  worktree location is a dropdown of two places, with the path field appearing only
+  for the custom one, rather than a switch whose label had to explain what *off* meant.
+- **An integration is one row.** The harness's own logo (`ui/integration-logo.tsx`,
+  the vendor marks as inline SVG — Claude Code's and Oh My Pi's in their brand colour,
+  Codex's and OpenCode's in `currentColor`), its name, what installing it gives you
+  (its `capabilities`, read from the daemon), and one action. Activity reporting is a
+  capability of Claude Code, not a thing installed beside it.
+- **Every AI setting is provider, model, reasoning effort**, in that order, each its
+  own control. The provider is a dropdown of the agents the daemon can run; model and
+  effort are `SuggestionCombobox`es whose options come from `sessionNamerModels` —
+  the provider's own catalog, asked for again whenever the provider changes, never a
+  list in the client. The combobox is editable: typing a value no option has offers
+  *Use "…"*, so a model the catalog does not list yet is one Enter away. Efforts follow
+  the chosen model; for a typed model the catalog lacks, every effort any model
+  offers. A catalog that cannot be read shows its reason inside the list and leaves the
+  field typeable. Any later AI-powered setting reuses the three rows.
 - **The commit bar** is always visible: one that appears when something is dirty moves
   the content as the user types and hides that the screen has a commit model at all.
   At rest it is quiet; dirty, it says how many changes it would write, because with one

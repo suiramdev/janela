@@ -1,17 +1,8 @@
 import { Undo02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Button,
-  Field,
-  FieldContent,
-  FieldError,
-  FieldLabel,
-  Kbd,
-  KbdGroup,
-  cn,
-} from "@janela/design";
+import { Button, FieldError, Kbd, KbdGroup, cn } from "@janela/design";
 import type { KeyboardEvent, ReactElement } from "react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import {
   type Command,
@@ -28,9 +19,8 @@ import {
   shortcutViolation,
   withCommandShortcut,
 } from "../../../shared/model/index.ts";
-import { SHORTCUTS_SECTION } from "../model/settings-index.ts";
-import { FieldSection } from "./fields.tsx";
-import { Section } from "./pane.tsx";
+import { SHORTCUTS_SECTION, sectionElementID } from "../model/settings-index.ts";
+import { RowGroup, SettingRow, labelIDFor } from "./pane.tsx";
 
 export interface SettingsShortcutsProps {
   readonly settings: GlobalSettings;
@@ -51,6 +41,8 @@ const MENU_ORDER: readonly CommandMenu[] = ["file", "view", "session", "terminal
 export const RECORDING_PROMPT = "Press the new shortcut. Esc keeps the old one.";
 
 export const NO_SHORTCUT = "None";
+
+export const SHORTCUT_RULE = "⌘ and a key, with ⇧ or ⌥ if you like. Ctrl belongs to the terminal.";
 
 const MODIFIER_CODE = /^(Meta|Shift|Alt|Control|CapsLock)/;
 
@@ -73,9 +65,18 @@ export function SettingsShortcuts(props: SettingsShortcutsProps): ReactElement {
   const merged = commandsWithShortcuts(settings, true);
 
   return (
-    <Section section={SHORTCUTS_SECTION}>
+    <section
+      id={sectionElementID(SHORTCUTS_SECTION.id)}
+      aria-label={SHORTCUTS_SECTION.title}
+      className="flex scroll-mt-4 flex-col gap-8"
+    >
+      <p className="text-muted-foreground text-xs/relaxed">{SHORTCUT_RULE}</p>
       {MENU_ORDER.map((menu) => (
-        <FieldSection key={menu} title={SHORTCUT_MENU_TITLE[menu]}>
+        <RowGroup
+          key={menu}
+          id={`${sectionElementID(SHORTCUTS_SECTION.id)}-${menu}`}
+          title={SHORTCUT_MENU_TITLE[menu]}
+        >
           {merged
             .filter((command) => command.menu === menu)
             .map((command) => (
@@ -88,9 +89,9 @@ export function SettingsShortcuts(props: SettingsShortcutsProps): ReactElement {
                 onRecording={onRecording}
               />
             ))}
-        </FieldSection>
+        </RowGroup>
       ))}
-    </Section>
+    </section>
   );
 }
 
@@ -103,7 +104,6 @@ function ShortcutField(props: {
 }): ReactElement {
   const { command, settings, onChange, onRecording } = props;
   const id = useId();
-  const labelID = `${id}-label`;
   const [isRecording, setRecording] = useState(false);
   const [violation, setViolation] = useState<string | undefined>(undefined);
 
@@ -157,21 +157,20 @@ function ShortcutField(props: {
     [command.id, isRecording, onChange, settings, stop],
   );
 
+  const refusal = useMemo(
+    () => (violation === undefined ? undefined : <FieldError>{violation}</FieldError>),
+    [violation],
+  );
+
   return (
-    <Field orientation="horizontal" data-invalid={violation === undefined ? undefined : true}>
-      <FieldContent>
-        <FieldLabel id={labelID} htmlFor={id}>
-          {command.title}
-        </FieldLabel>
-        {violation === undefined ? undefined : <FieldError>{violation}</FieldError>}
-      </FieldContent>
+    <SettingRow label={command.title} controlID={id} description={refusal}>
       <div className="flex items-center gap-1">
         <Button
           id={id}
           type="button"
           variant="outline"
           size="sm"
-          aria-labelledby={labelID}
+          aria-labelledby={labelIDFor(id)}
           aria-pressed={isRecording}
           data-recording={isRecording ? true : undefined}
           className={cn("min-w-24 justify-center", isRecording && "ring-2 ring-ring/60")}
@@ -195,9 +194,11 @@ function ShortcutField(props: {
           >
             <HugeiconsIcon icon={Undo02Icon} strokeWidth={2} />
           </Button>
-        ) : undefined}
+        ) : (
+          <span aria-hidden className="size-6" />
+        )}
       </div>
-    </Field>
+    </SettingRow>
   );
 }
 

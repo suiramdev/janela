@@ -1,4 +1,9 @@
-import { INTEGRATION_IDS, type IntegrationOverview, type IntegrationReport } from "@janela/core";
+import {
+  INTEGRATION_CAPABILITIES,
+  INTEGRATION_IDS,
+  type IntegrationOverview,
+  type IntegrationReport,
+} from "@janela/core";
 import { Result, Schema } from "effect";
 
 const IntegrationStatusSchema = Schema.Union([
@@ -14,7 +19,7 @@ const IntegrationReportSchema = Schema.Struct({
   executable: Schema.String,
   isAvailable: Schema.Boolean,
   configPath: Schema.String,
-  reports: Schema.Array(Schema.String),
+  capabilities: Schema.Array(Schema.Literals(INTEGRATION_CAPABILITIES)),
   status: IntegrationStatusSchema,
 });
 
@@ -34,7 +39,7 @@ export function serializeIntegrationOverview(overview: IntegrationOverview): str
       executable: report.executable,
       isAvailable: report.isAvailable,
       configPath: report.configPath,
-      reports: [...report.reports],
+      capabilities: [...report.capabilities],
       status: report.status,
     })),
   });

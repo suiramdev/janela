@@ -1,15 +1,8 @@
+import { VolumeHighIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { AttentionEvent, AttentionEventPreference, NotificationSound } from "@janela/client";
 import { ATTENTION_EVENTS, SILENT_NOTIFICATION_SOUND } from "@janela/client";
-import {
-  Button,
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-  NativeSelect,
-  NativeSelectOption,
-  Switch,
-} from "@janela/design";
+import { Button, NativeSelect, NativeSelectOption, Switch } from "@janela/design";
 import { Match } from "effect";
 import type { ChangeEvent, ReactElement } from "react";
 import { useCallback, useId } from "react";
@@ -18,7 +11,7 @@ import { SYSTEM_NOTIFICATION_SOUNDS } from "../../../shared/config/index.ts";
 import type { GlobalSettings, NotificationSoundControlling } from "../../../shared/model/index.ts";
 import { withNotificationEvent } from "../../../shared/model/index.ts";
 import { NOTIFICATIONS_EVENTS_SECTION } from "../model/settings-index.ts";
-import { Section } from "./pane.tsx";
+import { SettingRow, SettingsGroup, labelIDFor } from "./pane.tsx";
 
 export interface SettingsNotificationsProps {
   readonly settings: GlobalSettings;
@@ -44,12 +37,11 @@ const EVENT_LABEL = {
 } satisfies Record<AttentionEvent, string>;
 
 const EVENT_HINT = {
-  bell: "Off by default: a bell badges the sidebar either way. A program that asks macOS for a notification by name always delivers, and takes this sound.",
-  waiting: "An agent asking permission or a question is the thing you most want to hear about.",
-  finished: "The agent ended its turn and nothing went wrong.",
-  failed:
-    "Also a command that failed after more than ten seconds, which always delivers and takes this sound.",
-} satisfies Record<AttentionEvent, string>;
+  bell: "Explicit notification requests always deliver.",
+  waiting: undefined,
+  finished: undefined,
+  failed: "Commands failing after 10 seconds always deliver.",
+} satisfies Record<AttentionEvent, string | undefined>;
 
 export function SettingsNotifications(props: SettingsNotificationsProps): ReactElement {
   const { settings, onChange } = props;
@@ -62,7 +54,7 @@ export function SettingsNotifications(props: SettingsNotificationsProps): ReactE
   );
 
   return (
-    <Section section={NOTIFICATIONS_EVENTS_SECTION}>
+    <SettingsGroup section={NOTIFICATIONS_EVENTS_SECTION}>
       {ATTENTION_EVENTS.map((event) => (
         <NotificationEventField
           key={event}
@@ -72,7 +64,7 @@ export function SettingsNotifications(props: SettingsNotificationsProps): ReactE
           onChange={change}
         />
       ))}
-    </Section>
+    </SettingsGroup>
   );
 }
 
@@ -84,7 +76,6 @@ function NotificationEventField(props: {
 }): ReactElement {
   const { event, preference, control, onChange } = props;
   const id = useId();
-  const labelID = `${id}-label`;
 
   const toggle = useCallback(
     (notifies: boolean) => {
@@ -101,31 +92,23 @@ function NotificationEventField(props: {
   );
 
   return (
-    <Field orientation="horizontal">
-      <FieldContent>
-        <FieldLabel id={labelID} htmlFor={id}>
-          {EVENT_LABEL[event]}
-        </FieldLabel>
-        <FieldDescription>{EVENT_HINT[event]}</FieldDescription>
-      </FieldContent>
-      <div className="flex shrink-0 items-center gap-2">
-        {control === undefined ? undefined : (
-          <NotificationSoundPicker
-            label={EVENT_LABEL[event]}
-            sound={preference.sound}
-            isEnabled={preference.notifies}
-            control={control}
-            onChange={choose}
-          />
-        )}
-        <Switch
-          id={id}
-          aria-labelledby={labelID}
-          checked={preference.notifies}
-          onCheckedChange={toggle}
+    <SettingRow label={EVENT_LABEL[event]} description={EVENT_HINT[event]} controlID={id}>
+      {control === undefined ? undefined : (
+        <NotificationSoundPicker
+          label={EVENT_LABEL[event]}
+          sound={preference.sound}
+          isEnabled={preference.notifies}
+          control={control}
+          onChange={choose}
         />
-      </div>
-    </Field>
+      )}
+      <Switch
+        id={id}
+        aria-labelledby={labelIDFor(id)}
+        checked={preference.notifies}
+        onCheckedChange={toggle}
+      />
+    </SettingRow>
   );
 }
 
@@ -191,6 +174,7 @@ function NotificationSoundPicker(props: {
         value={value}
         disabled={!props.isEnabled}
         onChange={select}
+        className="w-32"
       >
         <NativeSelectOption value={SILENT_VALUE}>Silent</NativeSelectOption>
         {SYSTEM_NOTIFICATION_SOUNDS.map((name) => (
@@ -204,13 +188,14 @@ function NotificationSoundPicker(props: {
         <NativeSelectOption value={CHOOSE_VALUE}>{CHOOSE_SOUND_LABEL}</NativeSelectOption>
       </NativeSelect>
       <Button
-        variant="outline"
+        variant="ghost"
+        size="icon"
         type="button"
         aria-label={`Play — ${props.label}`}
         onClick={preview}
         disabled={!props.isEnabled || sound.kind === "silent"}
       >
-        Play
+        <HugeiconsIcon icon={VolumeHighIcon} strokeWidth={2} />
       </Button>
     </>
   );

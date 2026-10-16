@@ -3,13 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from "../../../shared/model/index.ts";
-import { SettingsAppearance } from "./appearance-settings.tsx";
+import { SettingsAppearance, THEME_BROWSER_HINT } from "./appearance-settings.tsx";
 
 const noop = (): void => {};
 
-const BROWSER_HINT = "In a browser the theme is the browser";
-
-const radios = (markup: string): string[] => markup.match(/<span[^>]*role="radio"[^>]*>/g) ?? [];
+const options = (markup: string): string[] => markup.match(/<option[^>]*>[^<]*<\/option>/g) ?? [];
 
 function paneMarkup(settings: GlobalSettings = DEFAULT_GLOBAL_SETTINGS, canApply = true): string {
   return renderToStaticMarkup(
@@ -18,21 +16,24 @@ function paneMarkup(settings: GlobalSettings = DEFAULT_GLOBAL_SETTINGS, canApply
 }
 
 describe("the appearance pane", () => {
-  test("offers the three themes in order and checks the held one", () => {
+  test("offers the three themes in one dropdown, in order, with nothing to explain them", () => {
     const markup = paneMarkup({ ...DEFAULT_GLOBAL_SETTINGS, theme: "light" });
-    const checked = radios(markup).map((radio) => radio.includes('aria-checked="true"'));
+    const themes = options(markup);
 
-    expect(checked).toEqual([false, true, false]);
-    expect(markup.indexOf(">System<")).toBeLessThan(markup.indexOf(">Light<"));
-    expect(markup.indexOf(">Light<")).toBeLessThan(markup.indexOf(">Dark<"));
-    expect(markup).not.toContain(BROWSER_HINT);
+    expect(themes.map((option) => option.replace(/<[^>]*>/g, ""))).toEqual([
+      "System",
+      "Light",
+      "Dark",
+    ]);
+
+    expect(themes[1]).toContain('selected=""');
+    expect(markup).not.toContain(THEME_BROWSER_HINT);
   });
 
-  test("in a browser the choice is shown, disabled, and says why", () => {
+  test("in a browser the dropdown is shown, disabled, and says why", () => {
     const markup = paneMarkup(DEFAULT_GLOBAL_SETTINGS, false);
 
-    expect(radios(markup)).toHaveLength(3);
-    expect(radios(markup).every((radio) => radio.includes('aria-disabled="true"'))).toBe(true);
-    expect(markup).toContain(BROWSER_HINT);
+    expect(markup).toMatch(/<select[^>]*disabled=""/);
+    expect(markup).toContain(THEME_BROWSER_HINT);
   });
 });

@@ -36,9 +36,9 @@ describe("protocol versioning", () => {
     expect(MINIMUM_SUPPORTED_VERSION).toBeLessThanOrEqual(PROTOCOL_VERSION);
   });
 
-  test("session naming joined the client's discriminants: version 16, speaking 16 only", () => {
-    expect(PROTOCOL_VERSION).toBe(16);
-    expect(MINIMUM_SUPPORTED_VERSION).toBe(16);
+  test("namer models joined the client's discriminants: version 17, speaking 17 only", () => {
+    expect(PROTOCOL_VERSION).toBe(17);
+    expect(MINIMUM_SUPPORTED_VERSION).toBe(17);
   });
 });
 

@@ -529,6 +529,11 @@ export function fakeNaming(
     prompts,
     load: () => Promise.resolve(),
     overview: () => Promise.resolve(overview),
+    models: (agent) =>
+      Promise.resolve({
+        agent,
+        models: [{ id: `${agent}-small`, name: "Small", efforts: ["low", "high"] }],
+      }),
     configure: (naming) => {
       configured.push(naming);
 

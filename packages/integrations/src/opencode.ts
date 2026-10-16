@@ -70,11 +70,7 @@ export const opencodeIntegration: Integration = {
   id: "opencode",
   name: "OpenCode",
   executable: "opencode",
-  reports: [
-    "Working while a session is busy",
-    "Waiting when it asks permission or a question",
-    "Finished when the session goes idle or fails",
-  ],
+  capabilities: ["activity"],
 
   configPath(home: IntegrationHome): string {
     return pluginPath(home);

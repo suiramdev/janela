@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ClientRequest } from "@janela/client";
-import type { SessionNamingOverview } from "@janela/core";
-import { serializeSessionNamingOverview } from "@janela/protocol";
+import type { SessionNamerCatalog, SessionNamingOverview } from "@janela/core";
+import { serializeSessionNamerCatalog, serializeSessionNamingOverview } from "@janela/protocol";
 
 import {
   chosenNamer,
   configureSessionNaming,
+  effortItems,
+  loadNamerCatalog,
   loadSessionNaming,
+  modelItems,
   namerOptions,
+  namingEffort,
   namingFor,
   namingModel,
   type SessionNamingRequesting,
@@ -89,11 +93,70 @@ describe("the form's values", () => {
     expect(chosenNamer({ ...OVERVIEW, naming: { kind: "off" } })).toBeUndefined();
   });
 
-  test("off comes first, and a namer missing from PATH says so", () => {
+  test("off comes first, and a provider missing from PATH says so and cannot be chosen", () => {
     const options = namerOptions(OVERVIEW);
 
     expect(options.map((option) => option.value)).toEqual(["off", "claude", "codex"]);
-    expect(options[1]?.detail).toContain("haiku");
-    expect(options[2]?.detail).toBe("codex is not on your PATH, so nothing would be named.");
+    expect(options[1]).toEqual({ value: "claude", title: "Claude Code", isDisabled: false });
+    expect(options[2]).toEqual({
+      value: "codex",
+      title: "Codex (not installed)",
+      isDisabled: true,
+    });
+  });
+
+  test("a chosen provider missing from PATH stays selectable, so the select can show it", () => {
+    const options = namerOptions({ ...OVERVIEW, naming: { kind: "agent", agent: "codex" } });
+
+    expect(options[2]?.isDisabled).toBe(false);
+  });
+
+  test("an effort joins the setting only when one was given", () => {
+    expect(namingFor("omp", "", " low ")).toEqual({ kind: "agent", agent: "omp", effort: "low" });
+    expect(namingFor("omp", "x", "")).toEqual({ kind: "agent", agent: "omp", model: "x" });
+    expect(namingEffort({ kind: "agent", agent: "omp", effort: "high" })).toBe("high");
+    expect(namingEffort({ kind: "off" })).toBe("");
+  });
+});
+
+describe("the provider's catalog", () => {
+  const CATALOG: SessionNamerCatalog = {
+    agent: "claude",
+    models: [
+      { id: "haiku", name: "Haiku", efforts: ["low", "high"] },
+      { id: "opus", name: "opus", efforts: ["low", "max"] },
+    ],
+  };
+
+  test("is asked for by provider, and parsed from the daemon's text reply", async () => {
+    const requests: ClientRequest[] = [];
+    const connection: SessionNamingRequesting = {
+      request(message) {
+        requests.push(message);
+
+        return Promise.resolve(serializeSessionNamerCatalog(CATALOG));
+      },
+    };
+
+    expect(await loadNamerCatalog(connection, "claude")).toEqual(CATALOG);
+    expect(requests).toEqual([{ type: "sessionNamerModels", agent: "claude" }]);
+  });
+
+  test("models show their name, with the id beside it when the two differ", () => {
+    expect(modelItems(CATALOG)).toEqual([
+      { value: "haiku", label: "Haiku", detail: "haiku" },
+      { value: "opus", label: "opus" },
+    ]);
+
+    expect(modelItems(undefined)).toEqual([]);
+  });
+
+  test("efforts are the chosen model's, or every model's for one the catalog lacks", () => {
+    expect(effortItems(CATALOG, "haiku").map((item) => item.value)).toEqual(["low", "high"]);
+    expect(effortItems(CATALOG, "my-own-model").map((item) => item.value)).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
   });
 });

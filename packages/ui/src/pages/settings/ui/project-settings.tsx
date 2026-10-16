@@ -1,4 +1,12 @@
-import type { AutomationEvent, AutomationScripts, Project, ProjectSettings } from "@janela/core";
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type {
+  AutomationEvent,
+  AutomationScripts,
+  Project,
+  ProjectSettings,
+  WorktreeRoot,
+} from "@janela/core";
 import {
   absolutePath,
   AUTOMATION_EVENTS,
@@ -6,16 +14,16 @@ import {
   supportsWorktrees,
 } from "@janela/core";
 import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   ShellScriptEditor,
 } from "@janela/design";
 import type { ReactElement } from "react";
 import { useCallback, useId } from "react";
 
 import {
+  AUTOMATION_EVENT_HINT,
   automationViolations,
   usesTimeout,
   withAutomationScript,
@@ -25,15 +33,26 @@ import {
   AUTOMATION_SECTION,
   PROJECT_AUTOMATION_SECTION,
   PROJECT_WORKTREES_SECTION,
+  sectionElementID,
 } from "../model/settings-index.ts";
-import { NumberField, SwitchField, TextField, Violations } from "./fields.tsx";
-import { PaneGroup, Section } from "./pane.tsx";
+import { type Choice, NumberRow, SelectRow, TextRow, Violations } from "./fields.tsx";
+import { SettingBlock, SettingsGroup } from "./pane.tsx";
 
 export interface ProjectSettingsPaneProps {
   readonly project: Project;
   readonly settings: ProjectSettings;
   readonly onChange: (settings: ProjectSettings) => void;
 }
+
+type WorktreeLocation = WorktreeRoot["kind"];
+
+export const WORKTREE_LOCATION_CHOICES: readonly Choice<WorktreeLocation>[] = [
+  { value: "siblingDirectory", title: "Beside the repository" },
+  { value: "custom", title: "A directory I choose" },
+];
+
+export const AUTOMATION_HINT =
+  "Each script runs in your login shell, in a terminal you can watch and interrupt. Scripts live here and are never read from the repository.";
 
 const SCRIPT_PLACEHOLDER = `# Runs in your login shell, in the session's directory.
 cp "$JANELA_PROJECT_DIRECTORY/.env" "$JANELA_SESSION_DIRECTORY/.env"`;
@@ -42,9 +61,9 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
   const { project, settings, onChange } = props;
   const projectDirectory = project.directory;
 
-  const changeCustomRoot = useCallback(
-    (isCustom: boolean) => {
-      if (!isCustom) {
+  const changeLocation = useCallback(
+    (location: WorktreeLocation) => {
+      if (location === "siblingDirectory") {
         onChange({ ...settings, worktreeRoot: { kind: "siblingDirectory" } });
 
         return;
@@ -82,60 +101,73 @@ export function ProjectSettingsPane(props: ProjectSettingsPaneProps): ReactEleme
   return (
     <>
       {supportsWorktrees(project) ? (
-        <Section section={PROJECT_WORKTREES_SECTION}>
-          <SwitchField
-            label="Use a directory I choose"
-            isOn={settings.worktreeRoot.kind === "custom"}
-            onChange={changeCustomRoot}
-            hint="Off puts them in .worktrees beside the repository, which keeps relative paths short — build tools embed them."
+        <SettingsGroup section={PROJECT_WORKTREES_SECTION}>
+          <SelectRow
+            label="Location"
+            description={
+              settings.worktreeRoot.kind === "custom"
+                ? undefined
+                : "In .worktrees, which keeps paths short."
+            }
+            value={settings.worktreeRoot.kind}
+            choices={WORKTREE_LOCATION_CHOICES}
+            onChange={changeLocation}
           />
           {settings.worktreeRoot.kind === "custom" ? (
-            <TextField
-              label="Worktree directory"
+            <TextRow
+              label="Directory"
+              description="An absolute path."
               value={settings.worktreeRoot.directory}
               onChange={changeRootPath}
               isMonospaced
-              hint="Must be an absolute path."
+              isWide
             />
           ) : undefined}
-        </Section>
+        </SettingsGroup>
       ) : undefined}
 
-      <PaneGroup section={PROJECT_AUTOMATION_SECTION}>
-        <AutomationVariables />
+      <SettingsGroup section={PROJECT_AUTOMATION_SECTION} description={AUTOMATION_HINT}>
         {AUTOMATION_EVENTS.map((event) => (
-          <AutomationScriptSection
+          <AutomationScriptBlock
             key={event}
             event={event}
             automation={settings.automation}
             onChange={changeAutomation}
           />
         ))}
+        <AutomationVariables />
         <Violations violations={automationViolations(settings)} />
-      </PaneGroup>
+      </SettingsGroup>
     </>
   );
 }
 
 function AutomationVariables(): ReactElement {
   return (
-    <div className="px-1">
-      <FieldDescription>
-        Every script sees these, on top of your shell&apos;s own environment:
-      </FieldDescription>
-      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
-        {AUTOMATION_VARIABLES.map((variable) => (
-          <div key={variable.name} className="contents">
-            <dt className="font-mono">${variable.name}</dt>
-            <dd className="text-muted-foreground">{variable.meaning}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
+    <Collapsible className="py-2.5">
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs transition-colors">
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          strokeWidth={2}
+          className="size-3 transition-transform duration-150 group-data-[panel-open]:rotate-90"
+        />
+        Variables every script sees
+      </CollapsibleTrigger>
+      <CollapsibleContent keepMounted>
+        <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+          {AUTOMATION_VARIABLES.map((variable) => (
+            <div key={variable.name} className="contents">
+              <dt className="font-mono">${variable.name}</dt>
+              <dd className="text-muted-foreground">{variable.meaning}</dd>
+            </div>
+          ))}
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function AutomationScriptSection(props: {
+function AutomationScriptBlock(props: {
   readonly event: AutomationEvent;
   readonly automation: AutomationScripts;
   readonly onChange: (automation: AutomationScripts) => void;
@@ -143,6 +175,7 @@ function AutomationScriptSection(props: {
   const { event, automation, onChange } = props;
   const id = useId();
   const entry = automation[event];
+  const section = AUTOMATION_SECTION[event];
 
   const changeScript = useCallback(
     (script: string) => {
@@ -159,32 +192,28 @@ function AutomationScriptSection(props: {
   );
 
   return (
-    <Section section={AUTOMATION_SECTION[event]}>
-      <Field>
-        <FieldContent>
-          <FieldLabel htmlFor={id}>Script</FieldLabel>
-          <FieldDescription>
-            Leave it empty and nothing runs. Lines starting with # are comments.
-          </FieldDescription>
-        </FieldContent>
-        <ShellScriptEditor
-          id={id}
-          value={entry?.script ?? ""}
-          onChange={changeScript}
-          placeholder={SCRIPT_PLACEHOLDER}
-        />
-      </Field>
-
+    <SettingBlock
+      label={section.title}
+      description={AUTOMATION_EVENT_HINT[event]}
+      controlID={id}
+      sectionID={sectionElementID(section.id)}
+    >
+      <ShellScriptEditor
+        id={id}
+        value={entry?.script ?? ""}
+        onChange={changeScript}
+        placeholder={SCRIPT_PLACEHOLDER}
+      />
       {usesTimeout(event) && entry !== undefined ? (
-        <NumberField
-          label="Deletion waits this long"
+        <NumberRow
+          label="Deletion timeout"
           value={entry.timeoutSeconds}
           onChange={changeTimeout}
           minimum={1}
           maximum={600}
-          hint="Seconds. Past it you are asked once whether to wait — deleting a session never hangs on a script."
+          unit="seconds"
         />
       ) : undefined}
-    </Section>
+    </SettingBlock>
   );
 }

@@ -1,5 +1,7 @@
 export type IntegrationID = (typeof INTEGRATION_IDS)[number];
 
+export type IntegrationCapability = (typeof INTEGRATION_CAPABILITIES)[number];
+
 export type IntegrationStatus =
   | { readonly kind: "installed" }
   | { readonly kind: "outdated" }
@@ -12,7 +14,7 @@ export interface IntegrationReport {
   readonly executable: string;
   readonly isAvailable: boolean;
   readonly configPath: string;
-  readonly reports: readonly string[];
+  readonly capabilities: readonly IntegrationCapability[];
   readonly status: IntegrationStatus;
 }
 
@@ -21,6 +23,8 @@ export interface IntegrationOverview {
 }
 
 export const INTEGRATION_IDS = ["claude", "codex", "opencode", "omp"] as const;
+
+export const INTEGRATION_CAPABILITIES = ["activity", "prompts"] as const;
 
 export function isIntegrationID(value: string): value is IntegrationID {
   return INTEGRATION_IDS.some((id) => id === value);

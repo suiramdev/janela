@@ -135,7 +135,7 @@ export function createIntegrationService(options: IntegrationServiceOptions): In
             executable: integration.executable,
             isAvailable: resolved !== undefined,
             configPath: integration.configPath(home),
-            reports: integration.reports,
+            capabilities: integration.capabilities,
             status,
           };
         }),
