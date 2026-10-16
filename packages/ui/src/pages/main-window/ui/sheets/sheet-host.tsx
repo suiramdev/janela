@@ -25,7 +25,7 @@ import {
 } from "../../model/command-dispatch.ts";
 import { CommandPalette } from "./command-palette.tsx";
 import { JumpList } from "./jump-list.tsx";
-import { NewSessionSheet, useBranchOverview } from "./new-session-sheet.tsx";
+import { NewSessionSheet, useBranchOverview, useHomeDirectory } from "./new-session-sheet.tsx";
 
 type SheetKind = Sheet["kind"];
 
@@ -212,6 +212,8 @@ function ConnectedNewSessionSheet(props: {
     project !== undefined && supportsWorktrees(project) ? project.id : undefined,
   );
 
+  const homeDirectory = useHomeDirectory(connection, project === undefined);
+
   const pickDirectory = useCallback(
     () => directories.pickDirectory({ title: "Choose Folder" }),
     [directories],
@@ -225,6 +227,7 @@ function ConnectedNewSessionSheet(props: {
       overview={overview}
       sessions={props.sessions}
       onPickDirectory={pickDirectory}
+      homeDirectory={homeDirectory}
       onCreate={props.onCreate}
       onCancel={props.onCancel}
     />

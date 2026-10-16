@@ -388,6 +388,13 @@ describe("the sheet", () => {
     expect(canCreate(markup)).toBe(false);
   });
 
+  test("no project starts in the home directory once the daemon has named it", () => {
+    const markup = render({ projectID: undefined, homeDirectory: absolutePath("/Users/ada") });
+
+    expect(markup).toContain('value="/Users/ada"');
+    expect(canCreate(markup)).toBe(true);
+  });
+
   test("a plain folder project asks nothing more and can be created", () => {
     const markup = render({ projectID: FOLDER.id, overview: FAILED });
 
