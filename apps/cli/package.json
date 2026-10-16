@@ -1,0 +1,28 @@
+{
+  "name": "@janela/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "`janela`: a client of janelad for a terminal, a script or an agent. Same protocol, no window.",
+  "bin": {
+    "janela": "./src/main.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "bun test",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@janela/client": "workspace:*",
+    "@janela/core": "workspace:*",
+    "@janela/protocol": "workspace:*",
+    "@janela/support": "workspace:*",
+    "effect": "4.0.3"
+  },
+  "devDependencies": {
+    "@janela/test-support": "workspace:*"
+  }
+}

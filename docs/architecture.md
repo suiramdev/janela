@@ -101,6 +101,42 @@ step, and it changes nothing above the transport.
 A phone client is another WebSocket peer of the gateway. It speaks the same frames,
 gets the same repaints, and needs nothing server-side that does not already exist.
 
+### The CLI
+
+`apps/cli` (`janela`, layer 7, client side) is the client ADR 0015 argued for: a
+process a script, an agent or a person over ssh can run to list projects and
+sessions, create and remove a session, create and start a terminal, and read one
+back with `snapshotText`. It is the first client that is not a window, and so the
+honest test of the split — the decision of 2026-10-16, issue #51.
+
+- **It needed no new `ClientRequest` variant.** Every verb it has is a message the
+  app already sends. Listing is `subscribe { kind: "state" }` and the first full
+  snapshot, exactly as the app's mirror fills. The one gap it found is a reply,
+  not a request: `createSession` and `addProject` answer `acknowledged`, so the CLI
+  learns which session or project it made by diffing the mirror before and after
+  (`createTerminal` already answers with its id). Two clients creating at the same
+  instant could confuse that; answering both with the new id is the fix, and it is
+  a protocol version bump when someone needs it.
+- **It opens the socket itself.** A CLI is already a process, so it needs no shell
+  between it and the socket; it is the one client with `node:net`. The socket's
+  path is part of the contract between a daemon and every client, so it moved from
+  `@janela/daemon` down to `@janela/protocol/endpoint` — a subpath, because the
+  browser links `@janela/protocol` and must not link `node:os`. `@janela/daemon`
+  re-exports it, so nothing above it moved. The gateway's edge to
+  `@janela/daemon/endpoint` was not an option: the gateway is daemon side and
+  needs no `@janela/client`; the CLI is client side and needs nothing else.
+- **It never starts the daemon.** The app and the gateway run
+  `launchctl kickstart gui/<uid>/sh.janela.janelad` when the socket is gone. Over
+  ssh with nobody logged in to the desktop there is no `gui/<uid>` domain, the
+  launch agent is not loaded, and the call can only fail; spawning `janelad`
+  directly would put the user's terminals under a process launchd does not own.
+  So `janela` connects once, and when nothing answers it exits 3 with a
+  `UserFacingError` naming the socket and the two ways to start one. When the user
+  *is* logged in to the desktop, an ssh session is the same uid, the peer check
+  passes, and the CLI works unchanged.
+- **It cannot attach.** Rendering a live terminal inside another terminal is a
+  separate decision; `snapshotText` is the read path until then.
+
 ---
 
 ## Packages
@@ -130,6 +166,8 @@ compiler stopped doing it.
     apps/daemon → janelad      apps/desktop  Tauri shell + composition root
     apps/gateway → the         apps/web      the browser client: same views,
       browser's shell                        a WebSocket transport, no macOS ports
+                               apps/cli      `janela`: the protocol from a shell,
+                                             over the Unix socket, no views
 ```
 
 The two halves meet **only** at `@janela/core` and `@janela/protocol`. That is what
@@ -142,7 +180,7 @@ by accident.
 | --- | --- | --- |
 | `@janela/support` | `Log`, timing marks, `UserFacingError`, bounded buffers | Know anything about the domain. Its `/process` subpath is daemon-only, so the rest stays linkable into a WebView |
 | `@janela/core` | `Project`, `Session`, `TerminalDescriptor`, `SessionLayout`, `AutomationScript` | Perform I/O, or hold anything that does not survive JSON |
-| `@janela/protocol` | Frames, messages, handshake, transport seam | Know how anything is *implemented* on either side |
+| `@janela/protocol` | Frames, messages, handshake, transport seam; behind `/endpoint`, where the daemon's socket lives | Know how anything is *implemented* on either side |
 
 ### Daemon side
 
@@ -169,6 +207,7 @@ by accident.
 | `@janela/ui` | Views and presentation state, internally Feature-Sliced (below) | Reach past `@janela/client` |
 | `apps/desktop` | The Tauri shell, the object graph, the port adapters, menus, notifications, the socket bridge | Contain logic worth testing |
 | `apps/web` | The browser client: the object graph over a WebSocket transport, the in-app folder picker host, the console log sink | Name a port only the Mac can answer — `ClientEnvironment.local` is `undefined` here |
+| `apps/cli` → `janela` | The socket `MessageTransport`, argument parsing, the commands, the removal confirmation, the daemon-absent message | Start a daemon, attach to a terminal, or send a request the app could not |
 
 *Planned* means designed and documented but not yet implemented.
 

@@ -18,6 +18,11 @@ Where the daemon listens, and who is allowed to talk to it. Two unglamorous
 constraints shape all of it, and both are easy to get wrong in a way that only
 fails on someone else's machine.
 
+The path itself — `defaultSocketPath`, `MAXIMUM_SOCKET_PATH_LENGTH`,
+`SocketPathTooLong` — lives in `@janela/protocol/endpoint`, because every client
+needs it and a client may not import this package; `endpoint.ts` re-exports it so
+the daemon's own imports did not move (#51).
+
 `MAXIMUM_SOCKET_PATH_LENGTH` is 104 — `sizeof(sockaddr_un.sun_path)`, measured on
 macOS 26. It is why the socket does not live beside the database in Application
 Support: that path is already 73 bytes for a 15-character home directory and

@@ -1,9 +1,13 @@
 import { lstatSync, type Stats } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import { UserFacingError, type LogRecord, type Logger } from "@janela/support";
 import { Data, Match, Option, Result, Schema } from "effect";
+
+export {
+  MAXIMUM_SOCKET_PATH_LENGTH,
+  SocketPathTooLong,
+  defaultSocketPath,
+} from "@janela/protocol/endpoint";
 
 export type SocketDirectoryProblem =
   | SocketDirectoryMissing
@@ -34,8 +38,6 @@ export type PeerVerdict =
       readonly refusal: PeerRefusal;
       readonly pid: number | undefined;
     };
-
-export const MAXIMUM_SOCKET_PATH_LENGTH = 104;
 
 export const SOCKET_DIRECTORY_MODE = 0o700;
 
@@ -99,23 +101,6 @@ export function peerRefusalLabel(refusal: PeerRefusal): string {
   );
 }
 
-export class SocketPathTooLong extends UserFacingError {
-  readonly byteCount: number;
-
-  override readonly summary = "Janela can't create its background service socket.";
-
-  constructor(byteCount: number) {
-    super("socket path too long", {
-      reason:
-        `The socket path is ${byteCount} bytes and the system limit is ` +
-        `${MAXIMUM_SOCKET_PATH_LENGTH}.`,
-      recoverySuggestion: "This can happen when your home directory path is unusually long.",
-    });
-
-    this.byteCount = byteCount;
-  }
-}
-
 export class SocketDirectoryUnsafe extends UserFacingError {
   readonly directory: string;
 
@@ -134,15 +119,6 @@ export class SocketDirectoryUnsafe extends UserFacingError {
     this.directory = directory;
     this.problem = problem;
   }
-}
-
-export function defaultSocketPath(): string {
-  const path = join(homedir(), ".janela", "run", "janelad.sock");
-  const byteCount = Buffer.byteLength(path, "utf8");
-
-  if (byteCount > MAXIMUM_SOCKET_PATH_LENGTH) throw new SocketPathTooLong(byteCount);
-
-  return path;
 }
 
 export function verifySocketDirectory(directory: string, ownUid: number): void {

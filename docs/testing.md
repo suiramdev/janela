@@ -109,7 +109,7 @@ interesting bug here is a real-socket bug: partial reads, a frame split across t
 reads, a peer that vanishes mid-frame, a length prefix that lies.
 
 **Mind the path limit, by hand.** `sun_path` is 104 bytes —
-`MAXIMUM_SOCKET_PATH_LENGTH` in `packages/daemon/src/endpoint.ts`, which is pinned
+`MAXIMUM_SOCKET_PATH_LENGTH` in `packages/protocol/src/endpoint.ts`, which is pinned
 to 104 by `endpoint.test.ts` and enforced in production by `defaultSocketPath()`,
 the only place that throws `SocketPathTooLong`. There is **no socket-path helper**:
 `@janela/test-support` exports `temporaryDirectory(label)` (with `path` and `join`)

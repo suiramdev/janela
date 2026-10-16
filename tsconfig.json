@@ -28,6 +28,7 @@
     { "path": "packages/ui" },
     { "path": "apps/desktop" },
     { "path": "apps/web" },
+    { "path": "apps/cli" },
 
     { "path": "packages/test-support" }
   ]

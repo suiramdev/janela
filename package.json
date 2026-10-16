@@ -26,6 +26,7 @@
     "web:isolated": "bun run scripts/dev.ts --web --isolated",
     "web:build": "turbo run build --filter=@janela/web",
     "gateway": "bun run --cwd apps/gateway start",
+    "cli": "bun run apps/cli/src/main.ts",
     "daemon": "bun run --cwd apps/daemon dev",
     "daemon:build": "turbo run build --filter=@janela/janelad",
     "daemon:restart": "bun run scripts/daemon-restart.ts",

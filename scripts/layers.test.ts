@@ -145,6 +145,7 @@ describe("the manifest is complete", () => {
       "@janela/ui",
       "@janela/desktop",
       "@janela/web",
+      "@janela/cli",
       "@janela/test-support",
     ];
 
