@@ -5,7 +5,7 @@
     "": {
       "name": "janela",
       "dependencies": {
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/protocol": "workspace:*",
@@ -31,7 +31,7 @@
         "@janela/core": "workspace:*",
         "@janela/protocol": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -52,7 +52,7 @@
         "@janela/session": "workspace:*",
         "@janela/support": "workspace:*",
         "@janela/terminal": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -76,7 +76,7 @@
         "@tauri-apps/plugin-opener": "2",
         "@tauri-apps/plugin-process": "2.3.1",
         "@tauri-apps/plugin-updater": "2.12.0",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
         "react": "19.2.8",
         "react-dom": "19.2.8",
       },
@@ -96,7 +96,7 @@
         "@janela/daemon": "workspace:*",
         "@janela/protocol": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -111,7 +111,7 @@
         "@janela/protocol": "workspace:*",
         "@janela/support": "workspace:*",
         "@janela/ui": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
         "react": "19.2.8",
         "react-dom": "19.2.8",
       },
@@ -130,7 +130,7 @@
         "@janela/core": "workspace:*",
         "@janela/protocol": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -141,7 +141,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -157,7 +157,7 @@
         "@janela/session": "workspace:*",
         "@janela/support": "workspace:*",
         "@janela/terminal": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -171,7 +171,7 @@
         "@janela/support": "workspace:*",
         "@prisma/client": "7.9.1",
         "@prisma/driver-adapter-utils": "7.9.1",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -206,7 +206,7 @@
       "dependencies": {
         "@janela/core": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -218,7 +218,7 @@
       "dependencies": {
         "@janela/core": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -230,7 +230,7 @@
       "dependencies": {
         "@janela/core": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -242,7 +242,7 @@
       "dependencies": {
         "@janela/core": "workspace:*",
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -253,7 +253,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@janela/support": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -269,7 +269,7 @@
         "@janela/git": "workspace:*",
         "@janela/support": "workspace:*",
         "@janela/terminal": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -279,7 +279,7 @@
       "name": "@janela/support",
       "version": "0.0.0",
       "dependencies": {
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -294,7 +294,7 @@
         "@janela/support": "workspace:*",
         "@xterm/addon-serialize": "0.14.0",
         "@xterm/headless": "6.0.0",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -310,7 +310,7 @@
         "@xterm/addon-fit": "0.11.0",
         "@xterm/addon-webgl": "0.19.0",
         "@xterm/xterm": "6.0.0",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@janela/test-support": "workspace:*",
@@ -333,7 +333,7 @@
         "@janela/protocol": "workspace:*",
         "@janela/support": "workspace:*",
         "@janela/terminal-ui": "workspace:*",
-        "effect": "4.0.3",
+        "effect": "4.0.5",
       },
       "devDependencies": {
         "@feature-sliced/steiger-plugin": "0.7.0",
@@ -1075,7 +1075,7 @@
 
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
-    "effect": ["effect@4.0.3", "", {}, "sha512-LoWn/Uwwx0JjHSDmBAAahx8sB+klzM6vsZovnbYowBNw6B4QScJLRLBByO61plvNiycx7HPN8FnsWUCu0eXW5w=="],
+    "effect": ["effect@4.0.5", "", {}, "sha512-BY4/28NlpOd99yzmV741xbVGmp+1U7tks4oB7F/Png64bTa5tm5eCA6W0RiXsnuLDDoJpjfVSo4Dnq4BZb/89Q=="],
 
     "effector": ["effector@23.4.4", "", {}, "sha512-QkZboRN28K/iwxigDhlJcI3ux3aNbt8kYGGH/GkqWG0OlGeyuBhb7PdM89Iu+ogV8Lmz16xIlwnXR2UNWI6psg=="],
 
