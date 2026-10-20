@@ -20,7 +20,7 @@
     "@janela/session": "workspace:*",
     "@janela/support": "workspace:*",
     "@janela/terminal": "workspace:*",
-    "effect": "4.0.3"
+    "effect": "4.0.5"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"

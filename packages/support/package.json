@@ -14,7 +14,7 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
-    "effect": "4.0.3"
+    "effect": "4.0.5"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"
