@@ -27,7 +27,7 @@ permissions:
 
 env:
   # Keep in sync with ci.yml, and with `packageManager` in package.json.
-  BUN_VERSION: "1.4.2"
+  BUN_VERSION: "1.4.4"
   # Keep in sync with ci.yml, and with .node-version.
   NODE_VERSION: "24.14.0"
 
