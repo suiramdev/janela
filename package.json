@@ -35,7 +35,7 @@
     "clean": "turbo run clean && rm -rf node_modules .turbo"
   },
   "dependencies": {
-    "effect": "4.0.3"
+    "effect": "4.0.7"
   },
   "devDependencies": {
     "@janela/protocol": "workspace:*",

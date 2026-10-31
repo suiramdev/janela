@@ -16,7 +16,7 @@
     "@janela/core": "workspace:*",
     "@janela/protocol": "workspace:*",
     "@janela/support": "workspace:*",
-    "effect": "4.0.3"
+    "effect": "4.0.7"
   },
   "devDependencies": {
     "@janela/test-support": "workspace:*"
