@@ -37,7 +37,7 @@ jobs:
   # already shipped, and a signing mode the secrets cannot honour.
   verify:
     name: Refuse early
-    runs-on: macos-15
+    runs-on: macos-26
     outputs:
       version: ${{ steps.version.outputs.version }}
       mode: ${{ steps.mode.outputs.mode }}
@@ -112,7 +112,7 @@ jobs:
   # notarize with, the updater manifest, and the draft.
   release:
     name: Bundle, verify and draft the release
-    runs-on: macos-15
+    runs-on: macos-26
     needs: verify
     # The one job in the repository that writes: it uploads the draft release.
     # The token reaches only the final step, through GH_TOKEN.
