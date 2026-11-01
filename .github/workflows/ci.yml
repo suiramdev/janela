@@ -32,7 +32,7 @@ jobs:
   # pushing. If these ever diverge, the local command is the one to fix.
   check:
     name: Lint, typecheck & test
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       # Actions are pinned to commit SHAs, not tags: a tag can be moved to point
       # at new code, a SHA cannot. Update deliberately, with the version comment.
@@ -89,7 +89,7 @@ jobs:
   # formatting mistake should not pay for a cargo build.
   native:
     name: Build the PTY library
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,7 +119,7 @@ jobs:
   # embed.
   sidecar:
     name: Compile the daemon sidecar
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [check, native]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -171,7 +171,7 @@ jobs:
   # than none at all.
   shell:
     name: Bundle and verify the app
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [check, native]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
